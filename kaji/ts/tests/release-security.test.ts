@@ -1414,6 +1414,52 @@ describe("Kaji workflow contracts", () => {
     }
   });
 
+  it("keeps supplied-artifact handoff children token-free and nonpacking", () => {
+    const smoke = readFileSync(
+      resolve(repositoryRoot, "kaji/ts/scripts/smoke_package.mts"),
+      "utf8",
+    );
+    const installedProof = readFileSync(
+      resolve(repositoryRoot, "kaji/ts/scripts/installed-github-smoke.mts"),
+      "utf8",
+    );
+    const handoff = smoke.slice(
+      smoke.indexOf("async function runHandoffCommand("),
+      smoke.indexOf("function readManifest("),
+    );
+    const dispatcher = smoke.slice(
+      smoke.indexOf("async function runSuppliedTarballHandoff("),
+      smoke.indexOf("function readManifest("),
+    );
+
+    for (const token of ["GH_TOKEN", "GITHUB_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) {
+      expect(smoke).toContain(`"${token}"`);
+      expect(installedProof).toContain(`"${token}" in process.env`);
+    }
+    expect(handoff).toContain("const childEnvironment = tokenFreeHandoffEnvironment(environment)");
+    expect(handoff).toContain("PROTECTED_HANDOFF_TOKENS.some");
+    expect(handoff).toContain("childEnvironment, timeoutMs");
+    expect(smoke).toContain("function safeHandoffDiagnostic(output: string): string");
+    expect(smoke).toContain('"[redacted-token]"');
+    expect(smoke).toContain('"$1$2[redacted]"');
+    expect(handoff).toContain("npm_config_userconfig: userConfig");
+    expect(handoff).toContain('npm_config_registry: "http://127.0.0.1:9"');
+    expect(handoff).toContain('BUN_CONFIG_REGISTRY: "http://127.0.0.1:9"');
+    expect(handoff).toContain(
+      '["install", "--production", "--ignore-scripts", "--omit=dev", "--offline"]',
+    );
+    expect(smoke).not.toContain("https://registry.npmjs.org");
+    expect(handoff).not.toContain('"npm", ["pack"');
+    expect(handoff).not.toContain('"run", "build"');
+    expect(dispatcher.indexOf("const digest = sha256(tarball)")).toBeGreaterThanOrEqual(0);
+    expect(dispatcher.indexOf("const digest = sha256(tarball)")).toBeLessThan(
+      dispatcher.indexOf("await runArtifactContractHandoff("),
+    );
+    expect(dispatcher.indexOf("const digest = sha256(tarball)")).toBeLessThan(
+      dispatcher.indexOf("await runNodeHandoff("),
+    );
+  });
+
   it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
     "keeps runner contexts out of every job-level environment in %s",
     (workflowName) => {

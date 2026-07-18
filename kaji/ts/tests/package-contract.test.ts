@@ -1,7 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  chmodSync,
   cpSync,
   copyFileSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -57,20 +60,20 @@ const GITHUB_SHARED_ABI = JSON.parse(
   readFileSync(join(canonicalRoot, "integrations/github-tool-abi-v1.json"), "utf8"),
 ) as {
   version: "1.0.0";
-  tools: ReadonlyArray<{ risk?: unknown }>;
+  tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
 const GITHUB_PACKAGE_ABI = JSON.parse(
   readFileSync(join(canonicalRoot, "integrations/github-tool-abi-typescript-v1.json"), "utf8"),
 ) as {
   schema_version: "1.0.0";
   catalog_version: "0.2.0";
-  tools: ReadonlyArray<{ risk?: unknown }>;
+  tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
 const GITHUB_COPIED_MANIFEST = JSON.parse(
   readFileSync(join(packageRoot, "registry/github/manifest.json"), "utf8"),
 ) as {
   version: "0.1.0";
-  tools: ReadonlyArray<{ risk?: unknown }>;
+  tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
 const GITHUB_API_FIXTURE = JSON.parse(
   readFileSync(join(canonicalRoot, "integrations/github-api-conformance-v1.json"), "utf8"),
@@ -107,7 +110,7 @@ const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
 ] as const;
 
 const GITHUB_PACKAGE_PROOF = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   evidenceClass: "offline_exact_artifact_smoke",
   integration: "github",
   runtime: "typescript",
@@ -120,13 +123,25 @@ const GITHUB_PACKAGE_PROOF = {
   sharedFixtureCaseCount: GITHUB_API_FIXTURE.cases.length,
   publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
   packageCatalog: {
+    schemaVersion: GITHUB_PACKAGE_ABI.schema_version,
+    catalogVersion: GITHUB_PACKAGE_ABI.catalog_version,
     toolCount: GITHUB_PACKAGE_ABI.tools.length,
     readToolCount: GITHUB_PACKAGE_ABI.tools.filter((tool) => tool.risk === "read").length,
+    tools: GITHUB_PACKAGE_ABI.tools.map((tool) => tool.name),
+    readTools: GITHUB_PACKAGE_ABI.tools
+      .filter((tool) => tool.risk === "read")
+      .map((tool) => tool.name),
+    providerAliases: GITHUB_PACKAGE_ABI.tools.map((tool) => `github_${tool.name}`),
+    catalogNames: GITHUB_PACKAGE_ABI.tools.map((tool) => `github.${tool.name}`),
   },
   cliCopiedCatalog: {
     manifestVersion: GITHUB_COPIED_MANIFEST.version,
     toolCount: GITHUB_COPIED_MANIFEST.tools.length,
     readToolCount: GITHUB_COPIED_MANIFEST.tools.filter((tool) => tool.risk === "read").length,
+    tools: GITHUB_COPIED_MANIFEST.tools.map((tool) => tool.name),
+    readTools: GITHUB_COPIED_MANIFEST.tools
+      .filter((tool) => tool.risk === "read")
+      .map((tool) => tool.name),
   },
   esmSharedAbiMatched: true,
   cjsSharedAbiMatched: true,
@@ -170,6 +185,26 @@ const GITHUB_PACKAGE_PROOF = {
   repositoryDeniedBeforeCredentialAccess: true,
   githubCatalogEventsVerified: ["requested", "started", "failed"],
   genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+  lifecycle: {
+    githubFailure: {
+      stages: ["requested", "started", "failed"],
+      providerAlias: "github_get_file",
+      catalogName: "github.get_file",
+      sameIdentityAtEveryStage: true,
+    },
+    syntheticCompletion: {
+      stages: ["requested", "started", "completed"],
+      providerAlias: "synthetic_complete",
+      catalogName: "synthetic.complete",
+      sameIdentityAtEveryStage: true,
+    },
+  },
+  policyBeforeRequest: {
+    testFile: "kaji/ts/tests/github-registry.test.ts",
+    testName: "rejects approval for github_create_issue before token or HTTP",
+    tokenLookups: 0,
+    requestAttempts: 0,
+  },
   aliasCollisionRejected: true,
   conclusion: "passed",
   failureCode: null,
@@ -579,7 +614,10 @@ describe("npm contract artifact", () => {
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
-    expect(source).not.toContain("completed.stderr");
+    expect(source.match(/completed\.stderr/g)).toHaveLength(1);
+    expect(source).toContain(
+      'phase.startsWith("handoff:")\n        ? safeHandoffDiagnostic(`${completed.stdout}\\n${completed.stderr}`)',
+    );
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
     expect(source).not.toContain(
@@ -633,6 +671,275 @@ describe("npm contract artifact", () => {
       'writeFileSync(join(generated, "github-types.ts"), GITHUB_TYPES_SOURCE)',
     );
     expect(source).not.toContain("githubTypeCompilations:");
+  });
+
+  it("freezes the closed supplied-tarball handoff grammar and downgrade guards", () => {
+    const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
+    const validator = source.slice(
+      source.indexOf("function assertGithubPackageProof("),
+      source.indexOf("async function runCommand("),
+    );
+    const handoff = source.slice(
+      source.indexOf("async function runHandoffCommand("),
+      source.indexOf("function readManifest("),
+    );
+    for (const required of [
+      'type HandoffMode = "artifact-contract" | "node"',
+      'argument === "--for-handoff"',
+      'argument === "--candidate-root"',
+      'argument === "--source-commit"',
+      'argument === "--artifact-sha256"',
+      'argument === "--node-binary"',
+      'argument === "--expected-node-major"',
+      'id: "artifact-contract"',
+      "subchecks: ARTIFACT_SUBCHECKS.map",
+      "id: `node-${arguments_.expectedNodeMajor}`",
+      "checks: NODE_HANDOFF_CHECKS.map",
+      "function safeHandoffDiagnostic(",
+      'testFile: "kaji/ts/tests/github-registry.test.ts"',
+      'testName: "rejects approval for github_create_issue before token or HTTP"',
+      'providerAlias: "github_get_file"',
+      'providerAlias: "synthetic_complete"',
+      "schemaVersion: 4",
+    ]) {
+      expect(source).toContain(required);
+    }
+    expect(validator).toContain("JSON.stringify(document) !== JSON.stringify(expected)");
+    expect(validator).toContain("schemaVersion: 4");
+    expect(validator).not.toContain("schemaVersion: 3");
+    for (const downgraded of [1, 3]) {
+      expect({ ...GITHUB_PACKAGE_PROOF, schemaVersion: downgraded }).not.toEqual(
+        GITHUB_PACKAGE_PROOF,
+      );
+    }
+    const checkSource = source.slice(
+      source.indexOf("const ARTIFACT_SUBCHECKS = ["),
+      source.indexOf("] as const;", source.indexOf("const ARTIFACT_SUBCHECKS = [")),
+    );
+    expect([...checkSource.matchAll(/"([a-z0-9.-]+)"/g)].map((match) => match[1])).toEqual([
+      "safe-packlist",
+      "source-byte-equality",
+      "export-targets",
+      "declarations",
+      "typescript-5.7.3-mts",
+      "typescript-5.7.3-cts",
+      "typescript-current-mts",
+      "typescript-current-cts",
+      "npm-install",
+      "bun-install",
+      "public-github-surface",
+      "typescript-catalog-15-13",
+      "shared-python-catalog-6-4",
+      "lifecycle-identity",
+      "policy-before-token",
+      "packaged-license",
+    ]);
+    expect(handoff).toContain('throw new Error("supplied-tarball handoff cannot build or pack")');
+    expect(handoff).toContain("const childEnvironment = tokenFreeHandoffEnvironment(environment)");
+    expect(handoff).toContain("PROTECTED_HANDOFF_TOKENS.some");
+    expect(handoff).not.toContain('"npm", ["pack"');
+    expect(handoff).not.toContain('"run", "build"');
+    expect(handoff).toContain('writeFileSync(esmPath, nodeFixtureSource("esm"');
+    expect(handoff).toContain('writeFileSync(cjsPath, nodeFixtureSource("commonjs"');
+    expect(handoff).toContain("realpathSync(result.packageRealpath) !== installedPackageRoot");
+    expect(source).toContain("github.inspectIntegration().tools().length !== 15");
+    expect(source).toContain("inspectIntegration().tools().length !== 6");
+  });
+
+  it("rejects malformed supplied-artifact invocations before install or output", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-handoff-args-"));
+    const tarball = join(root, "candidate.tgz");
+    const output = join(root, "receipt.json");
+    writeFileSync(tarball, "not-a-tarball");
+    const digest = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+    const script = join(packageRoot, "scripts/smoke_package.mts");
+    const common = [
+      script,
+      tarball,
+      "--source-commit",
+      "a".repeat(40),
+      "--artifact-sha256",
+      digest,
+      "--output",
+      output,
+    ];
+    try {
+      const forbiddenCandidate = spawnSync(
+        "bun",
+        [
+          ...common,
+          "--for-handoff",
+          "node",
+          "--candidate-root",
+          root,
+          "--node-binary",
+          process.execPath,
+          "--expected-node-major",
+          "22",
+        ],
+        { cwd: packageRoot, encoding: "utf8" },
+      );
+      expect(forbiddenCandidate.status).not.toBe(0);
+      expect(forbiddenCandidate.stderr).toContain("node handoff requires");
+      expect(existsSync(output)).toBe(false);
+
+      const digestMismatch = spawnSync(
+        "bun",
+        [
+          ...common.slice(0, 5),
+          "0".repeat(64),
+          ...common.slice(6),
+          "--for-handoff",
+          "artifact-contract",
+          "--candidate-root",
+          root,
+        ],
+        { cwd: packageRoot, encoding: "utf8" },
+      );
+      expect(digestMismatch.status).not.toBe(0);
+      expect(digestMismatch.stderr).toContain("SHA-256 differs before install");
+      expect(existsSync(output)).toBe(false);
+
+      const actualMajor = Number(process.versions.node.split(".", 1)[0]);
+      const wrongMajor = actualMajor === 22 ? 24 : 22;
+      const majorMismatch = spawnSync(
+        "bun",
+        [
+          ...common,
+          "--for-handoff",
+          "node",
+          "--node-binary",
+          process.execPath,
+          "--expected-node-major",
+          String(wrongMajor),
+        ],
+        { cwd: packageRoot, encoding: "utf8" },
+      );
+      expect(majorMismatch.status).not.toBe(0);
+      expect(majorMismatch.stderr).toContain("major differs");
+      expect(existsSync(output)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("strips protected tokens from every supplied-artifact child", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-handoff-env-"));
+    const tarball = join(root, "candidate.tgz");
+    const output = join(root, "receipt.json");
+    const marker = join(root, "child-environment.txt");
+    const fakeNode = join(root, "node-22");
+    writeFileSync(tarball, "not-a-tarball");
+    writeFileSync(
+      fakeNode,
+      `#!/bin/sh
+if [ "\${GH_TOKEN+x}" = x ] || [ "\${GITHUB_TOKEN+x}" = x ] || [ "\${NODE_AUTH_TOKEN+x}" = x ] || [ "\${NPM_TOKEN+x}" = x ]; then
+  printf leaked > ${JSON.stringify(marker)}
+else
+  printf clean > ${JSON.stringify(marker)}
+fi
+printf 'v24.0.0\\n'
+`,
+    );
+    chmodSync(fakeNode, 0o755);
+    const digest = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+    try {
+      const completed = spawnSync(
+        "bun",
+        [
+          join(packageRoot, "scripts/smoke_package.mts"),
+          tarball,
+          "--for-handoff",
+          "node",
+          "--source-commit",
+          "a".repeat(40),
+          "--artifact-sha256",
+          digest,
+          "--node-binary",
+          fakeNode,
+          "--expected-node-major",
+          "22",
+          "--output",
+          output,
+        ],
+        {
+          cwd: packageRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            GH_TOKEN: "gh-secret",
+            GITHUB_TOKEN: "github-secret",
+            NODE_AUTH_TOKEN: "node-secret",
+            NPM_TOKEN: "npm-secret",
+          },
+        },
+      );
+      expect(completed.status).not.toBe(0);
+      expect(readFileSync(marker, "utf8")).toBe("clean");
+      expect(existsSync(output)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retains a redacted child diagnostic when a handoff command fails", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-handoff-diagnostic-"));
+    const tarball = join(root, "candidate.tgz");
+    const output = join(root, "receipt.json");
+    const fakeNode = join(root, "node-22");
+    const secret = "ghp_handoff_diagnostic_secret";
+    writeFileSync(tarball, "not-a-tarball");
+    writeFileSync(
+      fakeNode,
+      `#!/bin/sh
+printf 'safe-reason=fixture-failed\\n' >&2
+printf 'token=${secret}\\n' >&2
+printf 'Authorization: Bearer opaque-secret-value\\n' >&2
+printf 'authorization=Basic dXNlcjpwYXNz\\n' >&2
+printf '{"headers":{"Authorization":"Bearer json-opaque-secret"}}\\n' >&2
+printf '{"token":"ordinary-secret"}\\n' >&2
+exit 7
+`,
+    );
+    chmodSync(fakeNode, 0o755);
+    const digest = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+    try {
+      const completed = spawnSync(
+        "bun",
+        [
+          join(packageRoot, "scripts/smoke_package.mts"),
+          tarball,
+          "--for-handoff",
+          "node",
+          "--source-commit",
+          "a".repeat(40),
+          "--artifact-sha256",
+          digest,
+          "--node-binary",
+          fakeNode,
+          "--expected-node-major",
+          "22",
+          "--output",
+          output,
+        ],
+        { cwd: packageRoot, encoding: "utf8" },
+      );
+      expect(completed.status).not.toBe(0);
+      expect(completed.stderr).toContain("child output: safe-reason=fixture-failed");
+      expect(completed.stderr).toContain("token=[redacted]");
+      expect(completed.stderr).toContain("Authorization: [redacted]");
+      expect(completed.stderr).toContain("authorization=[redacted]");
+      expect(completed.stderr).toContain('"Authorization":"[redacted]"');
+      expect(completed.stderr).toContain('"token":"[redacted]"');
+      expect(completed.stderr).not.toContain(secret);
+      expect(completed.stderr).not.toContain("opaque-secret-value");
+      expect(completed.stderr).not.toContain("dXNlcjpwYXNz");
+      expect(completed.stderr).not.toContain("json-opaque-secret");
+      expect(completed.stderr).not.toContain("ordinary-secret");
+      expect(existsSync(output)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("keeps the installed GitHub behavior receipt deterministic and non-live", () => {

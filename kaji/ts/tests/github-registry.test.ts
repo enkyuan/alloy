@@ -278,8 +278,8 @@ describe("GitHub registry bundle", () => {
       listFileCommits: vi.fn(async () => ({ operation: "list_file_commits" })),
       getRelease: vi.fn(async () => ({ operation: "get_release" })),
       listDeployments: vi.fn(async () => ({ operation: "list_deployments" })),
-    } as never;
-    const bindings = createPackageGitHubToolBindings(client);
+    };
+    const bindings = createPackageGitHubToolBindings(client as never);
     const context = { signal: new AbortController().signal } as never;
     const argumentsByName: Record<string, Record<string, unknown>> = {
       get_commit: { repository: "owner/repo", ref: "main", page: 2, per_page: 20 },

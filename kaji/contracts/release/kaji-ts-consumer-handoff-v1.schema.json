@@ -950,8 +950,10 @@
       "additionalProperties": false,
       "required": ["testFile", "testName", "tokenLookups", "requestAttempts"],
       "properties": {
-        "testFile": { "$ref": "#/$defs/repoPath" },
-        "testName": { "$ref": "#/$defs/nonEmptyString" },
+        "testFile": { "const": "kaji/ts/tests/github-registry.test.ts" },
+        "testName": {
+          "const": "rejects approval for github_create_issue before token or HTTP"
+        },
         "tokenLookups": { "const": 0 },
         "requestAttempts": { "const": 0 }
       }
@@ -1219,8 +1221,10 @@
             "testFile", "testName", "result", "tokenLookups", "requestAttempts"
           ],
           "properties": {
-            "testFile": { "$ref": "#/$defs/repoPath" },
-            "testName": { "$ref": "#/$defs/nonEmptyString" },
+            "testFile": { "const": "kaji/ts/tests/github-registry.test.ts" },
+            "testName": {
+              "const": "rejects approval for github_create_issue before token or HTTP"
+            },
             "result": { "const": "passed" },
             "tokenLookups": { "const": 0 },
             "requestAttempts": { "const": 0 }

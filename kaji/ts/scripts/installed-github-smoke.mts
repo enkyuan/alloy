@@ -34,6 +34,8 @@ const EXPECTED_TOOLS = [
 const EXPECTED_READ_TOOLS = EXPECTED_TOOLS.filter(
   (name) => name !== "add_comment" && name !== "create_issue",
 );
+const EXPECTED_PROVIDER_ALIASES = EXPECTED_TOOLS.map((name) => `github_${name}`);
+const EXPECTED_CATALOG_NAMES = EXPECTED_TOOLS.map((name) => `github.${name}`);
 const EXPECTED_RUNTIME_EXPORTS = [
   "GitHubIntegration",
   "createGithubIntegration",
@@ -224,10 +226,20 @@ function context(): ToolExecutionContext {
 
 function assertToolEvents(
   sdk: SdkRuntime,
-  events: ReadonlyArray<{ type: string; metadata: Readonly<Record<string, unknown>> }>,
+  events: ReadonlyArray<{
+    type: string;
+    tool_name?: string;
+    metadata: Readonly<Record<string, unknown>>;
+  }>,
+  providerAlias: string,
   catalogName: string,
   expectedTypes: readonly string[],
-): void {
+): {
+  stages: readonly string[];
+  providerAlias: string;
+  catalogName: string;
+  sameIdentityAtEveryStage: true;
+} {
   const toolEvents = events.filter((event) =>
     [
       sdk.EventType.TOOL_CALL_REQUESTED,
@@ -238,10 +250,20 @@ function assertToolEvents(
   );
   if (
     JSON.stringify(toolEvents.map((event) => event.type)) !== JSON.stringify(expectedTypes) ||
-    toolEvents.some((event) => event.metadata.catalog_name !== catalogName)
+    toolEvents.some(
+      (event) => event.tool_name !== providerAlias || event.metadata.catalog_name !== catalogName,
+    )
   ) {
     throw new Error(`logical catalog identity failed for ${catalogName}`);
   }
+  return {
+    stages: toolEvents.map((event) =>
+      event.type.replace("tool.call.", "").replace("tool_call_", "").toLowerCase(),
+    ),
+    providerAlias,
+    catalogName,
+    sameIdentityAtEveryStage: true,
+  };
 }
 
 function declarationExportNames(declaration: string): string[] {
@@ -376,7 +398,11 @@ async function executeCall(
   }> = {},
 ): Promise<{
   results: readonly Record<string, unknown>[];
-  events: ReadonlyArray<{ type: string; metadata: Readonly<Record<string, unknown>> }>;
+  events: ReadonlyArray<{
+    type: string;
+    tool_name?: string;
+    metadata: Readonly<Record<string, unknown>>;
+  }>;
 }> {
   const registry = new sdk.ToolRegistry();
   integration.register(registry);
@@ -403,6 +429,7 @@ async function executeCall(
     results,
     events: (await store.getEvents("installed-proof-session")) as Array<{
       type: string;
+      tool_name?: string;
       metadata: Readonly<Record<string, unknown>>;
     }>,
   };
@@ -410,7 +437,13 @@ async function executeCall(
 
 async function runProof(argv: string[]) {
   proofStage = "environment";
-  if ("GITHUB_TOKEN" in process.env || "NODE_PATH" in process.env) {
+  if (
+    "GH_TOKEN" in process.env ||
+    "GITHUB_TOKEN" in process.env ||
+    "NODE_AUTH_TOKEN" in process.env ||
+    "NPM_TOKEN" in process.env ||
+    "NODE_PATH" in process.env
+  ) {
     throw new Error("installed TypeScript proof environment is not isolated");
   }
   const args = parseArguments(argv);
@@ -610,8 +643,10 @@ async function runProof(argv: string[]) {
       !isDeepStrictEqual(requiredPackageTools.slice(0, abi.tools.length), abi.tools) ||
       copiedManifest.version !== "0.1.0" ||
       !isDeepStrictEqual(copiedManifest.tools, abi.tools) ||
-      packageTools.filter((spec) => spec.risk === "read").map((spec) => spec.name).join(",") !==
-        EXPECTED_READ_TOOLS.join(",")
+      packageTools
+        .filter((spec) => spec.risk === "read")
+        .map((spec) => spec.name)
+        .join(",") !== EXPECTED_READ_TOOLS.join(",")
     ) {
       throw new Error("GitHub shared/package catalog boundary changed");
     }
@@ -706,7 +741,7 @@ async function runProof(argv: string[]) {
     if (approvalTokenCalls !== 0 || approval.results[0]?.error_code !== "APPROVAL_REJECTED") {
       throw new Error("approval rejection reached credentials");
     }
-    assertToolEvents(sdk, approval.events, "github.create_issue", [
+    assertToolEvents(sdk, approval.events, "github_create_issue", "github.create_issue", [
       sdk.EventType.TOOL_CALL_REQUESTED,
       sdk.EventType.TOOL_CALL_FAILED,
     ]);
@@ -733,7 +768,7 @@ async function runProof(argv: string[]) {
     ) {
       throw new Error("validation failure reached credentials");
     }
-    assertToolEvents(sdk, validation.events, "github.get_issue", [
+    assertToolEvents(sdk, validation.events, "github_get_issue", "github.get_issue", [
       sdk.EventType.TOOL_CALL_REQUESTED,
       sdk.EventType.TOOL_CALL_FAILED,
     ]);
@@ -748,15 +783,21 @@ async function runProof(argv: string[]) {
     });
     const execution = await executeCall(sdk, executionIntegration, {
       id: "execution",
-      name: "github_get_issue",
-      arguments: { repository: fixture.repository, issue_number: 1 },
+      name: "github_get_file",
+      arguments: { repository: fixture.repository, path: "README.md" },
     });
     executionIntegration.close();
-    assertToolEvents(sdk, execution.events, "github.get_issue", [
-      sdk.EventType.TOOL_CALL_REQUESTED,
-      sdk.EventType.TOOL_CALL_STARTED,
-      sdk.EventType.TOOL_CALL_FAILED,
-    ]);
+    const githubFailureLifecycle = assertToolEvents(
+      sdk,
+      execution.events,
+      "github_get_file",
+      "github.get_file",
+      [
+        sdk.EventType.TOOL_CALL_REQUESTED,
+        sdk.EventType.TOOL_CALL_STARTED,
+        sdk.EventType.TOOL_CALL_FAILED,
+      ],
+    );
     publicScenarios.push("execution-failure");
 
     proofStage = "completed-event";
@@ -777,11 +818,17 @@ async function runProof(argv: string[]) {
       name: "synthetic_complete",
       arguments: {},
     });
-    assertToolEvents(sdk, completed.events, "synthetic.complete", [
-      sdk.EventType.TOOL_CALL_REQUESTED,
-      sdk.EventType.TOOL_CALL_STARTED,
-      sdk.EventType.TOOL_CALL_COMPLETED,
-    ]);
+    const syntheticCompletionLifecycle = assertToolEvents(
+      sdk,
+      completed.events,
+      "synthetic_complete",
+      "synthetic.complete",
+      [
+        sdk.EventType.TOOL_CALL_REQUESTED,
+        sdk.EventType.TOOL_CALL_STARTED,
+        sdk.EventType.TOOL_CALL_COMPLETED,
+      ],
+    );
     publicScenarios.push("synthetic-completed-event");
 
     proofStage = "mock-provider";
@@ -815,7 +862,7 @@ async function runProof(argv: string[]) {
     if (turn.text !== "The mock provider has completed the tool loop.") {
       throw new Error("MockProvider did not terminate deterministically");
     }
-    assertToolEvents(sdk, mockEvents, "github.get_issue", [
+    assertToolEvents(sdk, mockEvents, "github_get_issue", "github.get_issue", [
       sdk.EventType.TOOL_CALL_REQUESTED,
       sdk.EventType.TOOL_CALL_STARTED,
       sdk.EventType.TOOL_CALL_FAILED,
@@ -853,7 +900,7 @@ async function runProof(argv: string[]) {
       throw new Error("installed GitHub public proof assertions failed");
     }
     return {
-      schemaVersion: 3,
+      schemaVersion: 4,
       evidenceClass: "offline_exact_artifact_smoke",
       integration: "github",
       runtime: "typescript",
@@ -866,13 +913,23 @@ async function runProof(argv: string[]) {
       sharedFixtureCaseCount: fixture.cases.length,
       publicScenarioCount: publicScenarios.length,
       packageCatalog: {
+        schemaVersion: packageAbi.schema_version,
+        catalogVersion: packageAbi.catalog_version,
         toolCount: packageTools.length,
         readToolCount: packageTools.filter((spec) => spec.risk === "read").length,
+        tools: packageTools.map((spec) => spec.name),
+        readTools: packageTools.filter((spec) => spec.risk === "read").map((spec) => spec.name),
+        providerAliases: EXPECTED_PROVIDER_ALIASES,
+        catalogNames: EXPECTED_CATALOG_NAMES,
       },
       cliCopiedCatalog: {
         manifestVersion: copiedManifest.version,
         toolCount: copiedManifest.tools.length,
         readToolCount: copiedManifest.tools.filter((spec) => spec.risk === "read").length,
+        tools: copiedManifest.tools.map((spec) => spec.name),
+        readTools: copiedManifest.tools
+          .filter((spec) => spec.risk === "read")
+          .map((spec) => spec.name),
       },
       esmSharedAbiMatched: true,
       cjsSharedAbiMatched: true,
@@ -896,6 +953,16 @@ async function runProof(argv: string[]) {
       repositoryDeniedBeforeCredentialAccess: true,
       githubCatalogEventsVerified: ["requested", "started", "failed"],
       genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+      lifecycle: {
+        githubFailure: githubFailureLifecycle,
+        syntheticCompletion: syntheticCompletionLifecycle,
+      },
+      policyBeforeRequest: {
+        testFile: "kaji/ts/tests/github-registry.test.ts",
+        testName: "rejects approval for github_create_issue before token or HTTP",
+        tokenLookups: approvalTokenCalls,
+        requestAttempts: networkAttempts,
+      },
       aliasCollisionRejected: true,
       conclusion: "passed",
       failureCode: null,

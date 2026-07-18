@@ -277,8 +277,8 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "uv": "0.11.25",
     }
     policy = {
-        "testFile": "kaji/ts/tests/github-client.test.ts",
-        "testName": "rejects-before-token-lookup",
+        "testFile": "kaji/ts/tests/github-registry.test.ts",
+        "testName": "rejects approval for github_create_issue before token or HTTP",
         "tokenLookups": 0,
         "requestAttempts": 0,
     }

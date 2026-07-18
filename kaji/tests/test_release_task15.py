@@ -19,10 +19,177 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+TYPESCRIPT_GITHUB_TOOLS = [
+    "add_comment",
+    "create_issue",
+    "get_file",
+    "get_issue",
+    "list_issues",
+    "search_code",
+    "get_commit",
+    "get_pull_request",
+    "list_pull_request_files",
+    "list_check_runs",
+    "get_workflow_run",
+    "list_workflow_jobs",
+    "list_file_commits",
+    "get_release",
+    "list_deployments",
+]
+HOSTILE_TYPESCRIPT_CURRENT_VERSIONS = (
+    ("leading-zero-core", "01.2.3"),
+    ("leading-zero-prerelease", "1.2.3-01"),
+    ("invalid-build-character", "1.2.3+!"),
+    ("unicode-digits", "١.٢.٣"),
+)
+
+
+def _github_package_proof(runtime: str) -> dict[str, object]:
+    if runtime == "python":
+        return {
+            "schemaVersion": 1,
+            "evidenceClass": "offline_exact_artifact_smoke",
+            "integration": "github",
+            "runtime": "python",
+            "network": "scripted",
+            "liveProvider": False,
+            "contractVersion": "1.0.0",
+            "caseCount": 23,
+            "toolCount": 6,
+            "approvalDeniedBeforeCredentialAccess": True,
+            "mutationRetries": 0,
+            "unknownMutationPreserved": True,
+            "sourceRuntimeDetected": False,
+            "conclusion": "passed",
+            "failureCode": None,
+        }
+    assert runtime == "typescript"
+    read_tools = TYPESCRIPT_GITHUB_TOOLS[2:]
+    return {
+        "schemaVersion": 4,
+        "evidenceClass": "offline_exact_artifact_smoke",
+        "integration": "github",
+        "runtime": "typescript",
+        "network": "blocked",
+        "liveProvider": False,
+        "sharedAbiVersion": "1.0.0",
+        "packageAbiSchemaVersion": "1.0.0",
+        "packageCatalogVersion": "0.2.0",
+        "apiFixtureVersion": "1.0.0",
+        "sharedFixtureCaseCount": 23,
+        "publicScenarioCount": 14,
+        "packageCatalog": {
+            "schemaVersion": "1.0.0",
+            "catalogVersion": "0.2.0",
+            "toolCount": 15,
+            "readToolCount": 13,
+            "tools": TYPESCRIPT_GITHUB_TOOLS,
+            "readTools": read_tools,
+            "providerAliases": [f"github_{tool}" for tool in TYPESCRIPT_GITHUB_TOOLS],
+            "catalogNames": [f"github.{tool}" for tool in TYPESCRIPT_GITHUB_TOOLS],
+        },
+        "cliCopiedCatalog": {
+            "manifestVersion": "0.1.0",
+            "toolCount": 6,
+            "readToolCount": 4,
+            "tools": TYPESCRIPT_GITHUB_TOOLS[:6],
+            "readTools": read_tools[:4],
+        },
+        "esmSharedAbiMatched": True,
+        "cjsSharedAbiMatched": True,
+        "esmPackageAbiMatched": True,
+        "cjsPackageAbiMatched": True,
+        "esmClassIdentityMatched": True,
+        "cjsClassIdentityMatched": True,
+        "esmFactoryIdentityMatched": True,
+        "cjsFactoryIdentityMatched": True,
+        "esmRuntimeExports": [
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "cjsRuntimeExports": [
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "esmDeclarationExports": [
+            "CreateGitHubIntegrationOptions",
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "cjsDeclarationExports": [
+            "CreateGitHubIntegrationOptions",
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "typescriptDeclarationChecks": {
+            "compilerOptions": {
+                "module": "NodeNext",
+                "moduleResolution": "NodeNext",
+                "skipLibCheck": False,
+            },
+            "typescript57": {
+                "version": "5.7.3",
+                "mtsImport": "passed",
+                "ctsRequire": "passed",
+            },
+            "typescriptCurrent": {
+                "version": "6.0.2",
+                "mtsImport": "passed",
+                "ctsRequire": "passed",
+            },
+        },
+        "privateGitHubCompositionSourcesPacked": False,
+        "privateGitHubCompositionSourceImportsRejected": True,
+        "closedCallsDeniedBeforeCredentialAccess": True,
+        "approvalDeniedBeforeCredentialAccess": True,
+        "repositoryDeniedBeforeCredentialAccess": True,
+        "githubCatalogEventsVerified": ["requested", "started", "failed"],
+        "genericSyntheticCatalogEventsVerified": [
+            "requested",
+            "started",
+            "completed",
+        ],
+        "lifecycle": {
+            "githubFailure": {
+                "stages": ["requested", "started", "failed"],
+                "providerAlias": "github_get_file",
+                "catalogName": "github.get_file",
+                "sameIdentityAtEveryStage": True,
+            },
+            "syntheticCompletion": {
+                "stages": ["requested", "started", "completed"],
+                "providerAlias": "synthetic_complete",
+                "catalogName": "synthetic.complete",
+                "sameIdentityAtEveryStage": True,
+            },
+        },
+        "policyBeforeRequest": {
+            "testFile": "kaji/ts/tests/github-registry.test.ts",
+            "testName": "rejects approval for github_create_issue before token or HTTP",
+            "tokenLookups": 0,
+            "requestAttempts": 0,
+        },
+        "aliasCollisionRejected": True,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
 
 
 def _read(relative: str) -> str:
     return (REPO_ROOT / relative).read_text()
+
+
+def _normative_semver_pattern() -> str:
+    schema = json.loads(
+        _read("kaji/contracts/release/kaji-ts-consumer-handoff-v1.schema.json")
+    )
+    pattern = schema["$defs"]["semver"]["pattern"]
+    assert isinstance(pattern, str)
+    return pattern
 
 
 def _load_root_script(name: str) -> ModuleType:
@@ -1803,15 +1970,17 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert "compatibility-receipt.json" in job
         assert '.conclusion == "passed" and .failureCode == null' in job
         assert ".githubPackageProofs" in job
-        assert 'evidenceClass == "offline_exact_artifact_smoke"' in job
-        assert 'network == "scripted"' in job
-        assert ".liveProvider == false" in job
-        assert ".caseCount == 23" in job
-        assert ".toolCount == 6" in job
-        assert ".approvalDeniedBeforeCredentialAccess == true" in job
-        assert ".mutationRetries == 0" in job
-        assert ".unknownMutationPreserved == true" in job
-        assert ".sourceRuntimeDetected == false" in job
+        assert 'runtime: "python", network: "scripted"' in job
+        assert 'schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke"' in job
+        assert 'runtime: "typescript", network: "blocked"' in job
+        assert "toolCount: 15" in job
+        assert "readToolCount: 13" in job
+        assert 'manifestVersion: "0.1.0", toolCount: 6, readToolCount: 4' in job
+        assert 'providerAlias: "github_get_file"' in job
+        assert 'catalogName: "synthetic.complete"' in job
+        assert 'testFile: "kaji/ts/tests/github-registry.test.ts"' in job
+        assert "tokenLookups: 0, requestAttempts: 0" in job
+        assert "(.bun == .npm) and" in job
         assert ".releaseManifestSha256 | sha256" in job
         assert "all(.[]; sha256)" in job
         assert "compatibility_receipt_not_terminal" in job
@@ -1834,6 +2003,107 @@ def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
         "\n      - name:", 1
     )[0]
     return textwrap.dedent(step.split("        run: |\n", 1)[1])
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "job_name"),
+    (
+        ("kaji.rehearsal.yml", "python-compat"),
+        ("kaji.rehearsal.yml", "node-compat"),
+        ("kaji.publish.yml", "python-compat"),
+        ("kaji.publish.yml", "node-compat"),
+    ),
+)
+def test_compatibility_normalizers_require_identical_typescript_installed_proofs(
+    tmp_path: Path,
+    workflow_name: str,
+    job_name: str,
+) -> None:
+    script = _compatibility_normalizer_script(workflow_name, job_name)
+    assert f"test({json.dumps(_normative_semver_pattern())})" in script
+    commit = "a" * 40
+
+    def run_case(
+        name: str, receipt: dict[str, object]
+    ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+        directory = tmp_path / name
+        directory.mkdir()
+        path = directory / "compatibility-receipt.json"
+        path.write_text(json.dumps(receipt) + "\n")
+        completed = subprocess.run(
+            ["/bin/bash", "-c", script],
+            capture_output=True,
+            check=False,
+            env={
+                **os.environ,
+                "EXPECTED_COMMIT": commit,
+                "KAJI_COMPAT_RUNTIME_KIND": "node",
+                "KAJI_COMPAT_RUNTIME_VERSION": "22",
+                "KAJI_COMPAT_RECEIPT_DIR": str(directory),
+                "GITHUB_SERVER_URL": "https://github.example",
+                "GITHUB_REPOSITORY": "example/alloy",
+                "GITHUB_RUN_ID": "1234",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "CHECKOUT_OUTCOME": "success",
+                "RUNTIME_SETUP_OUTCOME": "success",
+                "DEPENDENCY_SETUP_OUTCOME": "success",
+                "DOWNLOAD_OUTCOME": "success",
+                "VERIFICATION_OUTCOME": "success",
+                "SMOKE_OUTCOME": "success",
+            },
+            text=True,
+        )
+        return completed, json.loads(path.read_text())
+
+    proof = _github_package_proof("typescript")
+    matching: dict[str, object] = {
+        "schemaVersion": 1,
+        "commit": commit,
+        "releaseManifestSha256": "b" * 64,
+        "artifactSha256": {"kaji-sdk-0.2.0-beta.1.tgz": "c" * 64},
+        "runtime": {"version": "v22.1.0"},
+        "artifacts": {
+            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.1.tgz",
+            "package": "/tmp/node_modules/@kaji/sdk",
+        },
+        "githubPackageProofs": {
+            "npm": proof,
+            "bun": json.loads(json.dumps(proof)),
+        },
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+    accepted, accepted_receipt = run_case("matching", matching)
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert accepted_receipt["conclusion"] == "passed"
+
+    for label, version in HOSTILE_TYPESCRIPT_CURRENT_VERSIONS:
+        invalid_semver = json.loads(json.dumps(matching))
+        for installer in ("npm", "bun"):
+            invalid_semver["githubPackageProofs"][installer][
+                "typescriptDeclarationChecks"
+            ]["typescriptCurrent"]["version"] = version
+        rejected, rejected_receipt = run_case(label, invalid_semver)
+        assert rejected.returncode != 0
+        assert rejected_receipt["conclusion"] == "failed"
+        assert rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    for label, field, value in (
+        ("current-version-divergence", "typescriptCurrent.version", "6.0.3"),
+        ("nested-policy-divergence", "policyBeforeRequest.tokenLookups", 1),
+    ):
+        divergent = json.loads(json.dumps(matching))
+        bun_proof = divergent["githubPackageProofs"]["bun"]
+        if field == "typescriptCurrent.version":
+            bun_proof["typescriptDeclarationChecks"]["typescriptCurrent"]["version"] = (
+                value
+            )
+        else:
+            bun_proof["policyBeforeRequest"]["tokenLookups"] = value
+        rejected, rejected_receipt = run_case(label, divergent)
+        assert rejected.returncode != 0
+        assert rejected_receipt["conclusion"] == "failed"
+        assert rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
 
 @pytest.mark.parametrize(
@@ -1944,25 +2214,6 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         "failureCode": None,
     }
 
-    def github_proof(runtime: str) -> dict[str, object]:
-        return {
-            "schemaVersion": 1,
-            "evidenceClass": "offline_exact_artifact_smoke",
-            "integration": "github",
-            "runtime": runtime,
-            "network": "scripted",
-            "liveProvider": False,
-            "contractVersion": "1.0.0",
-            "caseCount": 23,
-            "toolCount": 6,
-            "approvalDeniedBeforeCredentialAccess": True,
-            "mutationRetries": 0,
-            "unknownMutationPreserved": True,
-            "sourceRuntimeDetected": False,
-            "conclusion": "passed",
-            "failureCode": None,
-        }
-
     identity_free, identity_free_receipt, _ = run_case(
         "identity-free-passed",
         receipt=identity_free_passed,
@@ -1990,8 +2241,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "sdist": "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
             },
             "githubPackageProofs": {
-                "wheel": github_proof("python"),
-                "sdist": github_proof("python"),
+                "wheel": _github_package_proof("python"),
+                "sdist": _github_package_proof("python"),
             },
         }
     else:
@@ -2005,8 +2256,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "package": "/tmp/node_modules/@kaji/sdk",
             },
             "githubPackageProofs": {
-                "npm": github_proof("typescript"),
-                "bun": github_proof("typescript"),
+                "npm": _github_package_proof("typescript"),
+                "bun": _github_package_proof("typescript"),
             },
         }
     valid_hashes = passed["artifactSha256"]
@@ -2039,6 +2290,40 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert invalid_proof.returncode != 0
     assert invalid_proof_receipt["conclusion"] == "failed"
     assert invalid_proof_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    if runtime_kind == "node":
+        for label in (
+            "typescript-schema-1",
+            "typescript-schema-3",
+            "typescript-alias",
+            "typescript-lifecycle",
+            "typescript-counts",
+        ):
+            invalid = json.loads(json.dumps(passed))
+            proof = invalid["githubPackageProofs"]["npm"]
+            if label == "typescript-schema-1":
+                proof["schemaVersion"] = 1
+            elif label == "typescript-schema-3":
+                proof["schemaVersion"] = 3
+            elif label == "typescript-alias":
+                proof["packageCatalog"]["providerAliases"][0] = "github_get_issue"
+            elif label == "typescript-lifecycle":
+                proof["lifecycle"]["githubFailure"]["catalogName"] = (
+                    "synthetic.complete"
+                )
+            else:
+                proof["packageCatalog"]["toolCount"] = 14
+                proof["packageCatalog"]["readToolCount"] = 12
+            rejected, rejected_receipt, _ = run_case(
+                label,
+                receipt=invalid,
+                outcomes=all_success,
+            )
+            assert rejected.returncode != 0
+            assert rejected_receipt["conclusion"] == "failed"
+            assert (
+                rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+            )
 
     interrupted_passed, interrupted_receipt, _ = run_case(
         "interrupted-passed",
@@ -2155,25 +2440,6 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "workflowRunAttempt": workflow_run_attempt,
     }
 
-    def github_proof(runtime: str) -> dict[str, object]:
-        return {
-            "schemaVersion": 1,
-            "evidenceClass": "offline_exact_artifact_smoke",
-            "integration": "github",
-            "runtime": runtime,
-            "network": "scripted",
-            "liveProvider": False,
-            "contractVersion": "1.0.0",
-            "caseCount": 23,
-            "toolCount": 6,
-            "approvalDeniedBeforeCredentialAccess": True,
-            "mutationRetries": 0,
-            "unknownMutationPreserved": True,
-            "sourceRuntimeDetected": False,
-            "conclusion": "passed",
-            "failureCode": None,
-        }
-
     evidence_dir = tmp_path / "evidence"
     paths = {
         "compat-python-3.11": evidence_dir / "compat-python-3.11.json",
@@ -2212,8 +2478,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "sdist": "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
                 },
                 "githubPackageProofs": {
-                    "wheel": github_proof("python"),
-                    "sdist": github_proof("python"),
+                    "wheel": _github_package_proof("python"),
+                    "sdist": _github_package_proof("python"),
                 },
                 "conclusion": "passed",
                 "failureCode": None,
@@ -2238,8 +2504,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "package": f"/opt/kaji-node-{version}/node_modules/@kaji/sdk",
                 },
                 "githubPackageProofs": {
-                    "npm": github_proof("typescript"),
-                    "bun": github_proof("typescript"),
+                    "npm": _github_package_proof("typescript"),
+                    "bun": _github_package_proof("typescript"),
                 },
                 "conclusion": "passed",
                 "failureCode": None,
@@ -2501,6 +2767,44 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     )
 
 
+def test_release_evidence_validator_requires_identical_typescript_installed_proofs() -> (
+    None
+):
+    validator = _load_root_script("validate_release_evidence.py")
+    assert validator.SEMVER.pattern == _normative_semver_pattern()
+    proof = _github_package_proof("typescript")
+    matching = {
+        "npm": proof,
+        "bun": json.loads(json.dumps(proof)),
+    }
+
+    validator.validate_github_package_proofs(matching, "typescript")
+
+    for _, version in HOSTILE_TYPESCRIPT_CURRENT_VERSIONS:
+        invalid_semver = json.loads(json.dumps(matching))
+        for installer in ("npm", "bun"):
+            invalid_semver[installer]["typescriptDeclarationChecks"][
+                "typescriptCurrent"
+            ]["version"] = version
+        with pytest.raises(RuntimeError) as semver_error:
+            validator.validate_github_package_proofs(invalid_semver, "typescript")
+        assert str(semver_error.value) == "github_package_proof_invalid"
+
+    version_divergent = json.loads(json.dumps(matching))
+    version_divergent["bun"]["typescriptDeclarationChecks"]["typescriptCurrent"][
+        "version"
+    ] = "6.0.3"
+    with pytest.raises(RuntimeError) as version_error:
+        validator.validate_github_package_proofs(version_divergent, "typescript")
+    assert str(version_error.value) == "github_package_proof_invalid"
+
+    nested_divergent = json.loads(json.dumps(matching))
+    nested_divergent["bun"]["policyBeforeRequest"]["tokenLookups"] = 1
+    with pytest.raises(RuntimeError) as nested_error:
+        validator.validate_github_package_proofs(nested_divergent, "typescript")
+    assert str(nested_error.value) == "github_package_proof_invalid"
+
+
 def test_release_evidence_validator_accepts_one_canonical_current_run(
     tmp_path: Path,
 ) -> None:
@@ -2545,6 +2849,12 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
         ("stale_workflow_run", "workflow_run_mismatch"),
         ("prior_artifact_id", "release_artifact_id_mismatch"),
         ("invalid_github_proof", "github_package_proof_invalid"),
+        ("invalid_ts_schema_1", "github_package_proof_invalid"),
+        ("invalid_ts_schema_3", "github_package_proof_invalid"),
+        ("invalid_ts_alias", "github_package_proof_invalid"),
+        ("invalid_ts_lifecycle", "github_package_proof_invalid"),
+        ("invalid_ts_counts", "github_package_proof_invalid"),
+        ("invalid_ts_proof_version_divergence", "github_package_proof_invalid"),
         ("source_path", "source_path_detected"),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
@@ -2567,6 +2877,12 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "stale_workflow_run": "performance-status",
             "prior_artifact_id": "provider-evidence",
             "invalid_github_proof": "compat-python-3.11",
+            "invalid_ts_schema_1": "compat-node-22",
+            "invalid_ts_schema_3": "compat-node-22",
+            "invalid_ts_alias": "compat-node-22",
+            "invalid_ts_lifecycle": "compat-node-22",
+            "invalid_ts_counts": "compat-node-22",
+            "invalid_ts_proof_version_divergence": "compat-node-22",
             "source_path": "benchmark-results",
             "missing_provider_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
@@ -2590,6 +2906,27 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["releaseArtifactId"] = "455"
         elif hostile_case == "invalid_github_proof":
             document["githubPackageProofs"]["wheel"]["liveProvider"] = True
+        elif hostile_case == "invalid_ts_schema_1":
+            document["githubPackageProofs"]["npm"]["schemaVersion"] = 1
+        elif hostile_case == "invalid_ts_schema_3":
+            document["githubPackageProofs"]["npm"]["schemaVersion"] = 3
+        elif hostile_case == "invalid_ts_alias":
+            document["githubPackageProofs"]["npm"]["packageCatalog"]["providerAliases"][
+                0
+            ] = "github_get_issue"
+        elif hostile_case == "invalid_ts_lifecycle":
+            document["githubPackageProofs"]["npm"]["lifecycle"]["githubFailure"][
+                "catalogName"
+            ] = "synthetic.complete"
+        elif hostile_case == "invalid_ts_counts":
+            document["githubPackageProofs"]["npm"]["packageCatalog"]["toolCount"] = 14
+            document["githubPackageProofs"]["npm"]["packageCatalog"][
+                "readToolCount"
+            ] = 12
+        elif hostile_case == "invalid_ts_proof_version_divergence":
+            document["githubPackageProofs"]["bun"]["typescriptDeclarationChecks"][
+                "typescriptCurrent"
+            ]["version"] = "6.0.3"
         elif hostile_case == "source_path":
             document["resolvedPackages"]["typescript"] = str(
                 fixture.workspace / "kaji/ts/dist/node_modules/@kaji/sdk"

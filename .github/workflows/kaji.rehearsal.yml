@@ -385,20 +385,83 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def github_tools: [
+              "add_comment", "create_issue", "get_file", "get_issue", "list_issues",
+              "search_code", "get_commit", "get_pull_request", "list_pull_request_files",
+              "list_check_runs", "get_workflow_run", "list_workflow_jobs",
+              "list_file_commits", "get_release", "list_deployments"
+            ];
+            def github_read_tools: github_tools[2:];
+            def python_github_proof:
+              . == {
+                schemaVersion: 1, evidenceClass: "offline_exact_artifact_smoke",
+                integration: "github", runtime: "python", network: "scripted",
+                liveProvider: false, contractVersion: "1.0.0", caseCount: 23,
+                toolCount: 6, approvalDeniedBeforeCredentialAccess: true,
+                mutationRetries: 0, unknownMutationPreserved: true,
+                sourceRuntimeDetected: false, conclusion: "passed", failureCode: null
+              };
+            def typescript_github_proof:
+              . as $proof |
+              ($proof.typescriptDeclarationChecks.typescriptCurrent.version // null) as $current |
+              ($current | type == "string" and
+                test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$") and . != "5.7.3") and
+              $proof == {
+                schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke",
+                integration: "github", runtime: "typescript", network: "blocked",
+                liveProvider: false, sharedAbiVersion: "1.0.0",
+                packageAbiSchemaVersion: "1.0.0", packageCatalogVersion: "0.2.0",
+                apiFixtureVersion: "1.0.0", sharedFixtureCaseCount: 23,
+                publicScenarioCount: 14,
+                packageCatalog: {
+                  schemaVersion: "1.0.0", catalogVersion: "0.2.0", toolCount: 15,
+                  readToolCount: 13, tools: github_tools, readTools: github_read_tools,
+                  providerAliases: [github_tools[] | "github_" + .],
+                  catalogNames: [github_tools[] | "github." + .]
+                },
+                cliCopiedCatalog: {
+                  manifestVersion: "0.1.0", toolCount: 6, readToolCount: 4,
+                  tools: github_tools[0:6], readTools: github_read_tools[0:4]
+                },
+                esmSharedAbiMatched: true, cjsSharedAbiMatched: true,
+                esmPackageAbiMatched: true, cjsPackageAbiMatched: true,
+                esmClassIdentityMatched: true, cjsClassIdentityMatched: true,
+                esmFactoryIdentityMatched: true, cjsFactoryIdentityMatched: true,
+                esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+                cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+                esmDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
+                  "createGithubIntegration", "inspectIntegration"],
+                cjsDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
+                  "createGithubIntegration", "inspectIntegration"],
+                typescriptDeclarationChecks: {
+                  compilerOptions: {module: "NodeNext", moduleResolution: "NodeNext", skipLibCheck: false},
+                  typescript57: {version: "5.7.3", mtsImport: "passed", ctsRequire: "passed"},
+                  typescriptCurrent: {version: $current, mtsImport: "passed", ctsRequire: "passed"}
+                },
+                privateGitHubCompositionSourcesPacked: false,
+                privateGitHubCompositionSourceImportsRejected: true,
+                closedCallsDeniedBeforeCredentialAccess: true,
+                approvalDeniedBeforeCredentialAccess: true,
+                repositoryDeniedBeforeCredentialAccess: true,
+                githubCatalogEventsVerified: ["requested", "started", "failed"],
+                genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+                lifecycle: {
+                  githubFailure: {stages: ["requested", "started", "failed"],
+                    providerAlias: "github_get_file", catalogName: "github.get_file",
+                    sameIdentityAtEveryStage: true},
+                  syntheticCompletion: {stages: ["requested", "started", "completed"],
+                    providerAlias: "synthetic_complete", catalogName: "synthetic.complete",
+                    sameIdentityAtEveryStage: true}
+                },
+                policyBeforeRequest: {testFile: "kaji/ts/tests/github-registry.test.ts",
+                  testName: "rejects approval for github_create_issue before token or HTTP",
+                  tokenLookups: 0, requestAttempts: 0},
+                aliasCollisionRejected: true, conclusion: "passed", failureCode: null
+              };
             def github_proof($runtime):
-              type == "object" and
-              keys == ["approvalDeniedBeforeCredentialAccess", "caseCount", "conclusion",
-                "contractVersion", "evidenceClass", "failureCode", "integration",
-                "liveProvider", "mutationRetries", "network", "runtime", "schemaVersion",
-                "sourceRuntimeDetected", "toolCount", "unknownMutationPreserved"] and
-              .schemaVersion == 1 and
-              .evidenceClass == "offline_exact_artifact_smoke" and
-              .integration == "github" and .runtime == $runtime and
-              .network == "scripted" and .liveProvider == false and
-              .contractVersion == "1.0.0" and .caseCount == 23 and .toolCount == 6 and
-              .approvalDeniedBeforeCredentialAccess == true and .mutationRetries == 0 and
-              .unknownMutationPreserved == true and .sourceRuntimeDetected == false and
-              .conclusion == "passed" and .failureCode == null;
+              if $runtime == "python" then python_github_proof
+              elif $runtime == "typescript" then typescript_github_proof
+              else false end;
             (.schemaVersion == 1) and (.commit == $commit) and (
               (.conclusion == "failed" and
                (.failureCode | type == "string" and length > 0)) or
@@ -436,6 +499,7 @@ jobs:
                     (.package | nonempty)) and
                   (.githubPackageProofs |
                     type == "object" and keys == ["bun", "npm"] and
+                    (.bun == .npm) and
                     (.bun | github_proof("typescript")) and
                     (.npm | github_proof("typescript")))
                 end
@@ -600,20 +664,83 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def github_tools: [
+              "add_comment", "create_issue", "get_file", "get_issue", "list_issues",
+              "search_code", "get_commit", "get_pull_request", "list_pull_request_files",
+              "list_check_runs", "get_workflow_run", "list_workflow_jobs",
+              "list_file_commits", "get_release", "list_deployments"
+            ];
+            def github_read_tools: github_tools[2:];
+            def python_github_proof:
+              . == {
+                schemaVersion: 1, evidenceClass: "offline_exact_artifact_smoke",
+                integration: "github", runtime: "python", network: "scripted",
+                liveProvider: false, contractVersion: "1.0.0", caseCount: 23,
+                toolCount: 6, approvalDeniedBeforeCredentialAccess: true,
+                mutationRetries: 0, unknownMutationPreserved: true,
+                sourceRuntimeDetected: false, conclusion: "passed", failureCode: null
+              };
+            def typescript_github_proof:
+              . as $proof |
+              ($proof.typescriptDeclarationChecks.typescriptCurrent.version // null) as $current |
+              ($current | type == "string" and
+                test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$") and . != "5.7.3") and
+              $proof == {
+                schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke",
+                integration: "github", runtime: "typescript", network: "blocked",
+                liveProvider: false, sharedAbiVersion: "1.0.0",
+                packageAbiSchemaVersion: "1.0.0", packageCatalogVersion: "0.2.0",
+                apiFixtureVersion: "1.0.0", sharedFixtureCaseCount: 23,
+                publicScenarioCount: 14,
+                packageCatalog: {
+                  schemaVersion: "1.0.0", catalogVersion: "0.2.0", toolCount: 15,
+                  readToolCount: 13, tools: github_tools, readTools: github_read_tools,
+                  providerAliases: [github_tools[] | "github_" + .],
+                  catalogNames: [github_tools[] | "github." + .]
+                },
+                cliCopiedCatalog: {
+                  manifestVersion: "0.1.0", toolCount: 6, readToolCount: 4,
+                  tools: github_tools[0:6], readTools: github_read_tools[0:4]
+                },
+                esmSharedAbiMatched: true, cjsSharedAbiMatched: true,
+                esmPackageAbiMatched: true, cjsPackageAbiMatched: true,
+                esmClassIdentityMatched: true, cjsClassIdentityMatched: true,
+                esmFactoryIdentityMatched: true, cjsFactoryIdentityMatched: true,
+                esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+                cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+                esmDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
+                  "createGithubIntegration", "inspectIntegration"],
+                cjsDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
+                  "createGithubIntegration", "inspectIntegration"],
+                typescriptDeclarationChecks: {
+                  compilerOptions: {module: "NodeNext", moduleResolution: "NodeNext", skipLibCheck: false},
+                  typescript57: {version: "5.7.3", mtsImport: "passed", ctsRequire: "passed"},
+                  typescriptCurrent: {version: $current, mtsImport: "passed", ctsRequire: "passed"}
+                },
+                privateGitHubCompositionSourcesPacked: false,
+                privateGitHubCompositionSourceImportsRejected: true,
+                closedCallsDeniedBeforeCredentialAccess: true,
+                approvalDeniedBeforeCredentialAccess: true,
+                repositoryDeniedBeforeCredentialAccess: true,
+                githubCatalogEventsVerified: ["requested", "started", "failed"],
+                genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+                lifecycle: {
+                  githubFailure: {stages: ["requested", "started", "failed"],
+                    providerAlias: "github_get_file", catalogName: "github.get_file",
+                    sameIdentityAtEveryStage: true},
+                  syntheticCompletion: {stages: ["requested", "started", "completed"],
+                    providerAlias: "synthetic_complete", catalogName: "synthetic.complete",
+                    sameIdentityAtEveryStage: true}
+                },
+                policyBeforeRequest: {testFile: "kaji/ts/tests/github-registry.test.ts",
+                  testName: "rejects approval for github_create_issue before token or HTTP",
+                  tokenLookups: 0, requestAttempts: 0},
+                aliasCollisionRejected: true, conclusion: "passed", failureCode: null
+              };
             def github_proof($runtime):
-              type == "object" and
-              keys == ["approvalDeniedBeforeCredentialAccess", "caseCount", "conclusion",
-                "contractVersion", "evidenceClass", "failureCode", "integration",
-                "liveProvider", "mutationRetries", "network", "runtime", "schemaVersion",
-                "sourceRuntimeDetected", "toolCount", "unknownMutationPreserved"] and
-              .schemaVersion == 1 and
-              .evidenceClass == "offline_exact_artifact_smoke" and
-              .integration == "github" and .runtime == $runtime and
-              .network == "scripted" and .liveProvider == false and
-              .contractVersion == "1.0.0" and .caseCount == 23 and .toolCount == 6 and
-              .approvalDeniedBeforeCredentialAccess == true and .mutationRetries == 0 and
-              .unknownMutationPreserved == true and .sourceRuntimeDetected == false and
-              .conclusion == "passed" and .failureCode == null;
+              if $runtime == "python" then python_github_proof
+              elif $runtime == "typescript" then typescript_github_proof
+              else false end;
             (.schemaVersion == 1) and (.commit == $commit) and (
               (.conclusion == "failed" and
                (.failureCode | type == "string" and length > 0)) or
@@ -651,6 +778,7 @@ jobs:
                     (.package | nonempty)) and
                   (.githubPackageProofs |
                     type == "object" and keys == ["bun", "npm"] and
+                    (.bun == .npm) and
                     (.bun | github_proof("typescript")) and
                     (.npm | github_proof("typescript")))
                 end

@@ -86,6 +86,22 @@ def test_typescript_handoff_schema_is_required_valid_and_packaged_for_both_runti
         assert (package_root / TS_HANDOFF_SCHEMA_RELATIVE).read_bytes() == schema_bytes
 
 
+def test_typescript_handoff_policy_receipt_names_the_executed_regression() -> None:
+    schema = json.loads(TS_HANDOFF_SCHEMA.read_text())
+    properties = schema["$defs"]["policyEvidence"]["properties"]
+    root_properties = schema["$defs"]["securityEvidence"]["properties"][
+        "policyBeforeRequest"
+    ]["properties"]
+
+    for policy_properties in (properties, root_properties):
+        assert policy_properties["testFile"] == {
+            "const": "kaji/ts/tests/github-registry.test.ts"
+        }
+        assert policy_properties["testName"] == {
+            "const": "rejects approval for github_create_issue before token or HTTP"
+        }
+
+
 def test_typescript_github_package_abi_is_closed_and_rejects_drift() -> None:
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="github_package_abi_test")
     documents = checker["load_contract_documents"]()

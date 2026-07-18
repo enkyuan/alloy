@@ -213,8 +213,8 @@ def _manifest(mode: str) -> dict[str, Any]:
         "sourceTreeRecheck": "passed",
     }
     policy = {
-        "testFile": "kaji/ts/tests/github-client.test.ts",
-        "testName": "rejects-before-token-lookup",
+        "testFile": "kaji/ts/tests/github-registry.test.ts",
+        "testName": "rejects approval for github_create_issue before token or HTTP",
         "tokenLookups": 0,
         "requestAttempts": 0,
     }
@@ -458,6 +458,19 @@ def test_handoff_schema_accepts_both_closed_seven_receipt_modes() -> None:
     }
     signed_tag["source"]["signature"]["mechanism"] = signature["mechanism"]
     validator.validate(signed_tag)
+
+
+def test_handoff_schema_accepts_exact_root_policy_projection() -> None:
+    manifest = _manifest("release")
+    assert manifest["securityEvidence"]["policyBeforeRequest"] == {
+        "testFile": "kaji/ts/tests/github-registry.test.ts",
+        "testName": "rejects approval for github_create_issue before token or HTTP",
+        "result": "passed",
+        "tokenLookups": 0,
+        "requestAttempts": 0,
+    }
+
+    Draft202012Validator(_schema()).validate(manifest)
 
 
 def test_handoff_schema_closes_every_object_and_receipt_variant() -> None:

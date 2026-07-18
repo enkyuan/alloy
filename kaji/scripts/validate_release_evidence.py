@@ -24,9 +24,35 @@ COMMIT = re.compile(r"[0-9a-f]{40}")
 ARTIFACT_DIGEST = re.compile(r"[0-9a-f]{64}")
 ARTIFACT_ID = re.compile(r"[1-9][0-9]*")
 WORKFLOW_RUN = re.compile(r"https?://.+/actions/runs/[1-9][0-9]*")
+SEMVER = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
 PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
 PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.1.tgz"
+TYPESCRIPT_GITHUB_TOOLS = (
+    "add_comment",
+    "create_issue",
+    "get_file",
+    "get_issue",
+    "list_issues",
+    "search_code",
+    "get_commit",
+    "get_pull_request",
+    "list_pull_request_files",
+    "list_check_runs",
+    "get_workflow_run",
+    "list_workflow_jobs",
+    "list_file_commits",
+    "get_release",
+    "list_deployments",
+)
+TYPESCRIPT_GITHUB_READ_TOOLS = TYPESCRIPT_GITHUB_TOOLS[2:]
+SHARED_GITHUB_TOOLS = TYPESCRIPT_GITHUB_TOOLS[:6]
+SHARED_GITHUB_READ_TOOLS = TYPESCRIPT_GITHUB_READ_TOOLS[:4]
 
 
 class EvidenceValidationError(RuntimeError):
@@ -100,9 +126,23 @@ def validate_manifest(
     )
 
 
-def validate_github_package_proofs(value: Any, runtime: str) -> None:
-    expected_keys = {"sdist", "wheel"} if runtime == "python" else {"bun", "npm"}
-    expected_proof = {
+def _strict_json_equal(value: Any, expected: Any) -> bool:
+    if type(value) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(value) == set(expected) and all(
+            _strict_json_equal(value[key], item) for key, item in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(value) == len(expected) and all(
+            _strict_json_equal(actual, item)
+            for actual, item in zip(value, expected, strict=True)
+        )
+    return value == expected
+
+
+def _python_github_package_proof(runtime: str) -> dict[str, Any]:
+    return {
         "schemaVersion": 1,
         "evidenceClass": "offline_exact_artifact_smoke",
         "integration": "github",
@@ -119,10 +159,164 @@ def validate_github_package_proofs(value: Any, runtime: str) -> None:
         "conclusion": "passed",
         "failureCode": None,
     }
+
+
+def _typescript_github_package_proof_valid(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    declarations = value.get("typescriptDeclarationChecks")
+    if not isinstance(declarations, dict):
+        return False
+    current = declarations.get("typescriptCurrent")
+    current_version = current.get("version") if isinstance(current, dict) else None
+    if (
+        not isinstance(current_version, str)
+        or SEMVER.fullmatch(current_version) is None
+        or current_version == "5.7.3"
+    ):
+        return False
+
+    tools = list(TYPESCRIPT_GITHUB_TOOLS)
+    read_tools = list(TYPESCRIPT_GITHUB_READ_TOOLS)
+    expected = {
+        "schemaVersion": 4,
+        "evidenceClass": "offline_exact_artifact_smoke",
+        "integration": "github",
+        "runtime": "typescript",
+        "network": "blocked",
+        "liveProvider": False,
+        "sharedAbiVersion": "1.0.0",
+        "packageAbiSchemaVersion": "1.0.0",
+        "packageCatalogVersion": "0.2.0",
+        "apiFixtureVersion": "1.0.0",
+        "sharedFixtureCaseCount": 23,
+        "publicScenarioCount": 14,
+        "packageCatalog": {
+            "schemaVersion": "1.0.0",
+            "catalogVersion": "0.2.0",
+            "toolCount": 15,
+            "readToolCount": 13,
+            "tools": tools,
+            "readTools": read_tools,
+            "providerAliases": [f"github_{tool}" for tool in tools],
+            "catalogNames": [f"github.{tool}" for tool in tools],
+        },
+        "cliCopiedCatalog": {
+            "manifestVersion": "0.1.0",
+            "toolCount": 6,
+            "readToolCount": 4,
+            "tools": list(SHARED_GITHUB_TOOLS),
+            "readTools": list(SHARED_GITHUB_READ_TOOLS),
+        },
+        "esmSharedAbiMatched": True,
+        "cjsSharedAbiMatched": True,
+        "esmPackageAbiMatched": True,
+        "cjsPackageAbiMatched": True,
+        "esmClassIdentityMatched": True,
+        "cjsClassIdentityMatched": True,
+        "esmFactoryIdentityMatched": True,
+        "cjsFactoryIdentityMatched": True,
+        "esmRuntimeExports": [
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "cjsRuntimeExports": [
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "esmDeclarationExports": [
+            "CreateGitHubIntegrationOptions",
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "cjsDeclarationExports": [
+            "CreateGitHubIntegrationOptions",
+            "GitHubIntegration",
+            "createGithubIntegration",
+            "inspectIntegration",
+        ],
+        "typescriptDeclarationChecks": {
+            "compilerOptions": {
+                "module": "NodeNext",
+                "moduleResolution": "NodeNext",
+                "skipLibCheck": False,
+            },
+            "typescript57": {
+                "version": "5.7.3",
+                "mtsImport": "passed",
+                "ctsRequire": "passed",
+            },
+            "typescriptCurrent": {
+                "version": current_version,
+                "mtsImport": "passed",
+                "ctsRequire": "passed",
+            },
+        },
+        "privateGitHubCompositionSourcesPacked": False,
+        "privateGitHubCompositionSourceImportsRejected": True,
+        "closedCallsDeniedBeforeCredentialAccess": True,
+        "approvalDeniedBeforeCredentialAccess": True,
+        "repositoryDeniedBeforeCredentialAccess": True,
+        "githubCatalogEventsVerified": ["requested", "started", "failed"],
+        "genericSyntheticCatalogEventsVerified": [
+            "requested",
+            "started",
+            "completed",
+        ],
+        "lifecycle": {
+            "githubFailure": {
+                "stages": ["requested", "started", "failed"],
+                "providerAlias": "github_get_file",
+                "catalogName": "github.get_file",
+                "sameIdentityAtEveryStage": True,
+            },
+            "syntheticCompletion": {
+                "stages": ["requested", "started", "completed"],
+                "providerAlias": "synthetic_complete",
+                "catalogName": "synthetic.complete",
+                "sameIdentityAtEveryStage": True,
+            },
+        },
+        "policyBeforeRequest": {
+            "testFile": "kaji/ts/tests/github-registry.test.ts",
+            "testName": "rejects approval for github_create_issue before token or HTTP",
+            "tokenLookups": 0,
+            "requestAttempts": 0,
+        },
+        "aliasCollisionRejected": True,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+    return _strict_json_equal(value, expected)
+
+
+def validate_github_package_proofs(value: Any, runtime: str) -> None:
+    expected_keys = {"sdist", "wheel"} if runtime == "python" else {"bun", "npm"}
+    if runtime == "python":
+        valid = (
+            isinstance(value, dict)
+            and set(value) == expected_keys
+            and all(
+                _strict_json_equal(proof, _python_github_package_proof(runtime))
+                for proof in value.values()
+            )
+        )
+    else:
+        valid = (
+            runtime == "typescript"
+            and isinstance(value, dict)
+            and set(value) == expected_keys
+            and _strict_json_equal(value["npm"], value["bun"])
+            and all(
+                _typescript_github_package_proof_valid(proof)
+                for proof in value.values()
+            )
+        )
     require(
-        isinstance(value, dict)
-        and set(value) == expected_keys
-        and all(proof == expected_proof for proof in value.values()),
+        valid,
         "github_package_proof_invalid",
     )
 
