@@ -1,26 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INTEGRATION_RECOVERY,
   IntegrationAuthRequiredError,
   IntegrationExecutionError,
   IntegrationPolicyError,
   IntegrationRateLimitedError,
   IntegrationTransientReadError,
+  closedRecoveryFields,
   createGitHubRequester,
   createGmailRequester,
   snapshotIntegrationResult,
+  type IntegrationRecoveryFields,
+  type IntegrationRecoveryReason,
 } from "@kaji/sdk/integrations";
 import * as integrations from "@kaji/sdk/integrations";
 
+import { INTEGRATION_RECOVERY as INTERNAL_INTEGRATION_RECOVERY } from "@/contracts/integration-recovery";
+
 describe("experimental integrations subpath", () => {
-  it("exports exactly the five certified classes at runtime", () => {
+  it("exports exactly the certified runtime surface", () => {
     expect(Object.keys(integrations).sort()).toEqual(
       [
+        "INTEGRATION_RECOVERY",
         "IntegrationAuthRequiredError",
         "IntegrationExecutionError",
         "IntegrationPolicyError",
         "IntegrationRateLimitedError",
         "IntegrationTransientReadError",
+        "closedRecoveryFields",
         "createGitHubRequester",
         "createGmailRequester",
         "snapshotIntegrationResult",
@@ -44,6 +52,64 @@ describe("experimental integrations subpath", () => {
       reason_code: "transient_read_failed",
     });
     expect(new IntegrationPolicyError()).toBeInstanceOf(Error);
+  });
+
+  it("exports the exact frozen canonical recovery table", () => {
+    const reason: IntegrationRecoveryReason = "github_token_missing";
+    const fields = {
+      reason_code: reason,
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+      doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+    } satisfies IntegrationRecoveryFields;
+
+    expect(INTEGRATION_RECOVERY).toBe(INTERNAL_INTEGRATION_RECOVERY);
+    expect(Object.isFrozen(INTEGRATION_RECOVERY)).toBe(true);
+    expect(Object.keys(INTEGRATION_RECOVERY)).toHaveLength(15);
+    expect(Object.values(INTEGRATION_RECOVERY).every(Object.isFrozen)).toBe(true);
+    expect(
+      new Set(Object.values(INTEGRATION_RECOVERY).flatMap((value) => Object.keys(value))),
+    ).toEqual(new Set(["cause", "docUrl", "errorCode", "fix", "problem", "recoveryCode"]));
+    expect(INTEGRATION_RECOVERY.github_token_missing.docUrl).toBe(fields.doc_url);
+    expect(INTEGRATION_RECOVERY.rate_limited.docUrl).toBe(
+      "https://kaji.dev/docs/integrations/recovery-v1#rate-limited",
+    );
+  });
+
+  it("accepts only canonical recovery tuples and returns closed safe fields", () => {
+    const recovery = INTEGRATION_RECOVERY.github_token_missing;
+    const fields = {
+      reason_code: "github_token_missing",
+      recovery_code: recovery.recoveryCode,
+      doc_url: recovery.docUrl,
+    } as const;
+
+    expect(closedRecoveryFields(fields)).toEqual(fields);
+    expect(closedRecoveryFields({ ...fields, error_code: recovery.errorCode })).toEqual(fields);
+
+    for (const candidate of [
+      {},
+      { reason_code: "unknown", recovery_code: fields.recovery_code, doc_url: fields.doc_url },
+      { reason_code: fields.reason_code },
+      { ...fields, recovery_code: "RECONNECT_GMAIL" },
+      { ...fields, doc_url: INTEGRATION_RECOVERY.rate_limited.docUrl },
+      { ...fields, error_code: INTEGRATION_RECOVERY.rate_limited.errorCode },
+    ]) {
+      expect(closedRecoveryFields(candidate)).toBeUndefined();
+    }
+    const closed = closedRecoveryFields({
+      ...fields,
+      error_code: recovery.errorCode,
+      token: "secret",
+      headers: { authorization: "Bearer secret" },
+      principal: "user@example.com",
+      repository: "owner/repo",
+      arguments: { path: "secret" },
+      result: { secret: true },
+      raw_error: new Error("secret"),
+    });
+    expect(closed).toEqual(fields);
+    expect(Object.keys(closed ?? {}).sort()).toEqual(["doc_url", "reason_code", "recovery_code"]);
+    expect(integrations).not.toHaveProperty("isClosedRecoveryTuple");
   });
 
   it("fails closed when callers try to certify an unknown transport outcome", () => {

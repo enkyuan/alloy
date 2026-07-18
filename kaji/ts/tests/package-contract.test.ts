@@ -633,6 +633,9 @@ describe("npm contract artifact", () => {
     );
     expect(source).not.toContain("node_modules/@kaji/sdk/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
+    const expectedIntegrationExportList =
+      '["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"]';
+    expect(source.split(expectedIntegrationExportList)).toHaveLength(3);
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
     );
@@ -1279,6 +1282,58 @@ void roots;
 
     expect(esm.trim()).toBe("true false false");
     expect(cjs.trim()).toBe("true false false");
+  });
+
+  it("exports the closed recovery contract from built ESM and CommonJS entrypoints", () => {
+    const esmIntegrations = pathToFileURL(resolve(packageRoot, "dist/integrations.js")).href;
+    const script = (specifier: string, loader: "import" | "require") =>
+      loader === "import"
+        ? `const integrations=await import(${JSON.stringify(specifier)});`
+        : `const integrations=require(${JSON.stringify(specifier)});`;
+    const proof =
+      "const recovery=integrations.INTEGRATION_RECOVERY.github_token_missing;" +
+      "console.log(JSON.stringify({" +
+      "exports:['INTEGRATION_RECOVERY','closedRecoveryFields'].every(" +
+      'name=>typeof integrations[name]!=="undefined"),' +
+      'internalAbsent:typeof integrations.isClosedRecoveryTuple==="undefined",' +
+      "count:Object.keys(integrations.INTEGRATION_RECOVERY).length," +
+      "frozen:Object.isFrozen(integrations.INTEGRATION_RECOVERY)," +
+      "github:recovery.docUrl," +
+      "rateLimited:integrations.INTEGRATION_RECOVERY.rate_limited.docUrl," +
+      "valid:integrations.closedRecoveryFields({" +
+      "reason_code:'github_token_missing',recovery_code:recovery.recoveryCode," +
+      "doc_url:recovery.docUrl,error_code:recovery.errorCode})," +
+      "invalid:integrations.closedRecoveryFields({" +
+      "reason_code:'github_token_missing',recovery_code:recovery.recoveryCode," +
+      "doc_url:recovery.docUrl,error_code:'WRONG'})" +
+      "}));";
+    const expected = {
+      exports: true,
+      internalAbsent: true,
+      count: 15,
+      frozen: true,
+      github: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+      rateLimited: "https://kaji.dev/docs/integrations/recovery-v1#rate-limited",
+      valid: {
+        reason_code: "github_token_missing",
+        recovery_code: "CONFIGURE_GITHUB_TOKEN",
+        doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+      },
+    };
+
+    const esm = runText(
+      "node",
+      ["--input-type=module", "--eval", script(esmIntegrations, "import") + proof],
+      { cwd: packageRoot },
+    );
+    const cjs = runText(
+      "node",
+      ["--eval", script(resolve(packageRoot, "dist/integrations.cjs"), "require") + proof],
+      { cwd: packageRoot },
+    );
+
+    expect(JSON.parse(esm)).toEqual(expected);
+    expect(JSON.parse(cjs)).toEqual(expected);
   });
 
   it("installs packed benchmark seams through public ESM and CommonJS specifiers", () => {

@@ -1,6 +1,12 @@
 import { durableJsonSnapshot } from "@/events/json";
 import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 
+export {
+  INTEGRATION_RECOVERY,
+  closedRecoveryFields,
+  type IntegrationRecoveryFields,
+  type IntegrationRecoveryReason,
+} from "@/contracts/integration-recovery";
 export type { BoundedResponse } from "@/integrations/safe-fetch";
 export {
   createGitHubRequester,

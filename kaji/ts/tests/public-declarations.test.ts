@@ -73,8 +73,9 @@ describe("public declarations", () => {
     }
   });
 
-  it("exposes only the experimental fixed-origin integration surface", () => {
+  it("exposes only the experimental fixed-origin and closed recovery surface", () => {
     const sources = [
+      "src/contracts/integration-recovery.ts",
       "src/integrations/public.ts",
       "src/integrations/fixed-origin.ts",
       "src/integrations/safe-fetch.ts",
@@ -90,15 +91,23 @@ describe("public declarations", () => {
       expect(executionError).toContain('constructor(reasonCode: "api_rejected");');
       expect(executionError).not.toContain("errorCode");
       expect(executionError).not.toContain("retryable");
+      for (const recoveryExport of [
+        "INTEGRATION_RECOVERY",
+        "IntegrationRecoveryFields",
+        "IntegrationRecoveryReason",
+        "closedRecoveryFields",
+      ]) {
+        expect(exports).toContain(recoveryExport);
+      }
       for (const internal of [
         "FixedOriginTestTransport",
         "FixedOriginTestResponse",
         "fixedOriginForTest",
         "IntegrationTransportError",
         "IntegrationAuthError",
-        "INTEGRATION_RECOVERY",
-        "closedRecoveryFields",
         "closedTransportFailureFields",
+        "isClosedRecoveryTuple",
+        "recoveryForReason",
         "FixedOriginPolicy",
         "NodeHttpsTransport",
         "CERTIFIED_FAILURES",
