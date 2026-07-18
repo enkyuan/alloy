@@ -12,12 +12,151 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inspect } from "node:util";
+import Ajv2020 from "ajv/dist/2020";
 
 import { startSpan, type TraceSink } from "@/observability";
 import { providerAPIErrorFromUnknown } from "@/providers/errors";
 import { AgentBuilder } from "@/runtime/builder";
 import { ToolExecutionController } from "@/tools/execution";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
+
+const handoffSchemaRelative = "contracts/release/kaji-ts-consumer-handoff-v1.schema.json";
+const canonicalHandoffSchemaRelative =
+  "../contracts/release/kaji-ts-consumer-handoff-v1.schema.json";
+
+type HandoffSchemaRule = {
+  type?: string;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  not?: { pattern: string };
+  allOf?: Array<{ not?: { pattern: string } }>;
+};
+
+type HandoffSchema = {
+  $defs: Record<string, HandoffSchemaRule>;
+  "x-kajiConformance": {
+    semverBasename: Array<{
+      value: string;
+      valid: boolean;
+      basename?: string;
+    }>;
+    aliases: Record<string, Array<{ value: unknown; valid: boolean }>>;
+    tagSourceRefs: Array<{ tag: string; valid: boolean; ref?: string }>;
+    signerWorkflowIdentities: Array<{
+      value: {
+        repository: string;
+        filePath: string;
+        digest: string;
+        ref: string;
+      };
+      schemaValid: boolean;
+      relationValid: boolean;
+    }>;
+  };
+};
+
+function handoffSchema(): HandoffSchema {
+  return JSON.parse(readFileSync(resolve(handoffSchemaRelative), "utf8")) as HandoffSchema;
+}
+
+function compileHandoffFragment(schema: HandoffSchema, definition: string) {
+  return new Ajv2020({ allErrors: true, strict: false }).compile({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $defs: schema.$defs,
+    $ref: `#/$defs/${definition}`,
+  });
+}
+
+function independentAliasValid(schema: HandoffSchema, definition: string, value: unknown): boolean {
+  const rule = schema.$defs[definition];
+  if (rule === undefined) throw new Error(`unknown schema definition: ${definition}`);
+  if (definition === "positiveInt") {
+    return (
+      typeof value === "number" &&
+      Number.isInteger(value) &&
+      value >= (rule.minimum ?? Number.NEGATIVE_INFINITY) &&
+      value <= (rule.maximum ?? Number.POSITIVE_INFINITY)
+    );
+  }
+  if (typeof value !== "string") return false;
+  const codePoints = [...value].length;
+  if (codePoints < (rule.minLength ?? 0) || codePoints > (rule.maxLength ?? Infinity)) {
+    return false;
+  }
+  if (rule.pattern !== undefined && !new RegExp(rule.pattern, "u").test(value)) return false;
+  const negativeRules = [rule.not, ...(rule.allOf ?? []).map((item) => item.not)].filter(
+    (item): item is { pattern: string } => item !== undefined,
+  );
+  return !negativeRules.some((negative) => new RegExp(negative.pattern, "u").test(value));
+}
+
+function npmPackBasenameV1(schema: HandoffSchema, name: string, version: string): string {
+  if (name !== "@kaji/sdk") throw new Error("unexpected package name");
+  if (!independentAliasValid(schema, "semver", version)) {
+    throw new Error("invalid package version");
+  }
+  return `${name.slice(1).replace("/", "-")}-${version}.tgz`;
+}
+
+describe("TypeScript consumer handoff schema", () => {
+  it("ships a valid byte-identical Draft 2020-12 package mirror", () => {
+    const packaged = readFileSync(resolve(handoffSchemaRelative));
+    const canonical = readFileSync(resolve(canonicalHandoffSchemaRelative));
+    expect(packaged.equals(canonical)).toBe(true);
+    expect(() =>
+      new Ajv2020({ allErrors: true, strict: false }).compile(handoffSchema()),
+    ).not.toThrow();
+  });
+
+  it("shares exact dependency-free SemVer, basename, and alias fixtures", () => {
+    const schema = handoffSchema();
+    const semver = compileHandoffFragment(schema, "semver");
+    const basename = compileHandoffFragment(schema, "basename");
+
+    for (const testCase of schema["x-kajiConformance"].semverBasename) {
+      expect(semver(testCase.value), testCase.value).toBe(testCase.valid);
+      if (testCase.valid) {
+        expect(independentAliasValid(schema, "semver", testCase.value)).toBe(true);
+        const derived = npmPackBasenameV1(schema, "@kaji/sdk", testCase.value);
+        expect(derived).toBe(testCase.basename);
+        expect(basename(derived), derived).toBe(true);
+      } else {
+        expect(testCase.basename).toBeUndefined();
+        expect(independentAliasValid(schema, "semver", testCase.value)).toBe(false);
+        expect(() => npmPackBasenameV1(schema, "@kaji/sdk", testCase.value)).toThrow(
+          "invalid package version",
+        );
+      }
+    }
+
+    for (const [definition, cases] of Object.entries(schema["x-kajiConformance"].aliases)) {
+      const validate = compileHandoffFragment(schema, definition);
+      for (const testCase of cases) {
+        expect(validate(testCase.value), `${definition}: ${JSON.stringify(testCase.value)}`).toBe(
+          testCase.valid,
+        );
+        expect(independentAliasValid(schema, definition, testCase.value)).toBe(testCase.valid);
+      }
+    }
+
+    const tagName = compileHandoffFragment(schema, "tagName");
+    for (const testCase of schema["x-kajiConformance"].tagSourceRefs) {
+      expect(tagName(testCase.tag), testCase.tag).toBe(testCase.valid);
+      if (testCase.valid) expect(`refs/tags/${testCase.tag}`).toBe(testCase.ref);
+    }
+
+    const signerWorkflowIdentity = compileHandoffFragment(schema, "signerWorkflowIdentity");
+    for (const testCase of schema["x-kajiConformance"].signerWorkflowIdentities) {
+      expect(signerWorkflowIdentity(testCase.value)).toBe(testCase.schemaValid);
+      const canonicalRef = `${testCase.value.repository}/${testCase.value.filePath}@${testCase.value.digest}`;
+      const relationValid = testCase.schemaValid && testCase.value.ref === canonicalRef;
+      expect(relationValid).toBe(testCase.relationValid);
+    }
+  });
+});
 
 describe("release redaction boundaries", () => {
   it.each(["tests/integration/openai-tools.test.ts", "tests/integration/anthropic-live.test.ts"])(

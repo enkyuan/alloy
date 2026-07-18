@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 import pytest
+from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = REPO_ROOT / "kaji" / "contracts" / "beta-core-v1.json"
@@ -26,6 +27,8 @@ EVENT_SCHEMAS = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json",
     REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json",
 )
+TS_HANDOFF_SCHEMA_RELATIVE = Path("release/kaji-ts-consumer-handoff-v1.schema.json")
+TS_HANDOFF_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_HANDOFF_SCHEMA_RELATIVE
 
 
 def test_beta_contract_defaults_are_public_and_stable() -> None:
@@ -66,6 +69,21 @@ def test_python_package_contract_copy_matches_canonical_files() -> None:
         if source.is_file() and source.suffix in {".json", ".md"}:
             packaged = PACKAGE_CONTRACTS / source.relative_to(canonical)
             assert packaged.read_bytes() == source.read_bytes()
+
+
+def test_typescript_handoff_schema_is_required_valid_and_packaged_for_both_runtimes() -> (
+    None
+):
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="handoff_contract_test")
+    assert TS_HANDOFF_SCHEMA_RELATIVE.as_posix() in checker["REQUIRED_JSON"]
+
+    schema_bytes = TS_HANDOFF_SCHEMA.read_bytes()
+    Draft202012Validator.check_schema(json.loads(schema_bytes))
+    for package_root in (
+        REPO_ROOT / "kaji" / "src" / "kaji" / "contracts",
+        REPO_ROOT / "kaji" / "ts" / "contracts",
+    ):
+        assert (package_root / TS_HANDOFF_SCHEMA_RELATIVE).read_bytes() == schema_bytes
 
 
 def test_typescript_github_package_abi_is_closed_and_rejects_drift() -> None:

@@ -1,0 +1,1277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/release/kaji-ts-consumer-handoff-v1.schema.json",
+  "title": "Kaji TypeScript consumer handoff manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "artifact",
+    "package",
+    "source",
+    "github",
+    "upstreamVerification",
+    "securityEvidence",
+    "license"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifact": { "$ref": "#/$defs/artifact" },
+    "package": { "$ref": "#/$defs/package" },
+    "source": { "$ref": "#/$defs/source" },
+    "github": { "$ref": "#/$defs/githubContract" },
+    "upstreamVerification": { "$ref": "#/$defs/sevenReceipts" },
+    "securityEvidence": { "$ref": "#/$defs/securityEvidence" },
+    "license": { "$ref": "#/$defs/license" }
+  },
+  "x-kajiConformance": {
+    "semverBasename": [
+      { "value": "0.2.0", "valid": true, "basename": "kaji-sdk-0.2.0.tgz" },
+      { "value": "0.2.0-beta.1", "valid": true, "basename": "kaji-sdk-0.2.0-beta.1.tgz" },
+      { "value": "1.0.0-0", "valid": true, "basename": "kaji-sdk-1.0.0-0.tgz" },
+      { "value": "1.2.3-alpha.1+build.5", "valid": true, "basename": "kaji-sdk-1.2.3-alpha.1+build.5.tgz" },
+      { "value": "01.2.3", "valid": false },
+      { "value": "1.2", "valid": false },
+      { "value": "1.2.3-01", "valid": false },
+      { "value": "v1.2.3", "valid": false },
+      { "value": "1.2.3+", "valid": false },
+      { "value": " 1.2.3", "valid": false },
+      { "value": "1.2.3 ", "valid": false },
+      { "value": "1.2.3\n", "valid": false },
+      { "value": "1.2.3-alpha.é", "valid": false }
+    ],
+    "aliases": {
+      "positiveInt": [
+        { "value": 1, "valid": true },
+        { "value": 9007199254740991, "valid": true },
+        { "value": 0, "valid": false },
+        { "value": -1, "valid": false },
+        { "value": 9007199254740992, "valid": false },
+        { "value": 1.5, "valid": false },
+        { "value": true, "valid": false }
+      ],
+      "nonEmptyString": [
+        { "value": "!", "valid": true },
+        { "value": "release-proof", "valid": true },
+        { "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": true },
+        { "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": false },
+        { "value": "", "valid": false },
+        { "value": "contains space", "valid": false },
+        { "value": "line\nbreak", "valid": false },
+        { "value": "é", "valid": false }
+      ],
+      "email": [
+        { "value": "a@b.co", "valid": true },
+        { "value": "release.signer+ci@example.com", "valid": true },
+        { "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com", "valid": true },
+        { "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@example.com", "valid": false },
+        { "value": "release@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com", "valid": true },
+        { "value": "release@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.com", "valid": false },
+        { "value": "missing-tld@example", "valid": false },
+        { "value": "@example.com", "valid": false },
+        { "value": "release signer@example.com", "valid": false },
+        { "value": "rélease@example.com", "valid": false }
+      ],
+      "tagName": [
+        { "value": "kaji-a", "valid": true },
+        { "value": "kaji-release_1.alpha", "valid": true },
+        { "value": "kaji-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": true },
+        { "value": "kaji-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "valid": false },
+        { "value": "kaji-", "valid": false },
+        { "value": "release-1", "valid": false },
+        { "value": "kaji-a..b", "valid": false },
+        { "value": "kaji-a.", "valid": false },
+        { "value": "kaji-a.lock", "valid": false },
+        { "value": "kaji-a/b", "valid": false },
+        { "value": "kaji-é", "valid": false }
+      ],
+      "httpsUrl": [
+        { "value": "https://github.com/enkyuan/alloy/attestations/attestation-1", "valid": true },
+        { "value": "http://github.com/enkyuan/alloy/attestations/a", "valid": false },
+        { "value": "https://example.com/enkyuan/alloy/attestations/a", "valid": false },
+        { "value": "https://user@github.com/enkyuan/alloy/attestations/a", "valid": false },
+        { "value": "https://github.com:443/enkyuan/alloy/attestations/a", "valid": false },
+        { "value": "https://github.com/enkyuan/alloy/attestations/a?x=1", "valid": false },
+        { "value": "https://github.com/enkyuan/alloy/attestations/a#x", "valid": false },
+        { "value": "https://github.com/enkyuan/alloy/attestations/%61", "valid": false }
+      ],
+      "signerWorkflowRef": [
+        { "value": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@4444444444444444444444444444444444444444", "valid": true },
+        { "value": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@4444", "valid": false },
+        { "value": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "valid": false },
+        { "value": "enkyuan/alloy/.github/workflows/other.yml@4444444444444444444444444444444444444444", "valid": false }
+      ],
+      "repoPath": [
+        { "value": "kaji/ts/tests/github-client.test.ts", "valid": true },
+        { "value": "/kaji/ts/tests/github-client.test.ts", "valid": false },
+        { "value": "kaji/", "valid": false },
+        { "value": "kaji//tests/file.ts", "valid": false },
+        { "value": "kaji/./tests/file.ts", "valid": false },
+        { "value": "kaji/../tests/file.ts", "valid": false },
+        { "value": "kaji\\tests\\file.ts", "valid": false },
+        { "value": "C:/kaji/tests/file.ts", "valid": false }
+      ]
+    },
+    "tagSourceRefs": [
+      { "tag": "kaji-a", "valid": true, "ref": "refs/tags/kaji-a" },
+      { "tag": "kaji-release_1.alpha", "valid": true, "ref": "refs/tags/kaji-release_1.alpha" },
+      { "tag": "kaji-a.lock", "valid": false }
+    ],
+    "signerWorkflowIdentities": [
+      {
+        "value": {
+          "repository": "enkyuan/alloy",
+          "filePath": ".github/workflows/kaji.handoff.trusted.yml",
+          "digest": "4444444444444444444444444444444444444444",
+          "ref": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@4444444444444444444444444444444444444444"
+        },
+        "schemaValid": true,
+        "relationValid": true
+      },
+      {
+        "value": {
+          "repository": "enkyuan/alloy",
+          "filePath": ".github/workflows/kaji.handoff.trusted.yml",
+          "digest": "4444444444444444444444444444444444444444",
+          "ref": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@5555555555555555555555555555555555555555"
+        },
+        "schemaValid": true,
+        "relationValid": false
+      },
+      {
+        "value": {
+          "repository": "attacker/alloy",
+          "filePath": ".github/workflows/kaji.handoff.trusted.yml",
+          "digest": "4444444444444444444444444444444444444444",
+          "ref": "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@4444444444444444444444444444444444444444"
+        },
+        "schemaValid": false,
+        "relationValid": false
+      }
+    ]
+  },
+  "$defs": {
+    "hex40": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 40,
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "hex64": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "npmSha512": {
+      "type": "string",
+      "pattern": "^sha512-[A-Za-z0-9+/]+={0,2}$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "basename": {
+      "type": "string",
+      "pattern": "^kaji-sdk-(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?\\.tgz$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "positiveInt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "email": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 254,
+      "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "tagName": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 128,
+      "pattern": "^kaji-[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?)*$",
+      "allOf": [
+        { "not": { "pattern": "\\.lock$" } },
+        { "not": { "pattern": "[^!-~]" } }
+      ]
+    },
+    "httpsUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https://github\\.com/enkyuan/alloy/attestations/[A-Za-z0-9._~-]{1,128}$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "signerWorkflowRef": {
+      "type": "string",
+      "pattern": "^enkyuan/alloy/\\.github/workflows/kaji\\.handoff\\.trusted\\.yml@[0-9a-f]{40}$",
+      "not": { "pattern": "[^!-~]" }
+    },
+    "rangeSpec": {
+      "type": "string",
+      "minLength": 82,
+      "maxLength": 82,
+      "pattern": "^[0-9a-f]{40}\\.\\.[0-9a-f]{40}$"
+    },
+    "repoPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*//)(?!.*\\/$)[!-~]+$",
+      "allOf": [
+        { "not": { "pattern": "[^!-~]" } },
+        { "not": { "pattern": "\\\\" } }
+      ]
+    },
+    "signerWorkflowIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "filePath", "digest", "ref"],
+      "properties": {
+        "repository": { "const": "enkyuan/alloy" },
+        "filePath": { "const": ".github/workflows/kaji.handoff.trusted.yml" },
+        "digest": { "$ref": "#/$defs/hex40" },
+        "ref": { "$ref": "#/$defs/signerWorkflowRef" }
+      }
+    },
+    "construction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cleanCheckoutBuild", "packInvocationCount"],
+      "properties": {
+        "cleanCheckoutBuild": { "const": "passed" },
+        "packInvocationCount": { "const": 1 }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparison"],
+      "properties": {
+        "comparison": { "const": "not-run" }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "size",
+        "sha256",
+        "npmIntegrity",
+        "construction",
+        "reproducibility"
+      ],
+      "properties": {
+        "filename": { "$ref": "#/$defs/basename" },
+        "size": { "$ref": "#/$defs/positiveInt" },
+        "sha256": { "$ref": "#/$defs/hex64" },
+        "npmIntegrity": { "$ref": "#/$defs/npmSha512" },
+        "construction": { "$ref": "#/$defs/construction" },
+        "reproducibility": { "$ref": "#/$defs/reproducibility" }
+      }
+    },
+    "conditionalExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["import", "require"],
+      "properties": {
+        "import": { "$ref": "#/$defs/exportBranch" },
+        "require": { "$ref": "#/$defs/exportBranch" }
+      }
+    },
+    "exportBranch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types", "default"],
+      "properties": {
+        "types": { "type": "string" },
+        "default": { "type": "string" }
+      }
+    },
+    "rootExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+            "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+          }
+        }
+      ]
+    },
+    "testingExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/testing.d.ts", "default": "./dist/testing.js" },
+            "require": { "types": "./dist/testing.d.cts", "default": "./dist/testing.cjs" }
+          }
+        }
+      ]
+    },
+    "openaiExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/openai.d.ts", "default": "./dist/openai.js" },
+            "require": { "types": "./dist/openai.d.cts", "default": "./dist/openai.cjs" }
+          }
+        }
+      ]
+    },
+    "anthropicExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/anthropic.d.ts", "default": "./dist/anthropic.js" },
+            "require": { "types": "./dist/anthropic.d.cts", "default": "./dist/anthropic.cjs" }
+          }
+        }
+      ]
+    },
+    "integrationsExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/integrations.d.ts", "default": "./dist/integrations.js" },
+            "require": { "types": "./dist/integrations.d.cts", "default": "./dist/integrations.cjs" }
+          }
+        }
+      ]
+    },
+    "githubExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/integrations/github.d.ts", "default": "./dist/integrations/github.js" },
+            "require": { "types": "./dist/integrations/github.d.cts", "default": "./dist/integrations/github.cjs" }
+          }
+        }
+      ]
+    },
+    "authExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/auth.d.ts", "default": "./dist/auth.js" },
+            "require": { "types": "./dist/auth.d.cts", "default": "./dist/auth.cjs" }
+          }
+        }
+      ]
+    },
+    "cliExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": {
+              "types": "./dist/cli/package-entry.d.ts",
+              "default": "./dist/cli/package-entry.js"
+            },
+            "require": {
+              "types": "./dist/cli/package-entry-cjs.d.cts",
+              "default": "./dist/cli/package-entry-cjs.cjs"
+            }
+          }
+        }
+      ]
+    },
+    "exactExports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        ".",
+        "./testing",
+        "./openai",
+        "./anthropic",
+        "./integrations",
+        "./integrations/github",
+        "./auth",
+        "./cli"
+      ],
+      "properties": {
+        ".": { "$ref": "#/$defs/rootExport" },
+        "./testing": { "$ref": "#/$defs/testingExport" },
+        "./openai": { "$ref": "#/$defs/openaiExport" },
+        "./anthropic": { "$ref": "#/$defs/anthropicExport" },
+        "./integrations": { "$ref": "#/$defs/integrationsExport" },
+        "./integrations/github": { "$ref": "#/$defs/githubExport" },
+        "./auth": { "$ref": "#/$defs/authExport" },
+        "./cli": { "$ref": "#/$defs/cliExport" }
+      }
+    },
+    "githubSymbols4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "CreateGitHubIntegrationOptions" },
+        { "const": "GitHubIntegration" },
+        { "const": "createGithubIntegration" },
+        { "const": "inspectIntegration" }
+      ],
+      "items": false
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "exports", "publicSymbols"],
+      "properties": {
+        "name": { "const": "@kaji/sdk" },
+        "version": { "$ref": "#/$defs/semver" },
+        "exports": { "$ref": "#/$defs/exactExports" },
+        "publicSymbols": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["github"],
+          "properties": {
+            "github": { "$ref": "#/$defs/githubSymbols4" }
+          }
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "tree", "mergeBase", "verifierCommit", "signature"],
+      "properties": {
+        "repository": { "const": "https://github.com/enkyuan/alloy.git" },
+        "commit": { "$ref": "#/$defs/hex40" },
+        "tree": { "$ref": "#/$defs/hex40" },
+        "mergeBase": { "$ref": "#/$defs/hex40" },
+        "verifierCommit": { "$ref": "#/$defs/hex40" },
+        "signature": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "result", "mechanism"],
+          "properties": {
+            "required": { "const": true },
+            "result": { "const": "passed" },
+            "mechanism": {
+              "enum": [
+                "github-rest-commit-verification",
+                "github-rest-commit-and-annotated-tag-verification"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "tools15": {
+      "type": "array",
+      "minItems": 15,
+      "maxItems": 15,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "add_comment" }, { "const": "create_issue" },
+        { "const": "get_file" }, { "const": "get_issue" },
+        { "const": "list_issues" }, { "const": "search_code" },
+        { "const": "get_commit" }, { "const": "get_pull_request" },
+        { "const": "list_pull_request_files" }, { "const": "list_check_runs" },
+        { "const": "get_workflow_run" }, { "const": "list_workflow_jobs" },
+        { "const": "list_file_commits" }, { "const": "get_release" },
+        { "const": "list_deployments" }
+      ],
+      "items": false
+    },
+    "reads13": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "get_file" }, { "const": "get_issue" },
+        { "const": "list_issues" }, { "const": "search_code" },
+        { "const": "get_commit" }, { "const": "get_pull_request" },
+        { "const": "list_pull_request_files" }, { "const": "list_check_runs" },
+        { "const": "get_workflow_run" }, { "const": "list_workflow_jobs" },
+        { "const": "list_file_commits" }, { "const": "get_release" },
+        { "const": "list_deployments" }
+      ],
+      "items": false
+    },
+    "sharedTools6": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "add_comment" }, { "const": "create_issue" },
+        { "const": "get_file" }, { "const": "get_issue" },
+        { "const": "list_issues" }, { "const": "search_code" }
+      ],
+      "items": false
+    },
+    "sharedReads4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "get_file" }, { "const": "get_issue" },
+        { "const": "list_issues" }, { "const": "search_code" }
+      ],
+      "items": false
+    },
+    "githubContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "abi", "userAgentVersion", "sharedManifestVersion", "totalCount",
+        "readCount", "tools", "readTools", "shared"
+      ],
+      "properties": {
+        "abi": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "catalogVersion"],
+          "properties": {
+            "schemaVersion": { "const": "1.0.0" },
+            "catalogVersion": { "const": "0.2.0" }
+          }
+        },
+        "userAgentVersion": { "const": "0.2.0" },
+        "sharedManifestVersion": { "const": "0.1.0" },
+        "totalCount": { "const": 15 },
+        "readCount": { "const": 13 },
+        "tools": { "$ref": "#/$defs/tools15" },
+        "readTools": { "$ref": "#/$defs/reads13" },
+        "shared": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["totalCount", "readCount", "tools", "readTools"],
+          "properties": {
+            "totalCount": { "const": 6 },
+            "readCount": { "const": 4 },
+            "tools": { "$ref": "#/$defs/sharedTools6" },
+            "readTools": { "$ref": "#/$defs/sharedReads4" }
+          }
+        }
+      }
+    },
+    "sourceEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository", "headCommit", "treeSha", "mergeBase", "revisionCommand",
+        "range", "checkout", "clean", "trustedVerifierCommit", "rawResultSha256"
+      ],
+      "properties": {
+        "repository": { "const": "https://github.com/enkyuan/alloy.git" },
+        "headCommit": { "$ref": "#/$defs/hex40" },
+        "treeSha": { "$ref": "#/$defs/hex40" },
+        "mergeBase": { "$ref": "#/$defs/hex40" },
+        "revisionCommand": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "prefixItems": [
+            { "const": "git" }, { "const": "rev-list" },
+            { "const": "--reverse" }, { "const": "--topo-order" },
+            { "$ref": "#/$defs/rangeSpec" }
+          ],
+          "items": false
+        },
+        "range": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hex40" },
+          "uniqueItems": true
+        },
+        "checkout": { "const": "separate-fetch-depth-0" },
+        "clean": { "const": true },
+        "trustedVerifierCommit": { "$ref": "#/$defs/hex40" },
+        "rawResultSha256": { "$ref": "#/$defs/hex64" }
+      }
+    },
+    "commitSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha", "verified", "reason", "signerEmail", "payloadSha256"],
+      "properties": {
+        "sha": { "$ref": "#/$defs/hex40" },
+        "verified": { "const": true },
+        "reason": { "const": "valid" },
+        "signerEmail": { "$ref": "#/$defs/email" },
+        "payloadSha256": { "$ref": "#/$defs/hex64" }
+      }
+    },
+    "tagSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name", "objectSha", "targetCommit", "taggerEmail", "verified", "reason"
+      ],
+      "properties": {
+        "name": { "$ref": "#/$defs/tagName" },
+        "objectSha": { "$ref": "#/$defs/hex40" },
+        "targetCommit": { "$ref": "#/$defs/hex40" },
+        "taggerEmail": { "$ref": "#/$defs/email" },
+        "verified": { "const": true },
+        "reason": { "const": "valid" }
+      }
+    },
+    "signatureEvidenceCommit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identityField", "approvedSignerEmail", "verifierSource", "headCommit",
+        "treeSha", "verifierCommit", "verifierScriptSha256", "mergeBase", "range",
+        "commits", "rawResultSha256", "mechanism"
+      ],
+      "properties": {
+        "identityField": { "const": "gitCommit.committer.email" },
+        "approvedSignerEmail": { "$ref": "#/$defs/email" },
+        "verifierSource": { "const": "trusted-default-branch" },
+        "headCommit": { "$ref": "#/$defs/hex40" },
+        "treeSha": { "$ref": "#/$defs/hex40" },
+        "verifierCommit": { "$ref": "#/$defs/hex40" },
+        "verifierScriptSha256": { "$ref": "#/$defs/hex64" },
+        "mergeBase": { "$ref": "#/$defs/hex40" },
+        "range": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hex40" },
+          "uniqueItems": true
+        },
+        "commits": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/commitSignature" },
+          "uniqueItems": true
+        },
+        "rawResultSha256": { "$ref": "#/$defs/hex64" },
+        "mechanism": { "const": "github-rest-commit-verification" }
+      }
+    },
+    "signatureEvidenceTag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identityField", "approvedSignerEmail", "verifierSource", "headCommit",
+        "treeSha", "verifierCommit", "verifierScriptSha256", "mergeBase", "range",
+        "commits", "rawResultSha256", "mechanism", "tag"
+      ],
+      "properties": {
+        "identityField": { "const": "gitCommit.committer.email" },
+        "approvedSignerEmail": { "$ref": "#/$defs/email" },
+        "verifierSource": { "const": "trusted-default-branch" },
+        "headCommit": { "$ref": "#/$defs/hex40" },
+        "treeSha": { "$ref": "#/$defs/hex40" },
+        "verifierCommit": { "$ref": "#/$defs/hex40" },
+        "verifierScriptSha256": { "$ref": "#/$defs/hex64" },
+        "mergeBase": { "$ref": "#/$defs/hex40" },
+        "range": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hex40" },
+          "uniqueItems": true
+        },
+        "commits": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/commitSignature" },
+          "uniqueItems": true
+        },
+        "rawResultSha256": { "$ref": "#/$defs/hex64" },
+        "mechanism": { "const": "github-rest-commit-and-annotated-tag-verification" },
+        "tag": { "$ref": "#/$defs/tagSignature" }
+      }
+    },
+    "signatureEvidence": {
+      "oneOf": [
+        { "$ref": "#/$defs/signatureEvidenceCommit" },
+        { "$ref": "#/$defs/signatureEvidenceTag" }
+      ]
+    },
+    "packEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "package", "artifact", "toolchain", "construction",
+        "reproducibility", "registry", "sourceTreeRecheck"
+      ],
+      "properties": {
+        "mode": { "enum": ["release", "internal-evaluation"] },
+        "package": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "const": "@kaji/sdk" },
+            "version": { "$ref": "#/$defs/semver" }
+          }
+        },
+        "artifact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["filename", "size", "npmIntegrity"],
+          "properties": {
+            "filename": { "$ref": "#/$defs/basename" },
+            "size": { "$ref": "#/$defs/positiveInt" },
+            "npmIntegrity": { "$ref": "#/$defs/npmSha512" }
+          }
+        },
+        "toolchain": { "$ref": "#/$defs/toolchain" },
+        "construction": { "$ref": "#/$defs/construction" },
+        "reproducibility": { "$ref": "#/$defs/reproducibility" },
+        "registry": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status"],
+              "properties": { "status": { "const": "version-unused" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status"],
+              "properties": { "status": { "const": "not-claimed" } }
+            }
+          ]
+        },
+        "sourceTreeRecheck": { "const": "passed" }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "npm", "bun", "uv"],
+      "properties": {
+        "node": { "$ref": "#/$defs/semver" },
+        "npm": { "$ref": "#/$defs/semver" },
+        "bun": { "$ref": "#/$defs/semver" },
+        "uv": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "passedCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result"],
+      "properties": {
+        "id": { "type": "string" },
+        "result": { "const": "passed" }
+      }
+    },
+    "artifactSubchecks16": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "safe-packlist", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "source-byte-equality", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "export-targets", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "declarations", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "typescript-5.7.3-mts", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "typescript-5.7.3-cts", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "typescript-current-mts", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "typescript-current-cts", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "npm-install", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "bun-install", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "public-github-surface", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "typescript-catalog-15-13", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "shared-python-catalog-6-4", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "lifecycle-identity", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "policy-before-token", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "packaged-license", "result": "passed" } }] }
+      ],
+      "items": false
+    },
+    "artifactContractEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subchecks", "packlist", "package", "typescript", "installs", "catalogs",
+        "lifecycle", "policy", "license"
+      ],
+      "properties": {
+        "subchecks": { "$ref": "#/$defs/artifactSubchecks16" },
+        "packlist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["memberCount", "membersSha256"],
+          "properties": {
+            "memberCount": { "$ref": "#/$defs/positiveInt" },
+            "membersSha256": { "$ref": "#/$defs/hex64" }
+          }
+        },
+        "package": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exports", "publicSymbols"],
+          "properties": {
+            "exports": { "$ref": "#/$defs/exactExports" },
+            "publicSymbols": { "$ref": "#/$defs/githubSymbols4" }
+          }
+        },
+        "typescript": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimumVersion", "currentVersion"],
+          "properties": {
+            "minimumVersion": { "const": "5.7.3" },
+            "currentVersion": { "$ref": "#/$defs/semver" }
+          }
+        },
+        "installs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["npm", "bun"],
+          "properties": {
+            "npm": { "$ref": "#/$defs/installEvidence" },
+            "bun": { "$ref": "#/$defs/installEvidence" }
+          }
+        },
+        "catalogs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["typescript", "shared"],
+          "properties": {
+            "typescript": { "$ref": "#/$defs/typescriptCatalog" },
+            "shared": { "$ref": "#/$defs/sharedCatalog" }
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["githubFailure", "syntheticCompletion"],
+          "properties": {
+            "githubFailure": { "$ref": "#/$defs/githubFailureLifecycle" },
+            "syntheticCompletion": { "$ref": "#/$defs/syntheticCompletionLifecycle" }
+          }
+        },
+        "policy": { "$ref": "#/$defs/policyEvidence" },
+        "license": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "sha256"],
+          "properties": {
+            "id": { "const": "PolyForm-Noncommercial-1.0.0" },
+            "sha256": { "$ref": "#/$defs/hex64" }
+          }
+        }
+      }
+    },
+    "installEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactSha256", "realCopy"],
+      "properties": {
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "realCopy": { "const": true }
+      }
+    },
+    "typescriptCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "catalogVersion", "totalCount", "readCount", "tools", "readTools"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "catalogVersion": { "const": "0.2.0" },
+        "totalCount": { "const": 15 },
+        "readCount": { "const": 13 },
+        "tools": { "$ref": "#/$defs/tools15" },
+        "readTools": { "$ref": "#/$defs/reads13" }
+      }
+    },
+    "sharedCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifestVersion", "totalCount", "readCount", "tools", "readTools"],
+      "properties": {
+        "manifestVersion": { "const": "0.1.0" },
+        "totalCount": { "const": 6 },
+        "readCount": { "const": 4 },
+        "tools": { "$ref": "#/$defs/sharedTools6" },
+        "readTools": { "$ref": "#/$defs/sharedReads4" }
+      }
+    },
+    "githubFailureLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stages", "providerAlias", "catalogName", "sameIdentityAtEveryStage"],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "const": "requested" }, { "const": "started" }, { "const": "failed" }
+          ],
+          "items": false
+        },
+        "providerAlias": { "$ref": "#/$defs/nonEmptyString" },
+        "catalogName": { "const": "github.get_file" },
+        "sameIdentityAtEveryStage": { "const": true }
+      }
+    },
+    "syntheticCompletionLifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stages", "providerAlias", "catalogName", "sameIdentityAtEveryStage"],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "const": "requested" }, { "const": "started" }, { "const": "completed" }
+          ],
+          "items": false
+        },
+        "providerAlias": { "$ref": "#/$defs/nonEmptyString" },
+        "catalogName": { "const": "synthetic.complete" },
+        "sameIdentityAtEveryStage": { "const": true }
+      }
+    },
+    "policyEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["testFile", "testName", "tokenLookups", "requestAttempts"],
+      "properties": {
+        "testFile": { "$ref": "#/$defs/repoPath" },
+        "testName": { "$ref": "#/$defs/nonEmptyString" },
+        "tokenLookups": { "const": 0 },
+        "requestAttempts": { "const": 0 }
+      }
+    },
+    "nodeChecks4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "npm-install", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "esm-import", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "commonjs-require", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "catalog-15-13", "result": "passed" } }] }
+      ],
+      "items": false
+    },
+    "node22Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeMajor", "nodeVersion", "npmVersion", "installedArtifactSha256", "realCopy", "checks"
+      ],
+      "properties": {
+        "nodeMajor": { "const": 22 },
+        "nodeVersion": { "$ref": "#/$defs/semver" },
+        "npmVersion": { "$ref": "#/$defs/semver" },
+        "installedArtifactSha256": { "$ref": "#/$defs/hex64" },
+        "realCopy": { "const": true },
+        "checks": { "$ref": "#/$defs/nodeChecks4" }
+      }
+    },
+    "node24Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeMajor", "nodeVersion", "npmVersion", "installedArtifactSha256", "realCopy", "checks"
+      ],
+      "properties": {
+        "nodeMajor": { "const": 24 },
+        "nodeVersion": { "$ref": "#/$defs/semver" },
+        "npmVersion": { "$ref": "#/$defs/semver" },
+        "installedArtifactSha256": { "$ref": "#/$defs/hex64" },
+        "realCopy": { "const": true },
+        "checks": { "$ref": "#/$defs/nodeChecks4" }
+      }
+    },
+    "receiptDigests6": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceEquivalence", "signatureVerification", "packOnce",
+        "artifactContract", "node22", "node24"
+      ],
+      "properties": {
+        "sourceEquivalence": { "$ref": "#/$defs/hex64" },
+        "signatureVerification": { "$ref": "#/$defs/hex64" },
+        "packOnce": { "$ref": "#/$defs/hex64" },
+        "artifactContract": { "$ref": "#/$defs/hex64" },
+        "node22": { "$ref": "#/$defs/hex64" },
+        "node24": { "$ref": "#/$defs/hex64" }
+      }
+    },
+    "releaseChecks6": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "source-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "toolchain-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "registry-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "runtime-evidence-split", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "artifact-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "license-policy", "result": "passed" } }] }
+      ],
+      "items": false
+    },
+    "internalChecks5": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "source-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "toolchain-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "runtime-evidence-split", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "artifact-policy", "result": "passed" } }] },
+        { "allOf": [{ "$ref": "#/$defs/passedCheck" }, { "const": { "id": "license-policy", "result": "passed" } }] }
+      ],
+      "items": false
+    },
+    "releaseGateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "registry", "signerWorkflow", "toolchain", "publicReleaseClaim",
+        "commercialUseClaim", "receiptSha256", "checks"
+      ],
+      "properties": {
+        "mode": { "const": "release" },
+        "registry": { "const": "version-unused" },
+        "signerWorkflow": { "$ref": "#/$defs/signerWorkflowIdentity" },
+        "toolchain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["node", "npm", "bun", "uv"],
+          "properties": {
+            "node": { "$ref": "#/$defs/semver" },
+            "npm": { "$ref": "#/$defs/semver" },
+            "bun": { "const": "1.3.11" },
+            "uv": { "const": "0.11.25" }
+          }
+        },
+        "publicReleaseClaim": { "const": "eligible" },
+        "commercialUseClaim": { "const": "not-approved" },
+        "receiptSha256": { "$ref": "#/$defs/receiptDigests6" },
+        "checks": { "$ref": "#/$defs/releaseChecks6" }
+      }
+    },
+    "internalGateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode", "registry", "signerWorkflow", "toolchain", "publicReleaseClaim",
+        "commercialUseClaim", "receiptSha256", "checks"
+      ],
+      "properties": {
+        "mode": { "const": "internal-evaluation" },
+        "registry": { "const": "not-claimed" },
+        "signerWorkflow": { "$ref": "#/$defs/signerWorkflowIdentity" },
+        "toolchain": { "$ref": "#/$defs/toolchain" },
+        "publicReleaseClaim": { "const": "not-claimed" },
+        "commercialUseClaim": { "const": "not-approved" },
+        "receiptSha256": { "$ref": "#/$defs/receiptDigests6" },
+        "checks": { "$ref": "#/$defs/internalChecks5" }
+      }
+    },
+    "sourceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "source-equivalence" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/sourceEvidence" }
+      }
+    },
+    "signatureReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "signature-verification" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/signatureEvidence" }
+      }
+    },
+    "packReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "pack-once" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/packEvidence" }
+      }
+    },
+    "artifactContractReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "artifact-contract" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/artifactContractEvidence" }
+      }
+    },
+    "node22Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "node-22" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/node22Evidence" }
+      }
+    },
+    "node24Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "node-24" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/node24Evidence" }
+      }
+    },
+    "releaseGateReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "release-gate" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/releaseGateEvidence" }
+      }
+    },
+    "internalGateReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "sourceCommit", "artifactSha256", "evidence"],
+      "properties": {
+        "id": { "const": "internal-evaluation-gate" },
+        "result": { "const": "passed" },
+        "sourceCommit": { "$ref": "#/$defs/hex40" },
+        "artifactSha256": { "$ref": "#/$defs/hex64" },
+        "evidence": { "$ref": "#/$defs/internalGateEvidence" }
+      }
+    },
+    "sevenReceipts": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "$ref": "#/$defs/sourceReceipt" },
+        { "$ref": "#/$defs/signatureReceipt" },
+        { "$ref": "#/$defs/packReceipt" },
+        { "$ref": "#/$defs/artifactContractReceipt" },
+        { "$ref": "#/$defs/node22Receipt" },
+        { "$ref": "#/$defs/node24Receipt" },
+        {
+          "oneOf": [
+            { "$ref": "#/$defs/releaseGateReceipt" },
+            { "$ref": "#/$defs/internalGateReceipt" }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "securityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyBeforeRequest"],
+      "properties": {
+        "policyBeforeRequest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "testFile", "testName", "result", "tokenLookups", "requestAttempts"
+          ],
+          "properties": {
+            "testFile": { "$ref": "#/$defs/repoPath" },
+            "testName": { "$ref": "#/$defs/nonEmptyString" },
+            "result": { "const": "passed" },
+            "tokenLookups": { "const": 0 },
+            "requestAttempts": { "const": 0 }
+          }
+        }
+      }
+    },
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "file", "sha256", "commercialUseApproved", "intendedUse"
+      ],
+      "properties": {
+        "id": { "const": "PolyForm-Noncommercial-1.0.0" },
+        "file": { "const": "LICENSE" },
+        "sha256": { "$ref": "#/$defs/hex64" },
+        "commercialUseApproved": { "const": false },
+        "intendedUse": { "const": "internal-evaluation-only" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "command", "result", "failureCode", "sourceCommit", "artifactSha256"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "command": {
+          "enum": ["source-verify", "preflight", "stage", "finalize", "validate", "import"]
+        },
+        "result": { "const": "failed" },
+        "failureCode": {
+          "enum": [
+            "INVALID_ARGUMENT", "UNSAFE_PATH", "OUTPUT_EXISTS", "SOURCE_NOT_ISOLATED",
+            "SOURCE_DIRTY", "SOURCE_COMMIT_MISMATCH", "TRUSTED_VERIFIER_NOT_ON_DEFAULT",
+            "SIGNATURE_RANGE_EMPTY", "SIGNATURE_INVALID", "SIGNER_NOT_APPROVED", "TAG_INVALID",
+            "TOOLCHAIN_MISMATCH", "REGISTRY_UNAVAILABLE", "BUILD_FAILED", "PACK_FAILED",
+            "PACK_COUNT_INVALID", "ARTIFACT_CHANGED", "RECEIPT_INVALID", "SCHEMA_INVALID",
+            "VALIDATION_FAILED", "TRANSPORT_UNTRUSTED", "ATTESTATION_INVALID",
+            "IMPORT_COLLISION", "INTERNAL_ERROR"
+          ]
+        },
+        "sourceCommit": {
+          "oneOf": [{ "$ref": "#/$defs/hex40" }, { "type": "null" }]
+        },
+        "artifactSha256": {
+          "oneOf": [{ "$ref": "#/$defs/hex64" }, { "type": "null" }]
+        }
+      }
+    }
+  }
+}
