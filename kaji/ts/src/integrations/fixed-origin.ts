@@ -301,6 +301,11 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
     const started = this.monotonicNow();
     const operation = init.method === "GET" ? "read" : "mutation";
     const span = startSpan(this.trace, "kaji.integration.request", {
+      "session.id": context.sessionId,
+      "turn.id": context.turnId,
+      "request.id": context.requestId,
+      "trace.id": context.traceId,
+      "tool.call_id": context.toolCallId,
       "integration.name": this.integration,
       "integration.operation": operation,
       "http.status_family": "none",

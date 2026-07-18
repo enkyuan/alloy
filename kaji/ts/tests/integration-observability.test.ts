@@ -95,6 +95,11 @@ describe("integration observability", () => {
       {
         name: "kaji.integration.request",
         attributes: {
+          "session.id": "session",
+          "turn.id": "turn",
+          "request.id": "request",
+          "trace.id": "trace",
+          "tool.call_id": "call",
           "integration.name": "github",
           "integration.operation": "read",
           "http.status_family": "2xx",
