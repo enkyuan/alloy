@@ -29,6 +29,93 @@ function snippet(document: string, name: string, language: string): string {
   return match?.[1] ?? "";
 }
 
+type GitHubExampleFailure = "build" | "provider-drain" | "unsettled";
+
+async function executeGitHubExampleFailure(
+  source: string,
+  failure: GitHubExampleFailure,
+): Promise<{
+  readonly error: unknown;
+  readonly githubCloseCalls: number;
+  readonly runtimeCloseCalls: number;
+  readonly closeEvents: readonly string[];
+}> {
+  let githubCloseCalls = 0;
+  let runtimeCloseCalls = 0;
+  const closeEvents: string[] = [];
+  const runtime = {
+    async turn() {
+      return { text: "ok" };
+    },
+    async drainTools() {
+      return failure === "unsettled" ? ["tool-call"] : [];
+    },
+    async drainProviders() {
+      if (failure === "provider-drain") throw new Error("provider drain failed");
+      return failure === "unsettled" ? ["session"] : [];
+    },
+    close() {
+      runtimeCloseCalls += 1;
+      closeEvents.push("runtime.close");
+    },
+  };
+  class TestAgentBuilder {
+    provider(): this {
+      return this;
+    }
+    integration(): this {
+      return this;
+    }
+    defaultContext(): this {
+      return this;
+    }
+    systemPrompt(): this {
+      return this;
+    }
+    build() {
+      if (failure === "build") throw new Error("runtime build failed");
+      return runtime;
+    }
+  }
+  class TestOpenAIProvider {
+    constructor(_options: unknown) {}
+  }
+  const executable = source
+    .replace(/^import .*;\n/gmu, "")
+    .replace("process.env.OPENAI_API_KEY!", "process.env.OPENAI_API_KEY");
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+    ...arguments_: string[]
+  ) => (...values: unknown[]) => Promise<void>;
+  const run = new AsyncFunction(
+    "AgentBuilder",
+    "OpenAIProvider",
+    "deadlineAfter",
+    "createGithubIntegration",
+    "process",
+    "console",
+    `"use strict";\n${executable}`,
+  );
+  let error: unknown;
+  try {
+    await run(
+      TestAgentBuilder,
+      TestOpenAIProvider,
+      () => Date.now() + 30_000,
+      () => ({
+        close() {
+          githubCloseCalls += 1;
+          closeEvents.push("github.close");
+        },
+      }),
+      { env: { OPENAI_API_KEY: "provider-key", GITHUB_TOKEN: "github-token" } },
+      { log() {} },
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  return { error, githubCloseCalls, runtimeCloseCalls, closeEvents };
+}
+
 describe("cross-SDK release matrix docs", () => {
   it("defines privileged journal recovery and disposal boundaries", () => {
     const readme = read("kaji/ts/README.md");
@@ -166,6 +253,66 @@ describe("cross-SDK release matrix docs", () => {
     expect(readme).toContain("`echo` is the only beta catalog entry");
     expect(readme).toContain("`github` is the only experimental");
   });
+
+  it("documents, typechecks, and failure-tests read-only packaged GitHub wiring", async () => {
+    const readme = read("kaji/ts/README.md");
+    const guide = read("apps/docs/content/integrations/github.mdx");
+    const index = read("apps/docs/content/integrations/index.mdx");
+    const readmeExample = snippet(readme, "docs-test:github-read-only", "ts");
+    const guideExample = snippet(guide, "docs-test:github-read-only", "ts");
+
+    expect(guideExample).toBe(readmeExample);
+    expect(readmeExample).toContain('from "@kaji/sdk/integrations/github"');
+    expect(readmeExample).toContain('toolExposure: "read-only"');
+    expect(readmeExample).toContain("await runtime.drainTools(10_000)");
+    expect(readmeExample).toContain("github.close()");
+    expect(index).toContain("6 copied / 15 packaged TS");
+    const registry = JSON.parse(read("kaji/ts/registry/index.json")) as {
+      integrations: Record<string, unknown>;
+    };
+    const documentedIntegrations = [...index.matchAll(/^\| `([^`]+)`\s+\|/gmu)].map(
+      ([, name]) => name,
+    );
+    expect(documentedIntegrations).toEqual(Object.keys(registry.integrations));
+    for (const absent of ["fs", "http", "sqlite", "web"]) {
+      expect(index).not.toContain(`| \`${absent}\``);
+    }
+    expect(guide).toContain('The compatibility default, `toolExposure: "all"`');
+    expect(guide).toContain("model-exposure boundary, not a token");
+    expect(guide).toContain("raw Actions logs, GraphQL, blame, GitHub Enterprise Server");
+
+    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-github-"));
+    try {
+      writeFileSync(resolve(workdir, "github.mts"), readmeExample);
+      writeFileSync(
+        resolve(workdir, "tsconfig.json"),
+        JSON.stringify({
+          extends: "../tsconfig.json",
+          compilerOptions: { noEmit: true },
+          include: ["*.mts"],
+        }),
+      );
+      execFileSync(
+        "node",
+        [resolve(packageRoot, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"],
+        { cwd: workdir, stdio: "inherit" },
+      );
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+
+    for (const failure of ["build", "provider-drain", "unsettled"] as const) {
+      const result = await executeGitHubExampleFailure(readmeExample, failure);
+      expect(result.error, failure).toBeInstanceOf(Error);
+      expect(result.githubCloseCalls, `${failure}: GitHub close`).toBe(1);
+      expect(result.runtimeCloseCalls, `${failure}: runtime close`).toBe(
+        failure === "build" ? 0 : 1,
+      );
+      expect(result.closeEvents, `${failure}: close order`).toEqual(
+        failure === "build" ? ["github.close"] : ["runtime.close", "github.close"],
+      );
+    }
+  }, 30_000);
 
   it("matches the machine-readable beta feature tiers exactly", () => {
     const tiers = JSON.parse(read("kaji/contracts/feature-tiers-v1.json")) as Record<

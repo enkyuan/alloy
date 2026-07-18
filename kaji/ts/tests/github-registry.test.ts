@@ -132,6 +132,49 @@ describe("GitHub registry bundle", () => {
     integration.close();
   });
 
+  it("exposes only canonical read tools when configured read-only", () => {
+    const integration = createPackageGithubIntegration({
+      tokenFor: async () => "token",
+      repositories: ["owner/repo"],
+      toolExposure: "read-only",
+    });
+    const tools = integration.tools().map(([spec]) => ({
+      name: spec.name,
+      risk: spec.risk,
+    }));
+    const registry = new ToolRegistry();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    integration.register(registry);
+
+    expect(tools).toEqual(PACKAGE_READ_TOOLS.map((name) => ({ name, risk: "read" })));
+    expect(registry.listSpecs().map(({ name, catalogName }) => ({ name, catalogName }))).toEqual(
+      PACKAGE_READ_TOOLS.map((name) => ({
+        name: `github_${name}`,
+        catalogName: `github.${name}`,
+      })),
+    );
+    expect(registry.listSpecs().map(({ name }) => name)).not.toContain("github_add_comment");
+    expect(registry.listSpecs().map(({ name }) => name)).not.toContain("github_create_issue");
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      '[kaji] 13 integration tool names sanitized for provider compatibility; first: "github.get_file" -> "github_get_file"',
+    );
+    warn.mockRestore();
+    integration.close();
+  });
+
+  it("rejects invalid tool exposure before constructing package state", () => {
+    expect(
+      () =>
+        new PackageGitHubIntegration({
+          tokenFor: async () => "token",
+          repositories: [],
+          toolExposure: null,
+        } as never),
+    ).toThrow('GitHub toolExposure must be "all" or "read-only"');
+  });
+
   it("keeps package ABI version domains distinct from npm and the shared manifest", () => {
     const packageManifest = JSON.parse(readFileSync(resolve(kajiRoot, "ts/package.json"), "utf8"));
     const copiedManifest = JSON.parse(
@@ -203,7 +246,10 @@ describe("GitHub registry bundle", () => {
         catalogName: `github.${name}`,
       })),
     );
-    expect(warn).toHaveBeenCalledTimes(PACKAGE_TOOLS.length);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      '[kaji] 15 integration tool names sanitized for provider compatibility; first: "github.add_comment" -> "github_add_comment"',
+    );
     warn.mockRestore();
   });
 

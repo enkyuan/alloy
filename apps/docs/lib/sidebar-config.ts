@@ -57,6 +57,10 @@ export const contents: Content[] = [
         icon: RiPlugLine,
         subpages: [
           {
+            title: "GitHub",
+            href: "/docs/integrations/github",
+          },
+          {
             title: "Recovery v1",
             href: "/docs/integrations/recovery-v1",
           },

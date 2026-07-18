@@ -127,6 +127,7 @@ describe("public declarations", () => {
         "inspectIntegration",
       ]);
       expect(declaration).toContain("constructor(options: CreateGitHubIntegrationOptions);");
+      expect(declaration).toContain('readonly toolExposure?: "read-only" | "all";');
       expect(declaration).not.toMatch(
         /GitHubClient|FixedOriginRequester|GitHubClientOptions|PackageGitHubRuntime|\bhttp\b|\brequester\b|\btransport\b/,
       );

@@ -80,6 +80,7 @@ const EXPECTED_PUBLIC_SCENARIOS = [
   "public-registration",
   "closed-lifecycle",
   "repository-policy",
+  "observability-sinks",
   "approval-rejection",
   "validation-failure",
   "execution-failure",
@@ -87,6 +88,12 @@ const EXPECTED_PUBLIC_SCENARIOS = [
   "mock-provider-loop",
   "alias-collision",
 ] as const;
+const GITHUB_TOKEN_RECOVERY = Object.freeze({
+  error_code: "INTEGRATION_AUTH_REQUIRED",
+  reason_code: "github_token_missing",
+  recovery_code: "CONFIGURE_GITHUB_TOKEN",
+  doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+});
 
 interface ApiFixture {
   readonly version: "1.0.0";
@@ -263,6 +270,19 @@ function assertToolEvents(
     providerAlias,
     catalogName,
     sameIdentityAtEveryStage: true,
+  };
+}
+
+function recoveryTuple(value: unknown): Record<string, unknown> {
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  return {
+    error_code: record.error_code,
+    reason_code: record.reason_code,
+    recovery_code: record.recovery_code,
+    doc_url: record.doc_url,
   };
 }
 
@@ -611,6 +631,7 @@ async function runProof(argv: string[]) {
       if (
         !isDeepStrictEqual(exports, [...EXPECTED_DECLARATION_EXPORTS].sort()) ||
         !declaration.includes("constructor(options: CreateGitHubIntegrationOptions);") ||
+        !declaration.includes('readonly toolExposure?: "read-only" | "all";') ||
         /GitHubClient|FixedOriginRequester|GitHubClientOptions|PackageGitHubRuntime|\bhttp\b|\brequester\b|\btransport\b/.test(
           declaration,
         )
@@ -663,6 +684,39 @@ async function runProof(argv: string[]) {
     ) {
       throw new Error("GitHub provider aliases lost catalog identity");
     }
+    const readOnlyOptions = {
+      tokenFor: async () => "unused-read-only-token",
+      repositories: [] as const,
+      toolExposure: "read-only" as const,
+    };
+    const readOnlyEsm = github.createGithubIntegration(readOnlyOptions);
+    const readOnlyCjs = requiredGithub.createGithubIntegration(readOnlyOptions);
+    for (const [label, integration, RuntimeRegistry] of [
+      ["ESM", readOnlyEsm, sdk.ToolRegistry],
+      ["CommonJS", readOnlyCjs, requiredSdk.ToolRegistry],
+    ] as const) {
+      const readOnlyTools = integration.tools().map(([spec]) => spec);
+      const readOnlyRegistry = new RuntimeRegistry();
+      integration.register(readOnlyRegistry);
+      const readOnlyRegistered = readOnlyRegistry.listSpecs();
+      if (
+        !isDeepStrictEqual(
+          readOnlyTools.map((spec) => spec.name),
+          EXPECTED_READ_TOOLS,
+        ) ||
+        readOnlyTools.some((spec) => spec.risk !== "read") ||
+        !isDeepStrictEqual(
+          readOnlyRegistered.map((spec) => spec.name),
+          EXPECTED_READ_TOOLS.map((name) => `github_${name}`),
+        ) ||
+        readOnlyRegistered.some(
+          (spec, index) => spec.catalogName !== `github.${EXPECTED_READ_TOOLS[index]}`,
+        )
+      ) {
+        throw new Error(`${label} GitHub read-only exposure changed`);
+      }
+      integration.close();
+    }
     publicScenarios.push("public-registration");
 
     proofStage = "closed-lifecycle";
@@ -708,6 +762,80 @@ async function runProof(argv: string[]) {
     }
     if (repositoryTokenCalls !== 0) throw new Error("repository policy read credentials");
     publicScenarios.push("repository-policy");
+
+    proofStage = "observability-sinks";
+    const measurements: unknown[] = [];
+    const spans: Array<{ name: string; attributes: Record<string, string> }> = [];
+    const observabilityIntegration = github.createGithubIntegration({
+      tokenFor: async () => "private-observability-token",
+      repositories: [fixture.repository],
+      metricsSink: {
+        record(measurement) {
+          measurements.push(measurement);
+        },
+      },
+      traceSink: {
+        startSpan(name, attributes = {}) {
+          const span = { name, attributes: { ...attributes } };
+          spans.push(span);
+          return {
+            setAttribute(key, value) {
+              span.attributes[key] = value;
+            },
+            recordError() {},
+            end() {},
+          };
+        },
+      },
+    });
+    const observedSearch = observabilityIntegration
+      .tools()
+      .find(([spec]) => spec.name === "search_code")?.[1];
+    if (observedSearch === undefined) throw new Error("GitHub search_code handler is missing");
+    let abortReads = 0;
+    const signal = {
+      get aborted() {
+        abortReads += 1;
+        return abortReads >= 3;
+      },
+      reason: new DOMException("cancelled", "AbortError"),
+      addEventListener() {},
+      removeEventListener() {},
+    } as unknown as AbortSignal;
+    let observedCancellation = false;
+    try {
+      await observedSearch(
+        { repository: fixture.repository, query: "private-observability-query" },
+        { ...context(), principalId: "private-observability-principal", signal },
+      );
+    } catch (error) {
+      observedCancellation = error instanceof DOMException && error.name === "AbortError";
+    } finally {
+      observabilityIntegration.close();
+    }
+    const measurement = measurements[0] as
+      | { name?: unknown; labels?: Record<string, unknown> }
+      | undefined;
+    const observabilitySnapshot = JSON.stringify({ measurements, spans });
+    if (
+      !observedCancellation ||
+      measurements.length !== 1 ||
+      measurement?.name !== "kaji.integration.request_ms" ||
+      !isDeepStrictEqual(measurement.labels, {
+        integration: "github",
+        operation: "read",
+        outcome: "cancelled",
+      }) ||
+      spans.length !== 1 ||
+      spans[0]?.name !== "kaji.integration.request" ||
+      spans[0]?.attributes["integration.name"] !== "github" ||
+      spans[0]?.attributes["integration.operation"] !== "read" ||
+      observabilitySnapshot.includes("private-observability") ||
+      observabilitySnapshot.includes(fixture.repository)
+    ) {
+      throw new Error("installed GitHub observability plumbing is incomplete or unsafe");
+    }
+    publicScenarios.push("observability-sinks");
 
     proofStage = "approval-rejection";
     let approvalTokenCalls = 0;
@@ -798,6 +926,15 @@ async function runProof(argv: string[]) {
         sdk.EventType.TOOL_CALL_FAILED,
       ],
     );
+    const failedEvent = execution.events.find(
+      (event) => event.type === sdk.EventType.TOOL_CALL_FAILED,
+    );
+    if (
+      !isDeepStrictEqual(recoveryTuple(execution.results[0]), GITHUB_TOKEN_RECOVERY) ||
+      !isDeepStrictEqual(recoveryTuple(failedEvent), GITHUB_TOKEN_RECOVERY)
+    ) {
+      throw new Error("installed GitHub failure lost its certified recovery tuple");
+    }
     publicScenarios.push("execution-failure");
 
     proofStage = "completed-event";
@@ -900,7 +1037,7 @@ async function runProof(argv: string[]) {
       throw new Error("installed GitHub public proof assertions failed");
     }
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       evidenceClass: "offline_exact_artifact_smoke",
       integration: "github",
       runtime: "typescript",
@@ -953,6 +1090,8 @@ async function runProof(argv: string[]) {
       repositoryDeniedBeforeCredentialAccess: true,
       githubCatalogEventsVerified: ["requested", "started", "failed"],
       genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+      githubFailureRecovery: GITHUB_TOKEN_RECOVERY,
+      githubObservabilitySinksVerified: true,
       lifecycle: {
         githubFailure: githubFailureLifecycle,
         syntheticCompletion: syntheticCompletionLifecycle,

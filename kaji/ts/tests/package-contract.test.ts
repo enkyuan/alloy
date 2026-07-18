@@ -92,6 +92,7 @@ const GITHUB_PUBLIC_SCENARIOS = [
   "public-registration",
   "closed-lifecycle",
   "repository-policy",
+  "observability-sinks",
   "approval-rejection",
   "validation-failure",
   "execution-failure",
@@ -110,7 +111,7 @@ const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
 ] as const;
 
 const GITHUB_PACKAGE_PROOF = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   evidenceClass: "offline_exact_artifact_smoke",
   integration: "github",
   runtime: "typescript",
@@ -185,6 +186,13 @@ const GITHUB_PACKAGE_PROOF = {
   repositoryDeniedBeforeCredentialAccess: true,
   githubCatalogEventsVerified: ["requested", "started", "failed"],
   genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+  githubFailureRecovery: {
+    error_code: "INTEGRATION_AUTH_REQUIRED",
+    reason_code: "github_token_missing",
+    recovery_code: "CONFIGURE_GITHUB_TOKEN",
+    doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+  },
+  githubObservabilitySinksVerified: true,
   lifecycle: {
     githubFailure: {
       stages: ["requested", "started", "failed"],
@@ -700,14 +708,16 @@ describe("npm contract artifact", () => {
       'testName: "rejects approval for github_create_issue before token or HTTP"',
       'providerAlias: "github_get_file"',
       'providerAlias: "synthetic_complete"',
-      "schemaVersion: 4",
+      "schemaVersion: 5",
+      "githubFailureRecovery:",
+      "githubObservabilitySinksVerified: true",
     ]) {
       expect(source).toContain(required);
     }
     expect(validator).toContain("JSON.stringify(document) !== JSON.stringify(expected)");
-    expect(validator).toContain("schemaVersion: 4");
-    expect(validator).not.toContain("schemaVersion: 3");
-    for (const downgraded of [1, 3]) {
+    expect(validator).toContain("schemaVersion: 5");
+    expect(validator).not.toContain("schemaVersion: 4");
+    for (const downgraded of [1, 4]) {
       expect({ ...GITHUB_PACKAGE_PROOF, schemaVersion: downgraded }).not.toEqual(
         GITHUB_PACKAGE_PROOF,
       );
@@ -965,6 +975,7 @@ exit 7
       'exactToolSpecs(inspected, packageAbi, "ESM")',
       'exactToolSpecs(requiredInspected, packageAbi, "CommonJS")',
       "declarationExportNames(declaration)",
+      'readonly toolExposure?: "read-only" | "all";',
       "readTypeScriptDeclarationChecks(",
       'proofStage = "typescript-declaration-checks"',
       "typescriptDeclarationChecks,",
@@ -980,9 +991,17 @@ exit 7
       "repositoryDeniedBeforeCredentialAccess: true",
       'githubCatalogEventsVerified: ["requested", "started", "failed"]',
       'genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"]',
+      "githubFailureRecovery: GITHUB_TOKEN_RECOVERY",
+      "githubObservabilitySinksVerified: true",
+      'proofStage = "observability-sinks"',
+      "metricsSink:",
+      "traceSink:",
+      "recoveryTuple(execution.results[0])",
+      "recoveryTuple(failedEvent)",
       "aliasCollisionRejected: true",
       'Reflect.set(Socket.prototype, "connect"',
       "createGithubIntegration",
+      'toolExposure: "read-only"',
       'error.name !== "IntegrationPolicyError"',
       "new testing.MockProvider",
       "class SyntheticIntegration extends sdk.Integration",
@@ -1127,7 +1146,11 @@ import {
   inspectIntegration,
   type CreateGitHubIntegrationOptions,
 } from "@kaji/sdk/integrations/github";
-const options: CreateGitHubIntegrationOptions = { tokenFor: async () => "proof", repositories: [] };
+const options: CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "proof",
+  repositories: [],
+  toolExposure: "read-only",
+};
 const direct: GitHubIntegration = new GitHubIntegration(options);
 const created: GitHubIntegration = createGithubIntegration(options);
 const inspected: GitHubIntegration = inspectIntegration();
@@ -1139,7 +1162,11 @@ void roots;
         join(bootstrap, "github-types.cts"),
         `import sdk = require("@kaji/sdk");
 import github = require("@kaji/sdk/integrations/github");
-const options: github.CreateGitHubIntegrationOptions = { tokenFor: async () => "proof", repositories: [] };
+const options: github.CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "proof",
+  repositories: [],
+  toolExposure: "read-only",
+};
 const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
 const created: github.GitHubIntegration = github.createGithubIntegration(options);
 const inspected: github.GitHubIntegration = github.inspectIntegration();

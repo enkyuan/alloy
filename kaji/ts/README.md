@@ -203,6 +203,70 @@ Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
 
+### GitHub integration
+
+The experimental TypeScript package subpath exposes a fixed-origin GitHub
+integration without copying its source into your application. For an
+investigation agent, opt into read-only exposure so the two mutation tools are
+not registered or sent to the model.
+
+<!-- docs-test:github-read-only:start -->
+```ts
+import { AgentBuilder, OpenAIProvider, deadlineAfter } from "@kaji/sdk";
+import { createGithubIntegration } from "@kaji/sdk/integrations/github";
+
+const principalId = "github-investigator";
+const github = createGithubIntegration({
+  repositories: ["owner/repo"],
+  toolExposure: "read-only",
+  tokenFor: async (context) => {
+    if (context.signal.aborted) throw context.signal.reason;
+    if (context.principalId !== principalId) throw new Error("GitHub credential unavailable");
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) throw new Error("GITHUB_TOKEN is required");
+    return token;
+  },
+});
+
+try {
+  const runtime = new AgentBuilder()
+    .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
+    .integration(github)
+    .defaultContext({ principalId })
+    .systemPrompt("Use GitHub evidence from owner/repo and cite immutable refs.")
+    .build();
+
+  try {
+    const result = await runtime.turn("Inspect the latest failed checks.", {
+      context: { deadlineAtMs: deadlineAfter(30_000) },
+    });
+    console.log(result.text);
+  } finally {
+    try {
+      const unsettledTools = await runtime.drainTools(10_000);
+      const unsettledProviders = await runtime.drainProviders(10_000);
+      if (unsettledTools.length > 0 || unsettledProviders.length > 0) {
+        throw new Error("Kaji shutdown did not settle");
+      }
+    } finally {
+      runtime.close();
+    }
+  }
+} finally {
+  github.close();
+}
+```
+<!-- docs-test:github-read-only:end -->
+
+`toolExposure` controls which tools reach the model; it does not reduce token
+permissions. Keep the repository allowlist narrow and use a fine-grained token
+with only the read permissions needed by the selected tools. The callback is
+lazy, receives the tool execution context, and returns the raw token; Kaji
+validates it and adds the `Bearer` header. `AgentBuilder` does not own the
+integration, so close it only after active tool work has settled. See the
+[GitHub integration guide](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/integrations/github.mdx)
+for the 15-tool catalog, mutation policy, limits, and unsupported surfaces.
+
 `deadlineAtMs` is an absolute Unix epoch value; use `deadlineAfter()` when the
 caller has a duration. An earlier caller deadline can tighten, but never extend,
 the configured 120-second whole-turn default covering queue wait, provider open

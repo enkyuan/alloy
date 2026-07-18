@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { MetricMeasurement, MetricsSink, ToolExecutionContext, TraceSink } from "@kaji/sdk";
 
-import { createGithubIntegration } from "../registry/github/index";
+import { createGithubIntegration } from "@/integrations/github";
 
-describe("GitHub observability wiring", () => {
-  it("emits through caller sinks from the production factory without network I/O", async () => {
+describe("packaged GitHub observability wiring", () => {
+  it("emits through caller sinks from the public package factory without network I/O", async () => {
     const measurements: MetricMeasurement[] = [];
     const spans: Array<{ name: string; attributes: Record<string, string> }> = [];
     const metricsSink: MetricsSink = {

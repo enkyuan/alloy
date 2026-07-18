@@ -41,12 +41,18 @@ describe("Integration", () => {
 
   it("multiple tools all prefixed", () => {
     const registry = new ToolRegistry();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     new MultiToolIntegration().register(registry);
     const names = registry
       .listSpecs({ enabledOnly: false })
       .map((s) => s.name)
       .sort();
     expect(names).toEqual(["svc_alpha", "svc_beta"]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      '[kaji] 2 integration tool names sanitized for provider compatibility; first: "svc.alpha" -> "svc_alpha"',
+    );
+    warn.mockRestore();
   });
 
   it("concrete implementation with namespace and tools works correctly", () => {

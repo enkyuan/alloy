@@ -91,13 +91,20 @@ export abstract class Integration {
 
   /** Register all tools into the given registry, namespace-prefixed. */
   register(registry: ToolRegistry): void {
+    let sanitizedCount = 0;
+    let firstSanitized: readonly [original: string, sanitized: string] | undefined;
     for (const [spec, handler] of this.tools()) {
       const catalogName = `${this.namespace}.${spec.name}`;
       registry.register(
         setToolArgumentValidator(
           {
             ...spec,
-            name: providerSafeToolName(catalogName, { onMutate: warnOnSanitize }),
+            name: providerSafeToolName(catalogName, {
+              onMutate(original, sanitized) {
+                sanitizedCount += 1;
+                firstSanitized ??= [original, sanitized];
+              },
+            }),
             catalogName,
           },
           spec[TOOL_ARGUMENT_VALIDATOR],
@@ -105,11 +112,15 @@ export abstract class Integration {
         handler,
       );
     }
+    if (firstSanitized !== undefined) {
+      warnOnSanitize(sanitizedCount, firstSanitized[0], firstSanitized[1]);
+    }
   }
 }
 
-function warnOnSanitize(original: string, sanitized: string): void {
+function warnOnSanitize(count: number, original: string, sanitized: string): void {
+  const suffix = count === 1 ? "name" : "names";
   console.warn(
-    `[kaji] tool name ${JSON.stringify(original)} sanitized to ${JSON.stringify(sanitized)} for provider compatibility`,
+    `[kaji] ${count} integration tool ${suffix} sanitized for provider compatibility; first: ${JSON.stringify(original)} -> ${JSON.stringify(sanitized)}`,
   );
 }

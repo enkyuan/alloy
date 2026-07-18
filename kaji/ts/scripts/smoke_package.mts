@@ -88,7 +88,7 @@ interface SmokeArguments {
 }
 
 interface GitHubPackageProof {
-  readonly schemaVersion: 4;
+  readonly schemaVersion: 5;
   readonly evidenceClass: "offline_exact_artifact_smoke";
   readonly integration: "github";
   readonly runtime: "typescript";
@@ -155,6 +155,13 @@ interface GitHubPackageProof {
   readonly repositoryDeniedBeforeCredentialAccess: true;
   readonly githubCatalogEventsVerified: readonly ["requested", "started", "failed"];
   readonly genericSyntheticCatalogEventsVerified: readonly ["requested", "started", "completed"];
+  readonly githubFailureRecovery: {
+    readonly error_code: "INTEGRATION_AUTH_REQUIRED";
+    readonly reason_code: "github_token_missing";
+    readonly recovery_code: "CONFIGURE_GITHUB_TOKEN";
+    readonly doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token";
+  };
+  readonly githubObservabilitySinksVerified: true;
   readonly lifecycle: {
     readonly githubFailure: LifecycleProof;
     readonly syntheticCompletion: LifecycleProof;
@@ -204,6 +211,7 @@ const GITHUB_PUBLIC_SCENARIOS = [
   "public-registration",
   "closed-lifecycle",
   "repository-policy",
+  "observability-sinks",
   "approval-rejection",
   "validation-failure",
   "execution-failure",
@@ -315,6 +323,7 @@ import {
 const options: CreateGitHubIntegrationOptions = {
   tokenFor: async () => "installed-type-proof",
   repositories: [],
+  toolExposure: "read-only",
 };
 const direct: GitHubIntegration = new GitHubIntegration(options);
 const created: GitHubIntegration = createGithubIntegration(options);
@@ -331,6 +340,7 @@ import github = require("@kaji/sdk/integrations/github");
 const options: github.CreateGitHubIntegrationOptions = {
   tokenFor: async () => "installed-type-proof",
   repositories: [],
+  toolExposure: "read-only",
 };
 const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
 const created: github.GitHubIntegration = github.createGithubIntegration(options);
@@ -969,7 +979,7 @@ function assertGithubPackageProof(
     throw new Error("installed package contains private GitHub composition source");
   }
   const expected: GitHubPackageProof = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     evidenceClass: "offline_exact_artifact_smoke",
     integration: "github",
     runtime: "typescript",
@@ -1032,6 +1042,13 @@ function assertGithubPackageProof(
     repositoryDeniedBeforeCredentialAccess: true,
     githubCatalogEventsVerified: ["requested", "started", "failed"],
     genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+    githubFailureRecovery: {
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+      reason_code: "github_token_missing",
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+      doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+    },
+    githubObservabilitySinksVerified: true,
     lifecycle: {
       githubFailure: {
         stages: ["requested", "started", "failed"],
@@ -1576,7 +1593,7 @@ async function runArtifactContractHandoff(
   }
   const proof = npm.proof;
   if (
-    proof.schemaVersion !== 4 ||
+    proof.schemaVersion !== 5 ||
     proof.policyBeforeRequest.testFile !== POLICY_TEST_FILE ||
     proof.policyBeforeRequest.testName !== POLICY_TEST_NAME ||
     proof.policyBeforeRequest.tokenLookups !== 0 ||
