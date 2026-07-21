@@ -312,7 +312,12 @@ const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const PACKAGE_VERSION = "0.2.0-beta.1";
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
-const GITHUB_ESM_TYPES_SOURCE = `import { Integration } from "@kaji/sdk";
+const GITHUB_ESM_TYPES_SOURCE = `import {
+  Integration,
+  type CliApprovalInput,
+  type CliApprovalOptions,
+  type CliApprovalOutput,
+} from "@kaji/sdk";
 import {
   GitHubIntegration,
   createGithubIntegration,
@@ -329,7 +334,37 @@ const direct: GitHubIntegration = new GitHubIntegration(options);
 const created: GitHubIntegration = createGithubIntegration(options);
 const inspected: GitHubIntegration = inspectIntegration();
 const roots: Integration[] = [direct, created, inspected];
+const approvalInput: CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
 void roots;
+void approvalOptions;
 direct.close();
 created.close();
 inspected.close();
@@ -346,7 +381,37 @@ const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
 const created: github.GitHubIntegration = github.createGithubIntegration(options);
 const inspected: github.GitHubIntegration = github.inspectIntegration();
 const roots: sdk.Integration[] = [direct, created, inspected];
+const approvalInput: sdk.CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: sdk.CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: sdk.CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
 void roots;
+void approvalOptions;
 direct.close();
 created.close();
 inspected.close();
@@ -358,7 +423,7 @@ const GITHUB_TYPES_COMPILER_OPTIONS = {
   skipLibCheck: false,
   strict: true,
   target: "ES2022",
-  types: ["node"],
+  types: [],
 } as const;
 const GITHUB_TYPE_CONSUMERS = [
   {
@@ -2030,6 +2095,19 @@ function assertCliReplayOutput(output: string): void {
 function assertRootDeclarationsVendorNeutral(installedPackageRoot: string): void {
   for (const declarationFile of ["index.d.ts", "index.d.cts"]) {
     const declaration = readFileSync(join(installedPackageRoot, "dist", declarationFile), "utf8");
+    const approvalOptionsBlock = /interface CliApprovalOptions \{[\s\S]*?^\}/mu.exec(
+      declaration,
+    )?.[0];
+    if (approvalOptionsBlock === undefined) {
+      throw new Error(`root ${declarationFile} is missing CliApprovalOptions`);
+    }
+    for (const ambientStream of ["NodeJS.ReadableStream", "NodeJS.WritableStream"]) {
+      if (approvalOptionsBlock.includes(ambientStream)) {
+        throw new Error(
+          `root ${declarationFile} CliApprovalOptions references ambient ${ambientStream}`,
+        );
+      }
+    }
     if (
       /from ["']openai["']/.test(declaration) ||
       /from ["']@anthropic-ai\/sdk["']/.test(declaration) ||

@@ -101,7 +101,12 @@ export {
   type ToolExecutionOutcome,
   type ToolValidationCode,
 } from "@/tools/validation";
-export { cliApprovalHandler, type CliApprovalOptions } from "@/tools/approval";
+export {
+  cliApprovalHandler,
+  type CliApprovalInput,
+  type CliApprovalOptions,
+  type CliApprovalOutput,
+} from "@/tools/approval";
 export {
   DEFAULT_TOOL_EXECUTION_LIMITS,
   ToolExecutionController,

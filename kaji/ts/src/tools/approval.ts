@@ -13,11 +13,25 @@
 import { createInterface } from "node:readline";
 import type { TypedApprovalHandler } from "@/runtime/approval/types";
 
+export interface CliApprovalInput {
+  readonly readableEnded?: boolean;
+  readonly destroyed?: boolean;
+  on(event: string | symbol, listener: (...args: unknown[]) => void): this;
+  once(event: string | symbol, listener: (...args: unknown[]) => void): this;
+  removeListener(event: string | symbol, listener: (...args: unknown[]) => void): this;
+  pause(): this;
+  resume(): this;
+}
+
+export interface CliApprovalOutput {
+  write(chunk: string): boolean;
+}
+
 export interface CliApprovalOptions {
-  /** Defaults to process.stdin. Override in tests with a Readable stream. */
-  input?: NodeJS.ReadableStream;
-  /** Defaults to process.stdout. Override in tests with a Writable stream. */
-  output?: NodeJS.WritableStream;
+  /** Defaults to process.stdin. Override in tests with a readable input. */
+  input?: CliApprovalInput;
+  /** Defaults to process.stdout. Override in tests with a writable output. */
+  output?: CliApprovalOutput;
   /**
    * Optional label printed in the prompt header to disambiguate concurrent
    * agents (e.g. `"agent-a"`, `"session-c1"`). Defaults to empty.
@@ -30,7 +44,7 @@ export interface CliApprovalOptions {
  * the previous one's release. WeakMap so streams are garbage collected when
  * the host drops them.
  */
-const streamLocks = new WeakMap<NodeJS.ReadableStream, Promise<void>>();
+const streamLocks = new WeakMap<CliApprovalInput, Promise<void>>();
 
 export function cliApprovalHandler(opts: CliApprovalOptions = {}): TypedApprovalHandler {
   return {
@@ -40,6 +54,8 @@ export function cliApprovalHandler(opts: CliApprovalOptions = {}): TypedApproval
       const risk = context.risk;
       const input = opts.input ?? process.stdin;
       const output = opts.output ?? process.stdout;
+      const readlineInput = input as unknown as NodeJS.ReadableStream;
+      const readlineOutput = output as unknown as NodeJS.WritableStream;
       const labelSuffix = opts.label ? ` [${opts.label}]` : "";
 
       // Reserve our slot in the per-stream queue synchronously — read+write of
@@ -72,7 +88,7 @@ export function cliApprovalHandler(opts: CliApprovalOptions = {}): TypedApproval
         return { granted: false, code: "rejected", reason: "Approval input ended" };
       }
 
-      const rl = createInterface({ input, output });
+      const rl = createInterface({ input: readlineInput, output: readlineOutput });
       try {
         output.write(`\nApproval requested${labelSuffix}: ${name}\n`);
         output.write(`  risk: ${risk}\n`);

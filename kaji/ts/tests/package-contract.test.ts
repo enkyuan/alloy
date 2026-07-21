@@ -643,6 +643,18 @@ describe("npm contract artifact", () => {
 
   it("compiles installed GitHub declarations through every NodeNext conditional branch", () => {
     const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
+    const esmFixture = source.slice(
+      source.indexOf("const GITHUB_ESM_TYPES_SOURCE = `"),
+      source.indexOf("const GITHUB_CJS_TYPES_SOURCE = `"),
+    );
+    const cjsFixture = source.slice(
+      source.indexOf("const GITHUB_CJS_TYPES_SOURCE = `"),
+      source.indexOf("const GITHUB_TYPES_COMPILER_OPTIONS ="),
+    );
+    const declarationGuard = source.slice(
+      source.indexOf("function assertRootDeclarationsVendorNeutral("),
+      source.indexOf("async function install("),
+    );
 
     for (const required of [
       'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
@@ -651,14 +663,16 @@ describe("npm contract artifact", () => {
       'source: "github-types.cts"',
       'config: "tsconfig.github-types-esm.json"',
       'config: "tsconfig.github-types-cjs.json"',
-      'import { Integration } from "@kaji/sdk";',
       'import sdk = require("@kaji/sdk");',
       'import github = require("@kaji/sdk/integrations/github");',
       "const roots: Integration[] = [direct, created, inspected]",
       "const roots: sdk.Integration[] = [direct, created, inspected]",
       'module: "NodeNext"',
       'moduleResolution: "NodeNext"',
+      "strict: true",
+      "types: []",
       "skipLibCheck: false",
+      "noEmit: true",
       "files: [consumer.source]",
       'alias: "typescript57"',
       'line: "5.7"',
@@ -678,6 +692,31 @@ describe("npm contract artifact", () => {
     ]) {
       expect(source).toContain(required);
     }
+    for (const required of [
+      "type CliApprovalInput,",
+      "type CliApprovalOutput,",
+      "type CliApprovalOptions,",
+      "const approvalInput: CliApprovalInput = {",
+      "const approvalOutput: CliApprovalOutput = {",
+      "const approvalOptions: CliApprovalOptions = {",
+    ]) {
+      expect(esmFixture).toContain(required);
+    }
+    for (const required of [
+      'import sdk = require("@kaji/sdk");',
+      "const approvalInput: sdk.CliApprovalInput = {",
+      "const approvalOutput: sdk.CliApprovalOutput = {",
+      "const approvalOptions: sdk.CliApprovalOptions = {",
+    ]) {
+      expect(cjsFixture).toContain(required);
+    }
+    for (const fixture of [esmFixture, cjsFixture]) {
+      expect(fixture).not.toContain("node:stream");
+      expect(fixture).not.toContain("@types/node");
+    }
+    expect(declarationGuard).toContain("CliApprovalOptions");
+    expect(declarationGuard).toContain("NodeJS.ReadableStream");
+    expect(declarationGuard).toContain("NodeJS.WritableStream");
     expect(source).not.toContain(
       'writeFileSync(join(generated, "github-types.ts"), GITHUB_TYPES_SOURCE)',
     );
@@ -1142,7 +1181,12 @@ exit 7
       );
       writeFileSync(
         join(bootstrap, "github-types.mts"),
-        `import { Integration } from "@kaji/sdk";
+        `import {
+  Integration,
+  type CliApprovalInput,
+  type CliApprovalOptions,
+  type CliApprovalOutput,
+} from "@kaji/sdk";
 import {
   GitHubIntegration,
   createGithubIntegration,
@@ -1158,7 +1202,37 @@ const direct: GitHubIntegration = new GitHubIntegration(options);
 const created: GitHubIntegration = createGithubIntegration(options);
 const inspected: GitHubIntegration = inspectIntegration();
 const roots: Integration[] = [direct, created, inspected];
+const approvalInput: CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
 void roots;
+void approvalOptions;
 `,
       );
       writeFileSync(
@@ -1174,7 +1248,37 @@ const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
 const created: github.GitHubIntegration = github.createGithubIntegration(options);
 const inspected: github.GitHubIntegration = github.inspectIntegration();
 const roots: sdk.Integration[] = [direct, created, inspected];
+const approvalInput: sdk.CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: sdk.CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: sdk.CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
 void roots;
+void approvalOptions;
 `,
       );
       const compilerOptions = {
@@ -1184,7 +1288,7 @@ void roots;
         skipLibCheck: false,
         strict: true,
         target: "ES2022",
-        types: ["node"],
+        types: [],
       };
       for (const [config, source] of [
         ["tsconfig.github-types-esm.json", "github-types.mts"],
@@ -1628,6 +1732,12 @@ console.log(JSON.stringify({
       }
       for (const declarationPath of ["dist/index.d.ts", "dist/index.d.cts"]) {
         const declaration = runText("tar", ["-xOf", tarball, `package/${declarationPath}`]);
+        const approvalOptions = /interface CliApprovalOptions \{[\s\S]*?^\}/mu.exec(
+          declaration,
+        )?.[0];
+        expect(approvalOptions).toBeDefined();
+        expect(approvalOptions).not.toContain("NodeJS.ReadableStream");
+        expect(approvalOptions).not.toContain("NodeJS.WritableStream");
         expect(declaration).not.toMatch(/from ["']openai["']/);
         expect(declaration).not.toMatch(/from ["']@anthropic-ai\/sdk["']/);
         expect(declaration).not.toContain("Promise<OpenAI>");

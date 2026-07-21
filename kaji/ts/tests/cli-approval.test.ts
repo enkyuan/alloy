@@ -9,7 +9,40 @@ import { InMemoryEventStore } from "@/events/store";
 import { systemTimerScheduler } from "@/internal/uuid";
 import type { ApprovalRequestContext, TypedApprovalHandler } from "@/runtime/approval/types";
 import { cliApprovalHandler } from "@/tools/approval";
+import type { CliApprovalInput, CliApprovalOutput } from "@/tools/approval";
 import type { ToolRisk } from "@/tools/policy";
+
+const readableContract: CliApprovalInput = Readable.from(["y\n"]);
+const writableContract: CliApprovalOutput = new Writable({
+  write(_chunk, _encoding, callback) {
+    callback();
+  },
+});
+const packageOwnedInputContract: CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const packageOwnedOutputContract: CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+void [readableContract, writableContract, packageOwnedInputContract, packageOwnedOutputContract];
 
 function streamFromString(s: string): NodeJS.ReadableStream {
   return Readable.from([s]);
