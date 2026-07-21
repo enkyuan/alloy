@@ -813,23 +813,35 @@ async function runProof(argv: string[]) {
     } finally {
       observabilityIntegration.close();
     }
-    const measurement = measurements[0] as
+    const authMeasurement = measurements[0] as
+      | { name?: unknown; labels?: Record<string, unknown> }
+      | undefined;
+    const requestMeasurement = measurements[1] as
       | { name?: unknown; labels?: Record<string, unknown> }
       | undefined;
     const observabilitySnapshot = JSON.stringify({ measurements, spans });
     if (
       !observedCancellation ||
-      measurements.length !== 1 ||
-      measurement?.name !== "kaji.integration.request_ms" ||
-      !isDeepStrictEqual(measurement.labels, {
+      measurements.length !== 2 ||
+      authMeasurement?.name !== "kaji.integration.auth_ms" ||
+      !isDeepStrictEqual(authMeasurement.labels, {
+        integration: "github",
+        operation: "token",
+        outcome: "success",
+      }) ||
+      requestMeasurement?.name !== "kaji.integration.request_ms" ||
+      !isDeepStrictEqual(requestMeasurement.labels, {
         integration: "github",
         operation: "read",
         outcome: "cancelled",
       }) ||
-      spans.length !== 1 ||
-      spans[0]?.name !== "kaji.integration.request" ||
+      spans.length !== 2 ||
+      spans[0]?.name !== "kaji.integration.auth" ||
       spans[0]?.attributes["integration.name"] !== "github" ||
-      spans[0]?.attributes["integration.operation"] !== "read" ||
+      spans[0]?.attributes["integration.operation"] !== "token" ||
+      spans[1]?.name !== "kaji.integration.request" ||
+      spans[1]?.attributes["integration.name"] !== "github" ||
+      spans[1]?.attributes["integration.operation"] !== "read" ||
       observabilitySnapshot.includes("private-observability") ||
       observabilitySnapshot.includes(fixture.repository)
     ) {
