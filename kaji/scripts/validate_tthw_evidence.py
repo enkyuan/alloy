@@ -19,7 +19,7 @@ SCHEMA = ROOT / "kaji" / "contracts" / "release" / "tthw-evidence-v1.schema.json
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.1.tgz": ("typescript", "0.2.0-beta.1"),
+    "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 STEP_ORDER = (
     "artifact-install",

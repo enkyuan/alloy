@@ -281,7 +281,10 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(lock.packages["node_modules/@kaji/sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.1.tgz");
+    expect(manifest.dependencies["@kaji/sdk"]).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
+    expect(lock.packages["node_modules/@kaji/sdk"].version).toBe("0.2.0-beta.2");
+    expect(lock.packages["node_modules/@kaji/sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
+    expect(manifest.dependencies["@kaji/sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.1.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
     >) {
@@ -1671,7 +1674,9 @@ console.log(JSON.stringify({
 
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
-      expect(manifest.version).toBe("0.2.0-beta.1");
+      expect(manifest.version).toBe("0.2.0-beta.2");
+      expect(packed[0]!.filename).toBe(`kaji-sdk-${manifest.version}.tgz`);
+      expect(packed[0]!.filename).not.toBe("kaji-sdk-0.2.0-beta.1.tgz");
       expect(manifest.license).toBe("SEE LICENSE IN LICENSE");
       expect(manifest.files).toContain("LICENSE");
       expect(manifest.exports["./cli"]).toEqual({

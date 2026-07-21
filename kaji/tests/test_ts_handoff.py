@@ -675,7 +675,7 @@ def _preflight_fixture(
             "origin": handoff.REGISTRY_ORIGIN,
             "requestPath": handoff.REGISTRY_PATH,
             "package": "@kaji/sdk",
-            "version": "0.2.0-beta.1",
+            "version": "0.2.0-beta.2",
             "httpStatus": 200,
             "result": "version-unused",
             "packumentSha256": DIGEST,
@@ -692,7 +692,7 @@ def _preflight_fixture(
         "sourceCommit": HEAD,
         "treeSha": TREE,
         "trustedVerifierCommit": VERIFIER,
-        "package": {"name": "@kaji/sdk", "version": "0.2.0-beta.1"},
+        "package": {"name": "@kaji/sdk", "version": "0.2.0-beta.2"},
         "rawInputs": {
             "source": {
                 "filename": handoff.RAW_SOURCE_NAME,
@@ -734,7 +734,7 @@ def _patch_source_boundary(
         "_package_metadata",
         lambda _root: {
             "name": "@kaji/sdk",
-            "version": "0.2.0-beta.1",
+            "version": "0.2.0-beta.2",
             "scripts": {"prebuild": "bun run validate:registry"},
         },
     )
@@ -775,7 +775,7 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
     monkeypatch.setattr(
         handoff,
         "_package_metadata",
-        lambda _root: {"name": "@kaji/sdk", "version": "0.2.0-beta.1"},
+        lambda _root: {"name": "@kaji/sdk", "version": "0.2.0-beta.2"},
     )
     monkeypatch.setattr(
         handoff,
@@ -836,7 +836,7 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
         (
             200,
             "https://registry.npmjs.org/@kaji%2Fsdk",
-            {"name": "@kaji/sdk", "versions": {"0.2.0-beta.1": {}}},
+            {"name": "@kaji/sdk", "versions": {"0.2.0-beta.2": {}}},
             False,
         ),
     ],
@@ -857,13 +857,13 @@ def test_release_registry_proof_is_one_bounded_closed_lookup(
         return status, url, json.dumps(body).encode()
 
     if expected:
-        proof = handoff._registry_proof("0.2.0-beta.1", HEAD, _workflow(), registry_get)
+        proof = handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
         assert proof["result"] == "version-unused"
         assert proof["workflow"] == _workflow()
         assert "registry-secret" not in json.dumps(proof)
     else:
         with pytest.raises(handoff.HandoffError, match="REGISTRY_UNAVAILABLE"):
-            handoff._registry_proof("0.2.0-beta.1", HEAD, _workflow(), registry_get)
+            handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
     assert calls == [(handoff.REGISTRY_URL, "registry-secret")]
 
 
@@ -880,7 +880,7 @@ def test_release_registry_rejects_missing_token_without_network(
         raise AssertionError
 
     with pytest.raises(handoff.HandoffError, match="REGISTRY_UNAVAILABLE"):
-        handoff._registry_proof("0.2.0-beta.1", HEAD, _workflow(), registry_get)
+        handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
     assert called is False
 
 
@@ -908,7 +908,7 @@ def test_release_registry_rejects_malformed_oversized_and_timeout_results(
         return result
 
     with pytest.raises(handoff.HandoffError, match="REGISTRY_UNAVAILABLE"):
-        handoff._registry_proof("0.2.0-beta.1", HEAD, _workflow(), registry_get)
+        handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
 
 
 def test_command_environment_allows_only_local_nonsecret_controls(
@@ -1031,7 +1031,7 @@ def _stage_fixture(
         assert "NODE_AUTH_TOKEN" not in environment
         if command_tuple[:2] == ("npm", "pack"):
             pack_root = Path(command_tuple[-1])
-            filename = "kaji-sdk-0.2.0-beta.1.tgz"
+            filename = "kaji-sdk-0.2.0-beta.2.tgz"
             (pack_root / filename).write_bytes(tarball_payload)
             output = json.dumps(
                 [
@@ -1084,7 +1084,7 @@ def test_stage_runs_frozen_commands_builds_once_and_packs_once(
         "source-equivalence.json",
         "signature-verification.json",
         "pack-once.json",
-        "kaji-sdk-0.2.0-beta.1.tgz",
+        "kaji-sdk-0.2.0-beta.2.tgz",
     }
 
 
@@ -1100,7 +1100,7 @@ def test_stage_fsyncs_tarball_before_receipts_and_atomic_publication(
 
     def fsync_file(path: Path) -> None:
         events.append(("file-fsync", path, None))
-        assert path.name == "kaji-sdk-0.2.0-beta.1.tgz"
+        assert path.name == "kaji-sdk-0.2.0-beta.2.tgz"
         assert path.parent.name.startswith(".stage.tmp-")
         assert not (path.parent / ".pack" / path.name).exists()
         original_fsync_file(path)
@@ -1184,7 +1184,7 @@ def test_stage_rejects_pack_metadata_disagreement_and_cleans_owned_temp(
 
     def runner(command: Any, _cwd: Path, _environment: Any) -> Any:
         if tuple(command)[:2] == ("npm", "pack"):
-            path = Path(command[-1]) / "kaji-sdk-0.2.0-beta.1.tgz"
+            path = Path(command[-1]) / "kaji-sdk-0.2.0-beta.2.tgz"
             path.write_bytes(b"artifact")
             return handoff.CompletedCommand(
                 returncode=0,
@@ -1316,7 +1316,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         return (
             {
                 "name": "@kaji/sdk",
-                "version": "0.2.0-beta.1",
+                "version": "0.2.0-beta.2",
                 "exports": _exports(),
             },
             license_bytes,
@@ -1338,7 +1338,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         output_dir=output,
     )
     assert set(path.name for path in output.iterdir()) == {
-        "kaji-sdk-0.2.0-beta.1.tgz",
+        "kaji-sdk-0.2.0-beta.2.tgz",
         "kaji-sdk.manifest.json",
         "kaji-ts-consumer-handoff-v1.schema.json",
     }
@@ -1434,12 +1434,12 @@ def test_finalize_rejects_copied_package_or_license_identity_mismatch(
         assert path.parent.name.startswith(".bundle.tmp-")
         package = {
             "name": "@kaji/sdk",
-            "version": "0.2.0-beta.1",
+            "version": "0.2.0-beta.2",
             "exports": _exports(),
         }
         selected_license = license_bytes
         if mismatch == "package":
-            package["version"] = "0.2.0-beta.2"
+            package["version"] = "0.2.0-beta.1"
         elif mismatch == "exports":
             package["exports"] = {".": _exports()["."]}
         else:
@@ -1514,9 +1514,9 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
     elif mutation == "registry":
         pack["evidence"]["registry"] = {"status": "not-claimed"}
     elif mutation == "package-version":
-        pack["evidence"]["package"]["version"] = "0.2.0-beta.2"
+        pack["evidence"]["package"]["version"] = "0.2.0-beta.1"
     elif mutation == "artifact-filename":
-        pack["evidence"]["artifact"]["filename"] = "kaji-sdk-0.2.0-beta.2.tgz"
+        pack["evidence"]["artifact"]["filename"] = "kaji-sdk-0.2.0-beta.1.tgz"
     elif mutation == "artifact-size":
         pack["evidence"]["artifact"]["size"] += 1
     elif mutation == "artifact-integrity":
@@ -1583,7 +1583,7 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
         lambda _path: (
             {
                 "name": "@kaji/sdk",
-                "version": "0.2.0-beta.1",
+                "version": "0.2.0-beta.2",
                 "exports": _exports(),
             },
             license_bytes,

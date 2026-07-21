@@ -140,7 +140,7 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
                 fail(f"npm tarball file differs from checkout: {relative}")
 
     package = json.loads(expected["package.json"])
-    if package.get("name") != "@kaji/sdk" or package.get("version") != "0.2.0-beta.1":
+    if package.get("name") != "@kaji/sdk" or package.get("version") != "0.2.0-beta.2":
         fail("npm package name/version are not the approved beta coordinates")
     if package.get("license") != "SEE LICENSE IN LICENSE":
         fail("npm package license metadata is not canonical")

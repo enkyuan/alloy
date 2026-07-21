@@ -60,8 +60,8 @@ later run is not acceptable evidence.
 2. Create a signed, annotated tag targeting the approved commit directly:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.1 <approved-commit> -m "Kaji 0.2.0 beta 1"
-   git push origin refs/tags/kaji-v0.2.0-beta.1
+   git tag -s -a kaji-v0.2.0-beta.2 <approved-commit> -m "Kaji 0.2.0 beta 2"
+   git push origin refs/tags/kaji-v0.2.0-beta.2
    ```
 
 3. Approve `kaji-beta` only after offline, compatibility, and benchmark/soak
@@ -120,7 +120,7 @@ is failure. Therefore:
 
   ```bash
   curl --fail --silent --show-error https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
-  npm view @kaji/sdk@0.2.0-beta.1 version --json
+  npm view @kaji/sdk@0.2.0-beta.2 version --json
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and both publisher
@@ -132,10 +132,10 @@ is failure. Therefore:
   `https://pypi.org/manage/project/kaji-sdk/release/0.2.0b1/`, select **Options**,
   and yank the release with the incident/new-version reason. Do not delete its
   files or upload replacements.
-- If npm `0.2.0-beta.1` exists, deprecate it with a forward pointer:
+- If npm `0.2.0-beta.2` exists, deprecate it with a forward pointer:
 
   ```bash
-  npm deprecate @kaji/sdk@0.2.0-beta.1 "Unsafe beta; use the next published beta"
+  npm deprecate @kaji/sdk@0.2.0-beta.2 "Unsafe beta; use the next published beta"
   ```
 
 - Increment both package beta versions, update locks/changelogs, pass all gates

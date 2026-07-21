@@ -19,7 +19,7 @@ VALIDATOR = REPO_ROOT / "kaji/scripts/validate_tthw_evidence.py"
 ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.1.tgz": ("typescript", "0.2.0-beta.1"),
+    "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 
 
@@ -222,7 +222,7 @@ def test_validator_rejects_sensitive_confusion_text(tmp_path: Path) -> None:
 def test_validator_recomputes_retained_artifact_hashes(tmp_path: Path) -> None:
     module = _module()
     document, manifest, artifacts = _fixture(tmp_path)
-    (artifacts / "kaji-sdk-0.2.0-beta.1.tgz").write_bytes(b"tampered")
+    (artifacts / "kaji-sdk-0.2.0-beta.2.tgz").write_bytes(b"tampered")
 
     with pytest.raises(module.EvidenceError, match="retained artifact size/hash"):
         module.validate_bindings(document, manifest, artifacts)

@@ -248,7 +248,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
         assert stale not in combined
 
     getting_started = paths[0].read_text()
-    assert 'bun add @kaji/sdk@0.2.0-beta.1 "zod@>=4.3 <5"' in getting_started
+    assert 'bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5"' in getting_started
     assert "peer dependency" in getting_started
     assert 'risk="read"' in getting_started
     assert 'risk: "read"' in getting_started
@@ -321,13 +321,13 @@ def test_public_beta_install_paths_select_the_prerelease_artifacts() -> None:
     combined = "\n".join(documents.values())
     assert "kaji-sdk==0.2.0b1" in combined
     assert "kaji-sdk[openai]==0.2.0b1" in combined
-    assert "@kaji/sdk@0.2.0-beta.1" in combined
+    assert "@kaji/sdk@0.2.0-beta.2" in combined
 
     unpinned_python = re.compile(
         r"pip install [^\n`]*kaji-sdk(?:\[[^\]]+\])?(?!==0\.2\.0b1)(?:['\"]|\s|$)"
     )
     unpinned_typescript = re.compile(
-        r"(?:npm install|bun add)\s+@kaji/sdk(?!@0\.2\.0-beta\.1)(?:\s|$)"
+        r"(?:npm install|bun add)\s+@kaji/sdk(?!@0\.2\.0-beta\.2)(?:\s|$)"
     )
     assert unpinned_python.search(combined) is None
     assert unpinned_typescript.search(combined) is None

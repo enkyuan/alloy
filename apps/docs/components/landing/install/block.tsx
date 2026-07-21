@@ -9,7 +9,7 @@ import { PromptDialog } from "../install/prompt-dialog";
 
 const aiPromptText = `Set up a TypeScript agent in my project using @kaji/sdk.
 
-1. Install @kaji/sdk@0.2.0-beta.1, zod@>=4.3 <5, and openai.
+1. Install @kaji/sdk@0.2.0-beta.2, zod@>=4.3 <5, and openai.
 
 2. Create agent.ts with AgentBuilder and the OpenAI provider. Use the default
    in-memory event store/committer; do not add a database or server.
@@ -151,7 +151,7 @@ export function InstallBlock() {
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">bunx</span>{" "}
                       <span className="text-neutral-700 dark:text-neutral-300">
-                        --package=@kaji/sdk@0.2.0-beta.1 kaji init ./my-agent --provider openai
+                        --package=@kaji/sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai
                         --yes
                       </span>
                     </code>
@@ -159,7 +159,7 @@ export function InstallBlock() {
                       type="button"
                       onClick={() =>
                         copy(
-                          "bunx --package=@kaji/sdk@0.2.0-beta.1 kaji init ./my-agent --provider openai --yes",
+                          "bunx --package=@kaji/sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai --yes",
                         )
                       }
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"

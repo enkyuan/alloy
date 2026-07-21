@@ -1326,6 +1326,32 @@ describe("Kaji workflow contracts", () => {
     expect(classifier?.run).toContain('[ "$NPM_PUBLISH_RESULT" = skipped ]');
   });
 
+  it("binds the current TypeScript candidate to the beta.2 package and tarball identity", () => {
+    const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
+      name: string;
+      version: string;
+    };
+    const sourceVersion = readFileSync(resolve("src/index.ts"), "utf8").match(
+      /export const VERSION = "([^"]+)"/,
+    );
+    const packageSmokeVersion = readFileSync(resolve("scripts/smoke_package.mts"), "utf8").match(
+      /const PACKAGE_VERSION = "([^"]+)"/,
+    );
+    const tarball = npmPackBasenameV1(handoffSchema(), packageManifest.name, packageManifest.version);
+
+    expect(packageManifest.version).toBe("0.2.0-beta.2");
+    expect(packageManifest.version).not.toBe("0.2.0-beta.1");
+    expect(sourceVersion?.[1]).toBe(packageManifest.version);
+    expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
+    expect(tarball).toBe(`kaji-sdk-${packageManifest.version}.tgz`);
+    expect(tarball).toBe("kaji-sdk-0.2.0-beta.2.tgz");
+    for (const name of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
+      const { source } = readWorkflow(name);
+      expect(source).toContain(tarball);
+      expect(source).not.toContain("0.2.0-beta.1");
+    }
+  });
+
   it("smokes compatibility matrices only from verified producer artifacts", () => {
     const rehearsal = readWorkflow("kaji.rehearsal.yml").workflow;
     const publish = readWorkflow("kaji.publish.yml").workflow;

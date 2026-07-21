@@ -5,6 +5,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.2] - unreleased pre-beta build
+
+- Removed ambient Node.js stream namespace requirements from the public CLI approval declarations.
+- Bumped current TypeScript package, release, installed-runtime, and evidence identities to beta.2.
+
 ## [0.2.0-beta.1] - unreleased pre-beta build
 
 - Added bounded durable tool arguments, fail-closed installed-package proof,

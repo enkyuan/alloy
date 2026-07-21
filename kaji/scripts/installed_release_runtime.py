@@ -333,12 +333,12 @@ def _render_typescript_consumer(
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest.get("dependencies")
-        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.1.tgz"
+        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.2.tgz"
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
 
-    copied_tarball = consumer / "kaji-sdk-0.2.0-beta.1.tgz"
+    copied_tarball = consumer / "kaji-sdk-0.2.0-beta.2.tgz"
     shutil.copyfile(tarball, copied_tarball)
     (consumer / "package.json").write_bytes(manifest_bytes)
     rendered = copy.deepcopy(template)

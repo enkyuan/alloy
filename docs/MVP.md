@@ -14,7 +14,7 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install @kaji/sdk@0.2.0-beta.1 zod`)
+1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install @kaji/sdk@0.2.0-beta.2 zod`)
 2. **Install your provider SDK** (OpenAI or Anthropic; see below)
 3. **Set an API key for live providers** (`OPENAI_API_KEY` or
    `ANTHROPIC_API_KEY`). The installed-package mock quickstart needs no key.
@@ -138,9 +138,9 @@ pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
 **TypeScript**
 
 ```bash
-npm install @kaji/sdk@0.2.0-beta.1 zod openai        # OpenAI
+npm install @kaji/sdk@0.2.0-beta.2 zod openai        # OpenAI
 # or
-npm install @kaji/sdk@0.2.0-beta.1 zod @anthropic-ai/sdk  # Anthropic
+npm install @kaji/sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
 ```
 
 ### Step 2 - Configure provider

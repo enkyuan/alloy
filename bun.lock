@@ -15,7 +15,7 @@
     },
     "apps/cli": {
       "name": "@kaji/cli",
-      "version": "0.2.0-beta.1",
+      "version": "0.1.0",
       "bin": {
         "kaji": "./dist/index.js",
       },
@@ -136,7 +136,7 @@
     },
     "kaji/ts": {
       "name": "@kaji/sdk",
-      "version": "0.2.0-beta.1",
+      "version": "0.2.0-beta.2",
       "bin": {
         "kaji": "./dist/cli/bin.js",
       },
