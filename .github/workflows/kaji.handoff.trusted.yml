@@ -1,0 +1,991 @@
+name: handoff / kaji
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        required: true
+        type: string
+      tag_name:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      node_auth_token:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  stage:
+    name: trusted source, stage, and artifact contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      source-commit: ${{ steps.stage.outputs.source-commit }}
+      artifact-filename: ${{ steps.stage.outputs.artifact-filename }}
+      artifact-sha256: ${{ steps.stage.outputs.artifact-sha256 }}
+      preflight-sha256: ${{ steps.stage.outputs.preflight-sha256 }}
+    steps:
+      - name: Guard called workflow identity and candidate ref
+        shell: bash
+        env:
+          CALLED_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          CALLED_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          CALLED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          CALLED_WORKFLOW_REF: ${{ job.workflow_ref }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ github.sha }}
+          CANDIDATE_REF: ${{ github.ref }}
+          HANDOFF_MODE: ${{ inputs.mode }}
+          HANDOFF_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          test "$CALLED_WORKFLOW_REPOSITORY" = "enkyuan/alloy"
+          test "$CALLED_WORKFLOW_FILE_PATH" = ".github/workflows/kaji.handoff.trusted.yml"
+          test "$CALLER_REPOSITORY" = "enkyuan/alloy"
+          test "${#CALLED_WORKFLOW_SHA}" -eq 40
+          case "$CALLED_WORKFLOW_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          test "$CALLED_WORKFLOW_REF" = "$CALLED_WORKFLOW_REPOSITORY/$CALLED_WORKFLOW_FILE_PATH@$CALLED_WORKFLOW_SHA"
+          test "${#CANDIDATE_SHA}" -eq 40
+          case "$CANDIDATE_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          case "$HANDOFF_MODE" in
+            internal-evaluation)
+              test "$CANDIDATE_REF" = "refs/heads/main"
+              test -z "$HANDOFF_TAG_NAME"
+              ;;
+            release)
+              test "${#HANDOFF_TAG_NAME}" -ge 6
+              test "${#HANDOFF_TAG_NAME}" -le 128
+              [[ "$HANDOFF_TAG_NAME" =~ ^kaji-[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*$ ]] || exit 1
+              if [[ "$HANDOFF_TAG_NAME" == *.lock ]]; then exit 1; fi
+              test "$CANDIDATE_REF" = "refs/tags/$HANDOFF_TAG_NAME"
+              ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Initialize absent handoff roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test ! -e .artifacts
+          mkdir -m 700 .artifacts
+          mkdir -m 700 .artifacts/kaji-handoff-inputs
+          mkdir -m 700 .artifacts/kaji-handoff-inputs/receipts
+          mkdir -m 700 .artifacts/kaji-handoff-failures
+
+      - name: Check out trusted workflow implementation
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: trusted
+
+      - name: Check out candidate source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: enkyuan/alloy
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: candidate
+
+      - name: Establish protected-main history and clean checkouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for checkout in trusted candidate; do
+            test "$(git -C "$checkout" rev-parse --is-shallow-repository)" = "false"
+            main_commit=$(git -C "$checkout" rev-parse --verify 'refs/remotes/origin/main^{commit}')
+            test "${#main_commit}" -eq 40
+            case "$main_commit" in *[!0-9a-f]*) exit 1 ;; esac
+            test "$(git -C "$checkout" cat-file -t "$main_commit")" = "commit"
+            test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+          done
+
+      - name: Set up trusted Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up trusted uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+        with:
+          version: "0.11.25"
+          enable-cache: true
+          cache-dependency-glob: trusted/kaji/uv.lock
+
+      - name: Install trusted Python dependencies
+        shell: bash
+        run: uv sync --project trusted/kaji --frozen
+
+      - name: Verify candidate source and signatures with the trusted verifier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KAJI_RELEASE_SIGNER_EMAIL: ${{ vars.KAJI_RELEASE_SIGNER_EMAIL }}
+          HANDOFF_MODE: ${{ inputs.mode }}
+          KAJI_RELEASE_TAG: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          arguments=(
+            --candidate-root candidate
+            --base-ref refs/remotes/origin/main
+            --output-dir .artifacts/kaji-handoff-inputs/source
+          )
+          if [ "$HANDOFF_MODE" = "release" ]; then
+            arguments+=(--mode signed-tag --tag-name "$KAJI_RELEASE_TAG")
+          else
+            arguments+=(--mode commit)
+          fi
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/verify_ts_handoff_source.py "${arguments[@]}"
+
+      - name: Set up candidate Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Set up candidate Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install trusted TypeScript dependencies
+        shell: bash
+        working-directory: trusted/kaji/ts
+        run: bun install --frozen-lockfile
+
+      - name: Install candidate TypeScript dependencies
+        shell: bash
+        working-directory: candidate/kaji/ts
+        run: bun install --frozen-lockfile
+
+      - name: Preflight internal-evaluation handoff
+        if: ${{ inputs.mode == 'internal-evaluation' }}
+        shell: bash
+        env:
+          KAJI_HANDOFF_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          KAJI_HANDOFF_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          KAJI_HANDOFF_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          KAJI_HANDOFF_WORKFLOW_REF: ${{ job.workflow_ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/ts_handoff.py preflight \
+            --mode internal-evaluation \
+            --candidate-root candidate \
+            --source-input-dir .artifacts/kaji-handoff-inputs/source \
+            --output .artifacts/kaji-handoff-inputs/preflight.json \
+            --failure-dir .artifacts/kaji-handoff-failures
+
+      - name: Preflight release handoff
+        if: ${{ inputs.mode == 'release' }}
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}
+          KAJI_HANDOFF_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          KAJI_HANDOFF_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          KAJI_HANDOFF_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          KAJI_HANDOFF_WORKFLOW_REF: ${{ job.workflow_ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/ts_handoff.py preflight \
+            --mode release \
+            --candidate-root candidate \
+            --source-input-dir .artifacts/kaji-handoff-inputs/source \
+            --output .artifacts/kaji-handoff-inputs/preflight.json \
+            --failure-dir .artifacts/kaji-handoff-failures
+
+      - name: Stage the immutable package exactly once
+        id: stage
+        shell: bash
+        env:
+          HANDOFF_MODE: ${{ inputs.mode }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/ts_handoff.py stage \
+            --mode "$HANDOFF_MODE" \
+            --candidate-root candidate \
+            --preflight .artifacts/kaji-handoff-inputs/preflight.json \
+            --output-dir .artifacts/kaji-handoff-staging \
+            --failure-dir .artifacts/kaji-handoff-failures
+
+          stage=.artifacts/kaji-handoff-staging/stage.json
+          preflight=.artifacts/kaji-handoff-inputs/preflight.json
+          source_commit=$(jq -er '.sourceCommit | select(test("^[0-9a-f]{40}$"))' "$stage")
+          artifact_filename=$(jq -er '.artifact.filename | select(test("^kaji-sdk-[0-9A-Za-z.+-]+[.]tgz$"))' "$stage")
+          artifact_sha256=$(jq -er '.artifact.sha256 | select(test("^[0-9a-f]{64}$"))' "$stage")
+          stage_preflight_sha256=$(jq -er '.preflightSha256 | select(test("^[0-9a-f]{64}$"))' "$stage")
+          test -f "$preflight"
+          test ! -L "$preflight"
+          preflight_sha256=$(sha256sum "$preflight" | cut -d ' ' -f 1)
+          test "${#preflight_sha256}" -eq 64
+          case "$preflight_sha256" in *[!0-9a-f]*) exit 1 ;; esac
+          test "$stage_preflight_sha256" = "$preflight_sha256"
+          test "$source_commit" = "$EXPECTED_COMMIT"
+          test "$artifact_filename" = "$(basename "$artifact_filename")"
+          test -f ".artifacts/kaji-handoff-staging/$artifact_filename"
+          test ! -L ".artifacts/kaji-handoff-staging/$artifact_filename"
+          test "$(sha256sum ".artifacts/kaji-handoff-staging/$artifact_filename" | cut -d ' ' -f 1)" = "$artifact_sha256"
+          printf 'KAJI_RELEASE_COMMIT=%s\n' "$source_commit" >>"$GITHUB_ENV"
+          printf 'KAJI_HANDOFF_TARBALL=%s\n' "$artifact_filename" >>"$GITHUB_ENV"
+          printf 'KAJI_HANDOFF_SHA256=%s\n' "$artifact_sha256" >>"$GITHUB_ENV"
+          printf 'source-commit=%s\n' "$source_commit" >>"$GITHUB_OUTPUT"
+          printf 'artifact-filename=%s\n' "$artifact_filename" >>"$GITHUB_OUTPUT"
+          printf 'artifact-sha256=%s\n' "$artifact_sha256" >>"$GITHUB_OUTPUT"
+          printf 'preflight-sha256=%s\n' "$preflight_sha256" >>"$GITHUB_OUTPUT"
+
+      - name: Prove the supplied artifact contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun trusted/kaji/ts/scripts/smoke_package.mts \
+            --for-handoff artifact-contract \
+            ".artifacts/kaji-handoff-staging/$KAJI_HANDOFF_TARBALL" \
+            --candidate-root candidate \
+            --source-commit "$KAJI_RELEASE_COMMIT" \
+            --artifact-sha256 "$KAJI_HANDOFF_SHA256" \
+            --output .artifacts/kaji-handoff-inputs/receipts/artifact-contract.json
+
+      - name: Guard exact stage transfer file sets
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_stage=$(printf '%s\n' "$KAJI_HANDOFF_TARBALL" pack-once.json \
+            source-equivalence.json signature-verification.json stage.json | LC_ALL=C sort)
+          actual_stage=$(find .artifacts/kaji-handoff-staging -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_stage" = "$expected_stage"
+          expected_source=$(printf '%s\n' source-equivalence.raw.json signature-verification.raw.json | LC_ALL=C sort)
+          actual_source=$(find .artifacts/kaji-handoff-inputs/source -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_source" = "$expected_source"
+          test -f .artifacts/kaji-handoff-inputs/preflight.json
+          test ! -L .artifacts/kaji-handoff-inputs/preflight.json
+          test -f .artifacts/kaji-handoff-inputs/receipts/artifact-contract.json
+          test ! -L .artifacts/kaji-handoff-inputs/receipts/artifact-contract.json
+          test -z "$(find .artifacts/kaji-handoff-staging \
+            .artifacts/kaji-handoff-inputs/source -mindepth 1 ! -type f -print -quit)"
+
+      - name: Upload exact stage transfer envelope
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-ts-handoff-stage-${{ env.KAJI_RELEASE_COMMIT }}
+          path: |
+            .artifacts/kaji-handoff-staging/
+            .artifacts/kaji-handoff-inputs/source/
+            .artifacts/kaji-handoff-inputs/preflight.json
+          if-no-files-found: error
+          include-hidden-files: true
+
+      - name: Upload artifact-contract receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-ts-handoff-artifact-contract-${{ env.KAJI_RELEASE_COMMIT }}
+          path: .artifacts/kaji-handoff-inputs/receipts/artifact-contract.json
+          if-no-files-found: error
+          include-hidden-files: true
+
+  node:
+    name: Node ${{ matrix.node }} handoff receipt
+    needs: stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - name: Guard called workflow identity and candidate ref
+        shell: bash
+        env:
+          CALLED_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          CALLED_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          CALLED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          CALLED_WORKFLOW_REF: ${{ job.workflow_ref }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ github.sha }}
+          CANDIDATE_REF: ${{ github.ref }}
+          HANDOFF_MODE: ${{ inputs.mode }}
+          HANDOFF_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          test "$CALLED_WORKFLOW_REPOSITORY" = "enkyuan/alloy"
+          test "$CALLED_WORKFLOW_FILE_PATH" = ".github/workflows/kaji.handoff.trusted.yml"
+          test "$CALLER_REPOSITORY" = "enkyuan/alloy"
+          test "${#CALLED_WORKFLOW_SHA}" -eq 40
+          case "$CALLED_WORKFLOW_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          test "$CALLED_WORKFLOW_REF" = "$CALLED_WORKFLOW_REPOSITORY/$CALLED_WORKFLOW_FILE_PATH@$CALLED_WORKFLOW_SHA"
+          test "${#CANDIDATE_SHA}" -eq 40
+          case "$CANDIDATE_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          case "$HANDOFF_MODE" in
+            internal-evaluation) test "$CANDIDATE_REF" = "refs/heads/main"; test -z "$HANDOFF_TAG_NAME" ;;
+            release)
+              test "${#HANDOFF_TAG_NAME}" -ge 6
+              test "${#HANDOFF_TAG_NAME}" -le 128
+              [[ "$HANDOFF_TAG_NAME" =~ ^kaji-[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*$ ]] || exit 1
+              if [[ "$HANDOFF_TAG_NAME" == *.lock ]]; then exit 1; fi
+              test "$CANDIDATE_REF" = "refs/tags/$HANDOFF_TAG_NAME"
+              ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Check out trusted workflow implementation
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: trusted
+
+      - name: Set up matrix Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Set up trusted Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install trusted TypeScript dependencies
+        shell: bash
+        working-directory: trusted/kaji/ts
+        run: bun install --frozen-lockfile
+
+      - name: Download exact stage transfer envelope
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-ts-handoff-stage-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/
+
+      - name: Revalidate staged tarball and resolve Node binary
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          EXPECTED_FILENAME: ${{ needs.stage.outputs.artifact-filename }}
+          EXPECTED_SHA256: ${{ needs.stage.outputs.artifact-sha256 }}
+          EXPECTED_NODE_MAJOR: ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          expected_stage=$(printf '%s\n' "$EXPECTED_FILENAME" pack-once.json \
+            source-equivalence.json signature-verification.json stage.json | LC_ALL=C sort)
+          actual_stage=$(find .artifacts/kaji-handoff-staging -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_stage" = "$expected_stage"
+          expected_source=$(printf '%s\n' source-equivalence.raw.json signature-verification.raw.json | LC_ALL=C sort)
+          actual_source=$(find .artifacts/kaji-handoff-inputs/source -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_source" = "$expected_source"
+          test -f .artifacts/kaji-handoff-inputs/preflight.json
+          test ! -L .artifacts/kaji-handoff-inputs/preflight.json
+          test -z "$(find .artifacts/kaji-handoff-staging \
+            .artifacts/kaji-handoff-inputs/source -mindepth 1 ! -type f -print -quit)"
+          stage=.artifacts/kaji-handoff-staging/stage.json
+          test -f "$stage"
+          test ! -L "$stage"
+          test "$(jq -er '.sourceCommit' "$stage")" = "$EXPECTED_COMMIT"
+          test "$(jq -er '.artifact.filename' "$stage")" = "$EXPECTED_FILENAME"
+          test "$(jq -er '.artifact.sha256' "$stage")" = "$EXPECTED_SHA256"
+          tarball=".artifacts/kaji-handoff-staging/$EXPECTED_FILENAME"
+          test -f "$tarball"
+          test ! -L "$tarball"
+          test "$(sha256sum "$tarball" | cut -d ' ' -f 1)" = "$EXPECTED_SHA256"
+          node_binary=$(readlink -f "$(command -v node)")
+          test -x "$node_binary"
+          test "$(node --version | sed -E 's/^v([0-9]+).*/\1/')" = "$EXPECTED_NODE_MAJOR"
+          mkdir -p .artifacts/kaji-handoff-inputs/receipts
+          printf 'NODE_BINARY=%s\n' "$node_binary" >>"$GITHUB_ENV"
+
+      - name: Produce narrow Node receipt
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          EXPECTED_FILENAME: ${{ needs.stage.outputs.artifact-filename }}
+          EXPECTED_SHA256: ${{ needs.stage.outputs.artifact-sha256 }}
+          EXPECTED_NODE_MAJOR: ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          bun trusted/kaji/ts/scripts/smoke_package.mts \
+            --for-handoff node \
+            ".artifacts/kaji-handoff-staging/$EXPECTED_FILENAME" \
+            --node-binary "$NODE_BINARY" \
+            --expected-node-major "$EXPECTED_NODE_MAJOR" \
+            --source-commit "$EXPECTED_COMMIT" \
+            --artifact-sha256 "$EXPECTED_SHA256" \
+            --output ".artifacts/kaji-handoff-inputs/receipts/node-$EXPECTED_NODE_MAJOR.json"
+          expected_receipt="node-$EXPECTED_NODE_MAJOR.json"
+          test "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n')" = "$expected_receipt"
+          test -z "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 \
+            ! -type f -print -quit)"
+
+      - name: Upload one Node receipt only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-ts-handoff-node-${{ matrix.node }}-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/kaji-handoff-inputs/receipts/node-${{ matrix.node }}.json
+          if-no-files-found: error
+          include-hidden-files: true
+
+  finalize:
+    name: finalize and attest consumer handoff
+    needs: [stage, node]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Guard called workflow identity and candidate ref
+        shell: bash
+        env:
+          CALLED_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          CALLED_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          CALLED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          CALLED_WORKFLOW_REF: ${{ job.workflow_ref }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ github.sha }}
+          CANDIDATE_REF: ${{ github.ref }}
+          HANDOFF_MODE: ${{ inputs.mode }}
+          HANDOFF_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          test "$CALLED_WORKFLOW_REPOSITORY" = "enkyuan/alloy"
+          test "$CALLED_WORKFLOW_FILE_PATH" = ".github/workflows/kaji.handoff.trusted.yml"
+          test "$CALLER_REPOSITORY" = "enkyuan/alloy"
+          test "${#CALLED_WORKFLOW_SHA}" -eq 40
+          case "$CALLED_WORKFLOW_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          test "$CALLED_WORKFLOW_REF" = "$CALLED_WORKFLOW_REPOSITORY/$CALLED_WORKFLOW_FILE_PATH@$CALLED_WORKFLOW_SHA"
+          test "${#CANDIDATE_SHA}" -eq 40
+          case "$CANDIDATE_SHA" in *[!0-9a-f]*) exit 1 ;; esac
+          case "$HANDOFF_MODE" in
+            internal-evaluation) test "$CANDIDATE_REF" = "refs/heads/main"; test -z "$HANDOFF_TAG_NAME" ;;
+            release)
+              test "${#HANDOFF_TAG_NAME}" -ge 6
+              test "${#HANDOFF_TAG_NAME}" -le 128
+              [[ "$HANDOFF_TAG_NAME" =~ ^kaji-[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*$ ]] || exit 1
+              if [[ "$HANDOFF_TAG_NAME" == *.lock ]]; then exit 1; fi
+              test "$CANDIDATE_REF" = "refs/tags/$HANDOFF_TAG_NAME"
+              ;;
+            *) exit 1 ;;
+          esac
+
+      - name: Check out trusted workflow implementation
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: trusted
+
+      - name: Check out candidate source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          repository: enkyuan/alloy
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: candidate
+
+      - name: Establish protected-main history and clean checkouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for checkout in trusted candidate; do
+            test "$(git -C "$checkout" rev-parse --is-shallow-repository)" = "false"
+            main_commit=$(git -C "$checkout" rev-parse --verify 'refs/remotes/origin/main^{commit}')
+            test "${#main_commit}" -eq 40
+            case "$main_commit" in *[!0-9a-f]*) exit 1 ;; esac
+            test "$(git -C "$checkout" cat-file -t "$main_commit")" = "commit"
+            test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+          done
+
+      - name: Initialize finalizer-only artifact roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .artifacts/kaji-handoff-inputs/receipts
+          mkdir -m 700 .artifacts/kaji-handoff-failures
+
+      - name: Download exact stage transfer envelope
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-ts-handoff-stage-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/
+
+      - name: Guard exact stage transfer download
+        shell: bash
+        env:
+          EXPECTED_FILENAME: ${{ needs.stage.outputs.artifact-filename }}
+        run: |
+          set -euo pipefail
+          expected_stage=$(printf '%s\n' "$EXPECTED_FILENAME" pack-once.json \
+            source-equivalence.json signature-verification.json stage.json | LC_ALL=C sort)
+          actual_stage=$(find .artifacts/kaji-handoff-staging -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_stage" = "$expected_stage"
+          expected_source=$(printf '%s\n' source-equivalence.raw.json signature-verification.raw.json | LC_ALL=C sort)
+          actual_source=$(find .artifacts/kaji-handoff-inputs/source -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_source" = "$expected_source"
+          test -f .artifacts/kaji-handoff-inputs/preflight.json
+          test ! -L .artifacts/kaji-handoff-inputs/preflight.json
+          test -z "$(find .artifacts/kaji-handoff-staging \
+            .artifacts/kaji-handoff-inputs/source -mindepth 1 ! -type f -print -quit)"
+
+      - name: Authenticate exact preflight transfer
+        shell: bash
+        env:
+          EXPECTED_PREFLIGHT_SHA256: ${{ needs.stage.outputs.preflight-sha256 }}
+        run: |
+          set -euo pipefail
+          test "${#EXPECTED_PREFLIGHT_SHA256}" -eq 64
+          case "$EXPECTED_PREFLIGHT_SHA256" in *[!0-9a-f]*) exit 1 ;; esac
+          preflight=.artifacts/kaji-handoff-inputs/preflight.json
+          stage=.artifacts/kaji-handoff-staging/stage.json
+          test -f "$preflight"; test ! -L "$preflight"
+          test -f "$stage"; test ! -L "$stage"
+          test "$(sha256sum "$preflight" | cut -d ' ' -f 1)" = "$EXPECTED_PREFLIGHT_SHA256"
+          stage_preflight_sha256=$(jq -er '.preflightSha256 | select(test("^[0-9a-f]{64}$"))' "$stage")
+          test "$stage_preflight_sha256" = "$EXPECTED_PREFLIGHT_SHA256"
+
+      - name: Download exact artifact-contract receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-ts-handoff-artifact-contract-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/kaji-handoff-inputs/receipts/
+
+      - name: Guard artifact-contract download before merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n')" = artifact-contract.json
+          test -z "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 \
+            ! -type f -print -quit)"
+
+      - name: Download exact Node 22 receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-ts-handoff-node-22-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/kaji-handoff-inputs/receipts/
+
+      - name: Guard Node 22 download before merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s\n' artifact-contract.json node-22.json | LC_ALL=C sort)
+          actual=$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual" = "$expected"
+          test -z "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 \
+            ! -type f -print -quit)"
+
+      - name: Download exact Node 24 receipt
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-ts-handoff-node-24-${{ needs.stage.outputs.source-commit }}
+          path: .artifacts/kaji-handoff-inputs/receipts/
+
+      - name: Guard Node 24 download before finalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s\n' artifact-contract.json node-22.json node-24.json | LC_ALL=C sort)
+          actual=$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual" = "$expected"
+          test -z "$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 \
+            ! -type f -print -quit)"
+
+      - name: Revalidate transfer and select the recorded toolchain
+        id: toolchain
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          EXPECTED_FILENAME: ${{ needs.stage.outputs.artifact-filename }}
+          EXPECTED_SHA256: ${{ needs.stage.outputs.artifact-sha256 }}
+        run: |
+          set -euo pipefail
+          expected_stage=$(printf '%s\n' "$EXPECTED_FILENAME" pack-once.json \
+            source-equivalence.json signature-verification.json stage.json | LC_ALL=C sort)
+          actual_stage=$(find .artifacts/kaji-handoff-staging -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_stage" = "$expected_stage"
+          expected_source=$(printf '%s\n' source-equivalence.raw.json signature-verification.raw.json | LC_ALL=C sort)
+          actual_source=$(find .artifacts/kaji-handoff-inputs/source -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_source" = "$expected_source"
+          expected_receipts=$(printf '%s\n' artifact-contract.json node-22.json node-24.json | LC_ALL=C sort)
+          actual_receipts=$(find .artifacts/kaji-handoff-inputs/receipts -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_receipts" = "$expected_receipts"
+          test -z "$(find .artifacts/kaji-handoff-staging \
+            .artifacts/kaji-handoff-inputs/source \
+            .artifacts/kaji-handoff-inputs/receipts -mindepth 1 ! -type f -print -quit)"
+          preflight=.artifacts/kaji-handoff-inputs/preflight.json
+          stage=.artifacts/kaji-handoff-staging/stage.json
+          test -f "$preflight"; test ! -L "$preflight"
+          test -f "$stage"; test ! -L "$stage"
+          test "$(jq -er '.sourceCommit' "$preflight")" = "$EXPECTED_COMMIT"
+          test "$(jq -er '.sourceCommit' "$stage")" = "$EXPECTED_COMMIT"
+          test "$(jq -er '.artifact.filename' "$stage")" = "$EXPECTED_FILENAME"
+          test "$(jq -er '.artifact.sha256' "$stage")" = "$EXPECTED_SHA256"
+          tarball=".artifacts/kaji-handoff-staging/$EXPECTED_FILENAME"
+          test -f "$tarball"; test ! -L "$tarball"
+          test "$(sha256sum "$tarball" | cut -d ' ' -f 1)" = "$EXPECTED_SHA256"
+          for receipt in artifact-contract node-22 node-24; do
+            path=".artifacts/kaji-handoff-inputs/receipts/$receipt.json"
+            test -f "$path"; test ! -L "$path"
+            test "$(jq -er '.sourceCommit' "$path")" = "$EXPECTED_COMMIT"
+            test "$(jq -er '.artifactSha256' "$path")" = "$EXPECTED_SHA256"
+          done
+          node_version=$(jq -er '.toolchain.node | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
+          npm_version=$(jq -er '.toolchain.npm | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
+          bun_version=$(jq -er '.toolchain.bun | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
+          uv_version=$(jq -er '.toolchain.uv | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
+          printf 'node=%s\n' "$node_version" >>"$GITHUB_OUTPUT"
+          printf 'npm=%s\n' "$npm_version" >>"$GITHUB_OUTPUT"
+          printf 'bun=%s\n' "$bun_version" >>"$GITHUB_OUTPUT"
+          printf 'uv=%s\n' "$uv_version" >>"$GITHUB_OUTPUT"
+
+      - name: Set up finalizer Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+
+      - name: Set up recorded uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3.2.4
+        with:
+          version: ${{ steps.toolchain.outputs.uv }}
+          enable-cache: true
+          cache-dependency-glob: trusted/kaji/uv.lock
+
+      - name: Set up recorded Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ steps.toolchain.outputs.node }}
+
+      - name: Set up recorded Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.toolchain.outputs.bun }}
+
+      - name: Install trusted Python dependencies and verify toolchain
+        shell: bash
+        env:
+          EXPECTED_NODE: ${{ steps.toolchain.outputs.node }}
+          EXPECTED_NPM: ${{ steps.toolchain.outputs.npm }}
+          EXPECTED_BUN: ${{ steps.toolchain.outputs.bun }}
+          EXPECTED_UV: ${{ steps.toolchain.outputs.uv }}
+        run: |
+          set -euo pipefail
+          uv sync --project trusted/kaji --frozen
+          test "$(node --version | sed 's/^v//')" = "$EXPECTED_NODE"
+          test "$(npm --version)" = "$EXPECTED_NPM"
+          test "$(bun --version)" = "$EXPECTED_BUN"
+          test "$(uv --version | awk '{print $2}')" = "$EXPECTED_UV"
+          mkdir -m 700 .artifacts/kaji-handoff-evidence
+
+      - name: Finalize exact consumer handoff
+        shell: bash
+        env:
+          HANDOFF_MODE: ${{ inputs.mode }}
+          KAJI_RELEASE_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          KAJI_HANDOFF_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          KAJI_HANDOFF_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          KAJI_HANDOFF_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          KAJI_HANDOFF_WORKFLOW_REF: ${{ job.workflow_ref }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/ts_handoff.py finalize \
+            --mode "$HANDOFF_MODE" \
+            --candidate-root candidate \
+            --preflight .artifacts/kaji-handoff-inputs/preflight.json \
+            --stage-dir .artifacts/kaji-handoff-staging \
+            --artifact-contract .artifacts/kaji-handoff-inputs/receipts/artifact-contract.json \
+            --node-22 .artifacts/kaji-handoff-inputs/receipts/node-22.json \
+            --node-24 .artifacts/kaji-handoff-inputs/receipts/node-24.json \
+            --output-dir .artifacts/kaji-handoff \
+            --failure-dir .artifacts/kaji-handoff-failures
+
+      - name: Independently validate exact consumer handoff
+        shell: bash
+        env:
+          HANDOFF_MODE: ${{ inputs.mode }}
+          KAJI_RELEASE_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          KAJI_SIGNER_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          KAJI_SIGNER_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          KAJI_SIGNER_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          KAJI_SIGNER_WORKFLOW_REF: ${{ job.workflow_ref }}
+        run: |
+          set -euo pipefail
+          validation=.artifacts/kaji-handoff-evidence/validation.json
+          uv run --project trusted/kaji --no-sync python \
+            trusted/kaji/scripts/validate_ts_consumer_handoff.py \
+            --bundle-dir .artifacts/kaji-handoff \
+            --receipts-dir .artifacts/kaji-handoff-inputs/receipt-set \
+            --expected-mode "$HANDOFF_MODE" \
+            --expected-commit "$KAJI_RELEASE_COMMIT" \
+            --expected-signer-repository "$KAJI_SIGNER_WORKFLOW_REPOSITORY" \
+            --expected-signer-file-path "$KAJI_SIGNER_WORKFLOW_FILE_PATH" \
+            --expected-signer-digest "$KAJI_SIGNER_WORKFLOW_SHA" \
+            --expected-signer-ref "$KAJI_SIGNER_WORKFLOW_REF" \
+            --output "$validation" \
+            --failure-dir .artifacts/kaji-handoff-failures
+          tarball=$(jq -er '.artifact.filename | select(type == "string")' "$validation")
+          test "$tarball" = "$(basename "$tarball")"
+          case "$tarball" in ""|*/*|.*) exit 1 ;; esac
+          expected_bundle=$(printf '%s\n' "$tarball" kaji-sdk.manifest.json \
+            kaji-ts-consumer-handoff-v1.schema.json | LC_ALL=C sort)
+          actual_bundle=$(find .artifacts/kaji-handoff -mindepth 1 -maxdepth 1 \
+            -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_bundle" = "$expected_bundle"
+          test -z "$(find .artifacts/kaji-handoff -mindepth 1 \
+            ! -type f -print -quit)"
+          printf 'KAJI_RELEASE_COMMIT=%s\n' "$KAJI_RELEASE_COMMIT" >>"$GITHUB_ENV"
+          printf 'KAJI_HANDOFF_TARBALL=%s\n' "$tarball" >>"$GITHUB_ENV"
+
+      - name: Upload exact consumer handoff
+        id: handoff-upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-ts-consumer-handoff-${{ env.KAJI_RELEASE_COMMIT }}
+          path: |
+            .artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}
+            .artifacts/kaji-handoff/kaji-sdk.manifest.json
+            .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json
+          if-no-files-found: error
+          include-hidden-files: true
+
+      - name: Attest exact consumer handoff
+        id: handoff-provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            .artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}
+            .artifacts/kaji-handoff/kaji-sdk.manifest.json
+            .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json
+
+      - name: Retain closed transport and provenance evidence
+        shell: bash
+        env:
+          HANDOFF_MODE: ${{ inputs.mode }}
+          KAJI_RELEASE_TAG: ${{ inputs.tag_name }}
+          KAJI_RELEASE_COMMIT: ${{ needs.stage.outputs.source-commit }}
+          KAJI_HANDOFF_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          KAJI_HANDOFF_WORKFLOW_FILE_PATH: ${{ job.workflow_file_path }}
+          KAJI_HANDOFF_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          KAJI_HANDOFF_WORKFLOW_REF: ${{ job.workflow_ref }}
+          KAJI_HANDOFF_ARTIFACT_ID: ${{ steps.handoff-upload.outputs.artifact-id }}
+          KAJI_HANDOFF_ACTION_DIGEST: ${{ steps.handoff-upload.outputs.artifact-digest }}
+          KAJI_ATTESTATION_ID: ${{ steps.handoff-provenance.outputs.attestation-id }}
+          KAJI_ATTESTATION_URL: ${{ steps.handoff-provenance.outputs.attestation-url }}
+          KAJI_ATTESTATION_BUNDLE: ${{ steps.handoff-provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          test -n "$KAJI_HANDOFF_ARTIFACT_ID"
+          case "$KAJI_HANDOFF_ARTIFACT_ID" in *[!0-9]*|0) exit 1 ;; esac
+          test "$KAJI_HANDOFF_ARTIFACT_ID" -le 9007199254740991
+          test "${#KAJI_HANDOFF_ACTION_DIGEST}" -eq 64
+          case "$KAJI_HANDOFF_ACTION_DIGEST" in *[!0-9a-f]*) exit 1 ;; esac
+          test -n "$KAJI_ATTESTATION_ID"
+          test "${#KAJI_ATTESTATION_ID}" -le 256
+          [[ "$KAJI_ATTESTATION_ID" =~ ^[\!-~]+$ ]]
+          [[ "$KAJI_ATTESTATION_URL" =~ ^https://github\.com/enkyuan/alloy/attestations/[A-Za-z0-9._~-]{1,128}$ ]]
+          test "$KAJI_ATTESTATION_URL" = "https://github.com/enkyuan/alloy/attestations/$KAJI_ATTESTATION_ID"
+          case "$KAJI_ATTESTATION_BUNDLE" in /*) ;; *) exit 1 ;; esac
+          test -f "$KAJI_ATTESTATION_BUNDLE"
+          test ! -L "$KAJI_ATTESTATION_BUNDLE"
+          bundle_size=$(stat -c '%s' "$KAJI_ATTESTATION_BUNDLE")
+          test "$bundle_size" -gt 0
+          test "$bundle_size" -le 5242880
+
+          bundle_real=$(readlink -f "$KAJI_ATTESTATION_BUNDLE")
+          runner_temp_real=$(readlink -f "$RUNNER_TEMP")
+          case "$bundle_real" in "$runner_temp_real"/*) ;; *) exit 1 ;; esac
+
+          evidence=.artifacts/kaji-handoff-evidence
+          cp "$bundle_real" "$evidence/provenance.bundle.jsonl"
+          bundle_sha256=$(sha256sum "$evidence/provenance.bundle.jsonl" | cut -d ' ' -f 1)
+          tarball_sha256=$(sha256sum ".artifacts/kaji-handoff/$KAJI_HANDOFF_TARBALL" | cut -d ' ' -f 1)
+          manifest_sha256=$(sha256sum .artifacts/kaji-handoff/kaji-sdk.manifest.json | cut -d ' ' -f 1)
+          schema_sha256=$(sha256sum .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json | cut -d ' ' -f 1)
+          validation=.artifacts/kaji-handoff-evidence/validation.json
+          test "$(jq -er '.sourceCommit' "$validation")" = "$KAJI_RELEASE_COMMIT"
+          test "$(jq -er '.artifact.filename' "$validation")" = "$KAJI_HANDOFF_TARBALL"
+          test "$(jq -er '.artifact.sha256' "$validation")" = "$tarball_sha256"
+          test "$(jq -er '.manifestSha256' "$validation")" = "$manifest_sha256"
+          test "$(jq -er '.schemaSha256' "$validation")" = "$schema_sha256"
+          statement=$(mktemp "$evidence/.statement.XXXXXX")
+          jq -s -er 'select(length == 1) | .[0].dsseEnvelope.payload | select(type == "string")' \
+            "$evidence/provenance.bundle.jsonl" | base64 --decode >"$statement"
+          jq -e \
+            --arg tarball "$KAJI_HANDOFF_TARBALL" \
+            --arg tarballSha256 "$tarball_sha256" \
+            --arg manifestSha256 "$manifest_sha256" \
+            --arg schemaSha256 "$schema_sha256" \
+            '._type == "https://in-toto.io/Statement/v1" and
+             .predicateType == "https://slsa.dev/provenance/v1" and
+             (.subject | sort_by(.name)) == ([
+               {name: $tarball, digest: {sha256: $tarballSha256}},
+               {name: "kaji-sdk.manifest.json", digest: {sha256: $manifestSha256}},
+               {name: "kaji-ts-consumer-handoff-v1.schema.json", digest: {sha256: $schemaSha256}}
+             ] | sort_by(.name))' \
+            "$statement" >/dev/null
+          rm "$statement"
+          if [ "$HANDOFF_MODE" = "release" ]; then
+            source_ref="refs/tags/$KAJI_RELEASE_TAG"
+          else
+            source_ref="refs/heads/main"
+          fi
+
+          temporary=$(mktemp "$evidence/.transport.XXXXXX")
+          jq -S --null-input \
+            --arg repository "$KAJI_HANDOFF_WORKFLOW_REPOSITORY" \
+            --arg filePath "$KAJI_HANDOFF_WORKFLOW_FILE_PATH" \
+            --arg digest "$KAJI_HANDOFF_WORKFLOW_SHA" \
+            --arg workflowRef "$KAJI_HANDOFF_WORKFLOW_REF" \
+            --argjson runId "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg sourceRef "$source_ref" \
+            --arg artifactName "kaji-ts-consumer-handoff-$KAJI_RELEASE_COMMIT" \
+            --argjson artifactId "$KAJI_HANDOFF_ARTIFACT_ID" \
+            --arg actionDigest "$KAJI_HANDOFF_ACTION_DIGEST" \
+            --arg attestationId "$KAJI_ATTESTATION_ID" \
+            --arg attestationUrl "$KAJI_ATTESTATION_URL" \
+            --arg bundleSha256 "$bundle_sha256" \
+            --arg tarballName "$KAJI_HANDOFF_TARBALL" \
+            --arg tarballSha256 "$tarball_sha256" \
+            --arg manifestSha256 "$manifest_sha256" \
+            --arg schemaSha256 "$schema_sha256" \
+            '{schemaVersion: 1, artifactRepository: "enkyuan/alloy",
+              workflow: {repository: $repository, filePath: $filePath,
+                digest: $digest, ref: $workflowRef, runId: $runId, attempt: $attempt},
+              source: {commit: $commit, ref: $sourceRef},
+              artifact: {name: $artifactName, id: $artifactId,
+                actionDigest: $actionDigest, apiDigest: ("sha256:" + $actionDigest)},
+              attestation: {id: $attestationId, url: $attestationUrl,
+                bundleSha256: $bundleSha256},
+              subjects: [
+                {role: "tarball", name: $tarballName, sha256: $tarballSha256},
+                {role: "manifest", name: "kaji-sdk.manifest.json", sha256: $manifestSha256},
+                {role: "schema", name: "kaji-ts-consumer-handoff-v1.schema.json", sha256: $schemaSha256}
+              ]}' >"$temporary"
+
+          jq -e \
+            --arg repository "$KAJI_HANDOFF_WORKFLOW_REPOSITORY" \
+            --arg filePath "$KAJI_HANDOFF_WORKFLOW_FILE_PATH" \
+            --arg digest "$KAJI_HANDOFF_WORKFLOW_SHA" \
+            --arg workflowRef "$KAJI_HANDOFF_WORKFLOW_REF" \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg sourceRef "$source_ref" \
+            --arg actionDigest "$KAJI_HANDOFF_ACTION_DIGEST" \
+            --arg artifactName "kaji-ts-consumer-handoff-$KAJI_RELEASE_COMMIT" \
+            --argjson artifactId "$KAJI_HANDOFF_ARTIFACT_ID" \
+            --arg attestationId "$KAJI_ATTESTATION_ID" \
+            --arg attestationUrl "$KAJI_ATTESTATION_URL" \
+            --arg bundleSha256 "$bundle_sha256" \
+            --arg tarballSha256 "$tarball_sha256" \
+            --arg manifestSha256 "$manifest_sha256" \
+            --arg schemaSha256 "$schema_sha256" \
+            'keys == ["artifact", "artifactRepository", "attestation", "schemaVersion", "source", "subjects", "workflow"] and
+             .schemaVersion == 1 and .artifactRepository == "enkyuan/alloy" and
+             (.workflow | keys == ["attempt", "digest", "filePath", "ref", "repository", "runId"]) and
+             .workflow.repository == $repository and .workflow.filePath == $filePath and
+             .workflow.digest == $digest and .workflow.ref == $workflowRef and
+             .workflow.ref == ($repository + "/" + $filePath + "@" + $digest) and
+             (.workflow.runId | type == "number" and . > 0 and . <= 9007199254740991) and
+             (.workflow.attempt | type == "number" and . > 0 and . <= 9007199254740991) and
+             (.source | keys == ["commit", "ref"]) and .source.commit == $commit and .source.ref == $sourceRef and
+             (.artifact | keys == ["actionDigest", "apiDigest", "id", "name"]) and
+             .artifact.name == $artifactName and .artifact.id == $artifactId and
+             .artifact.actionDigest == $actionDigest and .artifact.apiDigest == ("sha256:" + $actionDigest) and
+             (.artifact.id | type == "number" and . > 0 and . <= 9007199254740991) and
+             (.attestation | keys == ["bundleSha256", "id", "url"]) and
+             .attestation.id == $attestationId and .attestation.url == $attestationUrl and
+             .attestation.url == ("https://github.com/enkyuan/alloy/attestations/" + $attestationId) and
+             .attestation.bundleSha256 == $bundleSha256 and
+             (.subjects | length == 3) and
+             .subjects[0] == {role: "tarball", name: env.KAJI_HANDOFF_TARBALL, sha256: $tarballSha256} and
+             .subjects[1] == {role: "manifest", name: "kaji-sdk.manifest.json", sha256: $manifestSha256} and
+             .subjects[2] == {role: "schema", name: "kaji-ts-consumer-handoff-v1.schema.json", sha256: $schemaSha256} and
+             (all(.subjects[]; keys == ["name", "role", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$"))))' \
+            "$temporary" >/dev/null
+          mv "$temporary" "$evidence/transport.json"
+          jq -S --null-input \
+            '{schemaVersion: 1, sourceVerifier: "passed", preflight: "passed",
+              stage: "passed", artifactContract: "passed", node22: "passed",
+              node24: "passed", finalize: "passed", validation: "passed",
+              upload: "passed", attestation: "passed"}' \
+            >"$evidence/workflow-status.json"
+
+          expected_evidence=$(printf '%s\n' provenance.bundle.jsonl transport.json \
+            validation.json workflow-status.json | LC_ALL=C sort)
+          actual_evidence=$(find "$evidence" -mindepth 1 -maxdepth 1 -type f \
+            -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_evidence" = "$expected_evidence"
+          expected_receipt_set=$(printf '%s\n' artifact-contract.json node-22.json node-24.json \
+            pack-once.json source-equivalence.json signature-verification.json | LC_ALL=C sort)
+          actual_receipt_set=$(find .artifacts/kaji-handoff-inputs/receipt-set \
+            -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+          test "$actual_receipt_set" = "$expected_receipt_set"
+          test -z "$(find "$evidence" .artifacts/kaji-handoff-inputs/source \
+            .artifacts/kaji-handoff-inputs/receipt-set \
+            .artifacts/kaji-handoff-failures -mindepth 1 ! -type f -print -quit)"
+          unexpected_failure=$(find .artifacts/kaji-handoff-failures -mindepth 1 -maxdepth 1 \
+            -type f ! -name 'source-verify.failure.json' ! -name 'preflight.failure.json' \
+            ! -name 'stage.failure.json' ! -name 'finalize.failure.json' \
+            ! -name 'validate.failure.json' -print -quit)
+          test -z "$unexpected_failure"
+
+          if grep -R -a -E -i \
+            '(authorization[[:space:]]*:|bearer[[:space:]]+[A-Za-z0-9._~-]+|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|npm_[A-Za-z0-9]{20,})' \
+            "$evidence" .artifacts/kaji-handoff-inputs/source \
+            .artifacts/kaji-handoff-inputs/preflight.json \
+            .artifacts/kaji-handoff-failures; then
+            echo "retained handoff evidence contains a credential-shaped value" >&2
+            exit 1
+          fi
+
+      - name: Upload separate operational handoff evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-ts-consumer-handoff-evidence-${{ env.KAJI_RELEASE_COMMIT }}
+          path: |
+            .artifacts/kaji-handoff-evidence/
+            .artifacts/kaji-handoff-inputs/source/
+            .artifacts/kaji-handoff-inputs/preflight.json
+            .artifacts/kaji-handoff-inputs/receipt-set/
+            .artifacts/kaji-handoff-failures/
+          if-no-files-found: error
+          include-hidden-files: true
