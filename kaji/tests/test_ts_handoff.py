@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.protocols import Validator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -90,7 +91,7 @@ def _schema() -> dict[str, Any]:
 
 def _fragment_validator(
     schema: dict[str, Any], definition: str
-) -> Draft202012Validator:
+) -> Validator:
     return Draft202012Validator(
         {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
