@@ -1036,6 +1036,7 @@ def test_kaji_ci_uses_only_reviewed_action_pins_with_release_annotations() -> No
         ".github/workflows/kaji.gate.yml",
         ".github/workflows/kaji.rehearsal.yml",
         ".github/workflows/kaji.publish.yml",
+        ".github/workflows/kaji.handoff.trusted.yml",
         ".github/actions/setup-python-uv/action.yml",
         ".github/actions/setup-bun-cache/action.yml",
     )
@@ -1054,3 +1055,333 @@ def test_kaji_ci_uses_only_reviewed_action_pins_with_release_annotations() -> No
             assert revision == REVIEWED_ACTION_PINS[action]
             assert re.fullmatch(r"[0-9a-f]{40}", revision)
             assert re.fullmatch(r"v\d[^\s]*", release)
+
+
+def _workflow_step_blocks(source: str, name: str) -> list[str]:
+    return re.findall(
+        rf"(?ms)^      - name: {re.escape(name)}\n.*?(?=^      - (?:name:|uses:|if:)|\Z)",
+        source,
+    )
+
+
+def _literal_paths(block: str, key: str) -> list[str]:
+    marker = f"          {key}: |\n"
+    assert marker in block
+    tail = block.split(marker, 1)[1]
+    paths: list[str] = []
+    for line in tail.splitlines():
+        if not line.startswith("            "):
+            break
+        paths.append(line.strip())
+    return paths
+
+
+def _assert_trusted_handoff_workflow_source(source: str) -> None:
+    assert source.startswith("name: handoff / kaji\n\n")
+    assert "  workflow_call:" in source
+    assert re.search(
+        r"(?ms)^    secrets:\n      node_auth_token:\n        required: false\n", source
+    )
+    assert "github_token:" not in source
+    assert "secrets.github_token" not in source
+    assert "secrets: inherit" not in source
+    assert "expected_sha" not in source
+    assert re.findall(r"(?m)^  ([a-z][a-z0-9-]*):$", source) == [
+        "stage",
+        "node",
+        "finalize",
+    ]
+    assert "timeout-minutes: 90" in source
+    assert source.count("timeout-minutes: 30") == 2
+    assert "matrix:\n        node: [22, 24]" in source
+    assert not re.search(r"(?m)^    continue-on-error:", source)
+    assert all(
+        value == "false"
+        for value in re.findall(r"(?m)^        continue-on-error:\s*(\S+)\s*$", source)
+    )
+    assert not re.search(r"(?m)^    if:", source)
+    assert re.findall(r"(?m)^        if:\s*(.+?)\s*$", source) == [
+        "${{ inputs.mode == 'internal-evaluation' }}",
+        "${{ inputs.mode == 'release' }}",
+    ]
+    internal_preflight = _workflow_step_blocks(
+        source, "Preflight internal-evaluation handoff"
+    )
+    release_preflight = _workflow_step_blocks(source, "Preflight release handoff")
+    assert len(internal_preflight) == len(release_preflight) == 1
+    assert "if: ${{ inputs.mode == 'internal-evaluation' }}" in internal_preflight[0]
+    assert "if: ${{ inputs.mode == 'release' }}" in release_preflight[0]
+
+    guards = _workflow_step_blocks(
+        source, "Guard called workflow identity and candidate ref"
+    )
+    assert len(guards) == 3
+    for guard in guards:
+        for field in (
+            "${{ job.workflow_repository }}",
+            "${{ job.workflow_file_path }}",
+            "${{ job.workflow_sha }}",
+            "${{ job.workflow_ref }}",
+            "${{ github.repository }}",
+            "${{ github.sha }}",
+            "${{ github.ref }}",
+        ):
+            assert field in guard
+        assert 'test "$CALLED_WORKFLOW_REPOSITORY" = "enkyuan/alloy"' in guard
+        assert (
+            'test "$CALLED_WORKFLOW_FILE_PATH" = '
+            '".github/workflows/kaji.handoff.trusted.yml"'
+        ) in guard
+        assert (
+            "$CALLED_WORKFLOW_REPOSITORY/$CALLED_WORKFLOW_FILE_PATH@"
+            "$CALLED_WORKFLOW_SHA"
+        ) in guard
+        assert 'test "$CALLER_REPOSITORY" = "enkyuan/alloy"' in guard
+        assert 'test "$CANDIDATE_REF" = "refs/heads/main"' in guard
+        assert 'test "$CANDIDATE_REF" = "refs/tags/$HANDOFF_TAG_NAME"' in guard
+
+    assert len(re.findall(r"(?m)^          GH_TOKEN:", source)) == 1
+    assert "GH_TOKEN: ${{ github.token }}" in source
+    assert source.count("${{ github.token }}") == 1
+    assert len(re.findall(r"(?m)^          NODE_AUTH_TOKEN:", source)) == 1
+    assert "NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}" in source
+    assert source.count("${{ secrets.node_auth_token }}") == 1
+    assert not re.search(r"(?m)^\s+GITHUB_TOKEN:", source)
+    assert not re.search(r"(?m)^\s+NPM_TOKEN:", source)
+    protected_tokens = r"(?:GH_TOKEN|GITHUB_TOKEN|NODE_AUTH_TOKEN|NPM_TOKEN)"
+    assert not re.search(rf"(?m)^  {protected_tokens}:", source)
+    assert not re.search(rf"(?m)^      {protected_tokens}:", source)
+    verifier = _workflow_step_blocks(
+        source, "Verify candidate source and signatures with the trusted verifier"
+    )
+    assert len(verifier) == 1
+    assert "GH_TOKEN: ${{ github.token }}" in verifier[0]
+    assert "NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}" in release_preflight[0]
+
+    checkout = f"actions/checkout@{REVIEWED_ACTION_PINS['actions/checkout']}"
+    assert source.count(checkout) == 5
+    assert source.count("fetch-depth: 0") == 5
+    assert source.count("persist-credentials: false") == 5
+    assert not re.search(r"(?m)^\s*git\b[^\n]*\bfetch\b", source)
+    history_checks = _workflow_step_blocks(
+        source, "Establish protected-main history and clean checkouts"
+    )
+    assert len(history_checks) == 2
+    for history_check in history_checks:
+        for fragment in (
+            "for checkout in trusted candidate; do",
+            'test "$(git -C "$checkout" rev-parse --is-shallow-repository)" = "false"',
+            'main_commit=$(git -C "$checkout" rev-parse --verify '
+            "'refs/remotes/origin/main^{commit}')",
+            'test "${#main_commit}" -eq 40',
+            'case "$main_commit" in *[!0-9a-f]*) exit 1 ;; esac',
+            'test "$(git -C "$checkout" cat-file -t "$main_commit")" = "commit"',
+            "status --porcelain --untracked-files=all",
+        ):
+            assert fragment in history_check
+    assert "path: ./.github/actions/" not in source
+    assert "path: candidate/.github/actions/" not in source
+    assert "trusted/kaji/scripts/verify_ts_handoff_source.py" in source
+    assert "trusted/kaji/scripts/ts_handoff.py" in source
+    assert "trusted/kaji/scripts/validate_ts_consumer_handoff.py" in source
+    assert "candidate/kaji/scripts/" not in source
+
+    stage_command = source.index("trusted/kaji/scripts/ts_handoff.py stage")
+    composite = source.index("--for-handoff artifact-contract")
+    assert stage_command < composite
+    between = source[stage_command:composite]
+    assert "uses:" not in between
+    assert "npm pack" not in source
+    assert "preflight-sha256: ${{ steps.stage.outputs.preflight-sha256 }}" in source
+    stage = _workflow_step_blocks(source, "Stage the immutable package exactly once")
+    assert len(stage) == 1
+    for fragment in (
+        "preflight_sha256=$(sha256sum \"$preflight\" | cut -d ' ' -f 1)",
+        'test "${#preflight_sha256}" -eq 64',
+        'case "$preflight_sha256" in *[!0-9a-f]*) exit 1 ;; esac',
+        'test "$stage_preflight_sha256" = "$preflight_sha256"',
+        'printf \'preflight-sha256=%s\\n\' "$preflight_sha256" >>"$GITHUB_OUTPUT"',
+    ):
+        assert fragment in stage[0]
+
+    authenticate = _workflow_step_blocks(
+        source, "Authenticate exact preflight transfer"
+    )
+    assert len(authenticate) == 1
+    for fragment in (
+        "EXPECTED_PREFLIGHT_SHA256: ${{ needs.stage.outputs.preflight-sha256 }}",
+        'test "${#EXPECTED_PREFLIGHT_SHA256}" -eq 64',
+        'case "$EXPECTED_PREFLIGHT_SHA256" in *[!0-9a-f]*) exit 1 ;; esac',
+        'test "$(sha256sum "$preflight" | cut -d \' \' -f 1)" = '
+        '"$EXPECTED_PREFLIGHT_SHA256"',
+        "stage_preflight_sha256=$(jq -er '.preflightSha256 | "
+        'select(test("^[0-9a-f]{64}$"))\' "$stage")',
+        'test "$stage_preflight_sha256" = "$EXPECTED_PREFLIGHT_SHA256"',
+    ):
+        assert fragment in authenticate[0]
+    finalize = source.index("  finalize:\n")
+    authenticate_position = source.index(
+        "      - name: Authenticate exact preflight transfer", finalize
+    )
+    toolchain_position = source.index(
+        "      - name: Revalidate transfer and select the recorded toolchain", finalize
+    )
+    assert authenticate_position < toolchain_position
+    for setup_name in (
+        "Set up finalizer Python",
+        "Set up recorded uv",
+        "Set up recorded Node",
+        "Set up recorded Bun",
+    ):
+        assert authenticate_position < source.index(
+            f"      - name: {setup_name}", finalize
+        )
+
+    stage_upload = _workflow_step_blocks(source, "Upload exact stage transfer envelope")
+    assert len(stage_upload) == 1
+    assert _literal_paths(stage_upload[0], "path") == [
+        ".artifacts/kaji-handoff-staging/",
+        ".artifacts/kaji-handoff-inputs/source/",
+        ".artifacts/kaji-handoff-inputs/preflight.json",
+    ]
+    consumer_upload = _workflow_step_blocks(source, "Upload exact consumer handoff")
+    attestation = _workflow_step_blocks(source, "Attest exact consumer handoff")
+    assert len(consumer_upload) == len(attestation) == 1
+    subjects = [
+        ".artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}",
+        ".artifacts/kaji-handoff/kaji-sdk.manifest.json",
+        ".artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json",
+    ]
+    assert _literal_paths(consumer_upload[0], "path") == subjects
+    assert _literal_paths(attestation[0], "subject-path") == subjects
+
+    upload_pin = (
+        f"actions/upload-artifact@{REVIEWED_ACTION_PINS['actions/upload-artifact']}"
+    )
+    assert source.count("include-hidden-files: true") == source.count(upload_pin) == 5
+    assert source.count("if-no-files-found: error") == 5
+    assert "overwrite:" not in source
+    assert "merge-multiple:" not in source
+    assert not re.search(r"(?m)^          pattern:", source)
+    assert "kaji-ts-handoff-node-22-${{ needs.stage.outputs.source-commit }}" in source
+    assert "kaji-ts-handoff-node-24-${{ needs.stage.outputs.source-commit }}" in source
+    assert "outputs:\n      receipt:" not in source
+
+    retain = _workflow_step_blocks(
+        source, "Retain closed transport and provenance evidence"
+    )
+    assert len(retain) == 1
+    for fragment in (
+        'case "$KAJI_ATTESTATION_BUNDLE" in /*)',
+        'case "$bundle_real" in "$runner_temp_real"/*)',
+        "select(length == 1)",
+        "(.subject | sort_by(.name)) == ([",
+        'apiDigest: ("sha256:" + $actionDigest)',
+        'attestations/" + $attestationId',
+        "expected_evidence",
+        "expected_receipt_set",
+    ):
+        assert fragment in retain[0]
+    assert "acceptedHandoff: true" not in source
+    assert '"acceptedHandoff":true' not in source
+
+
+def test_trusted_handoff_workflow_has_closed_transport_and_trust_boundaries() -> None:
+    source = (REPO_ROOT / ".github/workflows/kaji.handoff.trusted.yml").read_text()
+    _assert_trusted_handoff_workflow_source(source)
+
+
+@pytest.mark.parametrize(
+    "before,after",
+    [
+        ("${{ job.workflow_repository }}", "${{ github.repository }}"),
+        ("GH_TOKEN: ${{ github.token }}", "GH_TOKEN: ${{ secrets.node_auth_token }}"),
+        ("include-hidden-files: true", "include-hidden-files: false"),
+        (
+            "            .artifacts/kaji-handoff-staging/\n"
+            "            .artifacts/kaji-handoff-inputs/source/",
+            "            .artifacts/kaji-handoff-staging/**\n"
+            "            .artifacts/kaji-handoff-inputs/source/",
+        ),
+        ("select(length == 1)", "select(length >= 1)"),
+        (
+            "secrets:\n      node_auth_token:",
+            "secrets: inherit\n      node_auth_token:",
+        ),
+        (
+            "permissions:\n  contents: read\n",
+            "permissions:\n  contents: read\n\nenv:\n  GH_TOKEN: ${{ github.token }}\n",
+        ),
+        (
+            "  stage:\n    name: trusted source, stage, and artifact contract\n",
+            "  stage:\n    name: trusted source, stage, and artifact contract\n"
+            "    env:\n      NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}\n",
+        ),
+        (
+            "preflight-sha256: ${{ steps.stage.outputs.preflight-sha256 }}",
+            "preflight-sha256: ${{ steps.stage.outputs.artifact-sha256 }}",
+        ),
+        (
+            "EXPECTED_PREFLIGHT_SHA256: ${{ needs.stage.outputs.preflight-sha256 }}",
+            "EXPECTED_PREFLIGHT_SHA256: ${{ needs.stage.outputs.artifact-sha256 }}",
+        ),
+        (
+            "          GH_TOKEN: ${{ github.token }}",
+            "          GH_TOKEN: ${{ github.token }}\n"
+            "          SAFE_ALIAS: ${{ github.token }}",
+        ),
+        (
+            "          NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}",
+            "          NODE_AUTH_TOKEN: ${{ secrets.node_auth_token }}\n"
+            "          SAFE_ALIAS: ${{ secrets.node_auth_token }}",
+        ),
+        (
+            "      - name: Independently validate exact consumer handoff\n"
+            "        shell: bash\n",
+            "      - name: Independently validate exact consumer handoff\n"
+            "        continue-on-error: true\n"
+            "        shell: bash\n",
+        ),
+        (
+            "      - name: Independently validate exact consumer handoff\n"
+            "        shell: bash\n",
+            "      - name: Independently validate exact consumer handoff\n"
+            "        if: ${{ always() }}\n"
+            "        shell: bash\n",
+        ),
+        (
+            "  finalize:\n    name: finalize and attest consumer handoff\n",
+            "  finalize:\n    name: finalize and attest consumer handoff\n"
+            "    if: ${{ always() }}\n",
+        ),
+        (
+            "if: ${{ inputs.mode == 'release' }}",
+            "if: ${{ always() }}",
+        ),
+        (
+            "persist-credentials: false",
+            "persist-credentials: true",
+        ),
+        (
+            "fetch-depth: 0",
+            "fetch-depth: 1",
+        ),
+        (
+            "refs/remotes/origin/main^{commit}",
+            "refs/heads/main^{commit}",
+        ),
+        (
+            '            test "${#main_commit}" -eq 40\n',
+            '            git -C "$checkout" fetch origin main\n'
+            '            test "${#main_commit}" -eq 40\n',
+        ),
+    ],
+)
+def test_trusted_handoff_workflow_rejects_security_mutations(
+    before: str, after: str
+) -> None:
+    source = (REPO_ROOT / ".github/workflows/kaji.handoff.trusted.yml").read_text()
+    assert before in source
+    mutated = source.replace(before, after, 1)
+    with pytest.raises(AssertionError):
+        _assert_trusted_handoff_workflow_source(mutated)

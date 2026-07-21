@@ -255,6 +255,9 @@ type WorkflowJob = {
   environment?: string;
   needs?: string | string[];
   defaults?: { run?: { "working-directory"?: string } };
+  outputs?: Record<string, unknown>;
+  with?: Record<string, unknown>;
+  secrets?: Record<string, unknown> | "inherit";
   steps?: WorkflowStep[];
 };
 type Workflow = {
@@ -278,12 +281,14 @@ const workflowFiles = [
   "kaji.gate.yml",
   "kaji.rehearsal.yml",
   "kaji.publish.yml",
+  "kaji.handoff.trusted.yml",
 ] as const;
 const expectedKajiWorkflowNames = {
   "kaji.benchmark.yml": "benchmark / kaji",
   "kaji.gate.yml": "gate / kaji",
   "kaji.rehearsal.yml": "rehearsal / kaji",
   "kaji.publish.yml": "publish / kaji",
+  "kaji.handoff.trusted.yml": "handoff / kaji",
 } as const;
 type KajiWorkflowFile = keyof typeof expectedKajiWorkflowNames;
 const expectedKajiJobNames = {
@@ -322,6 +327,11 @@ const expectedKajiJobNames = {
     "publication-incident": "publication incident",
     "release-evidence": "release evidence",
   },
+  "kaji.handoff.trusted.yml": {
+    stage: "trusted source, stage, and artifact contract",
+    node: "Node ${{ matrix.node }} handoff receipt",
+    finalize: "finalize and attest consumer handoff",
+  },
 } as const satisfies Record<KajiWorkflowFile, Readonly<Record<string, string>>>;
 const sharedBetaPaths = [
   "kaji/contracts/**",
@@ -334,7 +344,9 @@ const sharedBetaPaths = [
   "package.json",
   "bun.lock",
   "kaji/uv.lock",
-  ...workflowFiles.map((name) => `.github/workflows/${name}`),
+  ...workflowFiles
+    .filter((name) => name !== "kaji.handoff.trusted.yml")
+    .map((name) => `.github/workflows/${name}`),
 ];
 const reviewedActionPins: Record<string, string> = {
   "actions/checkout": "34e114876b0b11c390a56381ad16ebd13914f8d5",
@@ -380,6 +392,15 @@ const expectedJobPermissionDeclarations: Partial<
     "publication-status": { contents: "read", attestations: "read" },
     "publication-incident": { contents: "write" },
     "release-evidence": { contents: "write" },
+  },
+  "kaji.handoff.trusted.yml": {
+    stage: { contents: "read" },
+    node: { contents: "read" },
+    finalize: {
+      contents: "read",
+      "id-token": "write",
+      attestations: "write",
+    },
   },
 };
 const requiredGateCommands = [
@@ -471,6 +492,12 @@ function actionSteps(value: Record<string, unknown>): WorkflowStep[] {
   return [...jobSteps, ...compositeSteps].filter((step) => step.uses !== undefined);
 }
 
+function isTrustedHandoffCall(reference: string): boolean {
+  return /^enkyuan\/alloy\/\.github\/workflows\/kaji\.handoff\.trusted\.yml@[0-9a-f]{40}$/.test(
+    reference,
+  );
+}
+
 function localActionDocument(root: string, reference: string): string {
   const directory = resolve(root, reference);
   const fromRoot = relative(root, directory);
@@ -499,7 +526,14 @@ function assertReviewedActionDocuments(entryPaths: string[], root = repositoryRo
 
     const { source, value } = readYaml(relativePath, root);
     const steps = actionSteps(value);
-    const externalSteps = steps.filter((step) => !step.uses!.startsWith("./"));
+    const reusableCalls = steps.filter((step) => isTrustedHandoffCall(step.uses!));
+    for (const step of reusableCalls) {
+      expect(step.uses).not.toContain("@main");
+      expect(step.uses).not.toContain("${{");
+    }
+    const externalSteps = steps.filter(
+      (step) => !step.uses!.startsWith("./") && !isTrustedHandoffCall(step.uses!),
+    );
     for (const step of externalSteps) {
       const [action, revision] = step.uses!.split("@");
       expect(revision, `${relativePath}:${step.uses}`).toMatch(/^[0-9a-f]{40}$/);
@@ -507,7 +541,7 @@ function assertReviewedActionDocuments(entryPaths: string[], root = repositoryRo
     }
     const annotatedExternalReferences = [
       ...source.matchAll(/^\s*(?:-\s*)?uses:\s+([^\s#]+)(?:\s+#\s+([^\s]+))?\s*$/gm),
-    ].filter(([, reference]) => !reference!.startsWith("./"));
+    ].filter(([, reference]) => !reference!.startsWith("./") && !isTrustedHandoffCall(reference!));
     expect(
       annotatedExternalReferences.map(([, reference]) => reference),
       `${relativePath}:external action annotations`,
@@ -627,6 +661,386 @@ function gateJob(workflow: Workflow): WorkflowJob {
   return job;
 }
 
+function workflowStep(job: WorkflowJob, name: string): WorkflowStep {
+  const step = (job.steps ?? []).find((candidate) => candidate.name === name);
+  if (step === undefined) throw new Error(`missing workflow step: ${name}`);
+  return step;
+}
+
+function literalPathLines(value: unknown): string[] {
+  if (typeof value !== "string") throw new Error("workflow path input must be a string");
+  return value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+}
+
+function assertTrustedHandoffWorkflow(workflow: Workflow, source: string): void {
+  expect(workflow.name).toBe("handoff / kaji");
+  expect(workflow.permissions).toEqual({ contents: "read" });
+  expect(workflow.env).toBeUndefined();
+  const call = workflow.on?.workflow_call as
+    | {
+        inputs?: Record<string, unknown>;
+        secrets?: Record<string, unknown>;
+      }
+    | undefined;
+  expect(call?.inputs).toEqual({
+    mode: { required: true, type: "string" },
+    tag_name: { required: false, type: "string", default: "" },
+  });
+  expect(call?.secrets).toEqual({ node_auth_token: { required: false } });
+  expect(source).not.toContain("secrets: inherit");
+  expect(source).not.toContain("secrets.github_token");
+  expect(source).not.toContain("expected_sha");
+
+  const jobs = workflow.jobs ?? {};
+  expect(Object.keys(jobs).sort()).toEqual(["finalize", "node", "stage"]);
+  const stage = jobs.stage!;
+  const node = jobs.node!;
+  const finalize = jobs.finalize!;
+  expect(stage["timeout-minutes"]).toBe(90);
+  expect(node["timeout-minutes"]).toBe(30);
+  expect(finalize["timeout-minutes"]).toBe(30);
+  expect(stage.permissions).toEqual({ contents: "read" });
+  expect(node.permissions).toEqual({ contents: "read" });
+  expect(finalize.permissions).toEqual({
+    contents: "read",
+    "id-token": "write",
+    attestations: "write",
+  });
+  expect(stage.outputs).toEqual({
+    "source-commit": "${{ steps.stage.outputs.source-commit }}",
+    "artifact-filename": "${{ steps.stage.outputs.artifact-filename }}",
+    "artifact-sha256": "${{ steps.stage.outputs.artifact-sha256 }}",
+    "preflight-sha256": "${{ steps.stage.outputs.preflight-sha256 }}",
+  });
+  expect(node.needs).toBe("stage");
+  expect(finalize.needs).toEqual(["stage", "node"]);
+  expect(node.outputs).toBeUndefined();
+  expect(node.strategy).toEqual({ "fail-fast": false, matrix: { node: [22, 24] } });
+  const conditionalSteps: Array<{ jobId: string; name: string | undefined; condition: unknown }> =
+    [];
+  for (const [jobId, job] of Object.entries(jobs)) {
+    expect(job["continue-on-error"], `${jobId}: job continue-on-error`).toBeUndefined();
+    expect(job.if, `${jobId}: job condition`).toBeUndefined();
+    for (const step of job.steps ?? []) {
+      expect(
+        [undefined, false],
+        `${jobId}:${step.name ?? step.uses}: step continue-on-error`,
+      ).toContain(step["continue-on-error"]);
+      if (step.if !== undefined)
+        conditionalSteps.push({ jobId, name: step.name, condition: step.if });
+    }
+  }
+  expect(conditionalSteps).toEqual([
+    {
+      jobId: "stage",
+      name: "Preflight internal-evaluation handoff",
+      condition: "${{ inputs.mode == 'internal-evaluation' }}",
+    },
+    {
+      jobId: "stage",
+      name: "Preflight release handoff",
+      condition: "${{ inputs.mode == 'release' }}",
+    },
+  ]);
+
+  const expectedGuardEnvironment = {
+    CALLED_WORKFLOW_REPOSITORY: "${{ job.workflow_repository }}",
+    CALLED_WORKFLOW_FILE_PATH: "${{ job.workflow_file_path }}",
+    CALLED_WORKFLOW_SHA: "${{ job.workflow_sha }}",
+    CALLED_WORKFLOW_REF: "${{ job.workflow_ref }}",
+    CALLER_REPOSITORY: "${{ github.repository }}",
+    CANDIDATE_SHA: "${{ github.sha }}",
+    CANDIDATE_REF: "${{ github.ref }}",
+    HANDOFF_MODE: "${{ inputs.mode }}",
+    HANDOFF_TAG_NAME: "${{ inputs.tag_name }}",
+  };
+  for (const job of [stage, node, finalize]) {
+    const guard = job.steps?.[0];
+    expect(guard?.name).toBe("Guard called workflow identity and candidate ref");
+    expect(guard?.env).toEqual(expectedGuardEnvironment);
+    expect(guard?.run).toContain('test "$CALLED_WORKFLOW_REPOSITORY" = "enkyuan/alloy"');
+    expect(guard?.run).toContain(
+      'test "$CALLED_WORKFLOW_FILE_PATH" = ".github/workflows/kaji.handoff.trusted.yml"',
+    );
+    expect(guard?.run).toContain('test "$CALLER_REPOSITORY" = "enkyuan/alloy"');
+    expect(guard?.run).toContain("${#CALLED_WORKFLOW_SHA}");
+    expect(guard?.run).toContain(
+      "$CALLED_WORKFLOW_REPOSITORY/$CALLED_WORKFLOW_FILE_PATH@$CALLED_WORKFLOW_SHA",
+    );
+    expect(guard?.run).toContain('test "$CANDIDATE_REF" = "refs/heads/main"');
+    expect(guard?.run).toContain('test "$CANDIDATE_REF" = "refs/tags/$HANDOFF_TAG_NAME"');
+  }
+
+  const checkoutPin = `actions/checkout@${reviewedActionPins["actions/checkout"]}`;
+  const stageCheckouts = (stage.steps ?? []).filter((step) => step.uses === checkoutPin);
+  expect(stageCheckouts.map((step) => step.with)).toEqual([
+    {
+      repository: "${{ job.workflow_repository }}",
+      ref: "${{ job.workflow_sha }}",
+      "fetch-depth": 0,
+      "persist-credentials": false,
+      path: "trusted",
+    },
+    {
+      repository: "enkyuan/alloy",
+      ref: "${{ github.sha }}",
+      "fetch-depth": 0,
+      "persist-credentials": false,
+      path: "candidate",
+    },
+  ]);
+  const nodeCheckouts = (node.steps ?? []).filter((step) => step.uses === checkoutPin);
+  expect(nodeCheckouts).toHaveLength(1);
+  expect(nodeCheckouts[0]?.with?.path).toBe("trusted");
+  expect(JSON.stringify(node)).not.toContain('path":"candidate');
+  const finalizeCheckouts = (finalize.steps ?? []).filter((step) => step.uses === checkoutPin);
+  expect(finalizeCheckouts).toHaveLength(2);
+  for (const checkout of [...stageCheckouts, ...nodeCheckouts, ...finalizeCheckouts]) {
+    expect(checkout.with?.["fetch-depth"]).toBe(0);
+    expect(checkout.with?.["persist-credentials"]).toBe(false);
+  }
+  expect(source).not.toMatch(/^\s*git\b[^\n]*\bfetch\b/gmu);
+  for (const history of [
+    workflowStep(stage, "Establish protected-main history and clean checkouts"),
+    workflowStep(finalize, "Establish protected-main history and clean checkouts"),
+  ]) {
+    expect(history.run).not.toMatch(/^\s*git\b[^\n]*\bfetch\b/gmu);
+    for (const fragment of [
+      "for checkout in trusted candidate; do",
+      `test "$(git -C "$checkout" rev-parse --is-shallow-repository)" = "false"`,
+      `main_commit=$(git -C "$checkout" rev-parse --verify 'refs/remotes/origin/main^{commit}')`,
+      'test "${#main_commit}" -eq 40',
+      'case "$main_commit" in *[!0-9a-f]*) exit 1 ;; esac',
+      `test "$(git -C "$checkout" cat-file -t "$main_commit")" = "commit"`,
+      "status --porcelain --untracked-files=all",
+    ]) {
+      expect(history.run).toContain(fragment);
+    }
+  }
+
+  const protectedBindings = Object.entries(jobs).flatMap(([jobId, job]) =>
+    (job.steps ?? []).flatMap((step) => {
+      const keys = Object.keys(step.env ?? {}).filter((key) =>
+        ["GH_TOKEN", "GITHUB_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN"].includes(key),
+      );
+      return keys.length === 0 ? [] : [{ jobId, name: step.name, keys, env: step.env }];
+    }),
+  );
+  expect(protectedBindings).toEqual([
+    {
+      jobId: "stage",
+      name: "Verify candidate source and signatures with the trusted verifier",
+      keys: ["GH_TOKEN"],
+      env: expect.objectContaining({ GH_TOKEN: "${{ github.token }}" }),
+    },
+    {
+      jobId: "stage",
+      name: "Preflight release handoff",
+      keys: ["NODE_AUTH_TOKEN"],
+      env: expect.objectContaining({ NODE_AUTH_TOKEN: "${{ secrets.node_auth_token }}" }),
+    },
+  ]);
+  const protectedTokenKeys = ["GH_TOKEN", "GITHUB_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN"];
+  expect(workflow.env).toBeUndefined();
+  for (const [jobId, job] of Object.entries(jobs)) {
+    expect(
+      protectedTokenKeys.filter((key) => Object.hasOwn(job.env ?? {}, key)),
+      `${jobId}: job-scoped token environment`,
+    ).toEqual([]);
+  }
+  const serializedWorkflow = JSON.stringify(workflow);
+  expect(serializedWorkflow.match(/\$\{\{ github[.]token \}\}/gu)).toHaveLength(1);
+  expect(serializedWorkflow.match(/\$\{\{ secrets[.]node_auth_token \}\}/gu)).toHaveLength(1);
+  expect(workflowStep(stage, "Preflight internal-evaluation handoff").env).not.toHaveProperty(
+    "NODE_AUTH_TOKEN",
+  );
+  expect(workflowStep(finalize, "Attest exact consumer handoff").with).not.toHaveProperty(
+    "github-token",
+  );
+
+  const stageSteps = stage.steps ?? [];
+  const stageIndex = stageSteps.findIndex((step) =>
+    step.run?.includes("trusted/kaji/scripts/ts_handoff.py stage"),
+  );
+  const compositeIndex = stageSteps.findIndex((step) =>
+    step.run?.includes("--for-handoff artifact-contract"),
+  );
+  expect(stageIndex).toBeGreaterThanOrEqual(0);
+  expect(compositeIndex).toBe(stageIndex + 1);
+  expect(stageSteps[stageIndex]?.run).not.toContain("npm pack");
+  expect(stageSteps[compositeIndex]?.run).not.toContain("npm pack");
+  expect(stageSteps[compositeIndex]?.run).not.toContain("bun run build");
+  const stageRun = workflowStep(stage, "Stage the immutable package exactly once").run ?? "";
+  for (const fragment of [
+    `preflight_sha256=$(sha256sum "$preflight" | cut -d ' ' -f 1)`,
+    'test "${#preflight_sha256}" -eq 64',
+    'case "$preflight_sha256" in *[!0-9a-f]*) exit 1 ;; esac',
+    'test "$stage_preflight_sha256" = "$preflight_sha256"',
+    `printf 'preflight-sha256=%s\\n' "$preflight_sha256" >>"$GITHUB_OUTPUT"`,
+  ]) {
+    expect(stageRun).toContain(fragment);
+  }
+
+  const uploadPin = `actions/upload-artifact@${reviewedActionPins["actions/upload-artifact"]}`;
+  const allUploads = Object.values(jobs).flatMap((job) =>
+    (job.steps ?? []).filter((step) => step.uses === uploadPin),
+  );
+  for (const upload of allUploads) {
+    expect(upload.with?.["if-no-files-found"]).toBe("error");
+    expect(upload.with?.["include-hidden-files"]).toBe(true);
+    expect(upload.with).not.toHaveProperty("overwrite");
+    expect(literalPathLines(upload.with?.path).every((path) => !path.includes("*"))).toBe(true);
+  }
+  const stageUpload = workflowStep(stage, "Upload exact stage transfer envelope");
+  expect(stageUpload.with?.name).toBe("kaji-ts-handoff-stage-${{ env.KAJI_RELEASE_COMMIT }}");
+  expect(literalPathLines(stageUpload.with?.path)).toEqual([
+    ".artifacts/kaji-handoff-staging/",
+    ".artifacts/kaji-handoff-inputs/source/",
+    ".artifacts/kaji-handoff-inputs/preflight.json",
+  ]);
+  const compositeUpload = workflowStep(stage, "Upload artifact-contract receipt only");
+  expect(literalPathLines(compositeUpload.with?.path)).toEqual([
+    ".artifacts/kaji-handoff-inputs/receipts/artifact-contract.json",
+  ]);
+  const nodeUpload = workflowStep(node, "Upload one Node receipt only");
+  expect(nodeUpload.with?.name).toBe(
+    "kaji-ts-handoff-node-${{ matrix.node }}-${{ needs.stage.outputs.source-commit }}",
+  );
+  expect(literalPathLines(nodeUpload.with?.path)).toEqual([
+    ".artifacts/kaji-handoff-inputs/receipts/node-${{ matrix.node }}.json",
+  ]);
+
+  const downloadPin = `actions/download-artifact@${reviewedActionPins["actions/download-artifact"]}`;
+  const nodeDownloads = (node.steps ?? []).filter((step) => step.uses === downloadPin);
+  expect(nodeDownloads.map((step) => step.with?.name)).toEqual([
+    "kaji-ts-handoff-stage-${{ needs.stage.outputs.source-commit }}",
+  ]);
+  const finalDownloads = (finalize.steps ?? []).filter((step) => step.uses === downloadPin);
+  expect(finalDownloads.map((step) => step.with?.name)).toEqual([
+    "kaji-ts-handoff-stage-${{ needs.stage.outputs.source-commit }}",
+    "kaji-ts-handoff-artifact-contract-${{ needs.stage.outputs.source-commit }}",
+    "kaji-ts-handoff-node-22-${{ needs.stage.outputs.source-commit }}",
+    "kaji-ts-handoff-node-24-${{ needs.stage.outputs.source-commit }}",
+  ]);
+  for (const download of [...nodeDownloads, ...finalDownloads]) {
+    expect(download.with).not.toHaveProperty("pattern");
+    expect(download.with).not.toHaveProperty("merge-multiple");
+    expect(String(download.with?.name)).not.toContain("*");
+  }
+  expect(workflowStep(node, "Revalidate staged tarball and resolve Node binary").run).toContain(
+    "sha256sum",
+  );
+  expect(
+    workflowStep(finalize, "Revalidate transfer and select the recorded toolchain").run,
+  ).toContain("sha256sum");
+  const finalizeSteps = finalize.steps ?? [];
+  const authenticateIndex = finalizeSteps.findIndex(
+    (step) => step.name === "Authenticate exact preflight transfer",
+  );
+  const toolchainIndex = finalizeSteps.findIndex(
+    (step) => step.name === "Revalidate transfer and select the recorded toolchain",
+  );
+  expect(authenticateIndex).toBeGreaterThanOrEqual(0);
+  expect(authenticateIndex).toBeLessThan(toolchainIndex);
+  const authenticate = workflowStep(finalize, "Authenticate exact preflight transfer");
+  expect(authenticate.env).toEqual({
+    EXPECTED_PREFLIGHT_SHA256: "${{ needs.stage.outputs.preflight-sha256 }}",
+  });
+  for (const fragment of [
+    'test "${#EXPECTED_PREFLIGHT_SHA256}" -eq 64',
+    'case "$EXPECTED_PREFLIGHT_SHA256" in *[!0-9a-f]*) exit 1 ;; esac',
+    `test "$(sha256sum "$preflight" | cut -d ' ' -f 1)" = "$EXPECTED_PREFLIGHT_SHA256"`,
+    `stage_preflight_sha256=$(jq -er '.preflightSha256 | select(test("^[0-9a-f]{64}$"))' "$stage")`,
+    'test "$stage_preflight_sha256" = "$EXPECTED_PREFLIGHT_SHA256"',
+  ]) {
+    expect(authenticate.run).toContain(fragment);
+  }
+  for (const setupName of [
+    "Set up finalizer Python",
+    "Set up recorded uv",
+    "Set up recorded Node",
+    "Set up recorded Bun",
+  ]) {
+    const setupIndex = finalizeSteps.findIndex((step) => step.name === setupName);
+    expect(setupIndex, setupName).toBeGreaterThan(authenticateIndex);
+  }
+  expect(workflowStep(finalize, "Guard exact stage transfer download").run).toContain(
+    "expected_stage",
+  );
+  expect(workflowStep(finalize, "Guard artifact-contract download before merge").run).toContain(
+    "artifact-contract.json",
+  );
+  expect(workflowStep(finalize, "Guard Node 22 download before merge").run).toContain(
+    "node-22.json",
+  );
+  expect(workflowStep(finalize, "Guard Node 24 download before finalization").run).toContain(
+    "node-24.json",
+  );
+
+  const consumerUpload = workflowStep(finalize, "Upload exact consumer handoff");
+  const provenance = workflowStep(finalize, "Attest exact consumer handoff");
+  const expectedSubjects = [
+    ".artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}",
+    ".artifacts/kaji-handoff/kaji-sdk.manifest.json",
+    ".artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json",
+  ];
+  expect(literalPathLines(consumerUpload.with?.path)).toEqual(expectedSubjects);
+  expect(literalPathLines(provenance.with?.["subject-path"])).toEqual(expectedSubjects);
+  const retain = workflowStep(finalize, "Retain closed transport and provenance evidence");
+  expect(retain.env).toMatchObject({
+    KAJI_HANDOFF_ARTIFACT_ID: "${{ steps.handoff-upload.outputs.artifact-id }}",
+    KAJI_HANDOFF_ACTION_DIGEST: "${{ steps.handoff-upload.outputs.artifact-digest }}",
+    KAJI_ATTESTATION_ID: "${{ steps.handoff-provenance.outputs.attestation-id }}",
+    KAJI_ATTESTATION_URL: "${{ steps.handoff-provenance.outputs.attestation-url }}",
+    KAJI_ATTESTATION_BUNDLE: "${{ steps.handoff-provenance.outputs.bundle-path }}",
+  });
+  for (const fragment of [
+    'case "$bundle_real" in "$runner_temp_real"/*)',
+    "select(length == 1)",
+    "(.subject | sort_by(.name)) == ([",
+    'apiDigest: ("sha256:" + $actionDigest)',
+    'attestations/" + $attestationId',
+    "expected_evidence",
+    "expected_receipt_set",
+    "authorization[[:space:]]*:",
+  ]) {
+    expect(retain.run).toContain(fragment);
+  }
+  const evidenceUpload = workflowStep(finalize, "Upload separate operational handoff evidence");
+  expect(evidenceUpload.with?.name).toBe(
+    "kaji-ts-consumer-handoff-evidence-${{ env.KAJI_RELEASE_COMMIT }}",
+  );
+  expect(evidenceUpload.with?.name).not.toBe(consumerUpload.with?.name);
+  expect(literalPathLines(evidenceUpload.with?.path)).not.toEqual(expectedSubjects);
+  expect(source).not.toContain('acceptedHandoff":true');
+}
+
+function runTrustedHandoffGuard(
+  guard: WorkflowStep,
+  overrides: Record<string, string> = {},
+): ReturnType<typeof spawnSync> {
+  const calledSha = "a".repeat(40);
+  return spawnSync("/bin/bash", ["-c", guard.run!], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CALLED_WORKFLOW_REPOSITORY: "enkyuan/alloy",
+      CALLED_WORKFLOW_FILE_PATH: ".github/workflows/kaji.handoff.trusted.yml",
+      CALLED_WORKFLOW_SHA: calledSha,
+      CALLED_WORKFLOW_REF: `enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@${calledSha}`,
+      CALLER_REPOSITORY: "enkyuan/alloy",
+      CANDIDATE_SHA: "b".repeat(40),
+      CANDIDATE_REF: "refs/heads/main",
+      HANDOFF_MODE: "internal-evaluation",
+      HANDOFF_TAG_NAME: "",
+      ...overrides,
+    },
+  });
+}
+
 describe("Kaji workflow contracts", () => {
   it("uses functional display names for every Kaji workflow and job", () => {
     for (const workflowFile of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
@@ -640,6 +1054,27 @@ describe("Kaji workflow contracts", () => {
         expect(jobs[jobId]?.name, `${workflowFile}:${jobId}`).toBe(expectedName);
       }
     }
+  });
+
+  it("defines the closed diagnostic-only trusted handoff workflow", () => {
+    const { source, workflow } = readWorkflow("kaji.handoff.trusted.yml");
+    assertTrustedHandoffWorkflow(workflow, source);
+  });
+
+  it("accepts bootstrap identity where caller and called revisions differ", () => {
+    const calledSha = "a".repeat(40);
+    const callerSha = "b".repeat(40);
+    const bootstrapCall: WorkflowJob = {
+      uses: `enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@${calledSha}`,
+      with: { mode: "internal-evaluation", tag_name: "" },
+      permissions: { contents: "read", "id-token": "write", attestations: "write" },
+    };
+    expect(isTrustedHandoffCall(bootstrapCall.uses!)).toBe(true);
+    expect(callerSha).not.toBe(calledSha);
+    const guard = readWorkflow("kaji.handoff.trusted.yml").workflow.jobs?.stage?.steps?.[0];
+    expect(guard).toBeDefined();
+    const execution = runTrustedHandoffGuard(guard!, { CANDIDATE_SHA: callerSha });
+    expect(execution.status, String(execution.stderr)).toBe(0);
   });
 
   it.each([
@@ -678,7 +1113,11 @@ describe("Kaji workflow contracts", () => {
     for (const name of workflowFiles) {
       const { workflow } = readWorkflow(name);
       for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
-        expect(job["timeout-minutes"], `${name}:${jobId}`).toBeGreaterThan(0);
+        if (job.uses === undefined) {
+          expect(job["timeout-minutes"], `${name}:${jobId}`).toBeGreaterThan(0);
+        } else {
+          expect(job["timeout-minutes"], `${name}:${jobId}:call job timeout`).toBeUndefined();
+        }
         if (job["timeout-minutes"] === 75) {
           expect(`${name}:${jobId}`).toBe("kaji.publish.yml:performance");
         }
@@ -1403,6 +1842,245 @@ describe("Kaji workflow contracts", () => {
 });
 
 describe("Kaji workflow contract mutations", () => {
+  it.each([
+    ["called repository", { CALLED_WORKFLOW_REPOSITORY: "fork/alloy" }],
+    ["called path", { CALLED_WORKFLOW_FILE_PATH: ".github/workflows/other.yml" }],
+    ["called digest", { CALLED_WORKFLOW_SHA: "A".repeat(40) }],
+    [
+      "called canonical ref",
+      { CALLED_WORKFLOW_REF: "enkyuan/alloy/.github/workflows/kaji.handoff.trusted.yml@main" },
+    ],
+    ["caller repository", { CALLER_REPOSITORY: "fork/alloy" }],
+    ["candidate digest", { CANDIDATE_SHA: "short" }],
+    ["feature source ref", { CANDIDATE_REF: "refs/heads/feature" }],
+    ["internal tag", { HANDOFF_TAG_NAME: "kaji-v1" }],
+    ["open mode", { HANDOFF_MODE: "diagnostic" }],
+  ] as const)("rejects mutated trusted handoff %s", (_label, environment) => {
+    const guard = readWorkflow("kaji.handoff.trusted.yml").workflow.jobs?.stage?.steps?.[0];
+    expect(guard).toBeDefined();
+    expect(runTrustedHandoffGuard(guard!, environment).status).not.toBe(0);
+  });
+
+  it("accepts only the canonical release tag relation", () => {
+    const guard = readWorkflow("kaji.handoff.trusted.yml").workflow.jobs?.stage?.steps?.[0];
+    expect(guard).toBeDefined();
+    const valid = runTrustedHandoffGuard(guard!, {
+      HANDOFF_MODE: "release",
+      HANDOFF_TAG_NAME: "kaji-beta.1",
+      CANDIDATE_REF: "refs/tags/kaji-beta.1",
+    });
+    expect(valid.status, String(valid.stderr)).toBe(0);
+    for (const tag of ["kaji-", "kaji-beta.lock", "kaji-beta/1", "Kaji-beta.1"]) {
+      expect(
+        runTrustedHandoffGuard(guard!, {
+          HANDOFF_MODE: "release",
+          HANDOFF_TAG_NAME: tag,
+          CANDIDATE_REF: `refs/tags/${tag}`,
+        }).status,
+        tag,
+      ).not.toBe(0);
+    }
+  });
+
+  it.each([
+    [
+      "called identity binding",
+      (workflow: Workflow): void => {
+        workflow.jobs!.stage!.steps![0]!.env!.CALLED_WORKFLOW_REPOSITORY =
+          "${{ github.repository }}";
+      },
+    ],
+    [
+      "top-level token environment",
+      (workflow: Workflow): void => {
+        workflow.env = { GH_TOKEN: "${{ github.token }}" };
+      },
+    ],
+    [
+      "job-scoped token environment",
+      (workflow: Workflow): void => {
+        workflow.jobs!.finalize!.env = { NODE_AUTH_TOKEN: "${{ secrets.node_auth_token }}" };
+      },
+    ],
+    [
+      "aliased token expression",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.finalize!, "Upload exact consumer handoff").with!.SAFE_ALIAS =
+          "${{ github.token }}";
+      },
+    ],
+    [
+      "preflight stage output authority",
+      (workflow: Workflow): void => {
+        workflow.jobs!.stage!.outputs!["preflight-sha256"] =
+          "${{ steps.stage.outputs.artifact-sha256 }}";
+      },
+    ],
+    [
+      "preflight finalizer binding",
+      (workflow: Workflow): void => {
+        workflowStep(
+          workflow.jobs!.finalize!,
+          "Authenticate exact preflight transfer",
+        ).env!.EXPECTED_PREFLIGHT_SHA256 = "${{ needs.stage.outputs.artifact-sha256 }}";
+      },
+    ],
+    [
+      "preflight content hash",
+      (workflow: Workflow): void => {
+        const authenticate = workflowStep(
+          workflow.jobs!.finalize!,
+          "Authenticate exact preflight transfer",
+        );
+        authenticate.run = authenticate.run!.replace(
+          `sha256sum "$preflight"`,
+          `printf '%s' "$stage_preflight_sha256"`,
+        );
+      },
+    ],
+    [
+      "preflight guard ordering",
+      (workflow: Workflow): void => {
+        const steps = workflow.jobs!.finalize!.steps!;
+        const authenticate = steps.findIndex(
+          (step) => step.name === "Authenticate exact preflight transfer",
+        );
+        const [guard] = steps.splice(authenticate, 1);
+        const setup = steps.findIndex((step) => step.name === "Set up recorded Bun");
+        steps.splice(setup + 1, 0, guard!);
+      },
+    ],
+    [
+      "independent validation continue-on-error",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.finalize!, "Independently validate exact consumer handoff")[
+          "continue-on-error"
+        ] = true;
+      },
+    ],
+    [
+      "independent validation condition",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.finalize!, "Independently validate exact consumer handoff").if =
+          "${{ always() }}";
+      },
+    ],
+    [
+      "job-level condition",
+      (workflow: Workflow): void => {
+        workflow.jobs!.finalize!.if = "${{ always() }}";
+      },
+    ],
+    [
+      "preflight condition drift",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.stage!, "Preflight release handoff").if = "${{ always() }}";
+      },
+    ],
+    [
+      "post-checkout shell fetch",
+      (workflow: Workflow): void => {
+        const history = workflowStep(
+          workflow.jobs!.stage!,
+          "Establish protected-main history and clean checkouts",
+        );
+        history.run = `${history.run}\ngit -C "$checkout" fetch origin main`;
+      },
+    ],
+    [
+      "main tracking-ref drift",
+      (workflow: Workflow): void => {
+        const history = workflowStep(
+          workflow.jobs!.finalize!,
+          "Establish protected-main history and clean checkouts",
+        );
+        history.run = history.run!.replace(
+          "refs/remotes/origin/main^{commit}",
+          "refs/heads/main^{commit}",
+        );
+      },
+    ],
+    [
+      "checkout fetch depth",
+      (workflow: Workflow): void => {
+        const checkout = workflow.jobs!.stage!.steps!.find((step) =>
+          step.uses?.startsWith("actions/checkout@"),
+        );
+        checkout!.with!["fetch-depth"] = 1;
+      },
+    ],
+    [
+      "checkout credential persistence",
+      (workflow: Workflow): void => {
+        const checkout = workflow.jobs!.finalize!.steps!.find((step) =>
+          step.uses?.startsWith("actions/checkout@"),
+        );
+        checkout!.with!["persist-credentials"] = true;
+      },
+    ],
+    [
+      "stage/composite adjacency",
+      (workflow: Workflow): void => {
+        const steps = workflow.jobs!.stage!.steps!;
+        const stage = steps.findIndex(
+          (step) => step.name === "Stage the immutable package exactly once",
+        );
+        steps.splice(stage + 1, 0, { name: "mutated gap", run: "true" });
+      },
+    ],
+    [
+      "composite token environment",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.stage!, "Prove the supplied artifact contract").env = {
+          GH_TOKEN: "${{ github.token }}",
+        };
+      },
+    ],
+    [
+      "wildcard stage transfer",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.stage!, "Upload exact stage transfer envelope").with!.path =
+          ".artifacts/**";
+      },
+    ],
+    [
+      "hidden-file exclusion",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.stage!, "Upload artifact-contract receipt only").with![
+          "include-hidden-files"
+        ] = false;
+      },
+    ],
+    [
+      "matrix shared output",
+      (workflow: Workflow): void => {
+        workflow.jobs!.node!.outputs = { receipt: "${{ steps.smoke.outputs.receipt }}" };
+      },
+    ],
+    [
+      "wildcard receipt download",
+      (workflow: Workflow): void => {
+        const step = workflow.jobs!.finalize!.steps!.find((candidate) =>
+          candidate.name?.includes("Download exact Node 22"),
+        )!;
+        step.with!.name = "kaji-ts-handoff-node-*";
+      },
+    ],
+    [
+      "attestation subject drift",
+      (workflow: Workflow): void => {
+        workflowStep(workflow.jobs!.finalize!, "Attest exact consumer handoff").with![
+          "subject-path"
+        ] = ".artifacts/kaji-handoff/*";
+      },
+    ],
+  ] as const)("rejects trusted handoff structural mutation: %s", (_label, mutate) => {
+    const current = readWorkflow("kaji.handoff.trusted.yml");
+    const workflow = structuredClone(current.workflow);
+    mutate(workflow);
+    expect(() => assertTrustedHandoffWorkflow(workflow, current.source)).toThrow();
+  });
+
   it.each([
     ["job continue-on-error", (job: WorkflowJob): void => void (job["continue-on-error"] = true)],
     ["job if false", (job: WorkflowJob): void => void (job.if = false)],
