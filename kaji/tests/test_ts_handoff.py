@@ -89,9 +89,7 @@ def _schema() -> dict[str, Any]:
     return value
 
 
-def _fragment_validator(
-    schema: dict[str, Any], definition: str
-) -> Validator:
+def _fragment_validator(schema: dict[str, Any], definition: str) -> Validator:
     return Draft202012Validator(
         {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

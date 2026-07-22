@@ -1337,7 +1337,11 @@ describe("Kaji workflow contracts", () => {
     const packageSmokeVersion = readFileSync(resolve("scripts/smoke_package.mts"), "utf8").match(
       /const PACKAGE_VERSION = "([^"]+)"/,
     );
-    const tarball = npmPackBasenameV1(handoffSchema(), packageManifest.name, packageManifest.version);
+    const tarball = npmPackBasenameV1(
+      handoffSchema(),
+      packageManifest.name,
+      packageManifest.version,
+    );
 
     expect(packageManifest.version).toBe("0.2.0-beta.2");
     expect(packageManifest.version).not.toBe("0.2.0-beta.1");
