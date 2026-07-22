@@ -4,6 +4,15 @@ import { describe, expect, it } from "vitest";
 
 import { EventType, KajiEvent } from "@/index";
 
+const lifecycleContract = {
+  inMemorySessionAdmission: "fail_closed_until_explicit_purge",
+  purgedSessionReuse: "fresh_sequence",
+  purgeClosesExistingSubscribers: true,
+  purgeFencesDirectStoreOperations: true,
+  postDeleteCleanup: "tombstone_until_converged",
+  splitDeliveryPurge: "unsupported",
+} as const;
+
 function readFixture(name: string): unknown {
   return JSON.parse(
     readFileSync(new URL(`../../fixtures/events/${name}`, import.meta.url), "utf8"),
@@ -11,6 +20,21 @@ function readFixture(name: string): unknown {
 }
 
 describe("shared event schema fixtures", () => {
+  it("pins and packages the cross-SDK session lifecycle contract byte-for-byte", () => {
+    for (const name of ["beta-core-v1.json", "feature-tiers-v1.json"] as const) {
+      const canonical = readFileSync(new URL(`../../contracts/${name}`, import.meta.url));
+      expect(readFileSync(new URL(`../../src/kaji/contracts/${name}`, import.meta.url))).toEqual(
+        canonical,
+      );
+      expect(readFileSync(new URL(`../contracts/${name}`, import.meta.url))).toEqual(canonical);
+    }
+
+    const contract = JSON.parse(
+      readFileSync(new URL("../../contracts/beta-core-v1.json", import.meta.url), "utf8"),
+    ) as { events: Record<string, unknown> };
+    expect(contract.events).toMatchObject(lifecycleContract);
+  });
+
   it("parses an agent message completed event with usage and cost", () => {
     const event = KajiEvent.parse(readFixture("agent-message-completed-with-usage.json"));
 

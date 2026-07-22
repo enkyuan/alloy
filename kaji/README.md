@@ -216,6 +216,33 @@ subscription.
 `AgentRuntime.history()` and `TextSession.events()` return at most 1,024 stored
 events by default. Pass `after_sequence` and `limit` to page explicitly.
 
+### Explicit session lifecycle
+
+The Python and TypeScript SDKs share the same supported in-memory purge
+lifecycle. The bounded store never evicts retained sessions implicitly: a full
+store raises `EventStoreCapacityError` until the host explicitly purges one.
+Stop ingress, drain tools and providers, export only reduced evidence, then run:
+
+```python
+await runtime.purge_session(session_id)
+```
+
+Purge rejects with `SessionPurgeBusyError` while owned work is active and with
+`SessionPurgeUnsupportedError` when the store, delivery path, or idempotency
+ledger cannot participate. Runtime purge closes its old subscribers, removes
+the event and ID indexes, and clears all runtime owners sharing that store; a
+standalone raw listener must be closed by its caller. Reset cursors to `0`
+before reuse; the next generation begins at sequence `1`.
+
+`PurgeableEventStore.purge_session(session_id)` is the public one-argument
+store-only capability, detected by `supports_session_purge()`. Runtime purge
+also requires Kaji's internal opaque coordinated capability, so a custom store
+implementing only the public method fails closed at the runtime boundary.
+Direct store operations and new owners remain fenced throughout purge. Split
+delivery is unsupported. If post-delete cache or settled-ledger cleanup fails,
+the strong `cleanup_pending` tombstone remains until a runtime purge retry
+converges; physical deletion is not repeated.
+
 `AgentRuntime.turn()` returns a `TurnResult` with a unique `turn_id`. The
 default process-local `InMemoryTurnCoordinator` is shared by runtimes using the
 same `EventStore` object, serializing same-session turns while allowing

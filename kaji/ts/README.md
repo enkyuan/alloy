@@ -136,6 +136,21 @@ first to reject future turn APIs; history and purge remain callable afterward.
 `close()` does not delete retained history and does not cancel already-active
 work.
 
+This lifecycle is identical to Python's supported in-memory path. The bounded
+store never evicts a retained session implicitly: a full store raises
+`EventStoreCapacityError` until the host explicitly purges one. Runtime purge
+closes its old subscribers, removes the event and ID indexes, and clears every
+runtime owner sharing the store; a standalone raw listener must be closed by
+its caller. Reset cursors to `0` before reuse; the next generation begins at
+sequence `1`.
+
+`PurgeableEventStore.purgeSession(sessionId)` is the public one-argument
+store-only capability, detected by `supportsSessionPurge()`. Runtime purge also
+requires Kaji's internal opaque coordinated capability, so a custom store that
+implements only the public method fails closed at the runtime boundary. Direct
+store operations and new owners remain fenced throughout purge. Split delivery
+is unsupported because its outbox cannot cross a reused generation.
+
 TypeScript's embedded defaults are bounded, in-memory, and process-local. This
 beta ships no persistent event store or distributed coordinator and does not
 release-certify host implementations; durability, deletion, and cross-process
@@ -148,8 +163,11 @@ A custom `ToolIdempotencyLedger` must implement optional `releaseSettled()` to
 participate in purge. The event store and SDK caches are already cleared before
 host ledger cleanup is awaited. If that cleanup rejects, deletion cannot be
 rolled back; repair the host ledger and retry the named purge. If it never
-settles, the purge promise and fence remain pending. Kaji cannot force hostile
-in-process host code to settle.
+settles, the strong `cleanup_pending` tombstone keeps turns, direct store
+operations, subscriptions, and new owners fenced. A later runtime purge retries
+cleanup without repeating physical deletion. Kaji cannot force hostile
+in-process host code to settle. `TurnAccounting` remains TypeScript-only and is
+separate from the cross-SDK purge contract.
 
 Then set an API key and add a risk-classified tool with explicit caller
 identity, deadline, and cancellation:

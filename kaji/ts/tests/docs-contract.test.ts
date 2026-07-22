@@ -194,7 +194,17 @@ describe("cross-SDK release matrix docs", () => {
     expect(normalizedProduction).toContain("Ordinary terminal tool failure");
     expect(normalizedProduction).toContain("Mid-provider cooperative cancellation");
     expect(normalizedProduction).toContain("Failure-event append failure");
-    expect(normalizedProduction).toContain("## TypeScript-only purge and accounting");
+    expect(normalizedProduction).toContain("## Cross-SDK session purge");
+    expect(normalizedProduction).toContain("Both SDKs use the same session lifecycle");
+    expect(normalizedProduction).toContain("public one-argument store capability");
+    expect(normalizedProduction).toContain("internal coordinated capability");
+    expect(normalizedProduction).toContain("cleanup_pending");
+    expect(normalizedProduction).toContain("`TurnAccounting` remains TypeScript-only");
+    expect(normalizedOrdering).toContain(
+      "direct append, event reads, last-sequence reads, transactions, and subscription registration",
+    );
+    expect(normalizedOrdering).toContain("old subscribers terminate normally");
+    expect(normalizedOrdering).toContain("Split delivery remains purge-unsupported");
     expect(normalizedProduction).toContain(
       "ships no persistent event store or distributed coordinator",
     );

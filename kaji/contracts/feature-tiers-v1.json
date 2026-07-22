@@ -125,7 +125,10 @@
         "ProviderOutputLimitError",
         "ProviderRateLimitedError",
         "ProviderResponseLimits",
+        "PurgeableEventStore",
         "SessionManager",
+        "SessionPurgeBusyError",
+        "SessionPurgeUnsupportedError",
         "SessionRecord",
         "SessionState",
         "SessionStore",
@@ -163,6 +166,7 @@
         "register_tool",
         "replay_session",
         "spec_to_neutral",
+        "supports_session_purge",
         "to_anthropic",
         "to_openai",
         "tool"

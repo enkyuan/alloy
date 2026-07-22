@@ -37,6 +37,12 @@
     "maxDurableEventBytes": 1048576,
     "inMemoryStoreMaxSessions": 1000,
     "inMemoryStoreMaxEventsPerSession": 10000,
+    "inMemorySessionAdmission": "fail_closed_until_explicit_purge",
+    "purgedSessionReuse": "fresh_sequence",
+    "purgeClosesExistingSubscribers": true,
+    "purgeFencesDirectStoreOperations": true,
+    "postDeleteCleanup": "tombstone_until_converged",
+    "splitDeliveryPurge": "unsupported",
     "overflow": "typed_error"
   },
   "integrations": {

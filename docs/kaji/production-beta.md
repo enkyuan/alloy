@@ -209,29 +209,54 @@ or distributed coordinator and does not release-certify host implementations;
 their durability, deletion, and cross-process correctness are host
 responsibilities.
 
-## TypeScript-only purge and accounting
+## Cross-SDK session purge
 
-The following lifecycle is TypeScript-only in this beta. `TurnAccounting`
-summarizes only normally completed provider iterations on a successful
-`TurnResult`; thrown failed turns have no aggregate accounting result.
-`PurgeableEventStore`, `supportsSessionPurge()`, `purgeSession()`,
-`SessionPurgeBusyError`, and `SessionPurgeUnsupportedError` are not Python
-parity claims.
+Both SDKs use the same session lifecycle for the supported in-memory path.
+Before disposal, stop ingress for the named session, drain tools and providers,
+page and reduce required evidence, then call `purge_session(session_id)` in
+Python or `purgeSession(sessionId)` in TypeScript. A live runtime may keep
+serving other sessions. For whole-runtime shutdown, `close()` may run first to
+reject new turn APIs; history, drains, and purge remain callable. A provider
+quarantine or other owned work makes purge fail closed with
+`SessionPurgeBusyError`.
 
-Before disposal, stop ingress for the named session. Drain tool and provider
-work, page and reduce required evidence, and then call
-`purgeSession(sessionId)`. A live runtime may keep serving other sessions. For a
-whole-runtime shutdown, call `close()` first to block new turn APIs; history and
-purge remain callable afterward. A provider that violates cancellation keeps
-the session quarantined until it really settles and `drainProviders()` succeeds.
+The bounded in-memory store never evicts a retained session implicitly. When
+every slot is occupied, admitting a new session raises
+`EventStoreCapacityError` until the host explicitly purges one. Successful
+purge normally terminates old subscribers, deletes the retained event and ID
+indexes, clears every runtime owner's projection/diagnostic caches, and releases
+settled idempotency entries. Reuse is a fresh generation: reset history and
+subscription cursors to `0`; the next stored event starts at sequence `1`.
 
-Purge removes SDK-owned retained indexes and caches but cannot promise VM string
-zeroization or delete copies held by the caller, providers, logs, observability
-backends, custom stores, or crash dumps. A custom store without the purge
-capability fails closed. A custom `ToolIdempotencyLedger.releaseSettled()` runs
-as host ledger cleanup only after the event store and SDK caches have been
-cleared. If it rejects, purge cannot roll back deletion; repair the host ledger
-and retry. If it never settles, the purge promise and fence remain pending.
+`PurgeableEventStore.purge_session(session_id)` and
+`PurgeableEventStore.purgeSession(sessionId)` are the public one-argument store
+capability, detected by `supports_session_purge()` / `supportsSessionPurge()`.
+Runtime purge additionally requires the built-in internal coordinated
+capability: its opaque, single-use authorization binds the store, session, and
+active purge lease. A custom store that implements only the public capability
+remains valid for store-only teardown, but runtime purge rejects it as
+`SessionPurgeUnsupportedError(component="event_store")` before mutation.
+
+The session fence covers direct append, event and last-sequence reads,
+transactions, and subscription registration as well as runtime turns and new
+shared-store owners. Stable in-memory delivery closes runtime-owned old
+subscribers before physical deletion; a standalone raw listener must be closed
+by its caller. Split delivery remains purge-unsupported because Kaji does
+not reconcile an outbox across reused generations; unsupported custom delivery
+or idempotency components also fail before deletion.
+
+After physical deletion, `cleanup_pending` is a strong tombstone until every
+shared runtime owner clears caches and host ledger cleanup converges. If cleanup
+fails, deletion cannot be rolled back: all fenced operations keep failing
+closed, and a later runtime purge retries cleanup without repeating physical
+deletion. Kaji cannot promise VM string zeroization or delete copies held by
+callers, providers, logs, observability backends, custom stores, or crash dumps.
+
+### TypeScript-only accounting
+
+`TurnAccounting` remains TypeScript-only. It summarizes only normally completed
+provider iterations on a successful `TurnResult`; thrown failed turns have no
+aggregate accounting result.
 
 ## Stable core
 

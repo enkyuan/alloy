@@ -46,8 +46,15 @@ in-process code; restart the process if the operation never settles.
 
 Session purge is explicit and session-scoped; `close()` never deletes history.
 The runtime rejects purge while that session has queued or active turn work,
-projection work, tool settlement, or provider quarantine. Drain owned work,
-purge the named session, and only then close the runtime:
+projection work, tool settlement, or provider quarantine. Stop ingress, drain
+owned work, purge the named session, and only then close the runtime:
+
+```python
+await runtime.drain_tools(grace_seconds)
+await runtime.drain_providers(grace_seconds)
+await runtime.purge_session(session_id)
+runtime.close()
+```
 
 ```ts
 await runtime.drainTools(graceMs);
@@ -65,12 +72,24 @@ does not cancel already-active work. For one session on a live runtime, do not
 close the runtime solely to dispose that session.
 
 Custom event stores remain compatible with `EventStore`; opt into deletion by
-implementing `PurgeableEventStore`. `supportsSessionPurge(store)` checks that
-capability before any runtime cache is cleared. Every live runtime sharing that
-store is invalidated for the named session, including its projector,
-diagnostics, and settled tool-idempotency entries. Runtime registrations are
-weakly held, so discarded runtimes do not become a store-lifetime leak. A new
-runtime cannot attach to the store while any session purge fence is active.
+implementing the public one-argument `PurgeableEventStore` capability.
+`supports_session_purge(store)` / `supportsSessionPurge(store)` detect it for
+store-only teardown. Runtime purge requires the built-in internal coordinated
+capability and opaque authorization; a custom store exposing only the public
+method fails closed as unsupported before mutation. Every live runtime sharing
+the built-in store participates as an owner, so one purge invalidates all of
+their projectors, diagnostics, subscriptions, and settled tool-idempotency
+entries. Runtime registrations are weak during ordinary operation. A new owner
+cannot attach while any session purge fence is active.
+
+The fence covers direct append, event reads, last-sequence reads, transactions,
+and subscription registration. Stable in-memory delivery closes the current
+generation before physical deletion, so old subscribers terminate normally.
+Physical deletion removes the event log and event-ID index. Reuse is a fresh
+generation: reset the cursor to `0`, and the next stored event starts at
+sequence `1`. A standalone raw listener must close before store-only purge.
+Split delivery remains purge-unsupported because a pending or retrying outbox
+cannot safely cross into a reused generation.
 
 Existing custom `ToolIdempotencyLedger` implementations remain source
 compatible. To opt into session purge, implement the optional
@@ -84,6 +103,11 @@ already-deleted event history; retry the named purge after repairing the
 ledger. Purge deterministically removes SDK-owned indexes and caches, but does
 not claim VM string zeroization or deletion of copies already emitted to
 providers, logs, sinks, custom stores, crash dumps, or caller-owned objects.
+Once physical deletion commits, a strong `cleanup_pending` tombstone retains
+all shared cleanup owners and fences turns, direct store operations, owner
+registration, subscriptions, and another direct purge until convergence. A
+runtime retry skips physical deletion, repeats cache and settled-ledger cleanup,
+and clears the tombstone only after every owner succeeds.
 
 ## Bounded replay and context
 

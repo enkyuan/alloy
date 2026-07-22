@@ -11,10 +11,15 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+BETA_CORE = REPO_ROOT / "kaji" / "contracts" / "beta-core-v1.json"
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json"
 PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "scenarios.json"
 RELEASE_MATRIX = REPO_ROOT / "kaji" / "RELEASE_MATRIX.md"
 CONTRACT_CHECKER = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
+PACKAGED_CONTRACT_ROOTS = (
+    REPO_ROOT / "kaji" / "src" / "kaji" / "contracts",
+    REPO_ROOT / "kaji" / "ts" / "contracts",
+)
 DOC_PATHS = [
     REPO_ROOT / "kaji" / "RELEASE_MATRIX.md",
     REPO_ROOT / "kaji" / "README.md",
@@ -148,6 +153,52 @@ def test_python_public_exports_have_one_tier_and_exact_generated_docs() -> None:
     )
     assert marker is not None
     assert marker.group(1) == checker["render_public_exports_fragment"]("python", tiers)
+
+
+def test_session_purge_lifecycle_is_frozen_in_beta_contract() -> None:
+    events = json.loads(BETA_CORE.read_text())["events"]
+
+    assert {
+        "inMemorySessionAdmission": events.get("inMemorySessionAdmission"),
+        "purgedSessionReuse": events.get("purgedSessionReuse"),
+        "purgeClosesExistingSubscribers": events.get("purgeClosesExistingSubscribers"),
+        "purgeFencesDirectStoreOperations": events.get(
+            "purgeFencesDirectStoreOperations"
+        ),
+        "postDeleteCleanup": events.get("postDeleteCleanup"),
+        "splitDeliveryPurge": events.get("splitDeliveryPurge"),
+    } == {
+        "inMemorySessionAdmission": "fail_closed_until_explicit_purge",
+        "purgedSessionReuse": "fresh_sequence",
+        "purgeClosesExistingSubscribers": True,
+        "purgeFencesDirectStoreOperations": True,
+        "postDeleteCleanup": "tombstone_until_converged",
+        "splitDeliveryPurge": "unsupported",
+    }
+
+
+def test_beta_contract_package_copies_are_byte_identical() -> None:
+    canonical_root = REPO_ROOT / "kaji" / "contracts"
+    for name in ("beta-core-v1.json", "feature-tiers-v1.json"):
+        expected = (canonical_root / name).read_bytes()
+        for packaged_root in PACKAGED_CONTRACT_ROOTS:
+            assert (packaged_root / name).read_bytes() == expected
+
+
+def test_python_session_purge_exports_are_stable() -> None:
+    stable = set(
+        json.loads(FEATURE_TIERS.read_text())["publicExports"]["python"]["stable"]
+    )
+    expected = {
+        "PurgeableEventStore",
+        "SessionPurgeBusyError",
+        "SessionPurgeUnsupportedError",
+        "supports_session_purge",
+    }
+
+    assert expected <= stable
+    for name in expected:
+        assert getattr(kaji, name) is not None
 
 
 def test_release_matrix_matches_registry_stability() -> None:
