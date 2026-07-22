@@ -474,7 +474,11 @@ def test_performance_evidence_is_bound_before_retention(
 @pytest.mark.parametrize(
     ("workflow_name", "upstream", "expected_commit"),
     [
-        (".github/workflows/kaji.rehearsal.yml", "offline-release", "${{ github.sha }}"),
+        (
+            ".github/workflows/kaji.rehearsal.yml",
+            "offline-release",
+            "${{ github.sha }}",
+        ),
         (
             ".github/workflows/kaji.publish.yml",
             "[verify-tag, offline-gates]",
