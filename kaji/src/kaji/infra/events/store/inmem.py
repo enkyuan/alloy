@@ -7,12 +7,24 @@ from collections import OrderedDict, defaultdict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from kaji.infra.events.errors import EventIdConflictError, EventStoreCapacityError
+from kaji.infra.events.errors import (
+    EventIdConflictError,
+    EventStoreCapacityError,
+    SessionPurgeBusyError,
+)
 from kaji.infra.events.lanes import SessionLanePool
+from kaji.infra.events.session_lifecycle import (
+    SessionPurgeAuthorization,
+    assert_physical_purge_authorized,
+    authorized_session_teardown,
+    finish_session_cleanup,
+    mark_physical_purge_committed,
+    store_session_operation,
+    store_session_purge,
+)
 from kaji.infra.events.schemas import (
-    EventType,
     NewKajiEvent,
     StoredKajiEvent,
     revalidate_new_event,
@@ -147,19 +159,6 @@ class InMemoryEventStore:
     def _copy_stored(event: StoredKajiEvent) -> StoredKajiEvent:
         return revalidate_stored_event(event)
 
-    def _evict_closed_session(self) -> bool:
-        for session_id, events in self._events.items():
-            if (
-                events
-                and events[-1].type == EventType.SESSION_CLOSED
-                and not self._lanes.is_active(session_id)
-            ):
-                removed = self._events.pop(session_id)
-                for event in removed:
-                    self._events_by_id.pop(event.id, None)
-                return True
-        return False
-
     async def _claim_id(
         self, draft: NewKajiEvent
     ) -> AppendResult | tuple[bool, _IdReservation]:
@@ -209,18 +208,15 @@ class InMemoryEventStore:
         stored = prepare_stored_event(draft, len(bucket) + 1)
         async with self._metadata_lock:
             if is_new_session:
-                if (
-                    len(self._events) >= self.max_sessions
-                    and not self._evict_closed_session()
-                ):
+                if len(self._events) >= self.max_sessions:
                     raise EventStoreCapacityError(
                         draft.session_id,
-                        f"all {self.max_sessions} session slots are active",
+                        f"all {self.max_sessions} session slots are retained; "
+                        "purge one explicitly",
                     )
                 self._events[draft.session_id] = bucket
             bucket.append(stored)
             self._events_by_id[stored.id] = stored
-            self._events.move_to_end(stored.session_id)
         return AppendResult(event=self._copy_stored(stored), inserted=True)
 
     def _fanout_snapshot(
@@ -272,11 +268,12 @@ class InMemoryEventStore:
         self, session_id: str
     ) -> AsyncIterator[InMemorySessionTransaction]:
         transaction = InMemorySessionTransaction(self, session_id)
-        try:
-            async with self._lanes.hold(session_id):
-                yield transaction
-        finally:
-            transaction.flush()
+        with store_session_operation(self, session_id):
+            try:
+                async with self._lanes.hold(session_id):
+                    yield transaction
+            finally:
+                transaction.flush()
 
     async def append(self, event: NewKajiEvent) -> AppendResult:
         # Snapshot before waiting so caller mutation cannot alter persistence.
@@ -298,7 +295,6 @@ class InMemoryEventStore:
         bucket = self._events.get(session_id)
         if bucket is None or limit == 0:
             return []
-        self._events.move_to_end(session_id)
         start = min(after_sequence, len(bucket))
         stop = None if limit is None else start + limit
         return [self._copy_stored(event) for event in bucket[start:stop]]
@@ -320,7 +316,6 @@ class InMemoryEventStore:
         bucket = self._events.get(session_id)
         if not bucket:
             return 0
-        self._events.move_to_end(session_id)
         sequence = revalidate_stored_event(bucket[-1]).sequence
         assert sequence is not None
         return sequence
@@ -328,3 +323,55 @@ class InMemoryEventStore:
     async def last_sequence(self, session_id: str) -> int:
         async with self.session_transaction(session_id) as transaction:
             return transaction.last_sequence_locked()
+
+    async def purge_session(self, session_id: str) -> bool:
+        """Physically delete one unowned, listener-free retained session."""
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise TypeError("session_id must be a non-empty string")
+        with store_session_purge(self, session_id) as lease:
+            purged = await self._purge_session_authorized(
+                session_id,
+                lease.authorization,
+            )
+            finish_session_cleanup(lease)
+            return purged
+
+    async def _purge_session_authorized(
+        self,
+        session_id: str,
+        authorization: SessionPurgeAuthorization,
+    ) -> bool:
+        """Delete only history and the ID index under an exact active lease."""
+        async with self._lanes.hold(session_id):
+            lease = assert_physical_purge_authorized(
+                self,
+                session_id,
+                authorization,
+            )
+            if self._listeners.get(session_id):
+                raise SessionPurgeBusyError(session_id)
+            async with self._metadata_lock:
+                removed = self._events.pop(session_id, None)
+                if removed is not None:
+                    for event in removed:
+                        self._events_by_id.pop(event.id, None)
+                lease._physical_existed = removed is not None
+                mark_physical_purge_committed(lease)
+            return lease._physical_existed
+
+    async def _detach_listeners_authorized(
+        self,
+        session_id: str,
+        listeners: tuple[object, ...],
+        authorization: SessionPurgeAuthorization,
+    ) -> None:
+        """Detach exact stable-delivery listeners without opening store access."""
+        with authorized_session_teardown(self, session_id, authorization):
+            async with self._lanes.hold(session_id):
+                active = self._listeners.get(session_id)
+                if active is None:
+                    return
+                for listener in listeners:
+                    active.discard(cast(SessionEventListener, listener))
+                if not active:
+                    self._listeners.pop(session_id, None)

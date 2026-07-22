@@ -4,15 +4,28 @@ from typing import Any, cast
 import pytest
 
 from kaji.infra.events import errors as event_errors
-from kaji.infra.events.errors import EventIdConflictError, EventStoreCapacityError
+from kaji.infra.events.errors import (
+    EventIdConflictError,
+    EventStoreCapacityError,
+    SessionPurgeBusyError,
+)
 from kaji.infra.events.lanes import NestedEventTransactionError
+from kaji.infra.events.session_lifecycle import (
+    SessionPurgeAuthorization,
+    finish_session_cleanup,
+    store_session_purge,
+)
 from kaji.infra.events.schemas import (
     NewKajiEvent,
     SessionClosed,
     ToolCallCompleted,
     UserMessage,
 )
-from kaji.infra.events.store import AppendResult, InMemoryEventStore
+from kaji.infra.events.store import (
+    AppendResult,
+    InMemoryEventStore,
+    supports_session_purge,
+)
 
 
 class _BarrierStore(InMemoryEventStore):
@@ -271,7 +284,7 @@ async def test_child_created_during_hold_can_commit_after_parent_releases() -> N
 
 
 @pytest.mark.asyncio
-async def test_active_closed_session_is_not_evicted() -> None:
+async def test_retained_closed_session_requires_purge_after_its_lane_releases() -> None:
     store = InMemoryEventStore(max_sessions=1)
     await store.append(SessionClosed(id="closed", session_id="closed"))
     entered = asyncio.Event()
@@ -289,6 +302,9 @@ async def test_active_closed_session_is_not_evicted() -> None:
     release.set()
     await holder
 
+    with pytest.raises(EventStoreCapacityError):
+        await store.append(UserMessage(id="new", session_id="new", content="one"))
+    assert await store.purge_session("closed") is True
     inserted = await store.append(
         UserMessage(id="new", session_id="new", content="one")
     )
@@ -410,17 +426,80 @@ async def test_store_bounds_never_silently_truncate_active_history() -> None:
 
 
 @pytest.mark.asyncio
-async def test_new_session_evicts_only_the_least_recently_used_closed_session() -> None:
-    store = InMemoryEventStore(max_sessions=2)
-    await store.append(UserMessage(session_id="closed", content="one"))
-    await store.append(SessionClosed(session_id="closed"))
-    await store.append(UserMessage(session_id="active", content="one"))
+async def test_closed_session_requires_explicit_purge_before_capacity_reuse() -> None:
+    store = InMemoryEventStore(max_sessions=1)
+    await store.append(UserMessage(session_id="old", content="one"))
+    await store.append(SessionClosed(session_id="old"))
+    await store.get_events("old")
 
-    inserted = await store.append(UserMessage(session_id="new", content="one"))
+    with pytest.raises(EventStoreCapacityError):
+        await store.append(UserMessage(session_id="new", content="two"))
 
-    assert inserted.event.sequence == 1
-    assert await store.get_events("closed") == []
-    assert await store.last_sequence("active") == 1
+    assert [event.sequence for event in await store.get_events("old")] == [1, 2]
+    with pytest.raises(EventStoreCapacityError):
+        await store.append(UserMessage(session_id="new", content="two"))
+
+
+@pytest.mark.asyncio
+async def test_purge_removes_owned_indexes_and_restarts_sequence_one() -> None:
+    store = InMemoryEventStore()
+    await store.append(
+        UserMessage(id="reusable-id", session_id="purged", content="old")
+    )
+    await store.append(
+        UserMessage(id="retained-id", session_id="retained", content="keep")
+    )
+
+    assert supports_session_purge(store)
+    assert await store.purge_session("purged") is True
+    assert await store.get_events("purged") == []
+    assert [event.id for event in await store.get_events("retained")] == ["retained-id"]
+
+    replacement = await store.append(
+        UserMessage(id="reusable-id", session_id="purged", content="new")
+    )
+    assert replacement.event.sequence == 1
+    assert await store.purge_session("missing") is False
+
+
+@pytest.mark.asyncio
+async def test_internal_purge_authorization_is_exact_and_single_use() -> None:
+    store = InMemoryEventStore()
+    other = InMemoryEventStore()
+    await store.append(UserMessage(session_id="authorized", content="old"))
+
+    with store_session_purge(store, "authorized") as lease:
+        with pytest.raises(SessionPurgeBusyError):
+            await store._purge_session_authorized(
+                "other-session",
+                lease.authorization,
+            )
+        with pytest.raises(SessionPurgeBusyError):
+            await other._purge_session_authorized(
+                "authorized",
+                lease.authorization,
+            )
+        with pytest.raises(SessionPurgeBusyError):
+            await store._purge_session_authorized(
+                "authorized",
+                SessionPurgeAuthorization(),
+            )
+
+        assert (
+            await store._purge_session_authorized(
+                "authorized",
+                lease.authorization,
+            )
+            is True
+        )
+        with pytest.raises(SessionPurgeBusyError):
+            await store._purge_session_authorized(
+                "authorized",
+                lease.authorization,
+            )
+        finish_session_cleanup(lease)
+
+    assert await store.get_events("authorized") == []
 
 
 @pytest.mark.asyncio

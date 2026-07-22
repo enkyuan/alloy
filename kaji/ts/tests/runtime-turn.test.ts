@@ -5,11 +5,15 @@ import { describe, it, expect } from "vitest";
 import {
   AgentBuilder,
   CancellationToken,
+  EventBus,
+  InMemoryEventCommitter,
   InMemoryEventStore,
   InMemoryToolIdempotencyLedger,
   EventType,
   KajiEvent,
+  SessionPurgeBusyError,
   SessionPurgeUnsupportedError,
+  SplitEventCommitter,
   supportsSessionPurge,
   type EventStore,
   type MetricMeasurement,
@@ -21,6 +25,11 @@ import {
   type ToolIdempotencyLedger,
 } from "@kaji/sdk";
 import { MockProvider } from "@/providers/mock";
+import {
+  authorizedListenerTeardown,
+  coordinatedSessionPurge,
+  type SessionPurgeAuthorization,
+} from "@/events/session-lifecycle";
 import { pageHistory } from "./helpers/history";
 
 class NonPurgeableStore implements EventStore {
@@ -40,6 +49,27 @@ class NonPurgeableStore implements EventStore {
   }
 }
 
+class PublicPurgeOnlyStore implements EventStore {
+  private readonly inner = new InMemoryEventStore();
+  readonly maxSessions = this.inner.maxSessions;
+
+  append(...args: Parameters<EventStore["append"]>) {
+    return this.inner.append(...args);
+  }
+
+  getEvents(...args: Parameters<EventStore["getEvents"]>) {
+    return this.inner.getEvents(...args);
+  }
+
+  lastSequence(...args: Parameters<EventStore["lastSequence"]>) {
+    return this.inner.lastSequence(...args);
+  }
+
+  purgeSession(sessionId: string): Promise<boolean> {
+    return this.inner.purgeSession(sessionId);
+  }
+}
+
 class ControlledPurgeStore extends InMemoryEventStore {
   readonly purgeEntered = Promise.withResolvers<void>();
   private readonly purgeRelease = Promise.withResolvers<void>();
@@ -48,10 +78,38 @@ class ControlledPurgeStore extends InMemoryEventStore {
     this.purgeRelease.resolve();
   }
 
-  override async purgeSession(sessionId: string): Promise<boolean> {
+  override async [coordinatedSessionPurge](
+    sessionId: string,
+    authorization: SessionPurgeAuthorization,
+  ): Promise<boolean> {
     this.purgeEntered.resolve();
     await this.purgeRelease.promise;
-    return super.purgeSession(sessionId);
+    return super[coordinatedSessionPurge](sessionId, authorization);
+  }
+}
+
+class StaggeredListenerTeardownStore extends InMemoryEventStore {
+  readonly firstFailure = new Error("first listener detach failed");
+  readonly secondFailure = new Error("second listener detach failed");
+  readonly secondEntered = Promise.withResolvers<void>();
+  readonly attempts: number[] = [];
+  private readonly secondRelease = Promise.withResolvers<void>();
+
+  releaseSecond(): void {
+    this.secondRelease.resolve();
+  }
+
+  override async [authorizedListenerTeardown](
+    _sessionId: string,
+    _listeners: readonly object[],
+    _authorization: SessionPurgeAuthorization,
+  ): Promise<void> {
+    const attempt = this.attempts.length;
+    this.attempts.push(attempt);
+    if (attempt === 0) throw this.firstFailure;
+    this.secondEntered.resolve();
+    await this.secondRelease.promise;
+    throw this.secondFailure;
   }
 }
 
@@ -372,6 +430,125 @@ describe("AgentRuntime.turn", () => {
     expect(runtime.contextDiagnostics("unsupported")).toEqual(diagnostics);
   });
 
+  it("supports public-only store purge directly but rejects it for runtime coordination", async () => {
+    const store = new PublicPurgeOnlyStore();
+    expect(supportsSessionPurge(store)).toBe(true);
+    await store.append(
+      KajiEvent.parse({ type: EventType.USER_MESSAGE, session_id: "direct", content: "old" }),
+    );
+    await expect(store.purgeSession("direct")).resolves.toBe(true);
+
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "kept" }))
+      .build({ store });
+    await runtime.turn("keep", { sessionId: "runtime-owned" });
+    const retained = await store.getEvents("runtime-owned");
+    await expect(runtime.purgeSession("runtime-owned")).rejects.toMatchObject({
+      code: "SESSION_PURGE_UNSUPPORTED",
+      component: "event_store",
+    });
+    expect(await store.getEvents("runtime-owned")).toEqual(retained);
+  });
+
+  it("closes old-generation subscribers and restarts cursor zero at sequence one", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "old" }))
+      .build({ store, committer });
+    await runtime.turn("old", { sessionId: "subscription-generation" });
+    const oldEvents = await store.getEvents("subscription-generation");
+    const subscription = committer.subscribe("subscription-generation");
+    for (const expected of oldEvents) {
+      await expect(subscription.next()).resolves.toMatchObject({
+        done: false,
+        value: { id: expected.id },
+      });
+    }
+    const waiting = subscription.next();
+
+    await expect(runtime.purgeSession("subscription-generation")).resolves.toBe(true);
+    await expect(waiting).resolves.toEqual({ value: undefined, done: true });
+    expect(store.activeListenerCount).toBe(0);
+
+    const freshSubscription = committer.subscribe("subscription-generation");
+    const freshEvent = freshSubscription.next();
+    const fresh = await runtime.turn("fresh", { sessionId: "subscription-generation" });
+    await expect(freshEvent).resolves.toMatchObject({
+      done: false,
+      value: { type: EventType.SESSION_CREATED, sequence: 1 },
+    });
+    expect(fresh.events[0]).toMatchObject({ type: EventType.SESSION_CREATED, sequence: 1 });
+    await freshSubscription.return?.();
+  });
+
+  it("settles every stable subscription close before reporting the first failure", async () => {
+    const store = new StaggeredListenerTeardownStore();
+    const committer = new InMemoryEventCommitter(store);
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "old" }))
+      .build({ store, committer });
+    await runtime.turn("old", { sessionId: "close-settlement" });
+    const first = committer.subscribe("close-settlement");
+    const second = committer.subscribe("close-settlement");
+    await Promise.all([first.next(), second.next()]);
+
+    let purgeSettled = false;
+    const purge = runtime.purgeSession("close-settlement").then(
+      (value) => {
+        purgeSettled = true;
+        return { status: "fulfilled" as const, value };
+      },
+      (reason: unknown) => {
+        purgeSettled = true;
+        return { status: "rejected" as const, reason };
+      },
+    );
+    await store.secondEntered.promise;
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const settledWhileSecondPending = purgeSettled;
+    let concurrentPurgeError: unknown;
+    if (!settledWhileSecondPending) {
+      try {
+        await store.purgeSession("close-settlement");
+      } catch (error) {
+        concurrentPurgeError = error;
+      }
+    }
+    store.releaseSecond();
+    const result = await purge;
+
+    expect(store.attempts).toEqual([0, 1]);
+    expect(settledWhileSecondPending).toBe(false);
+    expect(concurrentPurgeError).toBeInstanceOf(SessionPurgeBusyError);
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toBe(store.firstFailure);
+
+    await first.return?.();
+    await second.return?.();
+    runtime.close();
+  });
+
+  it("rejects split delivery purge in both runtime and underlying store", async () => {
+    const store = new InMemoryEventStore();
+    const committer = new SplitEventCommitter(store, new EventBus());
+    const runtime = new AgentBuilder()
+      .provider(new MockProvider({ reply: "old" }))
+      .build({ store, committer });
+    await runtime.turn("old", { sessionId: "split-generation" });
+
+    await expect(runtime.purgeSession("split-generation")).rejects.toMatchObject({
+      code: "SESSION_PURGE_UNSUPPORTED",
+      component: "event_delivery",
+    });
+    await expect(store.purgeSession("split-generation")).rejects.toMatchObject({
+      code: "SESSION_PURGE_UNSUPPORTED",
+      component: "event_delivery",
+    });
+    expect(await store.getEvents("split-generation")).not.toHaveLength(0);
+  });
+
   it("rejects a legacy custom ledger before deleting store or cache state", async () => {
     const backing = new InMemoryToolIdempotencyLedger();
     const legacyLedger: ToolIdempotencyLedger = {
@@ -408,6 +585,9 @@ describe("AgentRuntime.turn", () => {
 
     const purge = runtime.purgeSession("registration-race");
     await store.purgeEntered.promise;
+    await expect(store.purgeSession("registration-race")).rejects.toBeInstanceOf(
+      SessionPurgeBusyError,
+    );
     expect(() =>
       new AgentBuilder().provider(new MockProvider({ reply: "new" })).build({ store }),
     ).toThrowError(

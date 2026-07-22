@@ -1,4 +1,8 @@
-import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
+import {
+  EventIdConflictError,
+  EventStoreCapacityError,
+  SessionPurgeBusyError,
+} from "@/events/errors";
 import { structurallyEqualJson } from "@/events/json";
 import {
   type NewKajiEvent as NewKajiEventType,
@@ -7,7 +11,17 @@ import {
   snapshotStoredEventForAppend,
   validateStoredEvent,
 } from "@/events/schemas";
-import { EventType } from "@/events/types";
+import {
+  assertPhysicalPurgeAuthorized,
+  authorizedListenerTeardown,
+  authorizedSessionTeardown,
+  beginStoreSessionOperation,
+  beginStoreSessionPurge,
+  coordinatedSessionPurge,
+  finishSessionCleanup,
+  markPhysicalPurgeCommitted,
+  type SessionPurgeAuthorization,
+} from "@/events/session-lifecycle";
 import { KeyedSerialExecutor } from "@/internal/keyed-serial";
 
 export interface AppendResult {
@@ -69,8 +83,6 @@ export interface InMemoryEventStoreOptions {
 
 interface SessionLog {
   events: StoredKajiEvent[];
-  closed: boolean;
-  lastAccess: number;
 }
 
 interface ReservationOutcome {
@@ -106,7 +118,6 @@ export class InMemoryEventStore implements PurgeableEventStore {
   private readonly lanes = new KeyedSerialExecutor();
   readonly maxSessions: number;
   private readonly maxEventsPerSession: number;
-  private clock = 0;
 
   constructor(options: InMemoryEventStoreOptions = {}) {
     this.maxSessions = options.maxSessions ?? 1_000;
@@ -149,33 +160,41 @@ export class InMemoryEventStore implements PurgeableEventStore {
     sessionId: string,
     operation: (transaction: EventStoreSession) => Promise<T>,
   ): Promise<T> {
+    const finishOperation = beginStoreSessionOperation(this, sessionId);
     const deliveries: Array<{
       event: StoredKajiEvent;
       listeners: readonly SessionEventListener[];
     }> = [];
-    return this.lanes.run(
-      sessionId,
-      () =>
-        operation({
-          appendLocked: async (event) => {
-            const result = await this.appendTransaction(sessionId, event);
-            if (result.inserted) {
-              const listeners = [...(this.listeners.get(sessionId) ?? [])];
-              if (listeners.length > 0) deliveries.push({ event: result.event, listeners });
+    try {
+      return this.lanes
+        .run(
+          sessionId,
+          () =>
+            operation({
+              appendLocked: async (event) => {
+                const result = await this.appendTransaction(sessionId, event);
+                if (result.inserted) {
+                  const listeners = [...(this.listeners.get(sessionId) ?? [])];
+                  if (listeners.length > 0) deliveries.push({ event: result.event, listeners });
+                }
+                return result;
+              },
+              getEventsLocked: (options = {}) => this.getEventsLocked(sessionId, options),
+              lastSequenceLocked: () => this.lastSequenceLocked(sessionId),
+              attachListenerLocked: (listener) => this.attachListenerLocked(sessionId, listener),
+              detachListenerLocked: (listener) => this.detachListenerLocked(sessionId, listener),
+            }),
+          () => {
+            for (const delivery of deliveries) {
+              this.fanoutSnapshot(delivery.event, delivery.listeners);
             }
-            return result;
           },
-          getEventsLocked: (options = {}) => this.getEventsLocked(sessionId, options),
-          lastSequenceLocked: () => this.lastSequenceLocked(sessionId),
-          attachListenerLocked: (listener) => this.attachListenerLocked(sessionId, listener),
-          detachListenerLocked: (listener) => this.detachListenerLocked(sessionId, listener),
-        }),
-      () => {
-        for (const delivery of deliveries) {
-          this.fanoutSnapshot(delivery.event, delivery.listeners);
-        }
-      },
-    );
+        )
+        .finally(finishOperation);
+    } catch (error) {
+      finishOperation();
+      throw error;
+    }
   }
 
   async append(input: NewKajiEventType): Promise<AppendResult> {
@@ -255,7 +274,7 @@ export class InMemoryEventStore implements PurgeableEventStore {
   protected insertReserved(event: NewKajiEventType): Promise<AppendResult> {
     let session = this.sessions.get(event.session_id);
     const isNewSession = session === undefined;
-    if (session === undefined) session = { events: [], closed: false, lastAccess: 0 };
+    if (session === undefined) session = { events: [] };
     if (session.events.length >= this.maxEventsPerSession) {
       throw new EventStoreCapacityError(
         event.session_id,
@@ -272,8 +291,6 @@ export class InMemoryEventStore implements PurgeableEventStore {
       this.sessions.set(event.session_id, session);
     }
     session.events.push(stored);
-    session.closed = event.type === EventType.SESSION_CLOSED;
-    session.lastAccess = ++this.clock;
     this.eventsById.set(stored.id, stored);
     return Promise.resolve({ event: cloneStoredEvent(stored), inserted: true });
   }
@@ -325,7 +342,6 @@ export class InMemoryEventStore implements PurgeableEventStore {
     }
     const session = this.sessions.get(sessionId);
     if (session === undefined || limit === 0) return [];
-    session.lastAccess = ++this.clock;
     const start = Math.min(afterSequence, session.events.length);
     return session.events
       .slice(start, limit === undefined ? undefined : start + limit)
@@ -342,44 +358,62 @@ export class InMemoryEventStore implements PurgeableEventStore {
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
       throw new TypeError("sessionId must be a non-empty string");
     }
+    const lease = beginStoreSessionPurge(this, sessionId);
+    try {
+      const purged = await this[coordinatedSessionPurge](sessionId, lease.authorization);
+      finishSessionCleanup(lease);
+      return purged;
+    } finally {
+      lease.release();
+    }
+  }
+
+  async [coordinatedSessionPurge](
+    sessionId: string,
+    authorization: SessionPurgeAuthorization,
+  ): Promise<boolean> {
     return this.lanes.run(sessionId, async () => {
+      const lease = assertPhysicalPurgeAuthorized(this, sessionId, authorization);
+      if ((this.listeners.get(sessionId)?.size ?? 0) > 0) {
+        throw new SessionPurgeBusyError(sessionId);
+      }
       const session = this.sessions.get(sessionId);
-      const existed = session !== undefined || this.listeners.has(sessionId);
       if (session !== undefined) {
         this.sessions.delete(sessionId);
         for (const event of session.events) this.eventsById.delete(event.id);
       }
-      this.listeners.delete(sessionId);
-      return existed;
+      lease.physicalExisted = session !== undefined;
+      markPhysicalPurgeCommitted(lease);
+      return lease.physicalExisted;
     });
+  }
+
+  async [authorizedListenerTeardown](
+    sessionId: string,
+    listeners: readonly object[],
+    authorization: SessionPurgeAuthorization,
+  ): Promise<void> {
+    return authorizedSessionTeardown(this, sessionId, authorization, () =>
+      this.lanes.run(sessionId, async () => {
+        const active = this.listeners.get(sessionId);
+        if (active === undefined) return;
+        for (const listener of listeners) active.delete(listener as SessionEventListener);
+        if (active.size === 0) this.listeners.delete(sessionId);
+      }),
+    );
   }
 
   private lastSequenceLocked(sessionId: string): number {
     const session = this.sessions.get(sessionId);
     if (session === undefined) return 0;
-    session.lastAccess = ++this.clock;
     return session.events.length;
   }
 
   private admitSession(sessionId: string): void {
     if (this.sessions.size < this.maxSessions) return;
-    let candidate: [string, SessionLog] | undefined;
-    for (const entry of this.sessions) {
-      if (
-        entry[1].closed &&
-        !this.lanes.has(entry[0]) &&
-        (candidate === undefined || entry[1].lastAccess < candidate[1].lastAccess)
-      ) {
-        candidate = entry;
-      }
-    }
-    if (candidate === undefined) {
-      throw new EventStoreCapacityError(
-        sessionId,
-        `Cannot admit session ${sessionId}; ${this.maxSessions} active sessions are retained`,
-      );
-    }
-    this.sessions.delete(candidate[0]);
-    for (const event of candidate[1].events) this.eventsById.delete(event.id);
+    throw new EventStoreCapacityError(
+      sessionId,
+      `Cannot admit session ${sessionId}; ${this.maxSessions} session slots are retained; purge one explicitly`,
+    );
   }
 }

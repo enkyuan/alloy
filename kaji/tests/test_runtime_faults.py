@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, Iterator
 from dataclasses import dataclass, fields
+import gc
 import math
 from types import SimpleNamespace
 from typing import Any, Callable, Literal, Never
+import weakref
 
 import pytest
 
 from kaji.infra.events.store.inmem import InMemoryEventStore
+from kaji.infra.events.errors import SessionPurgeBusyError
+from kaji.infra.events.schemas import UserMessage
 from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.types import EventType
 from kaji.infra.observability import InMemoryMetrics
@@ -273,6 +277,30 @@ async def test_ledger_conflict_and_session_release_are_exact() -> None:
 
     assert await ledger.release_completed("session") == 1
     assert (await _claim(ledger, "call", arguments={"value": 1})).kind == "owner"
+
+
+@pytest.mark.asyncio
+async def test_release_settled_removes_unknown_and_completed_but_not_running() -> None:
+    ledger = InMemoryToolIdempotencyLedger()
+    completed = await _claim(ledger, "completed")
+    unknown = await _claim(ledger, "unknown")
+    running = await _claim(ledger, "running")
+    assert running.kind == "owner"
+    await ledger.complete(completed, {"ok": True})
+    await ledger.unknown_outcome(
+        unknown,
+        ToolIdempotencyFailure(
+            error="Tool execution timed out",
+            error_code="TOOL_TIMEOUT",
+            retryable=False,
+            outcome="unknown",
+        ),
+    )
+
+    assert await ledger.release_settled("session") == 2
+    assert (await _claim(ledger, "completed")).kind == "owner"
+    assert (await _claim(ledger, "unknown")).kind == "owner"
+    assert (await _claim(ledger, "running")).kind == "waiter"
 
 
 @pytest.mark.asyncio
@@ -2371,3 +2399,109 @@ async def test_drain_failure_keeps_session_quarantined_until_retry(
 
     assert await runtime.drain_providers(1) == []
     assert coordinator.entry_count == 0
+
+
+@pytest.mark.asyncio
+async def test_post_delete_cleanup_tombstone_blocks_every_generation_entrypoint() -> (
+    None
+):
+    class FailOnceReleaseLedger(InMemoryToolIdempotencyLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+            self.attempts = 0
+
+        async def release_settled(self, session_id: str) -> int:
+            self.attempts += 1
+            if self.attempts == 1:
+                self.entered.set()
+                await self.release.wait()
+                raise RuntimeError("host ledger cleanup failed")
+            return await super().release_settled(session_id)
+
+    session_id = "cleanup-pending"
+    store = InMemoryEventStore()
+    ledger = FailOnceReleaseLedger()
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider())
+        .tool_idempotency_ledger(ledger)
+        .build(store=store)
+    )
+    sibling = AgentBuilder().provider(MockProvider()).build(store=store)
+    await runtime.turn("old", session_id=session_id)
+    await sibling.turn("peer", session_id=session_id)
+
+    purge = asyncio.create_task(runtime.purge_session(session_id))
+    await ledger.entered.wait()
+    sibling_reference = weakref.ref(sibling)
+    del sibling
+    gc.collect()
+    assert sibling_reference() is not None
+    assert session_id not in store._events
+
+    with pytest.raises(SessionPurgeBusyError):
+        await store.get_events(session_id)
+    with pytest.raises(SessionPurgeBusyError):
+        await store.append(UserMessage(session_id=session_id, content="blocked"))
+    with pytest.raises(SessionPurgeBusyError):
+        await runtime.turn("blocked", session_id=session_id)
+    with pytest.raises(SessionPurgeBusyError):
+        await runtime.journal.open_subscription(session_id)
+    with pytest.raises(SessionPurgeBusyError):
+        await store.purge_session(session_id)
+    with pytest.raises(SessionPurgeBusyError):
+        AgentBuilder().provider(MockProvider()).build(store=store)
+
+    ledger.release.set()
+    with pytest.raises(RuntimeError, match="host ledger cleanup failed"):
+        await purge
+    gc.collect()
+    assert sibling_reference() is not None
+    with pytest.raises(SessionPurgeBusyError):
+        await store.last_sequence(session_id)
+
+    assert await runtime.purge_session(session_id) is True
+    fresh = await runtime.turn("fresh", session_id=session_id)
+    assert fresh.events[0].type == EventType.SESSION_CREATED
+    assert fresh.events[0].sequence == 1
+
+
+@pytest.mark.asyncio
+async def test_purge_converges_after_repeated_cancellation_post_delete() -> None:
+    class BlockingReleaseLedger(InMemoryToolIdempotencyLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            self.entered = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def release_settled(self, session_id: str) -> int:
+            self.entered.set()
+            await self.release.wait()
+            return await super().release_settled(session_id)
+
+    session_id = "cancelled-purge"
+    store = InMemoryEventStore()
+    ledger = BlockingReleaseLedger()
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider())
+        .tool_idempotency_ledger(ledger)
+        .build(store=store)
+    )
+    await runtime.turn("old", session_id=session_id)
+
+    purge = asyncio.create_task(runtime.purge_session(session_id))
+    await ledger.entered.wait()
+    assert session_id not in store._events
+    purge.cancel()
+    await asyncio.sleep(0)
+    purge.cancel()
+    ledger.release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await purge
+
+    assert await store.get_events(session_id) == []
+    fresh = await runtime.turn("fresh", session_id=session_id)
+    assert fresh.events[0].sequence == 1

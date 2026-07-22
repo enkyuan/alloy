@@ -8,6 +8,8 @@ from .errors import (
     EventSchemaIncompatibleError,
     EventStoreCapacityError,
     InvalidDurableValueError,
+    SessionPurgeBusyError,
+    SessionPurgeUnsupportedError,
 )
 from .journal import InMemoryEventJournal, SplitEventJournal
 from .protocols import EventBusProtocol, EventJournal
@@ -25,7 +27,13 @@ from .schemas import (
     validate_stored_event_json,
     validate_stored_event_python,
 )
-from .store import AppendResult, EventStore, InMemoryEventStore
+from .store import (
+    AppendResult,
+    EventStore,
+    InMemoryEventStore,
+    PurgeableEventStore,
+    supports_session_purge,
+)
 from .types import EventType
 
 __all__ = [
@@ -51,6 +59,8 @@ __all__ = [
     "SplitEventJournal",
     "EventStore",
     "InMemoryEventStore",
+    "PurgeableEventStore",
+    "supports_session_purge",
     "EventInfrastructureError",
     "InvalidDurableValueError",
     "DurableJsonLimitError",
@@ -59,4 +69,6 @@ __all__ = [
     "EventStoreCapacityError",
     "EventBufferOverflowError",
     "EventDeliveryError",
+    "SessionPurgeBusyError",
+    "SessionPurgeUnsupportedError",
 ]

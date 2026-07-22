@@ -856,13 +856,17 @@ export class ToolPlanner {
             nowMonotonic: this.now,
             timerScheduler: this.timerScheduler,
           });
-          const requested = handler.request(
-            {
-              id: call.id,
-              name: call.name,
-              args: cloneToolExecutionArguments(call.name, call.args),
-            },
-            context,
+          const requested = this.executionController.trackApproval(
+            sessionId,
+            call.id,
+            handler.request(
+              {
+                id: call.id,
+                name: call.name,
+                args: cloneToolExecutionArguments(call.name, call.args),
+              },
+              context,
+            ),
           );
           decision = normalizeApprovalDecision(
             handlerOwnsRequest

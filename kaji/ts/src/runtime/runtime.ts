@@ -15,7 +15,19 @@ import {
   type NewKajiEvent,
 } from "@/events/schemas";
 import { EventType } from "@/events/types";
-import { supportsSessionPurge, type EventStore } from "@/events/store";
+import type { EventStore } from "@/events/store";
+import {
+  beginStoreSessionOperation,
+  beginStoreSessionPurge,
+  coordinatedSessionPurge,
+  finishSessionCleanup,
+  registerRuntimeOwner,
+  retainStoreSessionQuarantine,
+  supportsCoordinatedSessionPurge,
+  type SessionPurgeAuthorization,
+  type StoreRuntimeOwner,
+  type StoreSessionPurgeLease,
+} from "@/events/session-lifecycle";
 import {
   resolveProviderResponseLimits,
   withProviderResponseDiagnostics,
@@ -87,151 +99,6 @@ import { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/e
 
 const PUBLIC_TURN_FAILURE = "Agent turn failed";
 const DEFAULT_TURN_COORDINATORS = new WeakMap<EventStore, SessionTurnCoordinator>();
-const STORE_SESSION_LIFECYCLES = new WeakMap<EventStore, Map<string, StoreSessionLifecycle>>();
-const STORE_RUNTIME_OWNERS = new WeakMap<EventStore, Set<WeakRef<StoreRuntimeOwner>>>();
-
-interface StoreRuntimeOwner {
-  supportsSessionPurge(): boolean;
-  isSessionBusy(sessionId: string): boolean;
-  clearSessionCaches(sessionId: string): void;
-  releaseSettledSession(sessionId: string): Promise<void>;
-}
-
-interface StoreRuntimeOwnerFinalizerToken {
-  readonly store: WeakRef<EventStore>;
-  readonly owner: WeakRef<StoreRuntimeOwner>;
-}
-
-const STORE_RUNTIME_OWNER_FINALIZER = new FinalizationRegistry<StoreRuntimeOwnerFinalizerToken>(
-  ({ store: storeReference, owner: ownerReference }) => {
-    const store = storeReference.deref();
-    if (store === undefined) return;
-    const owners = STORE_RUNTIME_OWNERS.get(store);
-    if (owners === undefined) return;
-    owners.delete(ownerReference);
-    if (owners.size === 0) STORE_RUNTIME_OWNERS.delete(store);
-  },
-);
-
-interface StoreSessionLifecycle {
-  activeOperations: number;
-  quarantinedProviders: number;
-  purging: boolean;
-}
-
-function runtimeOwnersForStore(store: EventStore): StoreRuntimeOwner[] {
-  const references = STORE_RUNTIME_OWNERS.get(store);
-  if (references === undefined) return [];
-  const owners: StoreRuntimeOwner[] = [];
-  for (const reference of references) {
-    const owner = reference.deref();
-    if (owner === undefined) references.delete(reference);
-    else owners.push(owner);
-  }
-  if (references.size === 0) STORE_RUNTIME_OWNERS.delete(store);
-  return owners;
-}
-
-function registerRuntimeOwner(store: EventStore, owner: StoreRuntimeOwner): void {
-  const purgingSession = [...(STORE_SESSION_LIFECYCLES.get(store)?.entries() ?? [])].find(
-    ([, state]) => state.purging,
-  )?.[0];
-  if (purgingSession !== undefined) {
-    throw new SessionPurgeBusyError(purgingSession);
-  }
-  let references = STORE_RUNTIME_OWNERS.get(store);
-  if (references === undefined) {
-    references = new Set();
-    STORE_RUNTIME_OWNERS.set(store, references);
-  }
-  for (const reference of references) {
-    if (reference.deref() === undefined) references.delete(reference);
-  }
-  const ownerReference = new WeakRef(owner);
-  references.add(ownerReference);
-  STORE_RUNTIME_OWNER_FINALIZER.register(owner, {
-    store: new WeakRef(store),
-    owner: ownerReference,
-  });
-}
-
-function storeSessionLifecycle(
-  store: EventStore,
-  sessionId: string,
-): { lifecycles: Map<string, StoreSessionLifecycle>; state: StoreSessionLifecycle } {
-  let lifecycles = STORE_SESSION_LIFECYCLES.get(store);
-  if (lifecycles === undefined) {
-    lifecycles = new Map();
-    STORE_SESSION_LIFECYCLES.set(store, lifecycles);
-  }
-  let state = lifecycles.get(sessionId);
-  if (state === undefined) {
-    state = { activeOperations: 0, quarantinedProviders: 0, purging: false };
-    lifecycles.set(sessionId, state);
-  }
-  return { lifecycles, state };
-}
-
-function releaseStoreSessionLifecycle(
-  store: EventStore,
-  sessionId: string,
-  lifecycles: Map<string, StoreSessionLifecycle>,
-  state: StoreSessionLifecycle,
-): void {
-  if (
-    state.activeOperations === 0 &&
-    state.quarantinedProviders === 0 &&
-    !state.purging &&
-    lifecycles.get(sessionId) === state
-  ) {
-    lifecycles.delete(sessionId);
-    if (lifecycles.size === 0) STORE_SESSION_LIFECYCLES.delete(store);
-  }
-}
-
-function beginStoreSessionOperation(store: EventStore, sessionId: string): () => void {
-  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
-  if (state.purging) {
-    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
-    throw new SessionPurgeBusyError(sessionId);
-  }
-  state.activeOperations += 1;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    state.activeOperations -= 1;
-    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
-  };
-}
-
-function beginStoreSessionPurge(store: EventStore, sessionId: string): () => void {
-  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
-  if (state.purging || state.activeOperations > 0 || state.quarantinedProviders > 0) {
-    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
-    throw new SessionPurgeBusyError(sessionId);
-  }
-  state.purging = true;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    state.purging = false;
-    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
-  };
-}
-
-function retainStoreSessionQuarantine(store: EventStore, sessionId: string): () => void {
-  const { lifecycles, state } = storeSessionLifecycle(store, sessionId);
-  state.quarantinedProviders += 1;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    state.quarantinedProviders -= 1;
-    releaseStoreSessionLifecycle(store, sessionId, lifecycles, state);
-  };
-}
 
 function isCompatibleAbortError(error: unknown): boolean {
   return (
@@ -610,9 +477,10 @@ export class AgentRuntime {
       options.planner ??
       (this.fixedTools !== undefined ? this.buildPlanner(this.fixedTools) : null);
     this.storeRuntimeOwner = Object.freeze({
-      supportsSessionPurge: () =>
-        typeof this.toolExecutionController.ledger.releaseSettled === "function",
+      sessionPurgeUnsupportedComponent: () => this.sessionPurgeUnsupportedComponent(),
       isSessionBusy: (sessionId: string) => this.hasBusySessionState(sessionId),
+      closeSessionSubscriptions: (sessionId: string, authorization: SessionPurgeAuthorization) =>
+        this.closeSessionSubscriptions(sessionId, authorization),
       clearSessionCaches: (sessionId: string) => this.clearSessionCaches(sessionId),
       releaseSettledSession: (sessionId: string) => this.releaseSettledSession(sessionId),
     });
@@ -689,35 +557,109 @@ export class AgentRuntime {
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
       throw new TypeError("sessionId must be a non-empty string");
     }
-    if (!supportsSessionPurge(this.store)) {
+    if (!supportsCoordinatedSessionPurge(this.store)) {
       throw new SessionPurgeUnsupportedError(sessionId);
     }
 
-    const finishPurge = beginStoreSessionPurge(this.store, sessionId);
+    const lease = beginStoreSessionPurge(this.store, sessionId, {
+      coordinated: true,
+      retryCleanup: true,
+    });
     try {
-      const owners = runtimeOwnersForStore(this.store);
-      if (owners.some((owner) => !owner.supportsSessionPurge())) {
-        throw new SessionPurgeUnsupportedError(sessionId, "tool_idempotency_ledger");
+      const owners = lease.cleanupTargets;
+      for (const owner of owners) {
+        const unsupported = owner.sessionPurgeUnsupportedComponent();
+        if (unsupported !== undefined) {
+          throw new SessionPurgeUnsupportedError(sessionId, unsupported);
+        }
       }
       if (owners.some((owner) => owner.isSessionBusy(sessionId))) {
         throw new SessionPurgeBusyError(sessionId);
       }
 
-      const purged = await this.store.purgeSession(sessionId);
-      for (const owner of owners) owner.clearSessionCaches(sessionId);
-      const settlements = await Promise.allSettled(
-        owners.map((owner) => owner.releaseSettledSession(sessionId)),
-      );
-      const rejected = settlements.find(
-        (settlement): settlement is PromiseRejectedResult => settlement.status === "rejected",
-      );
-      if (rejected !== undefined) {
-        throw rejected.reason;
+      if (!lease.recovering) {
+        const closures = await Promise.allSettled(
+          owners.map((owner) => owner.closeSessionSubscriptions(sessionId, lease.authorization)),
+        );
+        const rejected = closures.find(
+          (settlement): settlement is PromiseRejectedResult => settlement.status === "rejected",
+        );
+        if (rejected !== undefined) throw rejected.reason;
       }
-      return purged;
+
+      return await this.finishIrreversiblePurge(sessionId, lease);
     } finally {
-      finishPurge();
+      lease.release();
     }
+  }
+
+  private async finishIrreversiblePurge(
+    sessionId: string,
+    lease: StoreSessionPurgeLease,
+  ): Promise<boolean> {
+    const purged = lease.recovering
+      ? lease.result()
+      : await (this.store as import("@/events/session-lifecycle").CoordinatedPurgeableEventStore)[
+          coordinatedSessionPurge
+        ](sessionId, lease.authorization);
+
+    const failures: unknown[] = [];
+    for (const owner of lease.cleanupTargets) {
+      try {
+        owner.clearSessionCaches(sessionId);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    const settlements = await Promise.allSettled(
+      lease.cleanupTargets.map((owner) => owner.releaseSettledSession(sessionId)),
+    );
+    for (const settlement of settlements) {
+      if (settlement.status === "rejected") failures.push(settlement.reason);
+    }
+    if (failures.length > 0) throw failures[0];
+    finishSessionCleanup(lease);
+    return purged;
+  }
+
+  private sessionPurgeUnsupportedComponent():
+    | "event_delivery"
+    | "tool_idempotency_ledger"
+    | undefined {
+    if (
+      typeof (
+        this.committer as Partial<{
+          closeSessionSubscriptions(
+            sessionId: string,
+            authorization: SessionPurgeAuthorization,
+          ): Promise<void>;
+        }>
+      ).closeSessionSubscriptions !== "function"
+    ) {
+      return "event_delivery";
+    }
+    if (typeof this.toolExecutionController.ledger.releaseSettled !== "function") {
+      return "tool_idempotency_ledger";
+    }
+    return undefined;
+  }
+
+  private async closeSessionSubscriptions(
+    sessionId: string,
+    authorization: SessionPurgeAuthorization,
+  ): Promise<void> {
+    const close = (
+      this.committer as Partial<{
+        closeSessionSubscriptions(
+          targetSessionId: string,
+          targetAuthorization: SessionPurgeAuthorization,
+        ): Promise<void>;
+      }>
+    ).closeSessionSubscriptions;
+    if (close === undefined) {
+      throw new SessionPurgeUnsupportedError(sessionId, "event_delivery");
+    }
+    await close.call(this.committer, sessionId, authorization);
   }
 
   close(): void {

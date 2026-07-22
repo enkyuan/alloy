@@ -799,6 +799,8 @@ async def test_projection_and_diagnostics_caches_follow_store_capacity() -> None
     )
 
     for index in range(5):
+        if index >= 2:
+            assert await runtime.purge_session(f"closed-{index - 2}") is True
         session_id = f"closed-{index}"
         await runtime.turn("go", session_id=session_id)
         await runtime.append_event(SessionClosed(session_id=session_id))

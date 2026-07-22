@@ -252,6 +252,11 @@ export class ToolExecutionController {
     callId: string;
     settled: Promise<void>;
   }>();
+  private readonly pendingApprovals = new Set<{
+    sessionId: string;
+    callId: string;
+    settled: Promise<unknown>;
+  }>();
 
   constructor(options: ToolExecutionControllerOptions = {}) {
     this.limits = Object.freeze({ ...DEFAULT_TOOL_EXECUTION_LIMITS, ...options.limits });
@@ -585,11 +590,17 @@ export class ToolExecutionController {
       });
     });
     try {
-      while (this.active.size > 0 || this.pendingStarts.size > 0 || this.claimCleanups.size > 0) {
+      while (
+        this.active.size > 0 ||
+        this.pendingStarts.size > 0 ||
+        this.claimCleanups.size > 0 ||
+        this.pendingApprovals.size > 0
+      ) {
         const snapshot = [
           ...[...this.active.values()].map(({ settled }) => settled),
           ...[...this.pendingStarts.values()].map(({ settled }) => settled),
           ...[...this.claimCleanups].map(({ settled }) => settled),
+          ...[...this.pendingApprovals].map(({ settled }) => settled),
         ];
         const wake = await Promise.race([
           Promise.allSettled(snapshot).then(() => "settled" as const),
@@ -606,6 +617,7 @@ export class ToolExecutionController {
       ...[...this.active.values()].map(({ callId }) => callId),
       ...[...this.pendingStarts.values()].map(({ callId }) => callId),
       ...[...this.claimCleanups].map(({ callId }) => callId),
+      ...[...this.pendingApprovals].map(({ callId }) => callId),
     ].sort();
   }
 
@@ -614,8 +626,18 @@ export class ToolExecutionController {
     return (
       [...this.active.values()].some((entry) => entry.sessionId === sessionId) ||
       [...this.pendingStarts.values()].some((entry) => entry.sessionId === sessionId) ||
-      [...this.claimCleanups].some((entry) => entry.sessionId === sessionId)
+      [...this.claimCleanups].some((entry) => entry.sessionId === sessionId) ||
+      [...this.pendingApprovals].some((entry) => entry.sessionId === sessionId)
     );
+  }
+
+  /** @internal Retain approval ownership after a timeout/cancellation race. */
+  trackApproval<T>(sessionId: string, callId: string, operation: Promise<T>): Promise<T> {
+    let entry!: { sessionId: string; callId: string; settled: Promise<T> };
+    const settled = operation.finally(() => this.pendingApprovals.delete(entry));
+    entry = { sessionId, callId, settled };
+    this.pendingApprovals.add(entry);
+    return settled;
   }
 
   private trackPendingStart(

@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeGuard, runtime_checkable
 
 from kaji.infra.events.schemas import (
     NewKajiEvent,
@@ -47,6 +47,17 @@ class EventStore(Protocol):
     async def last_sequence(self, session_id: str) -> int:
         """Return the latest session-local sequence, or zero when absent."""
         ...
+
+
+@runtime_checkable
+class PurgeableEventStore(EventStore, Protocol):
+    """Public one-argument destructive teardown capability."""
+
+    async def purge_session(self, session_id: str) -> bool: ...
+
+
+def supports_session_purge(store: EventStore) -> TypeGuard[PurgeableEventStore]:
+    return callable(getattr(store, "purge_session", None))
 
 
 SessionEventListener = Callable[[StoredKajiEvent], bool]

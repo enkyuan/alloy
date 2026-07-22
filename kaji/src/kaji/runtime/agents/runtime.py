@@ -2,10 +2,10 @@ import asyncio
 import logging
 import math
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from kaji.core.safe_logging import log_redacted_failure
 from kaji.runtime.agents.cancellation import CancellationToken, ProviderDeadlineScope
@@ -32,8 +32,23 @@ from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.agents.stream import RuntimeStreamAccumulator, StreamDiagnostics
 from kaji.runtime.tools.registry import ToolSpec
+from kaji.infra.events.errors import (
+    SessionPurgeBusyError,
+    SessionPurgeComponent,
+    SessionPurgeUnsupportedError,
+)
 from kaji.infra.events.journal import InMemoryEventJournal
 from kaji.infra.events.protocols import EventJournal
+from kaji.infra.events.session_lifecycle import (
+    SessionPurgeAuthorization,
+    StoreSessionPurgeLease,
+    finish_session_cleanup,
+    register_runtime_owner,
+    retain_store_session_quarantine,
+    store_session_operation,
+    store_session_purge,
+    supports_coordinated_session_purge,
+)
 from kaji.infra.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
@@ -150,6 +165,7 @@ class _ProviderQuarantine:
     session_id: str
     lease: TurnLease
     settlement: asyncio.Task[None]
+    release_lifecycle: Callable[[], None]
 
 
 class _TurnEventEmitter:
@@ -319,6 +335,7 @@ class AgentRuntime:
                 approval_handler=approval_handler,
                 controller=self.tool_execution_controller,
             )
+        self._unregister_runtime_owner = register_runtime_owner(self.store, self)
 
     def _build_planner(
         self,
@@ -398,7 +415,159 @@ class AgentRuntime:
             await record.lease.release()
             await self.coordinator.clear_quarantine(record.session_id)
             self._provider_quarantine.pop(record.session_id, None)
+            record.release_lifecycle()
         return sorted(self._provider_quarantine)
+
+    async def purge_session(self, session_id: str) -> bool:
+        """Delete one settled generation and converge every shared owner."""
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise TypeError("session_id must be a non-empty string")
+        if not supports_coordinated_session_purge(self.store):
+            raise SessionPurgeUnsupportedError(session_id, "event_store")
+
+        with store_session_purge(
+            cast(EventStore, self.store),
+            session_id,
+            coordinated=True,
+            retry_cleanup=True,
+        ) as lease:
+            owners = lease.cleanup_targets
+            for owner in owners:
+                unsupported = owner.session_purge_unsupported_component()
+                if unsupported is not None:
+                    raise SessionPurgeUnsupportedError(session_id, unsupported)
+            if any(owner.is_session_busy(session_id) for owner in owners):
+                raise SessionPurgeBusyError(session_id)
+
+            if not lease.recovering:
+                closures = await asyncio.gather(
+                    *(
+                        owner.close_session_subscriptions(
+                            session_id,
+                            lease.authorization,
+                        )
+                        for owner in owners
+                    ),
+                    return_exceptions=True,
+                )
+                closure_failure = next(
+                    (
+                        result
+                        for result in closures
+                        if isinstance(result, BaseException)
+                    ),
+                    None,
+                )
+                if closure_failure is not None:
+                    raise closure_failure
+
+            commit = asyncio.create_task(
+                self._finish_irreversible_purge(session_id, lease)
+            )
+            cancelled = False
+            while not commit.done():
+                try:
+                    await asyncio.shield(commit)
+                except asyncio.CancelledError:
+                    cancelled = True
+            result = commit.result()
+            if cancelled:
+                raise asyncio.CancelledError
+            return result
+
+    async def _finish_irreversible_purge(
+        self,
+        session_id: str,
+        lease: StoreSessionPurgeLease,
+    ) -> bool:
+        if lease.recovering:
+            purged = lease.physical_existed
+        else:
+            assert supports_coordinated_session_purge(self.store)
+            purged = await self.store._purge_session_authorized(
+                session_id,
+                lease.authorization,
+            )
+
+        failures: list[BaseException] = []
+        for owner in lease.cleanup_targets:
+            try:
+                owner.clear_session_caches(session_id)
+            except BaseException as error:
+                failures.append(error)
+        settlements = await asyncio.gather(
+            *(
+                owner.release_settled_session(session_id)
+                for owner in lease.cleanup_targets
+            ),
+            return_exceptions=True,
+        )
+        failures.extend(
+            result for result in settlements if isinstance(result, BaseException)
+        )
+        if failures:
+            raise failures[0]
+        finish_session_cleanup(lease)
+        return purged
+
+    def session_purge_unsupported_component(
+        self,
+    ) -> SessionPurgeComponent | None:
+        if not callable(getattr(self.journal, "close_session_subscriptions", None)):
+            return "event_delivery"
+        if not callable(
+            getattr(self.tool_execution_controller.ledger, "release_settled", None)
+        ):
+            return "tool_idempotency_ledger"
+        return None
+
+    def is_session_busy(self, session_id: str) -> bool:
+        return self._has_busy_session_state(session_id)
+
+    async def close_session_subscriptions(
+        self,
+        session_id: str,
+        authorization: SessionPurgeAuthorization,
+    ) -> None:
+        close = getattr(self.journal, "close_session_subscriptions", None)
+        if not callable(close):
+            raise SessionPurgeUnsupportedError(session_id, "event_delivery")
+        await close(session_id, authorization)
+
+    def clear_session_caches(self, session_id: str) -> None:
+        self._projectors.pop(session_id, None)
+        self._projection_locks.pop(session_id, None)
+        self._active_projection_sessions.pop(session_id, None)
+        for turn_id, collector in tuple(self._turn_event_collectors.items()):
+            if collector.session_id == session_id:
+                self._turn_event_collectors.pop(turn_id, None)
+        self._context_diagnostics.pop(session_id, None)
+        self._stream_diagnostics.pop(session_id, None)
+        self._provider_quarantine.pop(session_id, None)
+
+    async def release_settled_session(self, session_id: str) -> None:
+        release = getattr(
+            self.tool_execution_controller.ledger, "release_settled", None
+        )
+        if not callable(release):
+            raise SessionPurgeUnsupportedError(
+                session_id,
+                "tool_idempotency_ledger",
+            )
+        await release(session_id)
+
+    def _has_busy_session_state(self, session_id: str) -> bool:
+        lock = self._projection_locks.get(session_id)
+        return (
+            session_id in self._active_projection_sessions
+            or (lock is not None and lock.locked())
+            or any(
+                collector.session_id == session_id
+                for collector in self._turn_event_collectors.values()
+            )
+            or session_id in self._provider_quarantine
+            or self.tool_execution_controller.has_active_session(session_id)
+        )
 
     def close(self) -> None:
         """Reject future turns without claiming active providers were killed."""
@@ -576,21 +745,37 @@ class AgentRuntime:
 
     @asynccontextmanager
     async def _projection_scope(self, session_id: str) -> AsyncIterator[None]:
-        self._active_projection_sessions[session_id] = (
-            self._active_projection_sessions.get(session_id, 0) + 1
-        )
-        try:
-            yield
-        finally:
-            remaining = self._active_projection_sessions[session_id] - 1
-            if remaining == 0:
-                self._active_projection_sessions.pop(session_id, None)
-            else:
-                self._active_projection_sessions[session_id] = remaining
-            self._trim_projection_cache()
+        with store_session_operation(self.store, session_id):
+            self._active_projection_sessions[session_id] = (
+                self._active_projection_sessions.get(session_id, 0) + 1
+            )
+            try:
+                yield
+            finally:
+                remaining = self._active_projection_sessions[session_id] - 1
+                if remaining == 0:
+                    self._active_projection_sessions.pop(session_id, None)
+                else:
+                    self._active_projection_sessions[session_id] = remaining
+                self._trim_projection_cache()
 
     @asynccontextmanager
     async def _turn_scope(
+        self,
+        session_id: str,
+        token: CancellationToken,
+        deadline_monotonic: float,
+    ) -> AsyncIterator[None]:
+        with store_session_operation(self.store, session_id):
+            async with self._turn_scope_unfenced(
+                session_id,
+                token,
+                deadline_monotonic,
+            ):
+                yield
+
+    @asynccontextmanager
+    async def _turn_scope_unfenced(
         self,
         session_id: str,
         token: CancellationToken,
@@ -625,12 +810,23 @@ class AgentRuntime:
                     settlement.add_done_callback(
                         lambda task: task.exception() if not task.cancelled() else None
                     )
-                    self._provider_quarantine[session_id] = _ProviderQuarantine(
+                    release_lifecycle = retain_store_session_quarantine(
+                        self.store,
+                        session_id,
+                    )
+                    record = _ProviderQuarantine(
                         session_id=session_id,
                         lease=transferred,
                         settlement=settlement,
+                        release_lifecycle=release_lifecycle,
                     )
-                    await self.coordinator.quarantine(session_id)
+                    self._provider_quarantine[session_id] = record
+                    try:
+                        await self.coordinator.quarantine(session_id)
+                    except BaseException:
+                        # Ownership already transferred to the quarantine record.
+                        # Keep it drainable even when coordinator setup fails.
+                        raise
                     raise
         finally:
             if not recorded:

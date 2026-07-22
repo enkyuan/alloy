@@ -104,7 +104,7 @@ new session at capacity
        -> reject queued turn / active projection / provider quarantine / running tool
        -> terminate old-generation subscribers
        -> issue one opaque physical-purge authorization
-       -> delete events + ID index + raw listeners
+       -> require zero raw listeners; delete events + ID index
        -> clear every owner's projectors/locks/collectors/diagnostics/quarantine
        -> delete completed + unknown idempotency entries
        -> clear cleanup_pending only after every ledger succeeds

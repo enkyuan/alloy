@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import Literal
 
 from kaji.infra.events.errors import (
     EventBufferOverflowError,
     EventDeliveryError,
     EventInfrastructureError,
     EventStoreCapacityError,
+)
+from kaji.infra.events.session_lifecycle import (
+    SessionPurgeAuthorization,
+    authorized_session_teardown,
+    register_purge_blocker,
+    store_session_operation,
+    supports_authorized_listener_teardown,
 )
 from kaji.infra.events.protocols import EventBusProtocol, EventSubscription
 from kaji.infra.events.schemas import (
@@ -36,14 +44,33 @@ from kaji.infra.observability.protocols import (
 
 @dataclass(eq=False, slots=True)
 class _Subscriber:
-    queue: asyncio.Queue[StoredKajiEvent | EventBufferOverflowError]
+    queue: asyncio.Queue[
+        StoredKajiEvent | EventBufferOverflowError | _SubscriptionClosed
+    ]
     last_sequence: int
     listener: SessionEventListener | None = None
+    closed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _SubscriptionClosed:
+    pass
+
+
+_SUBSCRIPTION_CLOSED = _SubscriptionClosed()
 
 
 @dataclass(slots=True)
 class _PendingSlot:
     active: bool
+
+
+@dataclass(eq=False, slots=True)
+class _SubscriptionCreation:
+    active: bool = True
+    orphaned: bool = False
+    teardown: Callable[[], Awaitable[None]] | None = None
+    cleanup_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class _InMemoryJournalSubscription:
@@ -62,18 +89,24 @@ class _InMemoryJournalSubscription:
         self._backlog = backlog
         self._backlog_index = 0
         self._closed = False
+        self._detached = False
+        self._detach_lock = asyncio.Lock()
 
     def __aiter__(self) -> _InMemoryJournalSubscription:
         return self
 
     async def __anext__(self) -> StoredKajiEvent:
-        if self._closed:
+        if self._closed or self._subscriber.closed:
+            self._closed = True
             raise StopAsyncIteration
         if self._backlog_index < len(self._backlog):
             event = self._backlog[self._backlog_index]
             self._backlog_index += 1
         else:
             item = await self._subscriber.queue.get()
+            if isinstance(item, _SubscriptionClosed):
+                self._closed = True
+                raise StopAsyncIteration
             if isinstance(item, EventBufferOverflowError):
                 self._closed = True
                 raise item
@@ -82,13 +115,16 @@ class _InMemoryJournalSubscription:
         return event
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
         self._closed = True
-        await self._journal._remove_subscriber(
-            self._session_id,
-            self._subscriber,
-        )
+        async with self._detach_lock:
+            if self._detached:
+                return
+            if not self._subscriber.closed:
+                await self._journal._remove_subscriber(
+                    self._session_id,
+                    self._subscriber,
+                )
+            self._detached = True
 
 
 class InMemoryEventJournal:
@@ -232,17 +268,52 @@ class InMemoryEventJournal:
         if after_sequence < 0:
             raise ValueError("after_sequence must be non-negative")
 
-        subscriber = _Subscriber(
-            queue=asyncio.Queue(maxsize=self.subscriber_queue_capacity),
-            last_sequence=after_sequence,
-        )
-        if self._transactional_store is not None:
-            async with self._transactional_store.session_transaction(
-                session_id
-            ) as transaction:
+        with store_session_operation(self.store, session_id):
+            subscriber = _Subscriber(
+                queue=asyncio.Queue(maxsize=self.subscriber_queue_capacity),
+                last_sequence=after_sequence,
+            )
+            if self._transactional_store is not None:
+                async with self._transactional_store.session_transaction(
+                    session_id
+                ) as transaction:
+                    backlog = [
+                        revalidate_stored_event(event)
+                        for event in transaction.get_events_locked(
+                            after_sequence=after_sequence,
+                            limit=self.subscriber_queue_capacity + 1,
+                        )
+                    ]
+                    record_metric(
+                        self._metrics,
+                        "kaji.subscriber.lag_events",
+                        len(backlog),
+                    )
+                    if len(backlog) > self.subscriber_queue_capacity:
+                        record_metric(
+                            self._metrics,
+                            "kaji.subscriber.overflow",
+                            1,
+                            stage="lag",
+                        )
+                        raise EventBufferOverflowError(
+                            last_sequence=after_sequence,
+                            latest_sequence=transaction.last_sequence_locked(),
+                        )
+                    subscriber.listener = lambda event: self._deliver(subscriber, event)
+                    transaction.attach_listener_locked(subscriber.listener)
+                    self._subscribers[session_id].append(subscriber)
+                    return _InMemoryJournalSubscription(
+                        self,
+                        session_id,
+                        subscriber,
+                        backlog,
+                    )
+            async with self._lock:
                 backlog = [
                     revalidate_stored_event(event)
-                    for event in transaction.get_events_locked(
+                    for event in await self.store.get_events(
+                        session_id,
                         after_sequence=after_sequence,
                         limit=self.subscriber_queue_capacity + 1,
                     )
@@ -261,43 +332,8 @@ class InMemoryEventJournal:
                     )
                     raise EventBufferOverflowError(
                         last_sequence=after_sequence,
-                        latest_sequence=transaction.last_sequence_locked(),
+                        latest_sequence=await self.store.last_sequence(session_id),
                     )
-                subscriber.listener = lambda event: self._deliver(subscriber, event)
-                transaction.attach_listener_locked(subscriber.listener)
-                return _InMemoryJournalSubscription(
-                    self,
-                    session_id,
-                    subscriber,
-                    backlog,
-                )
-        async with self._lock:
-            backlog = [
-                revalidate_stored_event(event)
-                for event in await self.store.get_events(
-                    session_id,
-                    after_sequence=after_sequence,
-                    limit=self.subscriber_queue_capacity + 1,
-                )
-            ]
-            record_metric(
-                self._metrics,
-                "kaji.subscriber.lag_events",
-                len(backlog),
-            )
-            if len(backlog) > self.subscriber_queue_capacity:
-                record_metric(
-                    self._metrics,
-                    "kaji.subscriber.overflow",
-                    1,
-                    stage="lag",
-                )
-                latest_sequence = await self.store.last_sequence(session_id)
-                overflow = EventBufferOverflowError(
-                    last_sequence=after_sequence,
-                    latest_sequence=latest_sequence,
-                )
-            else:
                 self._subscribers[session_id].append(subscriber)
                 return _InMemoryJournalSubscription(
                     self,
@@ -305,7 +341,6 @@ class InMemoryEventJournal:
                     subscriber,
                     backlog,
                 )
-        raise overflow
 
     async def _remove_subscriber(
         self,
@@ -317,13 +352,48 @@ class InMemoryEventJournal:
                 session_id
             ) as transaction:
                 transaction.detach_listener_locked(subscriber.listener)
+            self._close_subscriber(session_id, subscriber)
             return
         async with self._lock:
-            subscribers = self._subscribers.get(session_id)
-            if subscribers is not None and subscriber in subscribers:
-                subscribers.remove(subscriber)
-                if not subscribers:
-                    self._subscribers.pop(session_id, None)
+            self._close_subscriber(session_id, subscriber)
+
+    def _close_subscriber(self, session_id: str, subscriber: _Subscriber) -> None:
+        subscribers = self._subscribers.get(session_id)
+        if subscribers is not None and subscriber in subscribers:
+            subscribers.remove(subscriber)
+            if not subscribers:
+                self._subscribers.pop(session_id, None)
+        subscriber.listener = None
+        subscriber.closed = True
+        while not subscriber.queue.empty():
+            subscriber.queue.get_nowait()
+        subscriber.queue.put_nowait(_SUBSCRIPTION_CLOSED)
+
+    async def close_session_subscriptions(
+        self,
+        session_id: str,
+        authorization: SessionPurgeAuthorization,
+    ) -> None:
+        """Terminate one retained generation and detach every raw listener."""
+        subscribers = tuple(self._subscribers.get(session_id, ()))
+        listeners = tuple(
+            subscriber.listener
+            for subscriber in subscribers
+            if subscriber.listener is not None
+        )
+        if listeners:
+            if not supports_authorized_listener_teardown(self.store):
+                raise TypeError("event store cannot detach listeners during purge")
+            await self.store._detach_listeners_authorized(
+                session_id,
+                listeners,
+                authorization,
+            )
+        else:
+            with authorized_session_teardown(self.store, session_id, authorization):
+                pass
+        for subscriber in subscribers:
+            self._close_subscriber(session_id, subscriber)
 
 
 class _SplitJournalSubscription:
@@ -334,12 +404,17 @@ class _SplitJournalSubscription:
         live: EventSubscription,
         backlog: list[StoredKajiEvent],
         after_sequence: int,
+        on_close: Callable[[_SplitJournalSubscription], None],
     ) -> None:
         self._live = live
         self._backlog = backlog
         self._backlog_index = 0
         self._last_sequence = after_sequence
         self._closed = False
+        self._detached = False
+        self._unregistered = False
+        self._close_lock = asyncio.Lock()
+        self._on_close = on_close
 
     def __aiter__(self) -> _SplitJournalSubscription:
         return self
@@ -377,10 +452,14 @@ class _SplitJournalSubscription:
             return stored
 
     async def aclose(self) -> None:
-        if self._closed:
-            return
         self._closed = True
-        await self._live.aclose()
+        async with self._close_lock:
+            if not self._detached:
+                await self._live.aclose()
+                self._detached = True
+            if not self._unregistered:
+                self._on_close(self)
+                self._unregistered = True
 
 
 class SplitEventJournal:
@@ -404,14 +483,55 @@ class SplitEventJournal:
         self._metrics = metrics_sink
         self._lock = asyncio.Lock()
         self._pending_lock = asyncio.Lock()
+        self._close_lock = asyncio.Lock()
         self._pending: dict[str, StoredKajiEvent] = {}
         self._pending_reservations = 0
+        self._subscription_creations: set[_SubscriptionCreation] = set()
+        self._active_subscriptions: set[_SplitJournalSubscription] = set()
+        self._closed = False
         self._transactional_store = (
             self.store
             if isinstance(self.store, SessionTransactionalEventStore)
             and self.store.session_transactions_enabled
             else None
         )
+        self._unregister_purge_blocker = register_purge_blocker(self.store, self)
+
+    @property
+    def session_purge_component(self) -> Literal["event_delivery"]:
+        return "event_delivery"
+
+    async def close(self) -> None:
+        async with self._close_lock:
+            async with self._pending_lock:
+                if self._closed:
+                    return
+                orphaned = tuple(
+                    creation
+                    for creation in self._subscription_creations
+                    if creation.orphaned
+                )
+
+            cleanup_errors: list[BaseException] = []
+            for creation in orphaned:
+                try:
+                    await self._cleanup_subscription_creation(creation)
+                except BaseException as error:
+                    cleanup_errors.append(error)
+            if cleanup_errors:
+                raise cleanup_errors[0]
+
+            async with self._pending_lock:
+                if self._pending or self._pending_reservations:
+                    raise RuntimeError(
+                        "split event journal cannot close with pending delivery work"
+                    )
+                if self._subscription_creations or self._active_subscriptions:
+                    raise RuntimeError(
+                        "split event journal cannot close with active subscription work"
+                    )
+                self._unregister_purge_blocker()
+                self._closed = True
 
     @property
     def pending_event_ids(self) -> frozenset[str]:
@@ -462,6 +582,8 @@ class SplitEventJournal:
 
     async def _reserve_pending_slot(self, event: NewKajiEvent) -> _PendingSlot:
         async with self._pending_lock:
+            if self._closed:
+                raise RuntimeError("split event journal is closed")
             if event.id in self._pending:
                 return _PendingSlot(active=False)
             if (
@@ -482,6 +604,63 @@ class SplitEventJournal:
                 )
             self._pending_reservations += 1
             return _PendingSlot(active=True)
+
+    async def _reserve_subscription_creation(self) -> _SubscriptionCreation:
+        async with self._pending_lock:
+            if self._closed:
+                raise RuntimeError("split event journal is closed")
+            creation = _SubscriptionCreation()
+            self._subscription_creations.add(creation)
+            return creation
+
+    def _release_subscription_creation(
+        self,
+        creation: _SubscriptionCreation,
+    ) -> None:
+        if creation.active:
+            self._subscription_creations.discard(creation)
+            creation.active = False
+            creation.orphaned = False
+            creation.teardown = None
+
+    def _retain_subscription_creation(
+        self,
+        creation: _SubscriptionCreation,
+        teardown: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        creation.teardown = teardown
+        creation.orphaned = True
+        if not creation.active:
+            creation.active = True
+            self._subscription_creations.add(creation)
+
+    async def _cleanup_subscription_creation(
+        self,
+        creation: _SubscriptionCreation,
+    ) -> None:
+        async with creation.cleanup_lock:
+            if not creation.active or not creation.orphaned:
+                return
+            teardown = creation.teardown
+            if teardown is None:
+                return
+            await teardown()
+            self._release_subscription_creation(creation)
+
+    async def _activate_subscription(
+        self,
+        creation: _SubscriptionCreation,
+        subscription: _SplitJournalSubscription,
+    ) -> None:
+        async with self._pending_lock:
+            self._active_subscriptions.add(subscription)
+            self._release_subscription_creation(creation)
+
+    def _unregister_subscription(
+        self,
+        subscription: _SplitJournalSubscription,
+    ) -> None:
+        self._active_subscriptions.discard(subscription)
 
     async def _release_pending_slot(self, slot: _PendingSlot) -> None:
         if not slot.active:
@@ -567,6 +746,8 @@ class SplitEventJournal:
         return stored
 
     async def commit(self, event: NewKajiEvent) -> StoredKajiEvent:
+        if self._closed:
+            raise RuntimeError("split event journal is closed")
         event = revalidate_new_event(event)
         slot = await self._reserve_pending_slot(event)
         try:
@@ -581,7 +762,10 @@ class SplitEventJournal:
             await self._release_pending_slot(slot)
 
     async def retry_pending(self, event_id: str) -> StoredKajiEvent:
-        candidate = self._pending.get(event_id)
+        async with self._pending_lock:
+            if self._closed:
+                raise RuntimeError("split event journal is closed")
+            candidate = self._pending.get(event_id)
         if candidate is None:
             raise KeyError(f"no pending event {event_id!r}")
         if self._transactional_store is not None:
@@ -622,11 +806,13 @@ class SplitEventJournal:
         *,
         after_sequence: int = 0,
     ) -> EventSubscription:
-        if after_sequence < 0:
-            raise ValueError("after_sequence must be non-negative")
-
+        creation = await self._reserve_subscription_creation()
+        candidate_acquired = False
         live: EventSubscription | None = None
+        subscription: _SplitJournalSubscription | None = None
         try:
+            if after_sequence < 0:
+                raise ValueError("after_sequence must be non-negative")
             if self._transactional_store is not None:
                 async with self._transactional_store.session_transaction(
                     session_id
@@ -634,6 +820,10 @@ class SplitEventJournal:
                     candidate = self.bus.subscribe(
                         session_id, after_sequence=after_sequence
                     )
+                    candidate_acquired = True
+                    close_candidate = getattr(candidate, "aclose", None)
+                    if callable(close_candidate):
+                        creation.teardown = close_candidate
                     if not isinstance(candidate, EventSubscription):
                         raise TypeError("event subscriptions must implement aclose()")
                     live = candidate
@@ -660,11 +850,23 @@ class SplitEventJournal:
                             last_sequence=after_sequence,
                             latest_sequence=transaction.last_sequence_locked(),
                         )
-                return _SplitJournalSubscription(live, backlog, after_sequence)
+                subscription = _SplitJournalSubscription(
+                    live,
+                    backlog,
+                    after_sequence,
+                    self._unregister_subscription,
+                )
+                creation.teardown = subscription.aclose
+                await self._activate_subscription(creation, subscription)
+                return subscription
             async with self._lock:
                 candidate = self.bus.subscribe(
                     session_id, after_sequence=after_sequence
                 )
+                candidate_acquired = True
+                close_candidate = getattr(candidate, "aclose", None)
+                if callable(close_candidate):
+                    creation.teardown = close_candidate
                 if not isinstance(candidate, EventSubscription):
                     raise TypeError("event subscriptions must implement aclose()")
                 live = candidate
@@ -693,8 +895,27 @@ class SplitEventJournal:
                         latest_sequence=await self.store.last_sequence(session_id),
                     )
 
-            return _SplitJournalSubscription(live, backlog, after_sequence)
+            subscription = _SplitJournalSubscription(
+                live,
+                backlog,
+                after_sequence,
+                self._unregister_subscription,
+            )
+            creation.teardown = subscription.aclose
+            await self._activate_subscription(creation, subscription)
+            return subscription
         except BaseException:
-            if live is not None:
-                await live.aclose()
+            teardown = (
+                subscription.aclose if subscription is not None else creation.teardown
+            )
+            if not candidate_acquired:
+                self._release_subscription_creation(creation)
+            else:
+                self._retain_subscription_creation(creation, teardown)
+                if teardown is not None:
+                    try:
+                        await self._cleanup_subscription_creation(creation)
+                    except BaseException:
+                        # Preserve the setup/cancellation error; close() owns retries.
+                        pass
             raise

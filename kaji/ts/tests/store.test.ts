@@ -1,9 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import * as eventErrors from "@/events/errors";
-import { EventIdConflictError, EventStoreCapacityError } from "@/events/errors";
+import {
+  EventIdConflictError,
+  EventStoreCapacityError,
+  SessionPurgeBusyError,
+} from "@/events/errors";
 import { KajiEvent, type NewKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore, supportsSessionPurge, type AppendResult } from "@/events/store";
+import {
+  beginStoreSessionPurge,
+  coordinatedSessionPurge,
+  finishSessionCleanup,
+  SessionPurgeAuthorization,
+} from "@/events/session-lifecycle";
 import { EventType } from "@/events/types";
 import { NestedEventTransactionError } from "@/internal/keyed-serial";
 
@@ -194,11 +204,17 @@ describe("InMemoryEventStore", () => {
       }),
     );
     await store.append(userMessage("retained", "other-canary", 2, "retained-user"));
+    const listener = () => true;
     await store.sessionTransaction("purged", async (transaction) => {
-      transaction.attachListenerLocked(() => true);
+      transaction.attachListenerLocked(listener);
     });
 
     expect(supportsSessionPurge(store)).toBe(true);
+    await expect(store.purgeSession("purged")).rejects.toBeInstanceOf(SessionPurgeBusyError);
+    expect((await store.getEvents("purged")).map((event) => event.id)).toHaveLength(3);
+    await store.sessionTransaction("purged", async (transaction) => {
+      transaction.detachListenerLocked(listener);
+    });
     await expect(store.purgeSession("purged")).resolves.toBe(true);
     expect(await store.getEvents("purged")).toEqual([]);
     expect((await store.getEvents("retained")).map((event) => event.id)).toEqual(["retained-user"]);
@@ -221,22 +237,46 @@ describe("InMemoryEventStore", () => {
     expect((await store.getEvents("retained")).map((event) => event.id)).toEqual(["retained"]);
   });
 
-  it("serializes purge behind an in-flight append for the same session", async () => {
+  it("scopes internal purge authorization to one store, session, lease, and delete", async () => {
+    const store = new InMemoryEventStore();
+    const other = new InMemoryEventStore();
+    await store.append(userMessage("authorized", "old", 1));
+    const lease = beginStoreSessionPurge(store, "authorized");
+    try {
+      await expect(
+        store[coordinatedSessionPurge]("other-session", lease.authorization),
+      ).rejects.toBeInstanceOf(SessionPurgeBusyError);
+      await expect(
+        other[coordinatedSessionPurge]("authorized", lease.authorization),
+      ).rejects.toBeInstanceOf(SessionPurgeBusyError);
+      await expect(
+        store[coordinatedSessionPurge]("authorized", new SessionPurgeAuthorization()),
+      ).rejects.toBeInstanceOf(SessionPurgeBusyError);
+
+      await expect(store[coordinatedSessionPurge]("authorized", lease.authorization)).resolves.toBe(
+        true,
+      );
+      await expect(
+        store[coordinatedSessionPurge]("authorized", lease.authorization),
+      ).rejects.toBeInstanceOf(SessionPurgeBusyError);
+      finishSessionCleanup(lease);
+    } finally {
+      lease.release();
+    }
+    expect(await store.getEvents("authorized")).toEqual([]);
+  });
+
+  it("rejects purge during an in-flight append without deleting the generation", async () => {
     const store = new BarrierStore("raced");
     const append = store.append(userMessage("raced", "one", 1, "raced-event"));
     await store.entered;
 
-    const purge = store.purgeSession("raced");
-    let purgeSettled = false;
-    void purge.finally(() => {
-      purgeSettled = true;
-    });
-    await Promise.resolve();
-    expect(purgeSettled).toBe(false);
+    await expect(store.purgeSession("raced")).rejects.toBeInstanceOf(SessionPurgeBusyError);
 
     store.releaseBlocked();
     await expect(append).resolves.toMatchObject({ inserted: true });
-    await expect(purge).resolves.toBe(true);
+    expect(await store.getEvents("raced")).toHaveLength(1);
+    await expect(store.purgeSession("raced")).resolves.toBe(true);
     expect(await store.getEvents("raced")).toEqual([]);
     expect(store.activeSessionLaneCount).toBe(0);
     expect(store.activeIdReservationCount).toBe(0);
@@ -311,7 +351,7 @@ describe("InMemoryEventStore", () => {
     expect(store.activeSessionLaneCount).toBe(0);
   });
 
-  it("does not evict a closed session while its lane is active", async () => {
+  it("does not admit a new session while a retained session lane is active", async () => {
     const store = new InMemoryEventStore({ maxSessions: 1 });
     await store.append(
       KajiEvent.parse({ id: "closed", type: EventType.SESSION_CLOSED, session_id: "closed" }),
@@ -335,9 +375,9 @@ describe("InMemoryEventStore", () => {
     );
     release();
     await holder;
-    await expect(store.append(userMessage("new", "one", 1, "new"))).resolves.toMatchObject({
-      event: { sequence: 1 },
-    });
+    await expect(store.append(userMessage("new", "one", 1, "new"))).rejects.toBeInstanceOf(
+      EventStoreCapacityError,
+    );
   });
 
   it("rejects a cross-session id conflict while the owner is blocked", async () => {
@@ -406,19 +446,18 @@ describe("InMemoryEventStore", () => {
     );
   });
 
-  it("evicts only the least-recently-used closed session", async () => {
-    const store = new InMemoryEventStore({ maxSessions: 2 });
-    await store.append(
-      KajiEvent.parse({ id: "closed-a", type: EventType.SESSION_CLOSED, session_id: "a" }),
-    );
-    await store.append(
-      KajiEvent.parse({ id: "closed-b", type: EventType.SESSION_CLOSED, session_id: "b" }),
-    );
-    await store.getEvents("b");
-    await store.append(userMessage("c", "new", 1));
+  it("requires explicit purge before reusing retained session capacity", async () => {
+    const store = new InMemoryEventStore({ maxSessions: 1 });
+    await store.append(userMessage("old", "one", 1));
+    await store.append(KajiEvent.parse({ type: EventType.SESSION_CLOSED, session_id: "old" }));
+    await store.getEvents("old");
 
-    expect(await store.getEvents("a")).toEqual([]);
-    expect(await store.getEvents("b")).toHaveLength(1);
-    expect(await store.getEvents("c")).toHaveLength(1);
+    await expect(store.append(userMessage("new", "two", 2))).rejects.toBeInstanceOf(
+      EventStoreCapacityError,
+    );
+    expect((await store.getEvents("old")).map((event) => event.sequence)).toEqual([1, 2]);
+    await expect(store.append(userMessage("new", "two", 2))).rejects.toBeInstanceOf(
+      EventStoreCapacityError,
+    );
   });
 });

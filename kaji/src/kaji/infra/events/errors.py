@@ -83,6 +83,38 @@ class EventStoreCapacityError(EventInfrastructureError):
         super().__init__(f"event store capacity exceeded for {session_id!r}: {reason}")
 
 
+SessionPurgeComponent: TypeAlias = Literal[
+    "event_store",
+    "event_delivery",
+    "tool_idempotency_ledger",
+]
+
+
+class SessionPurgeBusyError(EventInfrastructureError):
+    code = "SESSION_PURGE_BUSY"
+
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+        super().__init__(
+            f"session {session_id!r} cannot be purged while work is active"
+        )
+
+
+class SessionPurgeUnsupportedError(EventInfrastructureError):
+    code = "SESSION_PURGE_UNSUPPORTED"
+
+    def __init__(
+        self,
+        session_id: str,
+        component: SessionPurgeComponent = "event_store",
+    ) -> None:
+        self.session_id = session_id
+        self.component = component
+        super().__init__(
+            f"session {session_id!r} cannot be purged by {component.replace('_', ' ')}"
+        )
+
+
 class EventBufferOverflowError(EventInfrastructureError):
     code = "EVENT_BUFFER_OVERFLOW"
 

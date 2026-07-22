@@ -139,6 +139,7 @@ class _ToolExecutionOutcome:
 
 @dataclass(slots=True)
 class _ActiveExecution:
+    session_id: str
     call_id: str
     task: asyncio.Task[Any]
 
@@ -155,6 +156,7 @@ class _PendingSetup:
 @dataclass(slots=True)
 class _PendingApproval:
     operation_id: int
+    session_id: str
     call_id: str
     task: asyncio.Task[Any]
 
@@ -984,6 +986,7 @@ class ToolExecutionController:
                 )
             )
             self._active[key] = _ActiveExecution(
+                session_id=context.session_id,
                 call_id=context.tool_call_id,
                 task=watcher,
             )
@@ -1180,6 +1183,7 @@ class ToolExecutionController:
 
     def start_approval(
         self,
+        session_id: str,
         call_id: str,
         operation: Callable[[], Coroutine[Any, Any, Any]],
     ) -> asyncio.Task[Any] | None:
@@ -1191,6 +1195,7 @@ class ToolExecutionController:
         task = asyncio.create_task(operation())
         self._pending_approvals[operation_id] = _PendingApproval(
             operation_id=operation_id,
+            session_id=session_id,
             call_id=call_id,
             task=task,
         )
@@ -1303,4 +1308,18 @@ class ToolExecutionController:
             [active.call_id for active in self._active.values()]
             + [pending.call_id for pending in self._pending_setup.values()]
             + [pending.call_id for pending in self._pending_approvals.values()]
+        )
+
+    def has_active_session(self, session_id: str) -> bool:
+        """Whether handler, setup, approval, or ambiguous cleanup owns a session."""
+        return (
+            any(active.session_id == session_id for active in self._active.values())
+            or any(
+                pending.session_id == session_id
+                for pending in self._pending_setup.values()
+            )
+            or any(
+                pending.session_id == session_id
+                for pending in self._pending_approvals.values()
+            )
         )

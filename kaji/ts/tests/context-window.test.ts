@@ -519,6 +519,9 @@ describe("AgentRuntime incremental projection", () => {
     });
 
     for (let index = 0; index < 5; index++) {
+      if (index >= 2) {
+        await expect(runtime.purgeSession(`closed-${index - 2}`)).resolves.toBe(true);
+      }
       const sessionId = `closed-${index}`;
       await runtime.turn("go", { sessionId });
       await runtime.appendEvent(

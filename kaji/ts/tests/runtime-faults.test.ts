@@ -794,34 +794,82 @@ describe("provider fault matrix", () => {
     const backing = new InMemoryToolIdempotencyLedger();
     const releaseEntered = Promise.withResolvers<void>();
     const releaseGate = Promise.withResolvers<void>();
+    let releaseAttempts = 0;
     const ledger: ToolIdempotencyLedger = {
       claim: (...args) => backing.claim(...args),
       complete: (...args) => backing.complete(...args),
       retryableFailure: (...args) => backing.retryableFailure(...args),
       unknownOutcome: (...args) => backing.unknownOutcome(...args),
       releaseCompleted: (...args) => backing.releaseCompleted(...args),
-      async releaseSettled() {
+      async releaseSettled(sessionId) {
+        releaseAttempts += 1;
+        if (releaseAttempts > 1) return backing.releaseSettled(sessionId);
         releaseEntered.resolve();
         await releaseGate.promise;
         throw new Error("host ledger purge failed");
       },
     };
     const store = new InMemoryEventStore();
+    const committer = new InMemoryEventCommitter(store);
     const runtime = new AgentBuilder()
       .provider(new MockProvider({ reply: "canary" }))
       .toolIdempotencyLedger(ledger)
-      .build({ store });
+      .build({ store, committer });
     await runtime.turn("cache-canary", { sessionId: "ledger-failure" });
     expect(runtime.contextIndexStats("ledger-failure")).toBeDefined();
 
     const purge = runtime.purgeSession("ledger-failure");
     await releaseEntered.promise;
-    expect(await store.getEvents("ledger-failure")).toEqual([]);
+    await expect(store.getEvents("ledger-failure")).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "ledger-failure",
+    });
+    await expect(
+      store.append(
+        KajiEvent.parse({
+          type: EventType.USER_MESSAGE,
+          session_id: "ledger-failure",
+          content: "blocked",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "ledger-failure",
+    });
+    await expect(runtime.turn("blocked", { sessionId: "ledger-failure" })).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "ledger-failure",
+    });
+    expect(() => committer.subscribe("ledger-failure")).toThrowError(
+      expect.objectContaining({
+        code: "SESSION_PURGE_BUSY",
+        sessionId: "ledger-failure",
+      }),
+    );
+    await expect(store.purgeSession("ledger-failure")).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "ledger-failure",
+    });
+    expect(() =>
+      new AgentBuilder().provider(new MockProvider({ reply: "blocked" })).build({ store }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "SESSION_PURGE_BUSY",
+        sessionId: "ledger-failure",
+      }),
+    );
     expect(runtime.contextIndexStats("ledger-failure")).toBeUndefined();
 
     releaseGate.resolve();
     await expect(purge).rejects.toThrow("host ledger purge failed");
+    await expect(store.getEvents("ledger-failure")).rejects.toMatchObject({
+      code: "SESSION_PURGE_BUSY",
+      sessionId: "ledger-failure",
+    });
+    await expect(runtime.purgeSession("ledger-failure")).resolves.toBe(true);
     expect(await store.getEvents("ledger-failure")).toEqual([]);
+    const fresh = await runtime.turn("fresh", { sessionId: "ledger-failure" });
+    expect(fresh.events[0]).toMatchObject({ type: EventType.SESSION_CREATED, sequence: 1 });
   });
 
   it("rejects purge while a turn owns or is setting up session-scoped runtime state", async () => {

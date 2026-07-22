@@ -66,6 +66,29 @@ export class EventStoreCapacityError extends Error {
   }
 }
 
+export type SessionPurgeComponent = "event_store" | "event_delivery" | "tool_idempotency_ledger";
+
+export class SessionPurgeBusyError extends Error {
+  readonly code = "SESSION_PURGE_BUSY" as const;
+
+  constructor(readonly sessionId: string) {
+    super(`Session ${sessionId} cannot be purged while work is active`);
+    this.name = "SessionPurgeBusyError";
+  }
+}
+
+export class SessionPurgeUnsupportedError extends Error {
+  readonly code = "SESSION_PURGE_UNSUPPORTED" as const;
+
+  constructor(
+    readonly sessionId: string,
+    readonly component: SessionPurgeComponent = "event_store",
+  ) {
+    super(`Session ${sessionId} cannot be purged by ${component.replaceAll("_", " ")}`);
+    this.name = "SessionPurgeUnsupportedError";
+  }
+}
+
 export class EventBufferOverflowError extends Error {
   readonly code = "EVENT_BUFFER_OVERFLOW";
 

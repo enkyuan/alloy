@@ -104,6 +104,8 @@ class ToolIdempotencyLedger(Protocol):
 
     async def release_completed(self, session_id: str) -> int: ...
 
+    async def release_settled(self, session_id: str) -> int: ...
+
 
 @dataclass(slots=True)
 class _WaitState:
@@ -346,6 +348,18 @@ class InMemoryToolIdempotencyLedger:
                 key
                 for key, entry in self._entries.items()
                 if entry.session_id == session_id and entry.state == "completed"
+            ]
+            for key in keys:
+                self._entries.pop(key, None)
+            return len(keys)
+
+    async def release_settled(self, session_id: str) -> int:
+        """Remove completed and unknown state without touching running claims."""
+        async with self._lock:
+            keys = [
+                key
+                for key, entry in self._entries.items()
+                if entry.session_id == session_id and entry.state != "running"
             ]
             for key in keys:
                 self._entries.pop(key, None)

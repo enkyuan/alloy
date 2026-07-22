@@ -1,17 +1,24 @@
 import asyncio
+import gc
+import weakref
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
 import pytest
 
+import kaji.infra.events.session_lifecycle as session_lifecycle
 from kaji.infra.events.bus import InMemoryEventBus
 from kaji.infra.events.errors import (
     EventBufferOverflowError,
     EventDeliveryError,
     EventSchemaIncompatibleError,
     EventStoreCapacityError,
+    SessionPurgeBusyError,
+    SessionPurgeComponent,
+    SessionPurgeUnsupportedError,
 )
 from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.infra.events.session_lifecycle import SessionPurgeAuthorization
 from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
 from kaji.infra.events.store import AppendResult, InMemoryEventStore
 
@@ -25,6 +32,25 @@ async def _close(stream: object) -> None:
 class _FailingAppendStore(InMemoryEventStore):
     async def append(self, event):  # type: ignore[no-untyped-def]
         raise RuntimeError("append unavailable")
+
+
+class _EventDeliveryPurgeBlocker:
+    @property
+    def session_purge_component(self) -> SessionPurgeComponent:
+        return "event_delivery"
+
+
+class _BlockingInsertStore(InMemoryEventStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def _insert_reserved(self, draft: NewKajiEvent) -> AppendResult:
+        if draft.id == "blocked":
+            self.entered.set()
+            await self.release.wait()
+        return await super()._insert_reserved(draft)
 
 
 class _FailOnceBus(InMemoryEventBus):
@@ -54,9 +80,37 @@ class _BlockingReadStore(InMemoryEventStore):
         return events
 
 
+class _BlockingSubscriptionReadStore(_BlockingReadStore):
+    @property
+    def session_transactions_enabled(self) -> bool:
+        return False
+
+
+class _PausedPurgeStore(InMemoryEventStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.purge_entered = asyncio.Event()
+        self.release_purge = asyncio.Event()
+
+    async def _purge_session_authorized(
+        self,
+        session_id: str,
+        authorization: SessionPurgeAuthorization,
+    ) -> bool:
+        self.purge_entered.set()
+        await self.release_purge.wait()
+        return await super()._purge_session_authorized(session_id, authorization)
+
+
 class _FailingReadStore(InMemoryEventStore):
     async def get_events(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("read unavailable")
+
+
+class _NonTransactionalFailingReadStore(_FailingReadStore):
+    @property
+    def session_transactions_enabled(self) -> bool:
+        return False
 
 
 class _RawBacklogStore(InMemoryEventStore):
@@ -146,6 +200,63 @@ class _TrackingLiveStream:
         self.closed = True
 
 
+class _UnteardownableLiveStream:
+    def __aiter__(self) -> "_UnteardownableLiveStream":
+        return self
+
+    async def __anext__(self) -> StoredKajiEvent:
+        await asyncio.Future()
+        raise StopAsyncIteration
+
+
+class _UnteardownableBus:
+    def __init__(self) -> None:
+        self.active_subscriptions = 0
+        self.subscriptions: list[_UnteardownableLiveStream] = []
+
+    async def publish(self, event: StoredKajiEvent) -> str:
+        return str(event.sequence)
+
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.active_subscriptions += 1
+        subscription = _UnteardownableLiveStream()
+        self.subscriptions.append(subscription)
+        return subscription
+
+
+class _BlockingCloseLiveStream(_TrackingLiveStream):
+    def __init__(self) -> None:
+        super().__init__()
+        self.close_entered = asyncio.Event()
+        self.release_close = asyncio.Event()
+        self.close_calls = 0
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        self.close_entered.set()
+        await self.release_close.wait()
+        self.closed = True
+
+
+class _RetryableCloseLiveStream(_TrackingLiveStream):
+    def __init__(self, failures: int = 1) -> None:
+        super().__init__()
+        self.close_calls = 0
+        self.failures = failures
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        if self.close_calls <= self.failures:
+            raise RuntimeError("close unavailable")
+        self.closed = True
+
+
 class _TrackingBus:
     def __init__(self) -> None:
         self.subscription: _TrackingLiveStream | None = None
@@ -164,6 +275,44 @@ class _TrackingBus:
         _ = session_id, after_sequence
         self.subscription = _TrackingLiveStream()
         return self.subscription
+
+
+class _BlockingCloseBus(_TrackingBus):
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.subscription = _BlockingCloseLiveStream()
+        return self.subscription
+
+
+class _RetryableCloseBus(_TrackingBus):
+    def __init__(self, failures: int = 1) -> None:
+        super().__init__()
+        self.failures = failures
+
+    def subscribe(
+        self,
+        session_id: str,
+        *,
+        after_sequence: int = 0,
+    ) -> AsyncIterator[StoredKajiEvent]:
+        _ = session_id, after_sequence
+        self.subscription = _RetryableCloseLiveStream(self.failures)
+        return self.subscription
+
+
+class _CountingSplitEventJournal(SplitEventJournal):
+    def __init__(self, store: InMemoryEventStore, bus: Any) -> None:
+        super().__init__(store, bus)
+        self.unregister_calls = 0
+
+    def _unregister_subscription(self, subscription: Any) -> None:
+        self.unregister_calls += 1
+        super()._unregister_subscription(subscription)
 
 
 class _RawLiveStream(_TrackingLiveStream):
@@ -457,6 +606,363 @@ async def test_split_publish_retry_uses_persisted_event_without_second_append() 
 
 
 @pytest.mark.asyncio
+async def test_live_stable_subscription_blocks_direct_purge_until_closed() -> None:
+    store = InMemoryEventStore()
+    journal = InMemoryEventJournal(store)
+    await journal.commit(UserMessage(session_id="generation", content="old"))
+    subscription = await journal.open_subscription("generation")
+    assert (await anext(subscription)).sequence == 1
+    waiting = asyncio.create_task(anext(subscription))
+    await asyncio.sleep(0)
+
+    with pytest.raises(SessionPurgeBusyError):
+        await store.purge_session("generation")
+    assert [event.sequence for event in await store.get_events("generation")] == [1]
+
+    await subscription.aclose()
+    with pytest.raises(StopAsyncIteration):
+        await waiting
+    assert await store.purge_session("generation") is True
+
+
+@pytest.mark.asyncio
+async def test_live_stable_subscription_close_retries_after_purge_fence() -> None:
+    store = _PausedPurgeStore()
+    journal = InMemoryEventJournal(store)
+    await journal.commit(UserMessage(id="old", session_id="close-race", content="old"))
+    subscription = await journal.open_subscription("close-race")
+    assert (await anext(subscription)).sequence == 1
+
+    purge = asyncio.create_task(store.purge_session("close-race"))
+    await store.purge_entered.wait()
+    with pytest.raises(SessionPurgeBusyError):
+        await subscription.aclose()
+    store.release_purge.set()
+    with pytest.raises(SessionPurgeBusyError):
+        await purge
+
+    await subscription.aclose()
+    await subscription.aclose()
+    assert await store.purge_session("close-race") is True
+
+
+@pytest.mark.asyncio
+async def test_split_pending_delivery_blocks_purge_until_retry_and_disposal() -> None:
+    store = InMemoryEventStore()
+    bus = _FailOnceBus()
+    journal = SplitEventJournal(store, bus)
+    draft = UserMessage(id="pending-old", session_id="split-generation", content="old")
+
+    with pytest.raises(EventDeliveryError):
+        await journal.commit(draft)
+    assert journal.pending_event_ids == {draft.id}
+
+    with pytest.raises(RuntimeError, match="pending"):
+        await journal.close()
+
+    with pytest.raises(SessionPurgeUnsupportedError) as blocked:
+        await store.purge_session("split-generation")
+    assert blocked.value.component == "event_delivery"
+    assert [event.id for event in await store.get_events("split-generation")] == [
+        draft.id
+    ]
+
+    await journal.retry_pending(draft.id)
+    assert [event.id for event in bus.calls] == [draft.id, draft.id]
+    assert journal.pending_event_ids == set()
+    await journal.close()
+    assert await store.purge_session("split-generation") is True
+    replacement = await store.append(
+        UserMessage(id="fresh", session_id="split-generation", content="fresh")
+    )
+    assert replacement.event.sequence == 1
+    assert [event.id for event in bus.calls] == [draft.id, draft.id]
+
+    with pytest.raises(RuntimeError, match="closed"):
+        await journal.commit(
+            UserMessage(id="after-close", session_id="split-generation", content="no")
+        )
+    with pytest.raises(RuntimeError, match="closed"):
+        await journal.retry_pending(draft.id)
+    with pytest.raises(RuntimeError, match="closed"):
+        await journal.open_subscription("split-generation")
+
+
+@pytest.mark.asyncio
+async def test_split_close_retains_purge_blocker_during_pending_reservation() -> None:
+    store = _BlockingInsertStore()
+    journal = SplitEventJournal(store, InMemoryEventBus())
+    committing = asyncio.create_task(
+        journal.commit(UserMessage(id="blocked", session_id="blocked", content="old"))
+    )
+    await store.entered.wait()
+
+    with pytest.raises(RuntimeError, match="pending"):
+        await journal.close()
+
+    store.release.set()
+    committed = await committing
+    assert committed.sequence == 1
+    with pytest.raises(SessionPurgeUnsupportedError) as blocked:
+        await store.purge_session("blocked")
+    assert blocked.value.component == "event_delivery"
+
+    await journal.close()
+    assert await store.purge_session("blocked") is True
+
+
+@pytest.mark.asyncio
+async def test_split_active_subscription_cannot_cross_a_reused_generation() -> None:
+    store = InMemoryEventStore()
+    bus = InMemoryEventBus()
+    old_journal = SplitEventJournal(store, bus)
+    old = await old_journal.commit(
+        UserMessage(id="old", session_id="split-subscription-generation", content="old")
+    )
+    old_subscription = await old_journal.open_subscription(
+        "split-subscription-generation"
+    )
+    assert await anext(old_subscription) == old
+
+    with pytest.raises(RuntimeError, match="subscription"):
+        await old_journal.close()
+    with pytest.raises(SessionPurgeUnsupportedError) as blocked:
+        await store.purge_session("split-subscription-generation")
+    assert blocked.value.component == "event_delivery"
+
+    await old_subscription.aclose()
+    await old_journal.close()
+    assert await store.purge_session("split-subscription-generation") is True
+
+    fresh_journal = SplitEventJournal(store, bus)
+    fresh_one = await fresh_journal.commit(
+        UserMessage(
+            id="fresh-one",
+            session_id="split-subscription-generation",
+            content="fresh one",
+        )
+    )
+    fresh_two = await fresh_journal.commit(
+        UserMessage(
+            id="fresh-two",
+            session_id="split-subscription-generation",
+            content="fresh two",
+        )
+    )
+    assert [fresh_one.sequence, fresh_two.sequence] == [1, 2]
+    with pytest.raises(StopAsyncIteration):
+        await anext(old_subscription)
+    await fresh_journal.close()
+
+
+@pytest.mark.asyncio
+async def test_split_close_blocks_subscription_creation_and_active_cursor() -> None:
+    store = _BlockingSubscriptionReadStore()
+    journal = SplitEventJournal(store, InMemoryEventBus())
+    await journal.commit(
+        UserMessage(id="old", session_id="subscription-creation", content="old")
+    )
+    opening = asyncio.create_task(journal.open_subscription("subscription-creation"))
+    await store.backlog_captured.wait()
+
+    with pytest.raises(RuntimeError, match="subscription"):
+        await journal.close()
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("subscription-creation")
+
+    store.release_backlog.set()
+    subscription = await opening
+    with pytest.raises(RuntimeError, match="subscription"):
+        await journal.close()
+    assert (await anext(subscription)).sequence == 1
+
+    await subscription.aclose()
+    await subscription.aclose()
+    await journal.close()
+    assert await store.purge_session("subscription-creation") is True
+
+
+@pytest.mark.asyncio
+async def test_split_failed_construction_retries_orphaned_live_teardown() -> None:
+    store = _NonTransactionalFailingReadStore()
+    bus = _RetryableCloseBus()
+    journal = SplitEventJournal(store, bus)
+
+    with pytest.raises(RuntimeError, match="read unavailable"):
+        await journal.open_subscription("construction-cleanup")
+    live = cast(_RetryableCloseLiveStream, bus.subscription)
+    assert live.close_calls == 1
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("construction-cleanup")
+
+    await journal.close()
+    assert live.close_calls == 2
+    assert await store.purge_session("construction-cleanup") is False
+
+
+@pytest.mark.asyncio
+async def test_split_close_retains_failed_construction_cleanup_for_retry() -> None:
+    store = _NonTransactionalFailingReadStore()
+    bus = _RetryableCloseBus(failures=2)
+    journal = SplitEventJournal(store, bus)
+
+    with pytest.raises(RuntimeError, match="read unavailable"):
+        await journal.open_subscription("construction-cleanup-retry")
+    with pytest.raises(RuntimeError, match="close unavailable"):
+        await journal.close()
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("construction-cleanup-retry")
+
+    await journal.close()
+    live = cast(_RetryableCloseLiveStream, bus.subscription)
+    assert live.close_calls == 3
+    assert await store.purge_session("construction-cleanup-retry") is False
+
+
+@pytest.mark.asyncio
+async def test_split_unteardownable_candidate_poison_survives_journal_collection() -> (
+    None
+):
+    async def abandon_journal(
+        store: InMemoryEventStore,
+        bus: _UnteardownableBus,
+    ) -> weakref.ReferenceType[SplitEventJournal]:
+        journal = SplitEventJournal(store, bus)
+        with pytest.raises(TypeError, match="aclose"):
+            await journal.open_subscription("construction-poison")
+        assert bus.active_subscriptions == 1
+        with pytest.raises(RuntimeError, match="subscription"):
+            await journal.close()
+        return weakref.ref(journal)
+
+    async def exercise() -> tuple[weakref.ReferenceType[InMemoryEventStore], int]:
+        store = InMemoryEventStore()
+        await store.append(
+            UserMessage(
+                id="construction-poison",
+                session_id="construction-poison",
+                content="retained",
+            )
+        )
+        bus = _UnteardownableBus()
+        journal_reference = await abandon_journal(store, bus)
+        gc.collect()
+        assert journal_reference() is None
+        with pytest.raises(SessionPurgeUnsupportedError):
+            await store.purge_session("construction-poison")
+        return weakref.ref(store), id(store)
+
+    store_reference, store_identity = await exercise()
+    gc.collect()
+    assert store_reference() is None
+    assert store_identity not in session_lifecycle._STORES
+
+
+@pytest.mark.asyncio
+async def test_explicit_purge_blocker_unregister_releases_store_registry() -> None:
+    async def exercise() -> tuple[weakref.ReferenceType[InMemoryEventStore], int]:
+        store = InMemoryEventStore()
+        unregister = session_lifecycle.register_purge_blocker(
+            store,
+            _EventDeliveryPurgeBlocker(),
+        )
+        with pytest.raises(SessionPurgeUnsupportedError):
+            await store.purge_session("unregistered-blocker")
+
+        unregister()
+        assert await store.purge_session("unregistered-blocker") is False
+        return weakref.ref(store), id(store)
+
+    store_reference, store_identity = await exercise()
+    gc.collect()
+    assert store_reference() is None
+    assert store_identity not in session_lifecycle._STORES
+
+
+@pytest.mark.asyncio
+async def test_same_component_purge_blockers_unregister_by_identity() -> None:
+    store = InMemoryEventStore()
+    unregister_first = session_lifecycle.register_purge_blocker(
+        store,
+        _EventDeliveryPurgeBlocker(),
+    )
+    unregister_second = session_lifecycle.register_purge_blocker(
+        store,
+        _EventDeliveryPurgeBlocker(),
+    )
+
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("duplicate-blockers")
+
+    unregister_first()
+    unregister_first()
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("duplicate-blockers")
+
+    unregister_second()
+    unregister_second()
+    assert await store.purge_session("duplicate-blockers") is False
+
+
+@pytest.mark.asyncio
+async def test_split_close_racing_subscription_aclose_stays_fail_closed() -> None:
+    store = InMemoryEventStore()
+    bus = _BlockingCloseBus()
+    journal = SplitEventJournal(store, bus)
+    subscription = await journal.open_subscription("subscription-close-race")
+    live = cast(_BlockingCloseLiveStream, bus.subscription)
+
+    closing = asyncio.create_task(subscription.aclose())
+    await live.close_entered.wait()
+    with pytest.raises(RuntimeError, match="subscription"):
+        await journal.close()
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("subscription-close-race")
+
+    live.release_close.set()
+    await closing
+    await subscription.aclose()
+    assert live.close_calls == 1
+    await journal.close()
+    assert await store.purge_session("subscription-close-race") is False
+
+
+@pytest.mark.asyncio
+async def test_split_subscription_close_retries_before_unregistering() -> None:
+    store = InMemoryEventStore()
+    bus = _RetryableCloseBus()
+    journal = _CountingSplitEventJournal(store, bus)
+    old = await journal.commit(
+        UserMessage(id="old", session_id="subscription-close-retry", content="old")
+    )
+    assert old.sequence == 1
+    subscription = await journal.open_subscription("subscription-close-retry")
+    live = cast(_RetryableCloseLiveStream, bus.subscription)
+
+    with pytest.raises(RuntimeError, match="close unavailable"):
+        await subscription.aclose()
+    assert journal.unregister_calls == 0
+    with pytest.raises(RuntimeError, match="subscription"):
+        await journal.close()
+    with pytest.raises(SessionPurgeUnsupportedError):
+        await store.purge_session("subscription-close-retry")
+
+    await subscription.aclose()
+    await subscription.aclose()
+    assert live.close_calls == 2
+    assert journal.unregister_calls == 1
+    await journal.close()
+    assert await store.purge_session("subscription-close-retry") is True
+
+    fresh = SplitEventJournal(store, InMemoryEventBus())
+    replacement = await fresh.commit(
+        UserMessage(id="fresh", session_id="subscription-close-retry", content="fresh")
+    )
+    assert replacement.sequence == 1
+    await fresh.close()
+
+
+@pytest.mark.asyncio
 async def test_split_pending_delivery_stays_in_sequence_until_target_retry() -> None:
     store = InMemoryEventStore()
     bus = _FailOnceBus()
@@ -736,7 +1242,8 @@ async def test_split_subscription_closes_live_iterator_when_backlog_read_fails()
 async def test_split_subscription_closes_live_iterator_when_read_is_cancelled() -> None:
     store = _BlockingReadStore()
     bus = _TrackingBus()
-    stream = SplitEventJournal(store, bus).subscribe("s1")
+    journal = SplitEventJournal(store, bus)
+    stream = journal.subscribe("s1")
     read = asyncio.ensure_future(anext(stream))
     await store.backlog_captured.wait()
 
@@ -746,6 +1253,7 @@ async def test_split_subscription_closes_live_iterator_when_read_is_cancelled() 
 
     assert bus.subscription is not None
     assert bus.subscription.closed is True
+    await journal.close()
 
 
 @pytest.mark.asyncio

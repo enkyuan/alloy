@@ -15,6 +15,13 @@ import {
   validateStoredEvent,
 } from "@/events/schemas";
 import {
+  authorizedListenerTeardown,
+  authorizedSessionTeardown,
+  registerPurgeBlocker,
+  supportsAuthorizedListenerTeardown,
+  type SessionPurgeAuthorization,
+} from "@/events/session-lifecycle";
+import {
   type EventStore,
   type EventStoreSession,
   InMemoryEventStore,
@@ -44,13 +51,14 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
   private detached = false;
 
   constructor(
+    readonly sessionId: string,
     private readonly inner: RingBufferSubscription<StoredKajiEvent>,
     private readonly ready: Promise<
       | { readonly attached: true; readonly backlog: readonly StoredKajiEvent[] }
       | { readonly attached: false; readonly error: unknown }
     >,
     afterSequence: number,
-    private readonly detach: () => Promise<void>,
+    private readonly detach: (authorization?: SessionPurgeAuthorization) => Promise<void>,
     private readonly onClose: () => void,
   ) {
     this.cursor = afterSequence;
@@ -72,7 +80,7 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
         return { value: event, done: false };
       }
       const next = await this.inner.next();
-      if (next.done) await this.close();
+      if (next.done && !this.closed) await this.close();
       return next;
     } catch (error) {
       await this.close();
@@ -92,20 +100,61 @@ class AttachedSubscription implements AsyncIterableIterator<StoredKajiEvent> {
     return this;
   }
 
-  private async close(): Promise<void> {
+  async closeForPurge(authorization: SessionPurgeAuthorization): Promise<void> {
+    await this.close(authorization);
+  }
+
+  private async close(authorization?: SessionPurgeAuthorization): Promise<void> {
     if (!this.closed) {
       this.closed = true;
+      this.backlog = [];
+      this.backlogIndex = 0;
       await this.inner.return();
     }
     if (this.detached) return;
+    await this.ready;
+    await this.detach(authorization);
     this.detached = true;
-    try {
-      await this.ready;
-      await this.detach();
-    } finally {
-      this.onClose();
-    }
+    this.onClose();
   }
+}
+
+type SplitLiveSubscription = AsyncIterableIterator<KajiEvent | StoredKajiEvent>;
+
+function bindSplitSubscriptionTeardown(candidate: unknown): (() => unknown) | undefined {
+  if (candidate === null || (typeof candidate !== "object" && typeof candidate !== "function")) {
+    return undefined;
+  }
+  let teardown: unknown;
+  try {
+    teardown = (candidate as { readonly return?: unknown }).return;
+  } catch {
+    return undefined;
+  }
+  if (typeof teardown !== "function") return undefined;
+  return () => Reflect.apply(teardown, candidate, []);
+}
+
+function validateSplitLiveSubscription(
+  candidate: unknown,
+  teardown: (() => unknown) | undefined,
+): { readonly live: SplitLiveSubscription; readonly teardown: () => unknown } {
+  if (candidate === null || typeof candidate !== "object") {
+    throw new TypeError("Event bus subscribe() must return a non-null subscription object");
+  }
+  const subscription = candidate as Record<PropertyKey, unknown>;
+  if (typeof subscription.next !== "function") {
+    throw new TypeError("Split event subscription must provide a callable next()");
+  }
+  if (teardown === undefined) {
+    throw new TypeError("Split event subscription must provide a callable return()");
+  }
+  if (typeof subscription[Symbol.asyncIterator] !== "function") {
+    throw new TypeError(
+      "Split event subscription must provide a callable [Symbol.asyncIterator]()",
+    );
+  }
+  return { live: candidate as SplitLiveSubscription, teardown };
 }
 
 class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
@@ -113,9 +162,13 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
   private backlog: readonly StoredKajiEvent[] | undefined;
   private backlogIndex = 0;
   private closed = false;
+  private detached = false;
+  private unregistered = false;
+  private closePromise: Promise<void> | undefined;
 
   constructor(
-    private readonly live: AsyncIterableIterator<KajiEvent | StoredKajiEvent>,
+    private readonly live: SplitLiveSubscription,
+    private readonly teardown: () => unknown,
     private readonly store: EventStore,
     private readonly sessionId: string,
     private readonly subscriberCapacity: number,
@@ -125,6 +178,7 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
       | { readonly ready: true; readonly backlog: readonly StoredKajiEvent[] }
       | { readonly ready: false; readonly error: unknown }
     >,
+    private readonly onClose: (subscription: SplitSubscription) => void = () => undefined,
   ) {
     this.cursor = afterSequence;
   }
@@ -173,7 +227,11 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
         return { value: event, done: false };
       }
     } catch (error) {
-      await this.close();
+      try {
+        await this.close();
+      } catch {
+        // The registered subscription retains the purge blocker and can retry teardown.
+      }
       if (error instanceof EventBufferOverflowError && error.lastSequence < this.cursor) {
         throw new EventBufferOverflowError(this.cursor, error.latestSequence);
       }
@@ -191,9 +249,26 @@ class SplitSubscription implements AsyncIterableIterator<StoredKajiEvent> {
   }
 
   private async close(): Promise<void> {
-    if (this.closed) return;
     this.closed = true;
-    await this.live.return?.();
+    if (this.detached && this.unregistered) return;
+    if (this.closePromise !== undefined) return this.closePromise;
+    const attempt = Promise.resolve().then(() => this.finishClose());
+    this.closePromise = attempt;
+    void attempt.catch(() => {
+      if (this.closePromise === attempt) this.closePromise = undefined;
+    });
+    return attempt;
+  }
+
+  private async finishClose(): Promise<void> {
+    if (!this.detached) {
+      await this.teardown();
+      this.detached = true;
+    }
+    if (!this.unregistered) {
+      this.onClose(this);
+      this.unregistered = true;
+    }
   }
 }
 
@@ -210,6 +285,11 @@ export interface SplitEventCommitterOptions {
 
 interface PendingSlot {
   active: boolean;
+}
+
+interface OrphanSubscriptionTeardown {
+  readonly teardown: (() => unknown) | undefined;
+  state: "idle" | "pending" | "failed";
 }
 
 /** Stable single-process append + fanout boundary. */
@@ -333,17 +413,49 @@ export class InMemoryEventCommitter implements EventCommitter {
       this.transactionalStore === undefined
         ? this.serial.run(() => attach())
         : this.transactionalStore.sessionTransaction(sessionId, attach);
-    const detach = async () => {
+    const detach = async (authorization?: SessionPurgeAuthorization) => {
       if (this.transactionalStore === undefined || listener === undefined) return;
+      if (authorization !== undefined) {
+        if (!supportsAuthorizedListenerTeardown(this.store)) {
+          throw new TypeError("Event store cannot detach listeners during purge");
+        }
+        await this.store[authorizedListenerTeardown](sessionId, [listener], authorization);
+        return;
+      }
       await this.transactionalStore.sessionTransaction(sessionId, async (transaction) => {
         transaction.detachListenerLocked(listener!);
       });
     };
-    const subscription = new AttachedSubscription(inner, ready, afterSequence, detach, () =>
-      this.subscriptions.delete(subscription),
+    const subscription = new AttachedSubscription(
+      sessionId,
+      inner,
+      ready,
+      afterSequence,
+      detach,
+      () => this.subscriptions.delete(subscription),
     );
     this.subscriptions.add(subscription);
     return subscription;
+  }
+
+  async closeSessionSubscriptions(
+    sessionId: string,
+    authorization: SessionPurgeAuthorization,
+  ): Promise<void> {
+    const subscriptions = [...this.subscriptions].filter(
+      (subscription) => subscription.sessionId === sessionId,
+    );
+    if (subscriptions.length === 0) {
+      authorizedSessionTeardown(this.store, sessionId, authorization, () => undefined);
+      return;
+    }
+    const settlements = await Promise.allSettled(
+      subscriptions.map((subscription) => subscription.closeForPurge(authorization)),
+    );
+    const rejected = settlements.find(
+      (settlement): settlement is PromiseRejectedResult => settlement.status === "rejected",
+    );
+    if (rejected !== undefined) throw rejected.reason;
   }
 
   async close(): Promise<void> {
@@ -361,6 +473,12 @@ export class SplitEventCommitter implements EventCommitter {
   private readonly metrics: MetricsSink;
   private readonly transactionalStore;
   private pendingReservations = 0;
+  private subscriptionCreations = 0;
+  private readonly subscriptions = new Set<SplitSubscription>();
+  private readonly orphanSubscriptionTeardowns = new Set<OrphanSubscriptionTeardown>();
+  private closed = false;
+  private readonly unregisterPurgeBlocker: () => void;
+  readonly sessionPurgeComponent = "event_delivery" as const;
   readonly maxPendingEvents: number;
 
   constructor(
@@ -378,9 +496,61 @@ export class SplitEventCommitter implements EventCommitter {
     if (!Number.isInteger(this.maxPendingEvents) || this.maxPendingEvents <= 0) {
       throw new RangeError("maxPendingEvents must be a positive integer");
     }
+    this.unregisterPurgeBlocker = registerPurgeBlocker(this.store, this);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    for (const orphan of this.orphanSubscriptionTeardowns) {
+      if (orphan.state !== "pending") this.startOrphanSubscriptionTeardown(orphan);
+    }
+    if (this.pending.size > 0 || this.pendingReservations > 0) {
+      throw new Error("Split event committer cannot close with pending delivery work");
+    }
+    if (this.subscriptionCreations > 0 || this.subscriptions.size > 0) {
+      throw new Error("Split event committer cannot close with active subscription work");
+    }
+    this.unregisterPurgeBlocker();
+    this.closed = true;
+  }
+
+  private retainOrphanSubscription(candidate: unknown, teardown?: () => unknown): void {
+    const orphan: OrphanSubscriptionTeardown = {
+      teardown: teardown ?? bindSplitSubscriptionTeardown(candidate),
+      state: "idle",
+    };
+    this.orphanSubscriptionTeardowns.add(orphan);
+    this.startOrphanSubscriptionTeardown(orphan);
+  }
+
+  private startOrphanSubscriptionTeardown(orphan: OrphanSubscriptionTeardown): void {
+    if (orphan.state === "pending") return;
+    if (orphan.teardown === undefined) {
+      orphan.state = "failed";
+      return;
+    }
+    orphan.state = "pending";
+    let result: unknown;
+    try {
+      result = orphan.teardown();
+    } catch {
+      orphan.state = "failed";
+      return;
+    }
+    void Promise.resolve(result).then(
+      () => {
+        if (this.orphanSubscriptionTeardowns.delete(orphan)) {
+          this.subscriptionCreations -= 1;
+        }
+      },
+      () => {
+        orphan.state = "failed";
+      },
+    );
   }
 
   commit(input: NewKajiEventType): Promise<StoredKajiEvent> {
+    if (this.closed) return Promise.reject(new Error("Split event committer is closed"));
     const event = snapshotNewEvent(input);
     let slot: PendingSlot;
     try {
@@ -398,6 +568,7 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   private reservePendingSlot(event: NewKajiEventType): PendingSlot {
+    if (this.closed) throw new Error("Split event committer is closed");
     const pending = this.pending.get(event.id);
     if (pending !== undefined) {
       const { sequence: _, ...original } = pending;
@@ -471,6 +642,7 @@ export class SplitEventCommitter implements EventCommitter {
   }
 
   retryPublish(eventId: string): Promise<StoredKajiEvent> {
+    if (this.closed) return Promise.reject(new Error("Split event committer is closed"));
     const event = this.pending.get(eventId);
     if (event === undefined) return Promise.reject(new Error(`No pending event ${eventId}`));
     if (this.transactionalStore !== undefined) {
@@ -516,36 +688,58 @@ export class SplitEventCommitter implements EventCommitter {
     sessionId: string,
     options: { afterSequence?: number } = {},
   ): AsyncIterableIterator<StoredKajiEvent> {
-    const afterSequence = options.afterSequence ?? 0;
-    const live = this.bus.subscribe(sessionId, { afterSequence });
-    const readyBacklog = this.transactionalStore
-      ?.sessionTransaction(sessionId, async (transaction) => {
-        const backlog = transaction
-          .getEventsLocked({
-            afterSequence,
-            limit: this.subscriberCapacity + 1,
-          })
-          .map(validateStoredEvent);
-        recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
-        if (backlog.length > this.subscriberCapacity) {
-          recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
-          throw new EventBufferOverflowError(afterSequence, transaction.lastSequenceLocked());
-        }
-        return backlog;
-      })
-      .then(
-        (backlog) => ({ ready: true, backlog }) as const,
-        (error: unknown) => ({ ready: false, error }) as const,
+    if (this.closed) throw new Error("Split event committer is closed");
+    this.subscriptionCreations += 1;
+    let candidateAcquired = false;
+    let candidate: unknown;
+    let teardown: (() => unknown) | undefined;
+    try {
+      const afterSequence = options.afterSequence ?? 0;
+      candidate = this.bus.subscribe(sessionId, { afterSequence });
+      candidateAcquired = true;
+      teardown = bindSplitSubscriptionTeardown(candidate);
+      const validated = validateSplitLiveSubscription(candidate, teardown);
+      const readyBacklog = this.transactionalStore
+        ?.sessionTransaction(sessionId, async (transaction) => {
+          const backlog = transaction
+            .getEventsLocked({
+              afterSequence,
+              limit: this.subscriberCapacity + 1,
+            })
+            .map(validateStoredEvent);
+          recordMetric(this.metrics, "kaji.subscriber.lag_events", backlog.length, {});
+          if (backlog.length > this.subscriberCapacity) {
+            recordMetric(this.metrics, "kaji.subscriber.overflow", 1, { stage: "lag" });
+            throw new EventBufferOverflowError(afterSequence, transaction.lastSequenceLocked());
+          }
+          return backlog;
+        })
+        .then(
+          (backlog) => ({ ready: true, backlog }) as const,
+          (error: unknown) => ({ ready: false, error }) as const,
+        );
+      const subscription = new SplitSubscription(
+        validated.live,
+        validated.teardown,
+        this.store,
+        sessionId,
+        this.subscriberCapacity,
+        afterSequence,
+        this.metrics,
+        readyBacklog,
+        (closed) => this.subscriptions.delete(closed),
       );
-    return new SplitSubscription(
-      live,
-      this.store,
-      sessionId,
-      this.subscriberCapacity,
-      afterSequence,
-      this.metrics,
-      readyBacklog,
-    );
+      this.subscriptions.add(subscription);
+      this.subscriptionCreations -= 1;
+      return subscription;
+    } catch (error) {
+      if (!candidateAcquired) {
+        this.subscriptionCreations -= 1;
+      } else {
+        this.retainOrphanSubscription(candidate, teardown);
+      }
+      throw error;
+    }
   }
 
   pendingEventIds(): string[] {

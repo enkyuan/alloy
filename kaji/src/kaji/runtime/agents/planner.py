@@ -836,6 +836,7 @@ class ToolPlanner:
                 deadline_monotonic=deadline,
             )
             request_task = self.controller.start_approval(
+                item.context.session_id,
                 item.context.tool_call_id,
                 lambda: handler.request(invocation, approval_context),
             )

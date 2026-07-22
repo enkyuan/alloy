@@ -25,6 +25,8 @@ _LAZY: dict[str, str] = {
     "JournalEventEmitter": "kaji.runtime.agents.planner",
     "MissingToolIdentityError": "kaji.runtime.agents.context",
     "ProviderCancellationContractViolation": "kaji.runtime.agents.limits",
+    "SessionPurgeBusyError": "kaji.infra.events.errors",
+    "SessionPurgeUnsupportedError": "kaji.infra.events.errors",
     "StreamDiagnostics": "kaji.runtime.agents.stream",
     "ToolExecutionContext": "kaji.runtime.agents.context",
     "ToolInvocation": "kaji.runtime.agents.context",
