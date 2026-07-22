@@ -2628,18 +2628,28 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "typescript": "5.7.3",
     }
     tthw_runs = []
-    for index, (path_name, system) in enumerate(
-        zip(
-            ("python", "npm", "bun", "python", "npm"),
-            ("macos", "linux", "macos", "linux", "macos"),
-            strict=True,
-        ),
-        1,
-    ):
+    for index, path_name in enumerate(("python", "npm", "bun", "python", "npm"), 1):
+        artifact_file = (
+            "kaji_sdk-0.2.0b1-py3-none-any.whl"
+            if path_name == "python"
+            else "kaji-sdk-0.2.0-beta.2.tgz"
+        )
+        artifact_package = "python" if path_name == "python" else "typescript"
+        artifact_version = "0.2.0b1" if path_name == "python" else "0.2.0-beta.2"
         tthw_runs.append(
             {
                 "participantId": f"user-{index:03d}",
-                "os": system,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifact": {
+                    "name": artifact_file,
+                    "package": artifact_package,
+                    "version": artifact_version,
+                    "sha256": artifact_hashes[artifact_file],
+                },
+                "os": "macos",
+                "architecture": "arm64",
+                "platformVersion": "15.5",
                 "path": path_name,
                 "cleanEnvironment": True,
                 "noSourceCheckout": True,

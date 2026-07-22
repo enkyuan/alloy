@@ -65,6 +65,8 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
         )
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(json.dumps({"commit": commit, "artifacts": manifest_rows}))
+    manifest_hash = _sha(manifest_path)
+    artifacts_by_name = {row["name"]: row for row in artifact_rows}
 
     toolchain = {
         "python": "3.14.6",
@@ -75,20 +77,33 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
         "typescript": "5.7.3 and 6.0.3",
     }
     paths = ["python", "npm", "bun", "python", "npm"]
-    systems = ["macos", "linux", "macos", "linux", "macos"]
     no_key_totals = [100_000, 110_000, 120_000, 130_000, 140_000]
     echo_totals = [400_000, 420_000, 440_000, 460_000, 480_000]
     runs = []
-    for index, (path, system, no_key, echo) in enumerate(
-        zip(paths, systems, no_key_totals, echo_totals, strict=True), 1
+    for index, (path, no_key, echo) in enumerate(
+        zip(paths, no_key_totals, echo_totals, strict=True), 1
     ):
         first = [no_key // 5, no_key // 5, no_key - 2 * (no_key // 5)]
         remaining = echo - no_key
         durations = [*first, remaining // 2, remaining - remaining // 2]
+        artifact_name = (
+            "kaji_sdk-0.2.0b1-py3-none-any.whl"
+            if path == "python"
+            else "kaji-sdk-0.2.0-beta.2.tgz"
+        )
+        artifact = artifacts_by_name[artifact_name]
         runs.append(
             {
                 "participantId": f"user-{index:03d}",
-                "os": system,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifact": {
+                    key: artifact[key]
+                    for key in ("name", "package", "version", "sha256")
+                },
+                "os": "macos",
+                "architecture": "arm64",
+                "platformVersion": "15.5",
                 "path": path,
                 "cleanEnvironment": True,
                 "noSourceCheckout": True,
@@ -133,7 +148,7 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
     document = {
         "schemaVersion": "1.0.0",
         "commit": commit,
-        "releaseManifestSha256": _sha(manifest_path),
+        "releaseManifestSha256": manifest_hash,
         "artifacts": artifact_rows,
         "automatedTimings": {
             name: {
@@ -174,14 +189,86 @@ def test_validator_requires_five_distinct_pseudonyms(tmp_path: Path) -> None:
         module.validate_document(document)
 
 
-def test_validator_requires_os_and_package_manager_coverage(tmp_path: Path) -> None:
+def test_validator_requires_arm64_macos_and_package_manager_coverage(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    valid, _manifest, _artifacts = _fixture(tmp_path)
+    document = deepcopy(valid)
+    document["humanRuns"][0]["os"] = "linux"
+
+    with pytest.raises(module.EvidenceError, match="/humanRuns/0/os"):
+        module.validate_document(document)
+
+    document = deepcopy(valid)
+    document["humanRuns"][0]["architecture"] = "x86_64"
+    with pytest.raises(module.EvidenceError, match="/humanRuns/0/architecture"):
+        module.validate_document(document)
+
+    document = deepcopy(valid)
+    for run in document["humanRuns"]:
+        if run["path"] == "bun":
+            run["path"] = "npm"
+    with pytest.raises(module.EvidenceError, match="Python, npm, and Bun"):
+        module.validate_document(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "pointer"),
+    [
+        ("architecture", None, "/humanRuns/0"),
+        ("platformVersion", None, "/humanRuns/0"),
+        ("platformVersion", "Sonoma", "/humanRuns/0/platformVersion"),
+    ],
+)
+def test_validator_requires_measured_macos_platform_identity(
+    tmp_path: Path, field: str, value: str | None, pointer: str
+) -> None:
     module = _module()
     document, _manifest, _artifacts = _fixture(tmp_path)
-    for run in document["humanRuns"]:
-        run["os"] = "macos"
+    if value is None:
+        del document["humanRuns"][0][field]
+    else:
+        document["humanRuns"][0][field] = value
 
-    with pytest.raises(module.EvidenceError, match="macOS and Linux"):
+    with pytest.raises(module.EvidenceError, match=pointer):
         module.validate_document(document)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("name", "kaji_sdk-0.2.0b1.tar.gz"),
+        ("package", "typescript"),
+        ("version", "0.2.0-beta.2"),
+        ("sha256", "f" * 64),
+    ],
+)
+def test_validator_rejects_wrong_participant_artifact_binding(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    document["humanRuns"][0]["artifact"][field] = value
+
+    with pytest.raises(module.EvidenceError, match=f"/humanRuns/0/artifact/{field}"):
+        module.validate_document(document)
+
+
+def test_validator_rejects_stale_participant_candidate_identity(tmp_path: Path) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    stale = deepcopy(document)
+    stale["humanRuns"][0]["commit"] = "b" * 40
+    with pytest.raises(module.EvidenceError, match="/humanRuns/0/commit"):
+        module.validate_document(stale)
+
+    foreign = deepcopy(document)
+    foreign["humanRuns"][0]["releaseManifestSha256"] = "c" * 64
+    with pytest.raises(
+        module.EvidenceError, match="/humanRuns/0/releaseManifestSha256"
+    ):
+        module.validate_document(foreign)
 
 
 def test_validator_recomputes_totals_and_thresholds(tmp_path: Path) -> None:
@@ -226,3 +313,29 @@ def test_validator_recomputes_retained_artifact_hashes(tmp_path: Path) -> None:
 
     with pytest.raises(module.EvidenceError, match="retained artifact size/hash"):
         module.validate_bindings(document, manifest, artifacts)
+
+
+def test_release_identity_hashes_and_parses_one_manifest_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _module()
+    _document, manifest, artifacts = _fixture(tmp_path)
+    original_hash = _sha(manifest)
+    original_sha256 = module.sha256
+
+    def mutate_after_hash(path: Path) -> str:
+        digest = original_sha256(path)
+        if path == manifest:
+            changed = json.loads(manifest.read_text())
+            changed["commit"] = "b" * 40
+            for entry in changed["artifacts"]:
+                entry["commit"] = "b" * 40
+            manifest.write_text(json.dumps(changed))
+        return digest
+
+    monkeypatch.setattr(module, "sha256", mutate_after_hash)
+
+    commit, manifest_hash, _artifacts = module.release_identity(manifest, artifacts)
+
+    assert commit == "a" * 40
+    assert manifest_hash == original_hash

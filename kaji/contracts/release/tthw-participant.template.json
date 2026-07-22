@@ -1,6 +1,16 @@
 {
   "participantId": "user-replace-me",
+  "commit": "replace-with-generated-commit",
+  "releaseManifestSha256": "replace-with-generated-release-manifest-sha256",
+  "artifact": {
+    "name": "replace-with-generated-artifact-name",
+    "package": "replace-with-generated-artifact-package",
+    "version": "replace-with-generated-artifact-version",
+    "sha256": "replace-with-generated-artifact-sha256"
+  },
   "os": "macos",
+  "architecture": "arm64",
+  "platformVersion": "replace-with-sw-vers-product-version",
   "path": "python",
   "cleanEnvironment": true,
   "noSourceCheckout": true,

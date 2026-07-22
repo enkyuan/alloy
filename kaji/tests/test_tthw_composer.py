@@ -119,6 +119,8 @@ def _fixture(tmp_path: Path) -> tuple[list[Path], Path, Path, Path]:
         )
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"commit": commit, "artifacts": manifest_rows}))
+    manifest_hash = _sha(manifest)
+    artifacts_by_name = {row["file"]: row for row in manifest_rows}
 
     toolchain = {
         "python": "3.14.6",
@@ -129,12 +131,27 @@ def _fixture(tmp_path: Path) -> tuple[list[Path], Path, Path, Path]:
         "typescript": "5.7.3 and 6.0.3",
     }
     paths = ("python", "npm", "bun", "python", "npm")
-    systems = ("macos", "linux", "macos", "linux", "macos")
     receipts = []
-    for index, (path_name, system) in enumerate(zip(paths, systems, strict=True), 1):
+    for index, path_name in enumerate(paths, 1):
+        artifact_name = (
+            "kaji_sdk-0.2.0b1-py3-none-any.whl"
+            if path_name == "python"
+            else "kaji-sdk-0.2.0-beta.2.tgz"
+        )
+        artifact = artifacts_by_name[artifact_name]
         receipt = {
             "participantId": f"user-{index:03d}",
-            "os": system,
+            "commit": commit,
+            "releaseManifestSha256": manifest_hash,
+            "artifact": {
+                "name": artifact["file"],
+                "package": artifact["package"],
+                "version": artifact["version"],
+                "sha256": artifact["sha256"],
+            },
+            "os": "macos",
+            "architecture": "arm64",
+            "platformVersion": "15.5",
             "path": path_name,
             "cleanEnvironment": True,
             "noSourceCheckout": True,
@@ -200,6 +217,13 @@ def test_checked_in_tthw_input_templates_have_exact_composer_shapes() -> None:
     assert all(step["durationMs"] == -1 for step in participant["steps"])
     assert participant["cleanEnvironment"] is True
     assert participant["noSourceCheckout"] is True
+    assert participant["os"] == "macos"
+    assert participant["architecture"] == "arm64"
+    assert participant["commit"] == "replace-with-generated-commit"
+    assert participant["releaseManifestSha256"] == (
+        "replace-with-generated-release-manifest-sha256"
+    )
+    assert set(participant["artifact"]) == {"name", "package", "version", "sha256"}
     assert set(timings) == {"python", "npm", "bun"}
     assert all(timing["coldSetupToOutputMs"] == -1 for timing in timings.values())
 
@@ -231,6 +255,9 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     ]
     assert document["humanRuns"][0]["noKeyTotalMs"] == 3_000
     assert document["humanRuns"][0]["echoTotalMs"] == 5_000
+    assert document["humanRuns"][0]["artifact"]["name"] == (
+        "kaji_sdk-0.2.0b1-py3-none-any.whl"
+    )
     assert document["summary"] == {
         "noKeyMedianMs": 9_000,
         "noKeyMaxMs": 15_000,
@@ -277,6 +304,136 @@ def test_composer_fails_before_replacing_output_on_invalid_receipt(
 
     assert module.main() == 1
     assert output.read_text() == "preserve-me"
+
+
+@pytest.mark.parametrize(
+    ("path_name", "artifact_name"),
+    [
+        ("python", "kaji_sdk-0.2.0b1-py3-none-any.whl"),
+        ("npm", "kaji-sdk-0.2.0-beta.2.tgz"),
+        ("bun", "kaji-sdk-0.2.0-beta.2.tgz"),
+    ],
+)
+def test_template_generation_binds_selected_candidate_artifact(
+    tmp_path: Path, path_name: str, artifact_name: str
+) -> None:
+    module = _load_script(COMPOSER)
+    _receipts, _timings, manifest, artifacts = _fixture(tmp_path)
+
+    participant = module.participant_template(
+        path_name=path_name,
+        release_manifest=manifest,
+        artifacts_dir=artifacts,
+    )
+
+    assert participant["commit"] == "a" * 40
+    assert participant["releaseManifestSha256"] == _sha(manifest)
+    assert participant["path"] == path_name
+    assert participant["artifact"]["name"] == artifact_name
+    assert participant["artifact"]["sha256"] == _sha(artifacts / artifact_name)
+    assert participant["os"] == "macos"
+    assert participant["architecture"] == "arm64"
+
+
+def test_template_generation_cli_writes_candidate_bound_skeleton(
+    tmp_path: Path,
+) -> None:
+    _receipts, _timings, manifest, artifacts = _fixture(tmp_path)
+    output = tmp_path / "participant.json"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(COMPOSER),
+            "--generate-participant-template",
+            "python",
+            "--release-manifest",
+            str(manifest),
+            "--artifacts-dir",
+            str(artifacts),
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.startswith("PASS: candidate-bound participant template")
+    assert json.loads(output.read_text())["commit"] == "a" * 40
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+
+
+def test_composer_rejects_stale_receipt_instead_of_injecting_candidate_identity(
+    tmp_path: Path,
+) -> None:
+    module = _load_script(COMPOSER)
+    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    stale = json.loads(receipts[0].read_text())
+    stale["commit"] = "b" * 40
+    receipts[0].write_text(json.dumps(stale))
+
+    with pytest.raises(module.validation.EvidenceError, match="/humanRuns/0/commit"):
+        module.compose(
+            participant_receipts=receipts,
+            automated_timings=timings,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+        )
+
+
+def test_composer_rejects_python_receipt_bound_to_sdist(tmp_path: Path) -> None:
+    module = _load_script(COMPOSER)
+    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipt = json.loads(receipts[0].read_text())
+    sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
+    receipt["artifact"] = {
+        "name": sdist.name,
+        "package": "python",
+        "version": "0.2.0b1",
+        "sha256": _sha(sdist),
+    }
+    receipts[0].write_text(json.dumps(receipt))
+
+    with pytest.raises(
+        module.validation.EvidenceError, match="/humanRuns/0/artifact/name"
+    ):
+        module.compose(
+            participant_receipts=receipts,
+            automated_timings=timings,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+        )
+
+
+def test_composer_rechecks_retained_artifacts_after_participant_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script(COMPOSER)
+    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    original = module._participant_receipt
+    mutated = False
+
+    def mutate_then_read(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        nonlocal mutated
+        if not mutated:
+            (artifacts / "kaji-sdk-0.2.0-beta.2.tgz").write_bytes(b"mutated")
+            mutated = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, "_participant_receipt", mutate_then_read)
+
+    with pytest.raises(
+        module.validation.EvidenceError, match="retained artifact size/hash differs"
+    ):
+        module.compose(
+            participant_receipts=receipts,
+            automated_timings=timings,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+        )
 
 
 def _complete_baseline(module: ModuleType) -> dict[str, Any]:

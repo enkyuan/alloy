@@ -9,29 +9,46 @@ the complete document passes.
 ## Inputs and cohort
 
 Retain the exact release `manifest.json`, wheel, sdist, and npm tarball in one
-read-only artifact directory. Give participants those four files only. Do not
-give them a repository archive, editable install, linked workspace, or local
-registry override.
+read-only artifact directory. Give each participant only the generated receipt
+skeleton, manifest, and artifact selected for their path. Do not give them a
+repository archive, editable install, linked workspace, or local registry
+override.
 
-Copy these checked-in inputs before collecting results:
+The checked-in participant template documents the closed receipt shape; its
+placeholder candidate fields are not collection evidence. Generate each
+candidate-bound skeleton from the retained manifest and artifacts before
+collecting results. For example:
 
-- `kaji/contracts/release/tthw-participant.template.json`, once per participant;
-- `kaji/contracts/release/tthw-automated-timings.template.json`, once per release.
+```bash
+uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
+  --generate-participant-template python \
+  --release-manifest /secure/kaji-release/manifest.json \
+  --artifacts-dir /secure/kaji-release \
+  --output /secure/tthw/user-001.json
+```
 
-Use exactly five distinct pseudonyms. The following assignment satisfies the
-required operating-system and package-manager coverage and exercises both
-Python distributions:
+Repeat that command for all five assignments, changing the selected path and
+output file. Copy
+`kaji/contracts/release/tthw-automated-timings.template.json` once per release.
+The generator verifies the canonical manifest and all three artifacts, then
+atomically binds the selected wheel or npm tarball into an owner-only skeleton.
 
-| Receipt | OS | Path | Artifact |
+Use exactly five distinct pseudonyms. Every participant must use arm64 macOS;
+the following assignment covers Python, npm, and Bun while binding each run to
+the artifact it installs:
+
+| Receipt | OS / architecture | Path | Artifact |
 | --- | --- | --- | --- |
-| `user-001` | macOS | Python | wheel |
-| `user-002` | Linux | Python | sdist |
-| `user-003` | macOS | npm | npm tarball |
-| `user-004` | Linux | npm | npm tarball |
-| `user-005` | Linux | Bun | npm tarball |
+| `user-001` | macOS / arm64 | Python | wheel |
+| `user-002` | macOS / arm64 | Python | wheel |
+| `user-003` | macOS / arm64 | npm | npm tarball |
+| `user-004` | macOS / arm64 | npm | npm tarball |
+| `user-005` | macOS / arm64 | Bun | npm tarball |
 
 Each participant starts in a new empty directory outside any Kaji checkout.
-Record the literal output of `python --version`, `uv --version`,
+Record `uname -m` as `architecture` and `sw_vers -productVersion` as
+`platformVersion`; they must report `arm64` and a numeric macOS version. Record
+the literal output of `python --version`, `uv --version`,
 `node --version`, `npm --version`, `bun --version`, and the installed
 TypeScript compiler versions in `toolchain`. A command that is not used still
 gets its installed version. `cleanEnvironment` and `noSourceCheckout` may be
@@ -47,15 +64,17 @@ milliseconds:
 4. `echo-setup`: Echo copy start through a runnable Echo proof file.
 5. `echo-run`: Echo proof start through all lifecycle assertions passing.
 
-Do not enter `noKeyTotalMs`, `echoTotalMs`, artifact hashes, manifest hash, or
-summary values in a participant receipt. The composer derives them. Every
-checked-in `-1` timing is an invalid sentinel and must be replaced with a real
-measurement.
+Do not enter `noKeyTotalMs`, `echoTotalMs`, or summary values in a participant
+receipt. Do not hand-edit its generated commit, manifest hash, artifact name,
+package, version, or hash. The composer verifies those bindings and derives the
+totals. Every checked-in `-1` timing is an invalid sentinel and must be replaced
+with a real measurement.
 
 ## Python path
 
-Set absolute paths first. Use the wheel for one participant and substitute the
-sdist filename for the other.
+Set absolute paths first. Every Python participant installs the wheel; the
+sdist remains bound by the aggregate release evidence but is not a TTHW
+participant artifact.
 
 ```bash
 export KAJI_ARTIFACTS=/absolute/path/to/kaji-release

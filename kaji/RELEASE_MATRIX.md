@@ -119,7 +119,7 @@ TypeScript optional provider imports, and cancellation error shape.
 | Full benchmark | `run_beta_benchmarks.py --full` on the pinned runner | Yes | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30` on the pinned runner | Yes | Pending protected run |
 | Keyed OpenAI + Anthropic proof | `live_provider_proof.py` in `kaji-beta` | Yes; both providers in Python and TypeScript, missing key blocks | Pending protected run |
-| Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh users across macOS/Linux and Python/npm/Bun | Unmeasured |
+| Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh arm64 macOS users across Python/npm/Bun, each bound to the installed candidate artifact | Unmeasured |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
 | Registry publication proof | protected PyPI/npm jobs plus byte verification | Yes | Pending approval/publication |

@@ -166,20 +166,22 @@ mismatch.
 Store one redacted evidence document in the protected `kaji-beta` environment
 as `KAJI_TTHW_EVIDENCE_JSON`. Both protected release workflows validate it with
 `kaji/scripts/validate_tthw_evidence.py` and retain `kaji-tthw-evidence`; they
-do not retain the document when validation fails. It must bind one 40-hex commit and
-release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
+do not retain the document when validation fails. It must bind one 40-hex commit
+and release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
 versions, and SHA-256 values; automated Python/npm/Bun cold/warm timings; and
-exactly five distinct pseudonymous fresh-user runs across macOS/Linux and
-Python/npm/Bun. Configuration alone does not claim that the cohort passed;
+exactly five distinct pseudonymous fresh-user runs on arm64 macOS across
+Python/npm/Bun. Each participant receipt repeats the exact commit, manifest
+hash, measured macOS version, and artifact it installed: Python uses the wheel,
+while npm and Bun use the npm tarball. Configuration alone does not claim that the cohort passed;
 until that real evidence exists, TTHW is **unmeasured**.
 
 Collect and compose it only through the
 [TTHW evidence operator guide](tthw-evidence.md). The guide provides the
-checked-in participant and automated-timing templates, exact no-source
-Python/npm/Bun commands, required Echo tool-loop observations, and the atomic
-`compose_tthw_evidence.py` command. The composer derives totals, summary,
-manifest hash, artifact sizes, and artifact hashes, then calls the same
-protected validator before writing owner-only output.
+candidate-bound participant-template command, checked-in automated-timing
+template, exact no-source Python/npm/Bun commands, required Echo tool-loop
+observations, and the atomic `compose_tthw_evidence.py` command. The composer
+rejects stale participant identity, derives totals and summary, and calls the
+same protected validator before writing owner-only output.
 
 The validator recomputes median and maximum totals. No-key median must be under
 5 minutes and every run under 10; Echo median must be under 10 minutes and
