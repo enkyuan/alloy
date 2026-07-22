@@ -21,7 +21,11 @@ export interface AddOptions {
   readonly registryRoot: string;
   readonly schemaRoot?: string;
   readonly log?: (message: string) => void;
+  readonly err?: (message: string) => void;
 }
+
+const ADD_USAGE =
+  "usage: kaji add <name> [--out <dir>] [--force] [--allow-experimental] [--check] [--json]";
 
 interface Args {
   readonly name: string;
@@ -32,10 +36,10 @@ interface Args {
   readonly json: boolean;
 }
 
-function parseArgs(argv: string[], log: (message: string) => void): Args | undefined {
+function parseArgs(argv: string[], err: (message: string) => void): Args | undefined {
   const name = argv[0];
   if (name === undefined || name.startsWith("-")) {
-    log("usage: kaji add <name> [--out <dir>] [--force] [--allow-experimental] [--check] [--json]");
+    err(ADD_USAGE);
     return undefined;
   }
   let out: string | undefined;
@@ -48,7 +52,8 @@ function parseArgs(argv: string[], log: (message: string) => void): Args | undef
     if (argument === "--out") {
       const value = argv[++index];
       if (value === undefined || value.startsWith("--")) {
-        log("--out requires a value");
+        err("--out requires a value");
+        err(ADD_USAGE);
         return undefined;
       }
       out = value;
@@ -61,12 +66,14 @@ function parseArgs(argv: string[], log: (message: string) => void): Args | undef
     } else if (argument === "--json") {
       json = true;
     } else {
-      log(`Unknown argument: ${argument}`);
+      err(`Unknown argument: ${argument}`);
+      err(ADD_USAGE);
       return undefined;
     }
   }
   if (check && force) {
-    log("--check cannot be combined with --force");
+    err("--check cannot be combined with --force");
+    err(ADD_USAGE);
     return undefined;
   }
   return { name, out, force, allowExperimental, check, json };
@@ -149,24 +156,25 @@ function setupGuidance(manifest: LoadedIntegrationManifest, log: (message: strin
 
 export async function add(argv: string[], opts: AddOptions): Promise<number> {
   const log = opts.log ?? ((message: string) => console.log(message));
-  const args = parseArgs(argv, log);
-  if (args === undefined) return argv.includes("--check") && argv.includes("--force") ? 2 : 1;
+  const err = opts.err ?? ((message: string) => console.error(message));
+  const args = parseArgs(argv, err);
+  if (args === undefined) return 2;
 
   let index: RegistryIndexDocument;
   try {
     index = await loadRegistryIndex(opts.registryRoot, { schemaRoot: opts.schemaRoot });
   } catch (error) {
-    log(formatIntegrationError(error));
+    err(formatIntegrationError(error));
     return 1;
   }
   const entry = index.integrations[args.name];
   if (entry === undefined) {
     const available = Object.keys(index.integrations).sort().join(", ") || "(none)";
-    log(`Unknown integration: '${args.name}'. Available: ${available}`);
+    err(`Unknown integration: '${args.name}'. Available: ${available}`);
     return 1;
   }
   if (entry.stability === "experimental" && !args.allowExperimental && !args.check) {
-    log(formatIntegrationError(new IntegrationExperimentalError(args.name)));
+    err(formatIntegrationError(new IntegrationExperimentalError(args.name)));
     return 1;
   }
 
@@ -177,7 +185,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       index,
     });
   } catch (error) {
-    log(formatIntegrationError(error));
+    err(formatIntegrationError(error));
     return 1;
   }
   const destination = resolve(args.out ?? join("./integrations", args.name));
@@ -188,7 +196,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       renderStatus(status, manifest, args.json, log);
       return exitCode(status);
     } catch (error) {
-      log(error instanceof Error ? error.message : "Integration check failed");
+      err(error instanceof Error ? error.message : "Integration check failed");
       return 1;
     }
   }
@@ -201,7 +209,7 @@ export async function add(argv: string[], opts: AddOptions): Promise<number> {
       renderStatus(error.status, manifest, args.json, log);
       return exitCode(error.status);
     }
-    log(error instanceof Error ? error.message : "Integration copy failed");
+    err(error instanceof Error ? error.message : "Integration copy failed");
     return 1;
   }
   if (args.json) {

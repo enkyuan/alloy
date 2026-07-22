@@ -106,6 +106,43 @@ describe("kaji add", () => {
   });
   afterEach(() => rmSync(tmp, { recursive: true, force: true }));
 
+  it.each([
+    { arguments_: [] },
+    { arguments_: ["echo", "--out"] },
+    { arguments_: ["echo", "--unknown"] },
+  ])("rejects malformed usage on stderr without writing: $arguments_", async ({ arguments_ }) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const destination = join(tmp, "malformed");
+    const code = await add(arguments_, {
+      registryRoot: registry,
+      schemaRoot,
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toContain("usage: kaji add");
+    expect(existsSync(destination)).toBe(false);
+  });
+
+  it("reports unknown integrations on stderr without usage or writes", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const destination = join(tmp, "unknown");
+    const code = await add(["unknown", "--out", destination], {
+      registryRoot: registry,
+      schemaRoot,
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toContain("Unknown integration");
+    expect(stderr.join("\n")).not.toContain("usage:");
+    expect(existsSync(destination)).toBe(false);
+  });
+
   it("copies .ts files into --out", async () => {
     const out = join(tmp, "integrations");
     const code = await add(["echo", "--out", out], {
@@ -122,15 +159,15 @@ describe("kaji add", () => {
       JSON.stringify(registryIndex({ echo: "echo/manifest.json" }, "experimental")),
     );
     const out = join(tmp, "experimental-out");
-    const logs: string[] = [];
+    const errors: string[] = [];
     const code = await add(["echo", "--out", out], {
       registryRoot: registry,
       schemaRoot,
-      log: (message) => logs.push(message),
+      err: (message) => errors.push(message),
     });
     expect(code).toBe(1);
     expect(existsSync(out)).toBe(false);
-    expect(logs).toEqual([
+    expect(errors).toEqual([
       "INTEGRATION_EXPERIMENTAL at /integrations/echo/stability: Integration 'echo' is experimental and outside the beta guarantee. Re-run with --allow-experimental to copy it.",
     ]);
   });
@@ -220,15 +257,19 @@ describe("kaji add", () => {
 
   it("rejects unknown flags before loading or copying", async () => {
     const out = join(tmp, "unknown-flag-out");
-    const logs: string[] = [];
+    const stdout: string[] = [];
+    const stderr: string[] = [];
     const code = await add(["echo", "--unsafe", "--out", out], {
       registryRoot: registry,
       schemaRoot,
-      log: (message) => logs.push(message),
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
     });
-    expect(code).toBe(1);
+    expect(code).toBe(2);
     expect(existsSync(out)).toBe(false);
-    expect(logs.join("\n")).toMatch(/Unknown argument: --unsafe/);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toMatch(/Unknown argument: --unsafe/);
+    expect(stderr.join("\n")).toContain("usage: kaji add");
   });
 
   it("copies every manifest-declared native asset", async () => {
@@ -882,11 +923,18 @@ describe("kaji add", () => {
     const previous = process.cwd();
     process.chdir(tmp);
     try {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
       expect(
         await add(["echo", "--check", "--force"], {
           registryRoot: join(__dirname, "..", "registry"),
+          log: (message) => stdout.push(message),
+          err: (message) => stderr.push(message),
         }),
       ).toBe(2);
+      expect(stdout).toEqual([]);
+      expect(stderr.join("\n")).toContain("--check cannot be combined with --force");
+      expect(stderr.join("\n")).toContain("usage: kaji add");
       expect(existsSync(join(tmp, "integrations/echo"))).toBe(false);
     } finally {
       process.chdir(previous);

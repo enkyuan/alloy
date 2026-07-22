@@ -10,6 +10,7 @@ import argparse
 import json
 from pathlib import Path
 import shlex
+import sys
 
 from kaji.integrations import (
     IntegrationNotFound,
@@ -26,6 +27,12 @@ from kaji.integrations.copy import (
 
 from ._pkg import TYPESCRIPT_SDK_CLI
 from ._style import color
+
+
+ADD_USAGE = (
+    "usage: kaji add <name> [--out <dir>] [--force] "
+    "[--allow-experimental] [--check] [--json]"
+)
 
 
 def add_parser(sub: argparse._SubParsersAction) -> None:
@@ -92,17 +99,21 @@ def run(args: argparse.Namespace) -> int:
     name = args.name
     dest = (Path(args.out) if args.out else Path("./integrations") / name).absolute()
     if args.check and args.force:
-        print(color("--check cannot be combined with --force", "red"))
+        print(
+            color("--check cannot be combined with --force", "red"),
+            file=sys.stderr,
+        )
+        print(ADD_USAGE, file=sys.stderr)
         return 2
     try:
         manifest = load_manifest(name)
     except IntegrationNotFound:
         available = ", ".join(list_integrations()) or "(none)"
-        print(color(f"Unknown integration: {name!r}.", "red"))
-        print(f"Available: {available}")
+        print(color(f"Unknown integration: {name!r}.", "red"), file=sys.stderr)
+        print(f"Available: {available}", file=sys.stderr)
         return 1
     except ManifestError as e:
-        print(color(f"Manifest error: {e}", "red"))
+        print(color(f"Manifest error: {e}", "red"), file=sys.stderr)
         return 1
 
     if manifest.stability == "experimental" and not (
@@ -112,7 +123,8 @@ def run(args: argparse.Namespace) -> int:
             color(
                 f"Integration {name!r} is experimental. Re-run with --allow-experimental.",
                 "red",
-            )
+            ),
+            file=sys.stderr,
         )
         return 1
 
@@ -136,7 +148,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return error.status.exit_code
     except ManifestError as e:
-        print(color(f"Install error: {e}", "red"))
+        print(color(f"Install error: {e}", "red"), file=sys.stderr)
         return 1
 
     if args.json:

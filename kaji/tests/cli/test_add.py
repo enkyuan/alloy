@@ -25,10 +25,35 @@ def test_add_echo_copies_files(tmp_path: Path) -> None:
 
 def test_add_unknown_integration_returns_nonzero(tmp_path: Path) -> None:
     out = StringIO()
-    with patch("sys.stdout", out):
+    err = StringIO()
+    with patch("sys.stdout", out), patch("sys.stderr", err):
         rc = main(["add", "does-not-exist", "--out", str(tmp_path)])
     assert rc == 1
-    assert "Unknown integration" in out.getvalue()
+    assert out.getvalue() == ""
+    assert "Unknown integration" in err.getvalue()
+    assert "usage:" not in err.getvalue()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    (["add"], ["add", "echo", "--out"], ["add", "echo", "--unknown"]),
+)
+def test_add_malformed_usage_exits_two_on_stderr_without_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    out = StringIO()
+    err = StringIO()
+    with (
+        patch("sys.stdout", out),
+        patch("sys.stderr", err),
+        pytest.raises(SystemExit) as raised,
+    ):
+        main(arguments)
+    assert raised.value.code == 2
+    assert out.getvalue() == ""
+    assert "usage:" in err.getvalue()
+    assert not (tmp_path / "integrations").exists()
 
 
 def test_add_refuses_overwrite_without_force(tmp_path: Path) -> None:
@@ -176,7 +201,7 @@ def test_github_requires_opt_in_then_copies_the_complete_owner_bundle(
 ) -> None:
     destination = tmp_path / "github"
     denied = StringIO()
-    with patch("sys.stdout", denied):
+    with patch("sys.stderr", denied):
         assert main(["add", "github", "--out", str(destination)]) == 1
     assert not destination.exists()
     assert "--allow-experimental" in denied.getvalue()
@@ -649,17 +674,23 @@ def test_staging_copy_failure_leaves_the_old_bundle_byte_identical(
 
 def test_check_force_is_rejected_without_creating_destination(tmp_path: Path) -> None:
     destination = tmp_path / "echo"
-    assert (
-        main(
-            [
-                "add",
-                "echo",
-                "--check",
-                "--force",
-                "--out",
-                str(destination),
-            ]
+    out = StringIO()
+    err = StringIO()
+    with patch("sys.stdout", out), patch("sys.stderr", err):
+        assert (
+            main(
+                [
+                    "add",
+                    "echo",
+                    "--check",
+                    "--force",
+                    "--out",
+                    str(destination),
+                ]
+            )
+            == 2
         )
-        == 2
-    )
+    assert out.getvalue() == ""
+    assert "--check cannot be combined with --force" in err.getvalue()
+    assert "usage:" in err.getvalue()
     assert not destination.exists()

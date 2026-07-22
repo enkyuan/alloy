@@ -57,6 +57,19 @@ describe("kaji cli dispatch", () => {
     expect(lines.join("\n")).toBe(`usage: ${COMMANDS.add!.usage}`);
   });
 
+  it("routes add usage through stderr", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const code = await runCli(["add"], {
+      registryRoot: "/tmp",
+      log: (message) => stdout.push(message),
+      err: (message) => stderr.push(message),
+    });
+    expect(code).toBe(2);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toContain("usage: kaji add");
+  });
+
   it("accepts global no-color and verbose flags before init", async () => {
     const lines: string[] = [];
     const out = mkdtempSync(join(tmpdir(), "kaji-cli-global-"));

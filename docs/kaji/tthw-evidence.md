@@ -71,10 +71,11 @@ cd ..
 .venv/bin/python -m kaji.cli --no-color add echo --out echo
 ```
 
-The no-key run must print `text=mock`, a nonempty `turn_id`, and a positive
+The no-key run must print `text=mock response`, a nonempty `turn_id`, and a positive
 integer `final_sequence`. Save this as `echo_loop.py` in the empty participant
 directory and run it with `.venv/bin/python echo_loop.py`:
 
+<!-- tthw-echo:python:start -->
 ```python
 import asyncio
 
@@ -89,14 +90,14 @@ async def main() -> None:
         .provider(
             kaji.get_provider(
                 "mock",
-                tool_call={"name": "echo.say", "args": {"message": "hello"}},
+                tool_call={"name": "echo_say", "args": {"message": "hello"}},
             )
         )
         .integration(EchoIntegration())
         .build()
     )
     result = await runtime.turn(
-        "Call echo.say.",
+        "Call echo_say.",
         context=kaji.TurnContext(principal_id="tthw-user"),
     )
     requested = next(e for e in result.events if e.type == EventType.TOOL_CALL_REQUESTED)
@@ -104,7 +105,7 @@ async def main() -> None:
     completed = next(e for e in result.events if e.type == EventType.TOOL_CALL_COMPLETED)
     assert requested.tool_call_id == started.tool_call_id == completed.tool_call_id
     assert completed.result == {"message": "hello"}
-    assert result.text == "mock"
+    assert result.text == "mock response"
     assert result.turn_id
     assert max(event.sequence or 0 for event in result.events) > 0
     print("PASS: echo requested, started, completed, and observed")
@@ -112,6 +113,7 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+<!-- tthw-echo:python:end -->
 
 ## npm path
 
@@ -160,6 +162,7 @@ bun run --cwd generated start
 Save the following as `echo-loop.ts`. Run it with
 `./node_modules/.bin/tsx echo-loop.ts` for npm or `bun echo-loop.ts` for Bun:
 
+<!-- tthw-echo:typescript:start -->
 ```ts
 import { AgentBuilder, EventType } from "@kaji/sdk";
 import { MockProvider } from "@kaji/sdk/testing";
@@ -168,12 +171,12 @@ import { EchoIntegration } from "./echo/index.ts";
 const runtime = new AgentBuilder()
   .provider(
     new MockProvider({
-      toolCall: { name: "echo.say", args: { message: "hello" } },
+      toolCall: { name: "echo_say", args: { message: "hello" } },
     }),
   )
   .integration(new EchoIntegration())
   .build();
-const result = await runtime.turn("Call echo.say.", {
+const result = await runtime.turn("Call echo_say.", {
   context: { principalId: "tthw-user" },
 });
 const requested = result.events.find((event) => event.type === EventType.TOOL_CALL_REQUESTED);
@@ -202,6 +205,7 @@ if (result.turnId.length === 0 || Math.max(...result.events.map((event) => event
 }
 console.log("PASS: echo requested, started, completed, and observed");
 ```
+<!-- tthw-echo:typescript:end -->
 
 Set every assertion in the receipt to `true` only when these checks pass. The
 requested, started, and completed events must share one nonempty tool-call ID;

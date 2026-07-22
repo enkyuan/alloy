@@ -508,7 +508,9 @@ export class ToolExecutionController {
       .then<ToolExecutionControllerOutcome, ToolExecutionControllerOutcome>(
         (result) => ({ status: "completed", result }),
         (cause) => {
-          logRedactedFailure("internal error", cause);
+          if (!(cause instanceof ToolExecutionError)) {
+            logRedactedFailure("internal error", cause);
+          }
           return { status: "failed", error: normalizeStartedToolFailure(cause) };
         },
       );

@@ -51,6 +51,7 @@ export const COMMANDS: Record<string, Command> = {
           registryRoot: opts.registryRoot,
           schemaRoot: opts.schemaRoot,
           log: opts.log,
+          err: opts.err,
         }),
       ),
   },

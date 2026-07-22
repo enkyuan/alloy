@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -21,12 +21,30 @@ function snippet(document: string, name: string, language: string): string {
     escaped +
     ":start -->\\s*`{3}" +
     language +
-    "\\n([\\s\\S]*?)\\n`{3}\\s*<!-- " +
+    "\\n([\\s\\S]*?)\\n[ \\t]*`{3}\\s*<!-- " +
     escaped +
     ":end -->";
-  const match = document.match(new RegExp(pattern));
-  expect(match, `missing ${name}`).not.toBeNull();
-  return match?.[1] ?? "";
+  const matches = [...document.matchAll(new RegExp(pattern, "gu"))];
+  expect(matches, `expected exactly one ${name}`).toHaveLength(1);
+  return matches[0]?.[1] ?? "";
+}
+
+function tokenFreeEnvironment(): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
+    npm_config_registry: "http://127.0.0.1:9",
+  };
+  for (const name of [
+    "ANTHROPIC_API_KEY",
+    "GITHUB_TOKEN",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+  ]) {
+    delete environment[name];
+  }
+  return environment;
 }
 
 type GitHubExampleFailure = "build" | "provider-drain" | "unsettled";
@@ -117,6 +135,40 @@ async function executeGitHubExampleFailure(
 }
 
 describe("cross-SDK release matrix docs", () => {
+  it("executes the exact no-key and TTHW TypeScript snippets offline", () => {
+    const gettingStarted = snippet(
+      read("apps/docs/content/getting-started.mdx"),
+      "getting-started:no-key:typescript",
+      "ts",
+    );
+    const tthw = snippet(read("docs/kaji/tthw-evidence.md"), "tthw-echo:typescript", "ts");
+    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-tthw-"));
+    try {
+      mkdirSync(resolve(workdir, "echo"));
+      copyFileSync(
+        resolve(packageRoot, "registry/echo/index.ts"),
+        resolve(workdir, "echo/index.ts"),
+      );
+      writeFileSync(resolve(workdir, "getting-started.mts"), gettingStarted);
+      writeFileSync(resolve(workdir, "echo-loop.mts"), tthw);
+      const environment = tokenFreeEnvironment();
+      const noKey = execFileSync("bun", ["getting-started.mts"], {
+        cwd: workdir,
+        env: environment,
+        encoding: "utf8",
+      });
+      const echo = execFileSync("bun", ["echo-loop.mts"], {
+        cwd: workdir,
+        env: environment,
+        encoding: "utf8",
+      });
+      expect(noKey.trim()).toBe("The mock provider has completed the tool loop.");
+      expect(echo.trim()).toBe("PASS: echo requested, started, completed, and observed");
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("defines privileged journal recovery and disposal boundaries", () => {
     const readme = read("kaji/ts/README.md");
     const production = read("docs/kaji/production-beta.md");

@@ -3,7 +3,7 @@ title: Getting Started
 description: Install kaji, define a tool, and run an agent turn end-to-end. Python and TypeScript.
 ---
 
-This page takes you from `install` to a working agent in five steps. By the
+This page takes you from `install` to a working agent in six steps. By the
 end you'll have sent a user message and received a model response, with one
 tool wired in.
 
@@ -14,24 +14,86 @@ tool wired in.
     <Tabs items={["python", "typescript"]}>
       <Tab value="python">
         ```bash
+        pip install "kaji-sdk==0.2.0b1"
+        ```
+      </Tab>
+      <Tab value="typescript">
+        ```bash
+        bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5"
+        ```
+      </Tab>
+    </Tabs>
+
+    These install the base SDK. TypeScript also requires Zod `>=4.3 <5` as a
+    peer dependency. No provider key is needed for the first run.
+
+  </Step>
+
+  <Step>
+    ### Run without a key
+
+    Start with the deterministic mock provider so package and runtime setup are
+    known-good before adding a network or credential boundary.
+
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        <!-- getting-started:no-key:python:start -->
+        ```python
+        import asyncio
+
+        import kaji
+
+
+        async def main() -> None:
+            runtime = (
+                kaji.AgentBuilder()
+                .provider(kaji.get_provider("mock"))
+                .build()
+            )
+            result = await runtime.turn("Say hello.")
+            print(result.text)
+
+
+        asyncio.run(main())
+        ```
+        <!-- getting-started:no-key:python:end -->
+      </Tab>
+      <Tab value="typescript">
+        <!-- getting-started:no-key:typescript:start -->
+        ```ts
+        import { AgentBuilder } from "@kaji/sdk";
+        import { MockProvider } from "@kaji/sdk/testing";
+
+        const runtime = new AgentBuilder().provider(new MockProvider()).build();
+        const result = await runtime.turn("Say hello.");
+        console.log(result.text);
+        ```
+        <!-- getting-started:no-key:typescript:end -->
+      </Tab>
+    </Tabs>
+
+    Python prints `mock`; TypeScript prints
+    `The mock provider has completed the tool loop.`
+
+  </Step>
+
+  <Step>
+    ### Set up a real provider
+
+    Add the provider client only after the no-key run succeeds.
+
+    <Tabs items={["python", "typescript"]}>
+      <Tab value="python">
+        ```bash
         pip install "kaji-sdk[openai]==0.2.0b1"
         ```
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5" openai
+        bun add openai
         ```
       </Tab>
     </Tabs>
-
-    These pull the SDK plus one provider client. TypeScript also requires Zod
-    `>=4.3 <5` as a peer dependency. For other providers or optional extras,
-    see [install](/docs/install).
-
-  </Step>
-
-  <Step>
-    ### Set a provider key
 
     Pick one provider and export its key. The base SDK uses a mock provider for
     tests until you configure a real one; scaffolds generated with
@@ -45,6 +107,7 @@ tool wired in.
 
     To choose another provider, set `KAJI_MODEL_PROVIDER=openai`,
     `anthropic`, `gemini`, or `kimi`.
+    For other providers or optional extras, see [install](/docs/install).
 
   </Step>
 

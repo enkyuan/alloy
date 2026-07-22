@@ -54,6 +54,8 @@ type SmokePhase =
   | `${PackageManager}:github-types-${GitHubTypeModule}-typescript-${GitHubTypeCompilerLine}`
   | `${PackageManager}:lifecycle-run`
   | `${PackageManager}:failure-history-run`
+  | `${PackageManager}:docs-getting-started-run`
+  | `${PackageManager}:docs-tthw-echo-run`
   | `${PackageManager}:cold-run`
   | `${PackageManager}:warm-run`
   | `handoff:${string}`;
@@ -312,6 +314,20 @@ const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const PACKAGE_VERSION = "0.2.0-beta.2";
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
+
+function markedSnippet(path: string, name: string, language: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const pattern = new RegExp(
+    `<!-- ${escaped}:start -->\\s*\`{3}${language}\\n([\\s\\S]*?)\\n[ \\t]*\`{3}\\s*` +
+      `<!-- ${escaped}:end -->`,
+    "gu",
+  );
+  const matches = [...readFileSync(path, "utf8").matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`expected exactly one ${name} block in ${path}`);
+  }
+  return matches[0]?.[1] ?? "";
+}
 const GITHUB_ESM_TYPES_SOURCE = `import {
   Integration,
   type CliApprovalInput,
@@ -1157,6 +1173,7 @@ async function runCommand(
   environment: NodeJS.ProcessEnv = baseEnvironment,
   timeoutMs = LOCAL_TIMEOUT_MS,
   expectedStatus = 0,
+  includeStderr = false,
 ): Promise<string> {
   try {
     const completed = await runBoundedCommand({
@@ -1176,7 +1193,7 @@ async function runCommand(
         `release command exited with status ${completed.status}, expected ${expectedStatus}${diagnostic === "" ? "" : `; child output: ${diagnostic}`}`,
       );
     }
-    return completed.stdout;
+    return includeStderr ? `${completed.stdout}\n${completed.stderr}` : completed.stdout;
   } catch (error) {
     if (error instanceof CommandError) {
       error.message = `package smoke failed at phase ${phase}: ${error.message}`;
@@ -2306,7 +2323,7 @@ async function runScaffold(
   assertCliInitOutput(initOutput, generated);
 
   const installedPackageRoot = join(bootstrap, "node_modules/@kaji/sdk");
-  const echo = join(root, "echo");
+  const echo = join(generated, "echo");
   const addOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
@@ -2325,6 +2342,7 @@ async function runScaffold(
     ownerEnvironment,
     LOCAL_TIMEOUT_MS,
     1,
+    true,
   );
   assertExperimentalDenial(denialOutput, deniedGithub);
 
@@ -2433,6 +2451,45 @@ async function runScaffold(
   );
   const tsx = join(generated, "node_modules/tsx/dist/cli.mjs");
   if (!existsSync(tsx)) throw new Error("generated scaffold is missing the tsx runner");
+  const gettingStarted = markedSnippet(
+    join(repositoryRoot, "apps/docs/content/getting-started.mdx"),
+    "getting-started:no-key:typescript",
+    "ts",
+  );
+  const tthwEcho = markedSnippet(
+    join(repositoryRoot, "docs/kaji/tthw-evidence.md"),
+    "tthw-echo:typescript",
+    "ts",
+  );
+  writeFileSync(join(generated, "getting-started.mts"), gettingStarted);
+  writeFileSync(join(generated, "tthw-echo.mts"), tthwEcho);
+  const docsEnvironment = tokenFreeHandoffEnvironment({
+    ...ownerEnvironment,
+    npm_config_registry: "http://127.0.0.1:9",
+  });
+  const docsCommand = manager === "npm" ? nodeBinary : "bun";
+  const docsArgs = (source: string) =>
+    manager === "npm" ? [tsx, source] : ["--no-install", source];
+  const gettingStartedOutput = await runCommand(
+    `${manager}:docs-getting-started-run`,
+    docsCommand,
+    docsArgs("getting-started.mts"),
+    generated,
+    docsEnvironment,
+  );
+  if (gettingStartedOutput.trim() !== EXPECTED_MOCK_REPLY) {
+    throw new Error("Getting Started no-key output changed");
+  }
+  const tthwOutput = await runCommand(
+    `${manager}:docs-tthw-echo-run`,
+    docsCommand,
+    docsArgs("tthw-echo.mts"),
+    generated,
+    docsEnvironment,
+  );
+  if (tthwOutput.trim() !== "PASS: echo requested, started, completed, and observed") {
+    throw new Error("TTHW Echo output changed");
+  }
   const lifecycleOutput = await runCommand(
     `${manager}:lifecycle-run`,
     nodeBinary,

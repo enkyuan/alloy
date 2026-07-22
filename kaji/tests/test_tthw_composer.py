@@ -4,9 +4,14 @@ from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import re
+import shutil
 import stat
+import subprocess
 import sys
+import textwrap
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
@@ -27,6 +32,55 @@ ARTIFACTS = {
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
+
+
+def _marked_snippet(path: Path, name: str, language: str) -> str:
+    matches = re.findall(
+        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n[ \t]*```\s*"
+        rf"<!-- {re.escape(name)}:end -->",
+        path.read_text(),
+        flags=re.DOTALL,
+    )
+    assert len(matches) == 1, f"expected exactly one {name} block in {path}"
+    return textwrap.dedent(matches[0])
+
+
+def test_exact_python_tthw_echo_snippet_runs_offline(tmp_path: Path) -> None:
+    source = _marked_snippet(
+        REPO_ROOT / "docs/kaji/tthw-evidence.md", "tthw-echo:python", "python"
+    )
+    echo = tmp_path / "echo"
+    echo.mkdir()
+    shutil.copyfile(
+        REPO_ROOT / "kaji/src/kaji/integrations/registry/echo/echo.py",
+        echo / "echo.py",
+    )
+    script = tmp_path / "echo_loop.py"
+    script.write_text(source)
+    environment = os.environ.copy()
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "GITHUB_TOKEN",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
+        environment.pop(name, None)
+
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == (
+        "PASS: echo requested, started, completed, and observed"
+    )
 
 
 def _load_script(path: Path) -> ModuleType:

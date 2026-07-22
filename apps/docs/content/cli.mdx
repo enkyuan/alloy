@@ -74,9 +74,21 @@ Gmail manifest are not shipped at this checkpoint. `replay` accepts
 `--tail` arguments.
 
 Both embedded SDK CLIs accept global `--no-color` and `--verbose` before the
-command. Successful data uses stdout, diagnostics use stderr, and exits are 0
-for success/help, 1 for validation/runtime/file conflicts, and 2 for usage.
-Replay output is a closed redaction-safe projection.
+command. Successful data uses stdout and diagnostics use stderr.
+
+| Exit | Meaning                                                                     |
+| ---: | --------------------------------------------------------------------------- |
+|  `0` | Success, help, or an `add --check` result that is current                   |
+|  `1` | Validation, runtime, file, or copy failure                                  |
+|  `2` | Malformed usage                                                             |
+|  `3` | `add --check`: bundle is absent                                             |
+|  `4` | `add --check`: bundle is outdated                                           |
+|  `5` | `add --check`: bundle has local modifications or another ownership conflict |
+|  `6` | `add --check`: bundle is demoted and cannot be promoted automatically       |
+
+Codes `3`-`6` classify copied bundle state, primarily for `add --check`; they
+are not generic runtime failures. Replay output is a closed redaction-safe
+projection.
 
 ## Standalone cross-language CLI (source only)
 

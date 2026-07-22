@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
+import sys
+import textwrap
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -22,14 +26,53 @@ MANIFEST_SCHEMA = (
 
 def _snippet(path: Path, name: str, language: str) -> str:
     text = path.read_text()
-    match = re.search(
-        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n```\s*"
+    matches = re.findall(
+        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n[ \t]*```\s*"
         rf"<!-- {re.escape(name)}:end -->",
         text,
         flags=re.DOTALL,
     )
-    assert match is not None, f"missing {name} in {path}"
-    return match.group(1)
+    assert len(matches) == 1, f"expected exactly one {name} in {path}"
+    return textwrap.dedent(matches[0])
+
+
+def test_exact_getting_started_python_no_key_snippet_runs(tmp_path: Path) -> None:
+    guide = REPO_ROOT / "apps/docs/content/getting-started.mdx"
+    source = _snippet(guide, "getting-started:no-key:python", "python")
+    script = tmp_path / "getting_started.py"
+    script.write_text(source)
+    environment = os.environ.copy()
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
+        environment.pop(name, None)
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "mock"
+
+
+def test_getting_started_proves_no_key_success_before_provider_setup() -> None:
+    guide = REPO_ROOT / "apps/docs/content/getting-started.mdx"
+    text = guide.read_text()
+    no_key = text.index("<!-- getting-started:no-key:python:start -->")
+    first_provider_setup = min(
+        text.index("OPENAI_API_KEY"),
+        text.index('get_provider("openai")'),
+        text.index("new OpenAIProvider"),
+    )
+    assert no_key < first_provider_setup
 
 
 def test_exact_installed_python_quickstart_runs() -> None:
@@ -271,6 +314,8 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
     assert re.search(r"\|\s*`add`\s*\|\s*Yes\s*\|\s*Yes\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`replay`\s*\|\s*No\s*\|\s*Yes\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`mcp`\s*\|\s*No\s*\|\s*No\s*\|\s*Status only", cli)
+    for code in range(7):
+        assert re.search(rf"\|\s*`{code}`\s*\|", cli)
 
     tool_registry = paths[5].read_text()
     assert "sequentially by default" in tool_registry
@@ -291,7 +336,14 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     ts_smoke = (REPO_ROOT / "kaji" / "ts" / "scripts" / "smoke_package.mts").read_text()
     assert "installed-quickstart:python:start" in python_smoke
     assert "exec(compile(match.group(1)" in python_smoke
+    assert '"getting-started:no-key:python"' in python_smoke
+    assert '"tthw-echo:python"' in python_smoke
+    assert 'cli_main(["--no-color", "add", "echo"' in python_smoke
     assert "installed-quickstart:typescript:start" in ts_smoke
+    assert '"getting-started:no-key:typescript"' in ts_smoke
+    assert '"tthw-echo:typescript"' in ts_smoke
+    assert "docs-getting-started-run" in ts_smoke
+    assert "docs-tthw-echo-run" in ts_smoke
     assert re.search(
         r'runCommand\(\s*"docs:compile-typescript-current",\s*nodeBinary,\s*'
         r'\[\s*tsc,\s*"--project",\s*"tsconfig\.docs\.json"\s*,?\s*\]\s*\)',

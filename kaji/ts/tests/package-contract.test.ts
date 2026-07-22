@@ -545,6 +545,8 @@ describe("npm contract artifact", () => {
       "assertCliInitOutput(initOutput, generated)",
       "assertCliAddOutput(addOutput, echo, installedPackageRoot)",
       "assertExperimentalDenial(denialOutput, deniedGithub)",
+      "includeStderr = false",
+      "includeStderr ? `${completed.stdout}\\n${completed.stderr}` : completed.stdout",
       "assertGithubCliAddOutput(githubOutput, github, installedPackageRoot)",
       "assertGithubPackageProof",
       'const githubProofRunner = join(bootstrap, "installed-github-smoke.mts");',
@@ -625,7 +627,7 @@ describe("npm contract artifact", () => {
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
-    expect(source.match(/completed\.stderr/g)).toHaveLength(1);
+    expect(source.match(/completed\.stderr/g)).toHaveLength(2);
     expect(source).toContain(
       'phase.startsWith("handoff:")\n        ? safeHandoffDiagnostic(`${completed.stdout}\\n${completed.stderr}`)',
     );

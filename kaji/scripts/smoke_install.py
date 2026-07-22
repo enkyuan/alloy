@@ -11,10 +11,30 @@ Run after installing the built wheel into a clean venv:
 
 from __future__ import annotations
 
+from contextlib import chdir
 import os
 from pathlib import Path
 import re
 import sys
+from tempfile import TemporaryDirectory
+import textwrap
+
+
+def marked_snippet(path: Path, name: str, language: str) -> str:
+    matches = re.findall(
+        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n[ \t]*```\s*"
+        rf"<!-- {re.escape(name)}:end -->",
+        path.read_text(),
+        flags=re.DOTALL,
+    )
+    if len(matches) != 1:
+        print(
+            f"FAIL: expected exactly one {name} block in {path}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+    return textwrap.dedent(matches[0])
+
 
 # ---------------------------------------------------------------------------
 # 1. Top-level lazy imports resolve
@@ -55,7 +75,14 @@ for name in required_names:
 # ---------------------------------------------------------------------------
 print("\nChecking OpenAI provider error when key absent...")
 
-os.environ.pop("OPENAI_API_KEY", None)
+for protected_name in (
+    "ANTHROPIC_API_KEY",
+    "GITHUB_TOKEN",
+    "GOOGLE_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+):
+    os.environ.pop(protected_name, None)
 
 try:
     kaji.get_provider("openai")
@@ -131,5 +158,48 @@ if match is None:
     sys.exit(1)
 exec(compile(match.group(1), str(docs_path), "exec"), {"__name__": "__main__"})
 print("  ok: canonical Python quickstart")
+
+# ---------------------------------------------------------------------------
+# 6. The exact Getting Started no-key block runs against the wheel.
+# ---------------------------------------------------------------------------
+print("\nRunning installed-package Getting Started no-key guide...")
+getting_started_path = (
+    Path(__file__).resolve().parents[2]
+    / "apps"
+    / "docs"
+    / "content"
+    / "getting-started.mdx"
+)
+getting_started = marked_snippet(
+    getting_started_path, "getting-started:no-key:python", "python"
+)
+exec(
+    compile(getting_started, str(getting_started_path), "exec"),
+    {"__name__": "__main__"},
+)
+print("  ok: Getting Started no-key guide")
+
+# ---------------------------------------------------------------------------
+# 7. The installed CLI stages Echo and the exact TTHW block runs unchanged.
+# ---------------------------------------------------------------------------
+print("\nRunning installed-package TTHW Echo guide...")
+from kaji.cli import main as cli_main  # noqa: E402
+
+tthw_path = Path(__file__).resolve().parents[2] / "docs" / "kaji" / "tthw-evidence.md"
+tthw = marked_snippet(tthw_path, "tthw-echo:python", "python")
+with TemporaryDirectory(prefix="kaji-installed-tthw-") as directory:
+    root = Path(directory)
+    if cli_main(["--no-color", "add", "echo", "--out", str(root / "echo")]) != 0:
+        print("FAIL: installed CLI could not stage Echo", file=sys.stderr)
+        raise SystemExit(1)
+    script = root / "echo_loop.py"
+    script.write_text(tthw)
+    sys.path.insert(0, str(root))
+    try:
+        with chdir(root):
+            exec(compile(tthw, str(script), "exec"), {"__name__": "__main__"})
+    finally:
+        sys.path.remove(str(root))
+print("  ok: TTHW Echo guide")
 
 print("\nSmoke install: PASSED")

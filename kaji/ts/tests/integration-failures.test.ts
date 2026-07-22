@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { EventType } from "@/events/types";
 import { ToolCallFailed } from "@/events/schemas";
@@ -47,6 +47,41 @@ async function run(error: Error) {
 }
 
 describe("integration failure recovery", () => {
+  it("does not duplicate expected integration failures in operational logs", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const recovery = recoveryForReason("github_token_missing");
+      const { result, event } = await run(new IntegrationAuthRequiredError("github_token_missing"));
+
+      expect(logged).not.toHaveBeenCalled();
+      const expected = {
+        error_code: "INTEGRATION_AUTH_REQUIRED",
+        reason_code: "github_token_missing",
+        recovery_code: "CONFIGURE_GITHUB_TOKEN",
+        doc_url: recovery.docUrl,
+      };
+      expect(result).toMatchObject(expected);
+      expect(event).toMatchObject(expected);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("logs one redacted diagnostic for an unexpected exception", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await run(new Error("private-token-canary private-args-canary"));
+      expect(logged).toHaveBeenCalledTimes(1);
+      const diagnostic = String(logged.mock.calls[0]?.[0]);
+      expect(diagnostic).toContain("internal error");
+      expect(diagnostic).toContain("details redacted");
+      expect(diagnostic).not.toContain("private-token-canary");
+      expect(diagnostic).not.toContain("private-args-canary");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it("preserves a provider-confirmed API rejection as failed and nonretryable", async () => {
     const recovery = recoveryForReason("api_rejected");
     const { result, event } = await run(new IntegrationExecutionError("api_rejected"));

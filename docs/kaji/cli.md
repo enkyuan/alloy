@@ -34,8 +34,20 @@ out of integration and runtime code.
 ## Streams and exits
 
 Requested data and successful write summaries use stdout. Warnings and
-diagnostics use stderr. Exit `0` means success or help, `1` means validation,
-runtime, file, or collision failure, and `2` means malformed usage.
+diagnostics use stderr. Both SDK CLIs use the same closed exit contract:
+
+| Exit | Meaning |
+|---:|---|
+| `0` | Success, help, or an `add --check` result that is current |
+| `1` | Validation, runtime, file, or copy failure |
+| `2` | Malformed usage |
+| `3` | `add --check`: bundle is absent |
+| `4` | `add --check`: bundle is outdated |
+| `5` | `add --check`: bundle has local modifications or another ownership conflict |
+| `6` | `add --check`: bundle is demoted and cannot be promoted automatically |
+
+Codes `3`-`6` are bundle-state classifications, primarily from `add --check`;
+they are not generic runtime failures.
 
 `replay` fails closed on corrupt JSONL. Human and JSON formats contain only a
 closed safe projection: structural IDs, tool identity, and error paths are

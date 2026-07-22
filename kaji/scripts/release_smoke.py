@@ -66,8 +66,9 @@ def run_capture(
     budget: CommandBudget = PACKAGE_COMMAND_BUDGET,
     environment: dict[str, str] | None = None,
     expected_status: int = 0,
+    include_stderr: bool = False,
 ) -> str:
-    """Run a bounded command and return UTF-8 stdout."""
+    """Run a bounded command and return the selected UTF-8 output."""
 
     try:
         completed = run_checked(
@@ -86,8 +87,9 @@ def run_capture(
         raise SystemExit(
             f"FAIL: installed command exited {completed.returncode}, expected {expected_status}"
         )
+    output = completed.stdout + (completed.stderr if include_stderr else b"")
     try:
-        return completed.stdout.decode("utf-8", errors="strict")
+        return output.decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         raise SystemExit("FAIL: installed scaffold emitted non-UTF-8 output") from None
 
@@ -514,6 +516,7 @@ def smoke_archives(
                 cwd=artifact_workdir,
                 environment=environment,
                 expected_status=1,
+                include_stderr=True,
             )
             assert_experimental_denial(denial_output, denied_github)
 

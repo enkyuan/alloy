@@ -108,7 +108,6 @@ def test_release_smoke_preserves_build_verify_install_order(
         for index, command in enumerate(commands)
         if str(scripts / "smoke_install.py") in command
     ]
-
     assert len(verify) == 2
     assert len(installed_smokes) == 2
     assert verify[0] < archive < installed_smokes[0] < installed_smokes[1] < verify[1]
@@ -153,6 +152,31 @@ def test_release_smoke_preserves_build_verify_install_order(
             for command in commands
         )
         == 2
+    )
+
+
+def test_run_capture_can_assert_an_expected_stderr_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script("release_smoke.py")
+    monkeypatch.setattr(
+        module,
+        "run_checked",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=b"",
+            stderr=b"experimental opt-in required\n",
+        ),
+    )
+
+    assert (
+        module.run_capture(
+            ["kaji", "add", "github"],
+            cwd=tmp_path,
+            expected_status=1,
+            include_stderr=True,
+        )
+        == "experimental opt-in required\n"
     )
 
 
@@ -451,6 +475,7 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         '"add", "echo", "--out"',
         '"add", "github", "--out"',
         '"--allow-experimental"',
+        "include_stderr=True",
         "assert_experimental_denial(denial_output, denied_github)",
         "assert_github_cli_output(github_output, github, registry)",
         "from kaji.integrations.registry.github.github import inspect_integration; ",
