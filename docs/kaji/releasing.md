@@ -31,6 +31,41 @@ commit, then verifies the same pair again immediately before each registry
 write and before attaching release assets. Lightweight, unsigned, retargeted,
 or indirect tags fail closed.
 
+## First-publication prerequisites
+
+Complete these once before creating the release tag:
+
+1. Make `enkyuan/alloy` public. The npm provenance required by this release is
+   unsupported for a private source repository. First review the full Git
+   history and Actions logs for secrets. After the visibility change, re-enable
+   the branch and tag push rulesets that GitHub disables, and confirm standard
+   GitHub-hosted runners are available.
+2. Land the approved release commit on the default branch before tagging it.
+   Never tag a feature-branch-only commit: package metadata and READMEs link to
+   canonical documentation on the default branch, and the publish workflow
+   rejects a tag whose commit is not already contained there.
+3. In PyPI account publishing settings, add a pending trusted publisher for
+   project `kaji-sdk`, owner `enkyuan`, repository `alloy`, workflow `kaji.publish.yml`,
+   and environment `kaji-beta-publish`.
+4. Confirm the npm publisher is a member of the `kaji` organization's
+   `developers` team (create the organization first if needed) and that the team
+   retains read/write access for new `@kaji` packages. Owners are added to
+   `developers` by default, but ownership alone is not the policy checked by this
+   workflow. Because `@kaji/sdk` does not exist yet, its first publication requires
+   a short-lived granular token with read/write access to the `@kaji` scope and
+   bypass 2FA enabled. Store it only as `NPM_TOKEN` in `kaji-beta-publish`; after
+   the first release, migrate the package to npm trusted publishing and revoke
+   this bootstrap token.
+5. Configure `kaji-beta` with required reviewers and only
+   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `KAJI_TTHW_EVIDENCE_JSON`.
+   Configure `kaji-beta-publish` with separate required reviewers,
+   `NPM_TOKEN`, and `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
+6. Set repository variables `KAJI_RELEASE_SIGNER_EMAIL`,
+   `KAJI_BENCHMARK_RUNNER_MANIFEST`, and
+   `KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256`. Register the pinned arm64 macOS
+   performance runner with labels `self-hosted`, `macOS`, `ARM64`, and
+   `kaji-benchmark`.
+
 ## Offline rehearsal
 
 From a clean checkout with Bun 1.3.11, Node 22 or 24, uv 0.11.25, and the locked
@@ -74,8 +109,9 @@ later run is not acceptable evidence.
    benchmark, soak, SBOM, and provenance evidence. The first
    `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
    requires `NPM_TOKEN`, requires `KAJI_NPM_PUBLISHER` to match `npm whoami`,
-   and verifies that identity has package write scope for `@kaji/sdk` or an
-   approved write-capable `kaji` organization role for a first publication.
+   and verifies that identity has existing package write scope for `@kaji/sdk`,
+   or both an approved `kaji` organization role and `developers`-team membership
+   for a first publication.
 5. After publisher preflight passes, the Python and npm publisher jobs become
    eligible together under `kaji-beta-publish`. Approve both pending jobs in
    one final approval batch. Do not approve one publisher and defer or reject

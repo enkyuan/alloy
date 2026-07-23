@@ -65,6 +65,39 @@ def registry_path(base: str, relative: str) -> str:
     return joined
 
 
+def expected_package_bytes(ts_root: Path) -> tuple[dict[str, object], dict[str, bytes]]:
+    package_payload = (ts_root / "package.json").read_bytes()
+    package = json.loads(package_payload)
+    if not isinstance(package, dict):
+        fail("npm package metadata must be an object")
+
+    expected = {
+        "LICENSE": (ts_root / "LICENSE").read_bytes(),
+        "README.md": (ts_root / "README.md").read_bytes(),
+        "package.json": package_payload,
+    }
+    files = package.get("files")
+    if not isinstance(files, list) or not files:
+        fail("npm package files allowlist is missing")
+    for raw_path in files:
+        if not isinstance(raw_path, str):
+            fail("npm package files allowlist contains a non-string entry")
+        relative = checked_path(f"package/{raw_path}").removeprefix("package/")
+        source = ts_root / relative
+        if source.is_file():
+            expected[relative] = source.read_bytes()
+        elif source.is_dir():
+            expected.update(
+                {
+                    f"{relative}/{child}": payload
+                    for child, payload in tree_bytes(source).items()
+                }
+            )
+        else:
+            fail(f"npm package files allowlist entry does not exist: {raw_path}")
+    return package, expected
+
+
 def verify_npm_tarball(tarball: Path, repo: Path) -> None:
     ts_root = repo / "kaji/ts"
     canonical_contracts_root = repo / "kaji/contracts"
@@ -73,18 +106,7 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
     if not (ts_root / "dist").is_dir():
         fail("TypeScript dist/ must be built before npm artifact verification")
 
-    expected: dict[str, bytes] = {
-        "LICENSE": (ts_root / "LICENSE").read_bytes(),
-        "README.md": (ts_root / "README.md").read_bytes(),
-        "package.json": (ts_root / "package.json").read_bytes(),
-    }
-    for directory in ("contracts", "dist", "registry"):
-        expected.update(
-            {
-                f"{directory}/{relative}": payload
-                for relative, payload in tree_bytes(ts_root / directory).items()
-            }
-        )
+    package, expected = expected_package_bytes(ts_root)
 
     members: dict[str, tarfile.TarInfo] = {}
     total_size = 0
@@ -139,7 +161,6 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
             if stream is None or stream.read() != expected_payload:
                 fail(f"npm tarball file differs from checkout: {relative}")
 
-    package = json.loads(expected["package.json"])
     if package.get("name") != "@kaji/sdk" or package.get("version") != "0.2.0-beta.2":
         fail("npm package name/version are not the approved beta coordinates")
     if package.get("license") != "SEE LICENSE IN LICENSE":

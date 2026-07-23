@@ -358,6 +358,38 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
         assert expected in package_smoke
 
 
+def test_npm_lock_uses_patched_fast_uri() -> None:
+    lockfile = _read("bun.lock")
+
+    assert '"fast-uri": ["fast-uri@3.1.4"' in lockfile
+    assert '"fast-uri": ["fast-uri@3.1.3"' not in lockfile
+    for relative in (
+        "kaji/scripts/installed-typescript-runtime/package-lock.json",
+        "kaji/scripts/installed-typescript-runtime/package-lock.core.json",
+    ):
+        package_lock = json.loads(_read(relative))
+        fast_uri = package_lock["packages"]["node_modules/fast-uri"]
+        assert fast_uri == {
+            "version": "3.1.4",
+            "resolved": "https://registry.npmjs.org/fast-uri/-/fast-uri-3.1.4.tgz",
+            "integrity": (
+                "sha512-8JnbkQ4juDyvYs4mgFGQqg4yCYtFDtUtmp2QIQq11ZZe5CFQ5wcqm1rqDgAh/"
+                "QdMySuBnPzMUiJUNZG5N/AiQw=="
+            ),
+            "funding": [
+                {
+                    "type": "github",
+                    "url": "https://github.com/sponsors/fastify",
+                },
+                {
+                    "type": "opencollective",
+                    "url": "https://opencollective.com/fastify",
+                },
+            ],
+            "license": "BSD-3-Clause",
+        }
+
+
 def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None:
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
@@ -401,11 +433,16 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "live_provider_proof.py",
         "group: kaji-beta-publish-${{ github.ref_name }}",
         "KAJI_RELEASE_SIGNER_EMAIL",
+        "context.payload.repository?.private !== false",
+        "npm provenance requires the source repository to be public",
+        "github.rest.repos.compareCommits",
+        "comparison.data.merge_base_commit.sha !== releaseCommit",
+        "signed beta tag commit must already be contained in the default branch",
         'verification.reason !== "valid"',
         "tag.data.tag !== tagName",
         "signed beta tagger is not repository-approved",
         'core.setOutput("tag-object", tagObject)',
-        'core.setOutput("commit", tag.data.object.sha)',
+        'core.setOutput("commit", releaseCommit)',
         "Revalidate downloaded filenames, sizes, hashes, and commit",
         "offline-gate-summary.json",
         "offline-gates.log",
@@ -430,6 +467,8 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "publisher-preflight:",
         "NPM_TOKEN is required",
         "npm access list packages",
+        "npm team ls @kaji:developers",
+        "npm identity is not a member of the kaji developers team",
         "verify_release_artifacts.py",
         "verify_npm_package.py",
         "verify_archives.py",
@@ -1820,8 +1859,19 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "SHA-256 digest",
         "`KAJI_RELEASE_SIGNER_EMAIL`",
         "does not claim a separately",
+        "pending trusted publisher",
+        "project `kaji-sdk`",
+        "workflow `kaji.publish.yml`",
+        "Land the approved release commit on the default branch",
+        "Never tag a feature-branch-only commit",
+        "create the organization first if needed",
+        "both an approved `kaji` organization role and `developers`-team membership",
+        "migrate the package to npm trusted publishing",
     ):
         assert expected in runbook
+    assert "ownership alone is not the policy checked by this workflow" in " ".join(
+        runbook.split()
+    )
 
 
 def test_release_metadata_rejects_non_commit_provenance() -> None:

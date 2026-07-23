@@ -558,3 +558,11 @@ This package ports the **runtime core** of the Python `kaji` SDK: events,
 sessions, tools, providers, and the ReAct loop. Python's Redis realtime bus,
 RAG, and text/voice modalities are not yet ported. The Python bus can be
 Redis-backed for multi-process deployments; the TS `EventBus` is in-memory only.
+
+## License
+
+Kaji is source-available under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+It permits use, modification, and distribution for noncommercial purposes,
+subject to its terms and notice requirements; commercial use is not permitted,
+and this is not an OSI-approved open-source license.

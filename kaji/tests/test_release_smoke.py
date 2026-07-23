@@ -644,6 +644,62 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
     assert 'version: "0.11.25"' in setup_action
 
 
+def test_package_readmes_describe_noncommercial_license_accurately() -> None:
+    expected = (
+        "Kaji is source-available under the "
+        "[PolyForm Noncommercial License 1.0.0]"
+        "(https://polyformproject.org/licenses/noncommercial/1.0.0). "
+        "It permits use, modification, and distribution for noncommercial purposes, "
+        "subject to its terms and notice requirements; commercial use is not permitted, "
+        "and this is not an OSI-approved open-source license."
+    )
+
+    for path in (SDK_ROOT / "README.md", SDK_ROOT / "ts" / "README.md"):
+        readme = " ".join(path.read_text().split())
+        assert expected in readme
+        assert "redistribution are not permitted" not in readme
+
+
+def test_npm_verifier_derives_expected_files_from_package_allowlist(
+    tmp_path: Path,
+) -> None:
+    module = _load_script("verify_npm_package.py")
+    ts_root = tmp_path / "ts"
+    package = {
+        "files": [
+            "LICENSE",
+            "dist",
+            "registry/index.json",
+            "registry/github/client.ts",
+        ]
+    }
+    files = {
+        "LICENSE": "license\n",
+        "README.md": "readme\n",
+        "package.json": json.dumps(package),
+        "dist/index.js": "export {};\n",
+        "registry/index.json": "{}\n",
+        "registry/github/client.ts": "export {};\n",
+        "registry/github/private-fixture.py": "# must not ship\n",
+    }
+    for relative, payload in files.items():
+        path = ts_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload)
+
+    actual_package, expected = module.expected_package_bytes(ts_root)
+
+    assert actual_package == package
+    assert set(expected) == {
+        "LICENSE",
+        "README.md",
+        "package.json",
+        "dist/index.js",
+        "registry/index.json",
+        "registry/github/client.ts",
+    }
+
+
 def test_clean_caches_removes_project_caches_without_touching_venv(
     tmp_path: Path,
 ) -> None:

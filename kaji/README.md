@@ -616,3 +616,11 @@ as `kaji`) and
 [`kaji-serve`](https://github.com/enkyuan/alloy/blob/main/kaji/serve/README.md) (the reference FastAPI + STT
 service). The SDK has no dependency on the service -- the boundary mirrors
 langchain / langserve.
+
+## License
+
+Kaji is source-available under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+It permits use, modification, and distribution for noncommercial purposes,
+subject to its terms and notice requirements; commercial use is not permitted,
+and this is not an OSI-approved open-source license.

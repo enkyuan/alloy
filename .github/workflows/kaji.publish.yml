@@ -35,6 +35,11 @@ jobs:
             if (!expectedTaggerEmail) {
               throw new Error("KAJI_RELEASE_SIGNER_EMAIL must name the approved signed tagger");
             }
+            if (context.payload.repository?.private !== false) {
+              throw new Error(
+                "npm provenance requires the source repository to be public before beta publication",
+              );
+            }
             const tagName = context.ref.replace("refs/tags/", "");
             if (!/^kaji-v0\.2\.0-beta\.2$/.test(tagName)) {
               throw new Error(`unexpected beta tag: ${tagName}`);
@@ -66,15 +71,32 @@ jobs:
             if (tag.data.object.type !== "commit") {
               throw new Error("annotated beta tag must target a commit directly");
             }
+            const releaseCommit = tag.data.object.sha;
+            const defaultBranch = context.payload.repository?.default_branch;
+            if (!defaultBranch) {
+              throw new Error("repository default branch is unavailable");
+            }
+            const comparison = await github.rest.repos.compareCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: releaseCommit,
+              head: defaultBranch,
+            });
+            if (comparison.data.merge_base_commit.sha !== releaseCommit) {
+              throw new Error(
+                "signed beta tag commit must already be contained in the default branch",
+              );
+            }
             core.setOutput("tag-name", tagName);
             core.setOutput("tag-object", tagObject);
-            core.setOutput("commit", tag.data.object.sha);
+            core.setOutput("commit", releaseCommit);
             core.summary
               .addHeading("Verified immutable beta tag", 2)
               .addList([
                 `Tag: ${tagName}`,
                 `Annotated tag object: ${tagObject}`,
-                `Peeled direct commit: ${tag.data.object.sha}`,
+                `Peeled direct commit: ${releaseCommit}`,
+                `Default branch containing commit: ${defaultBranch}`,
               ]);
             await core.summary.write();
 
@@ -1604,18 +1626,21 @@ jobs:
           else
             npm org ls kaji "$IDENTITY" --json --registry=https://registry.npmjs.org/ \
               >"$RUNNER_TEMP/npm-org-role.json"
-            npm team ls kaji:developers --json --registry=https://registry.npmjs.org/ \
+            npm team ls @kaji:developers --json --registry=https://registry.npmjs.org/ \
               >"$RUNNER_TEMP/npm-developers.json"
             jq --exit-status --arg identity "$IDENTITY" \
               '(if type == "string" then .
                 elif type == "object" then (.[$identity] // .role // "")
                 else "" end) as $role |
                $role == "owner" or $role == "admin" or $role == "developer"' \
-              "$RUNNER_TEMP/npm-org-role.json" >/dev/null
+              "$RUNNER_TEMP/npm-org-role.json" >/dev/null || {
+                echo "npm identity has no approved kaji organization role" >&2
+                exit 1
+              }
             jq --exit-status --arg identity "$IDENTITY" \
               'type == "array" and any(.[]; ltrimstr("@") == ($identity | ltrimstr("@")))' \
               "$RUNNER_TEMP/npm-developers.json" >/dev/null || {
-                echo "npm identity has neither package write access nor an approved kaji org role" >&2
+                echo "npm identity is not a member of the kaji developers team" >&2
                 exit 1
               }
             echo "Verified npm publisher identity through the kaji developers team for first publication." \
