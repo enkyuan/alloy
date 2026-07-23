@@ -1,0 +1,11 @@
+self-hosted-runner:
+  labels:
+    - macOS
+    - ARM64
+    - kaji-benchmark
+
+paths:
+  .github/workflows/kaji.handoff.trusted.yml:
+    ignore:
+      # Valid reusable-workflow properties missing from actionlint 1.7.12.
+      - 'property "workflow_(repository|file_path|sha|ref)" is not defined in object type'

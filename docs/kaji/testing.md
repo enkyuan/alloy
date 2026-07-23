@@ -3,6 +3,36 @@
 Use deterministic seams for local tests, then test the exact package artifact.
 Local success is offline rehearsal, not protected release evidence.
 
+## Local CI
+
+Validate workflow syntax and executable workflow contracts:
+
+```bash
+bun run check:workflows
+```
+
+This requires `actionlint` (`brew install actionlint` on macOS).
+
+Run the same Kaji gate command used by `gate / kaji`:
+
+```bash
+bun run ci:kaji
+```
+
+Run both checks together before pushing:
+
+```bash
+bun run ci:local
+```
+
+The combined command checks the uv lockfile and performs frozen Python and Bun
+dependency syncs before running the gate.
+
+These commands verify repository-owned workflow logic on the current macOS
+host. They do not emulate the GitHub Actions runner environment, protected
+environments, OIDC, artifact transfer, attestations, registry publication, or
+keyed provider proof.
+
 ## Deterministic tests
 
 - Use Python `get_provider("mock")` or TypeScript `MockProvider` for no-key

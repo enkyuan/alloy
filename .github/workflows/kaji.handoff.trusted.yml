@@ -242,13 +242,17 @@ jobs:
           test -f ".artifacts/kaji-handoff-staging/$artifact_filename"
           test ! -L ".artifacts/kaji-handoff-staging/$artifact_filename"
           test "$(sha256sum ".artifacts/kaji-handoff-staging/$artifact_filename" | cut -d ' ' -f 1)" = "$artifact_sha256"
-          printf 'KAJI_RELEASE_COMMIT=%s\n' "$source_commit" >>"$GITHUB_ENV"
-          printf 'KAJI_HANDOFF_TARBALL=%s\n' "$artifact_filename" >>"$GITHUB_ENV"
-          printf 'KAJI_HANDOFF_SHA256=%s\n' "$artifact_sha256" >>"$GITHUB_ENV"
-          printf 'source-commit=%s\n' "$source_commit" >>"$GITHUB_OUTPUT"
-          printf 'artifact-filename=%s\n' "$artifact_filename" >>"$GITHUB_OUTPUT"
-          printf 'artifact-sha256=%s\n' "$artifact_sha256" >>"$GITHUB_OUTPUT"
-          printf 'preflight-sha256=%s\n' "$preflight_sha256" >>"$GITHUB_OUTPUT"
+          {
+            printf 'KAJI_RELEASE_COMMIT=%s\n' "$source_commit"
+            printf 'KAJI_HANDOFF_TARBALL=%s\n' "$artifact_filename"
+            printf 'KAJI_HANDOFF_SHA256=%s\n' "$artifact_sha256"
+          } >>"$GITHUB_ENV"
+          {
+            printf 'source-commit=%s\n' "$source_commit"
+            printf 'artifact-filename=%s\n' "$artifact_filename"
+            printf 'artifact-sha256=%s\n' "$artifact_sha256"
+            printf 'preflight-sha256=%s\n' "$preflight_sha256"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Prove the supplied artifact contract
         shell: bash
@@ -668,10 +672,12 @@ jobs:
           npm_version=$(jq -er '.toolchain.npm | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
           bun_version=$(jq -er '.toolchain.bun | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
           uv_version=$(jq -er '.toolchain.uv | select(test("^[0-9]+[.][0-9]+[.][0-9]+([+-][0-9A-Za-z.-]+)?$"))' "$preflight")
-          printf 'node=%s\n' "$node_version" >>"$GITHUB_OUTPUT"
-          printf 'npm=%s\n' "$npm_version" >>"$GITHUB_OUTPUT"
-          printf 'bun=%s\n' "$bun_version" >>"$GITHUB_OUTPUT"
-          printf 'uv=%s\n' "$uv_version" >>"$GITHUB_OUTPUT"
+          {
+            printf 'node=%s\n' "$node_version"
+            printf 'npm=%s\n' "$npm_version"
+            printf 'bun=%s\n' "$bun_version"
+            printf 'uv=%s\n' "$uv_version"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Set up finalizer Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0

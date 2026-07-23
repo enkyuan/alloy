@@ -1200,9 +1200,14 @@ def _assert_trusted_handoff_workflow_source(source: str) -> None:
         'test "${#preflight_sha256}" -eq 64',
         'case "$preflight_sha256" in *[!0-9a-f]*) exit 1 ;; esac',
         'test "$stage_preflight_sha256" = "$preflight_sha256"',
-        'printf \'preflight-sha256=%s\\n\' "$preflight_sha256" >>"$GITHUB_OUTPUT"',
+        "printf 'preflight-sha256=%s\\n' \"$preflight_sha256\"",
     ):
         assert fragment in stage[0]
+    assert re.search(
+        r'printf \'preflight-sha256=%s\\n\' "\$preflight_sha256"\n'
+        r'\s*\} >>"\$GITHUB_OUTPUT"',
+        stage[0],
+    )
 
     authenticate = _workflow_step_blocks(
         source, "Authenticate exact preflight transfer"

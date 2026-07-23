@@ -19,6 +19,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BETA_GATE = REPO_ROOT / "kaji" / "scripts" / "beta_release_check.py"
+WORKFLOW_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_workflows.py"
 ROOT_PACKAGE = REPO_ROOT / "package.json"
 ROOT_LOCK = REPO_ROOT / "bun.lock"
 ROOT_GITIGNORE = REPO_ROOT / ".gitignore"
@@ -94,6 +95,174 @@ def test_beta_release_check_help_distinguishes_local_rehearsal() -> None:
     help_text = " ".join(result.stdout.split())
     assert "non-promotable local rehearsal" in help_text
     assert "commit and pinned-toolchain enforcement" in help_text
+
+
+def test_local_ci_entrypoints_use_the_canonical_python_checks() -> None:
+    package = json.loads(ROOT_PACKAGE.read_text())
+
+    assert package["scripts"]["check:workflows"] == (
+        "uv run --project kaji --no-sync python kaji/scripts/check_workflows.py"
+    )
+    assert package["scripts"]["ci:kaji"] == (
+        "uv run --project kaji --no-sync python "
+        "kaji/scripts/beta_release_check.py --gate"
+    )
+    assert package["scripts"]["ci:local"] == (
+        "uv run --project kaji --no-sync python kaji/scripts/check_workflows.py --gate"
+    )
+    assert WORKFLOW_CHECK.is_file()
+
+
+def test_local_ci_gate_is_exact_and_non_promotable() -> None:
+    module = _load_beta_gate()
+
+    assert [gate.command for gate in module.ci_gates()] == [
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/check_beta_contract.py",
+        ),
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/sync_beta_contracts.py",
+            "--check",
+        ),
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/sync_integration_contracts.py",
+            "--check",
+        ),
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/check_integration_abi.py",
+            "--explain",
+        ),
+        module.offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/check_sdk_parity.py",
+        ),
+        ("bun", "run", "audit:ast-grep"),
+        module.offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/run_beta_benchmarks.py",
+            "--quick",
+        ),
+        module.offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/integration_benchmark.py",
+            "--mode",
+            "quick",
+        ),
+        module.offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "pytest",
+            "kaji/tests",
+            "-m",
+            "not integration",
+            "--cov-fail-under=80",
+        ),
+        module.offline_command("bun", "run", "--cwd", "kaji/ts", "build"),
+        module.offline_command("bun", "run", "--cwd", "kaji/ts", "test:coverage"),
+    ]
+    literals = {
+        node.value
+        for node in ast.walk(ast.parse(BETA_GATE.read_text()))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+    assert (
+        "PASS: local Kaji CI gate completed; protected matrix, provider, and "
+        "publication evidence NOT claimed" in literals
+    )
+
+
+def test_workflow_check_prepares_frozen_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_root_script("check_workflows.py")
+    calls: list[tuple[str, Path, list[str]]] = []
+    gate_calls: list[dict[str, str]] = []
+
+    def capture(
+        label: str,
+        directory: Path,
+        command: list[str],
+        environment: dict[str, str],
+        *_args: object,
+    ) -> None:
+        calls.append((label, directory, command))
+
+    monkeypatch.setattr(module, "run_in_dir", capture)
+    monkeypatch.setattr(module, "run_ci_checks", gate_calls.append)
+
+    environment = {"PATH": "/usr/bin:/bin"}
+    module.run_workflow_checks(environment, include_gate=True)
+
+    assert [(label, directory, command) for label, directory, command in calls] == [
+        ("GitHub Actions static analysis", REPO_ROOT, ["actionlint"]),
+        (
+            "Python lockfile freshness",
+            REPO_ROOT / "kaji",
+            ["uv", "lock", "--check"],
+        ),
+        (
+            "Frozen Python dependencies",
+            REPO_ROOT / "kaji",
+            ["uv", "sync", "--frozen"],
+        ),
+        (
+            "Frozen Bun dependencies",
+            REPO_ROOT,
+            ["bun", "install", "--frozen-lockfile"],
+        ),
+        (
+            "Executable Kaji workflow contracts",
+            REPO_ROOT,
+            [
+                "bun",
+                "run",
+                "--cwd",
+                "kaji/ts",
+                "test",
+                "--",
+                "tests/release-security.test.ts",
+            ],
+        ),
+    ]
+    assert gate_calls == [environment]
 
 
 def test_protected_provider_proof_requires_both_keys_before_success(
@@ -271,6 +440,7 @@ def test_beta_release_check_wraps_required_gates() -> None:
         "UV_SYSTEM_CERTS",
         '"audit:ast-grep"',
         "check_sdk_parity.py",
+        "check_integration_abi.py",
         "run_beta_benchmarks.py",
         "integration_benchmark.py",
         "offline_gate.py",

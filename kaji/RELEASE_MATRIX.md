@@ -89,6 +89,11 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 ## Release Gates
 
+Run `bun run ci:local` before pushing. It validates the GitHub Actions
+documents and executable workflow contracts, then runs the same Kaji gate used
+by `gate / kaji`. A passing local run proves repository-owned logic on the
+current macOS host only; it does not replace protected evidence below.
+
 Use the root wrapper as the default local gate before a beta checkpoint:
 
 ```bash

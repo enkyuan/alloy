@@ -542,19 +542,8 @@ const expectedJobPermissionDeclarations: Partial<
     },
   },
 };
-const requiredGateCommands = [
-  "uv run --project kaji python kaji/scripts/check_beta_contract.py",
-  "uv run --project kaji python kaji/scripts/sync_beta_contracts.py --check",
-  "uv run --project kaji python kaji/scripts/sync_integration_contracts.py --check",
-  "uv run --project kaji python kaji/scripts/check_integration_abi.py --explain",
-  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/check_sdk_parity.py",
-  "bun run audit:ast-grep",
-  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py --quick",
-  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync python kaji/scripts/integration_benchmark.py --mode quick",
-  'uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- uv run --project kaji --no-sync pytest kaji/tests -m "not integration" --cov-fail-under=80',
-  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts build",
-  "uv run --project kaji --no-sync python kaji/scripts/offline_gate.py -- bun run --cwd kaji/ts test:coverage",
-];
+const requiredGateCommand =
+  "uv run --project kaji --no-sync python kaji/scripts/beta_release_check.py --gate";
 
 function readYaml(
   relativePath: string,
@@ -621,14 +610,18 @@ function dependencyClosure(workflow: Workflow, jobId: string): Set<string> {
   return closure;
 }
 
-function actionSteps(value: Record<string, unknown>): WorkflowStep[] {
+function workflowSteps(value: Record<string, unknown>): WorkflowStep[] {
   const workflow = value as Workflow;
   const jobSteps = Object.values(workflow.jobs ?? {}).flatMap((job) => [
     ...(job.uses ? [{ uses: job.uses }] : []),
     ...(job.steps ?? []),
   ]);
   const compositeSteps = (value.runs as { steps?: WorkflowStep[] } | undefined)?.steps ?? [];
-  return [...jobSteps, ...compositeSteps].filter((step) => step.uses !== undefined);
+  return [...jobSteps, ...compositeSteps];
+}
+
+function actionSteps(value: Record<string, unknown>): WorkflowStep[] {
+  return workflowSteps(value).filter((step) => step.uses !== undefined);
 }
 
 function isTrustedHandoffCall(reference: string): boolean {
@@ -735,19 +728,23 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(effectivePermissions(workflow, job)).toEqual({ contents: "read" });
 
   const steps = job.steps ?? [];
-  expect(steps).toHaveLength(14);
+  expect(steps).toHaveLength(5);
   for (const [index, step] of steps.entries()) {
     expect(step.if, `gate step ${index} must execute normally`).toBeUndefined();
     expect(step["continue-on-error"] ?? false, `gate step ${index} must fail closed`).toBe(false);
   }
-  expect(steps.slice(0, 3).map((step) => step.uses)).toEqual([
+  expect(steps.slice(0, 4).map((step) => step.uses)).toEqual([
     `actions/checkout@${reviewedActionPins["actions/checkout"]}`,
+    `actions/setup-node@${reviewedActionPins["actions/setup-node"]}`,
     "./.github/actions/setup-python-uv",
     "./.github/actions/setup-bun-cache",
   ]);
 
   const checkout = steps[0];
   expect(checkout?.uses).toBe(`actions/checkout@${reviewedActionPins["actions/checkout"]}`);
+  expect(steps.find((step) => step.uses?.startsWith("actions/setup-node@"))?.with).toEqual({
+    "node-version": "24",
+  });
   expect(
     steps.find((step) => step.uses === "./.github/actions/setup-python-uv")?.with,
   ).toMatchObject({ "working-directory": "kaji", "sync-args": "--frozen" });
@@ -758,9 +755,9 @@ function assertProtectionReadyGate(workflow: Workflow): void {
     "bun-version": "1.3.11",
     "install-args": "--frozen-lockfile",
   });
-  expect(steps.flatMap((step) => (step.run ? [step.run.trim()] : []))).toEqual(
-    requiredGateCommands,
-  );
+  expect(steps.flatMap((step) => (step.run ? [step.run.trim()] : []))).toEqual([
+    requiredGateCommand,
+  ]);
 }
 
 function assertNarrowPermissions(name: (typeof workflowFiles)[number], workflow: Workflow): void {
@@ -1018,10 +1015,13 @@ function assertTrustedHandoffWorkflow(workflow: Workflow, source: string): void 
     'test "${#preflight_sha256}" -eq 64',
     'case "$preflight_sha256" in *[!0-9a-f]*) exit 1 ;; esac',
     'test "$stage_preflight_sha256" = "$preflight_sha256"',
-    `printf 'preflight-sha256=%s\\n' "$preflight_sha256" >>"$GITHUB_OUTPUT"`,
+    `printf 'preflight-sha256=%s\\n' "$preflight_sha256"`,
   ]) {
     expect(stageRun).toContain(fragment);
   }
+  expect(stageRun).toMatch(
+    /printf 'preflight-sha256=%s\\n' "\$preflight_sha256"\n\s*\} >>"\$GITHUB_OUTPUT"/u,
+  );
 
   const uploadPin = `actions/upload-artifact@${reviewedActionPins["actions/upload-artifact"]}`;
   const allUploads = Object.values(jobs).flatMap((job) =>
@@ -1246,6 +1246,44 @@ describe("Kaji workflow contracts", () => {
     expect(closure).toContain(".github/actions/setup-python-uv/action.yml");
     expect(closure).toContain(".github/actions/setup-bun-cache/action.yml");
     expect(closure).toContain(".github/actions/verify-kaji-beta-tag/action.yml");
+  });
+
+  it("parses every Kaji shell step with Bash", () => {
+    const documents = assertReviewedActionDocuments(
+      (Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]).map(
+        (name) => `.github/workflows/${name}`,
+      ),
+    );
+
+    for (const relativePath of documents) {
+      const { value } = readYaml(relativePath);
+      for (const [index, step] of workflowSteps(value).entries()) {
+        if (step.run === undefined) continue;
+        const syntax = spawnSync("/bin/bash", ["-n"], {
+          encoding: "utf8",
+          input: step.run,
+        });
+        expect(syntax.status, `${relativePath}:run step ${index}: ${syntax.stderr}`).toBe(0);
+      }
+    }
+  });
+
+  it("parses every Kaji github-script program with Node", () => {
+    for (const name of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
+      const { value } = readYaml(`.github/workflows/${name}`);
+      for (const [index, step] of workflowSteps(value).entries()) {
+        if (!step.uses?.startsWith("actions/github-script@")) continue;
+        expect(typeof step.with?.script).toBe("string");
+        const syntax = spawnSync(process.execPath, ["--check", "-"], {
+          encoding: "utf8",
+          input: `async function githubScript() {\n${String(step.with?.script)}\n}\n`,
+        });
+        expect(
+          syntax.status,
+          `.github/workflows/${name}:github-script ${index}: ${syntax.stderr}`,
+        ).toBe(0);
+      }
+    }
   });
 
   it("bounds every Kaji job and keeps effective permissions narrow", () => {
@@ -2342,9 +2380,9 @@ describe("Kaji workflow contract mutations", () => {
     ["setup if false", (job: WorkflowJob): void => void (job.steps![2]!.if = false)],
     [
       "command continue-on-error",
-      (job: WorkflowJob): void => void (job.steps![3]!["continue-on-error"] = true),
+      (job: WorkflowJob): void => void (job.steps![4]!["continue-on-error"] = true),
     ],
-    ["command if false", (job: WorkflowJob): void => void (job.steps![3]!.if = false)],
+    ["command if false", (job: WorkflowJob): void => void (job.steps![4]!.if = false)],
   ] as const)("rejects %s on the required PR gate path", (_label, mutate) => {
     const workflow = structuredClone(readWorkflow("kaji.gate.yml").workflow);
     mutate(gateJob(workflow));

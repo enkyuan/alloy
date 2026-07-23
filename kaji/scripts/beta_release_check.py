@@ -118,6 +118,142 @@ TS_RELEASE_GATES = (
     Gate("TypeScript publint", TYPESCRIPT, ("bun", "x", "publint")),
 )
 
+SHARED_GATES = (
+    Gate(
+        "Shared beta contract",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/check_beta_contract.py",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate(
+        "Packaged beta contract synchronization",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/sync_beta_contracts.py",
+            "--check",
+        ),
+    ),
+    Gate(
+        "Integration contract synchronization",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/sync_integration_contracts.py",
+            "--check",
+        ),
+    ),
+    Gate(
+        "Integration manifest and tool ABI",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "python",
+            "kaji/scripts/check_integration_abi.py",
+            "--explain",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate(
+        "Cross-SDK behavioral parity",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/check_sdk_parity.py",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate("ast-grep structural audit", ROOT, ("bun", "run", "audit:ast-grep")),
+    Gate(
+        "Deterministic complexity and quick benchmark smoke",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/run_beta_benchmarks.py",
+            "--quick",
+        ),
+        RELEASE_COMMAND_BUDGET,
+    ),
+    Gate(
+        "Deterministic integration quick benchmark",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji",
+            "--no-sync",
+            "python",
+            "kaji/scripts/integration_benchmark.py",
+            "--mode",
+            "quick",
+        ),
+        RELEASE_COMMAND_BUDGET,
+    ),
+)
+
+PYTHON_CI_GATE = Gate(
+    "Python tests (offline)",
+    ROOT,
+    offline_command(
+        "uv",
+        "run",
+        "--project",
+        "kaji",
+        "--no-sync",
+        "pytest",
+        "kaji/tests",
+        "-m",
+        "not integration",
+        "--cov-fail-under=80",
+    ),
+    LOCAL_ORCHESTRATOR_BUDGET,
+)
+
+CI_GATES = (
+    *SHARED_GATES,
+    PYTHON_CI_GATE,
+    Gate(
+        "TypeScript build (offline)",
+        ROOT,
+        offline_command("bun", "run", "--cwd", "kaji/ts", "build"),
+    ),
+    Gate(
+        "TypeScript tests (offline)",
+        ROOT,
+        offline_command("bun", "run", "--cwd", "kaji/ts", "test:coverage"),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+)
+
 
 def common_gates() -> tuple[Gate, ...]:
     return TS_COMMON_GATES
@@ -125,6 +261,10 @@ def common_gates() -> tuple[Gate, ...]:
 
 def release_gates() -> tuple[Gate, ...]:
     return TS_RELEASE_GATES
+
+
+def ci_gates() -> tuple[Gate, ...]:
+    return CI_GATES
 
 
 def section(label: str) -> None:
@@ -259,130 +399,17 @@ def run_required_key_failure(environment: dict[str, str]) -> None:
 def run_shared_checks(environment: dict[str, str]) -> None:
     run_no_key_live_skip(environment)
     run_required_key_failure(environment)
-    run_in_dir(
-        "ast-grep structural audit",
-        ROOT,
-        ["bun", "run", "audit:ast-grep"],
-        environment,
-    )
-    run_in_dir(
-        "Cross-SDK behavioral parity",
-        ROOT,
-        list(
-            offline_command(
-                "uv",
-                "run",
-                "--project",
-                "kaji",
-                "--no-sync",
-                "python",
-                "kaji/scripts/check_sdk_parity.py",
-            )
-        ),
-        environment,
-        LOCAL_ORCHESTRATOR_BUDGET,
-    )
-    run_in_dir(
-        "Shared beta contract",
-        ROOT,
-        [
-            "uv",
-            "run",
-            "--project",
-            "kaji",
-            "python",
-            "kaji/scripts/check_beta_contract.py",
-        ],
-        environment,
-        LOCAL_ORCHESTRATOR_BUDGET,
-    )
-    run_in_dir(
-        "Packaged beta contract synchronization",
-        ROOT,
-        [
-            "uv",
-            "run",
-            "--project",
-            "kaji",
-            "python",
-            "kaji/scripts/sync_beta_contracts.py",
-            "--check",
-        ],
-        environment,
-    )
-    run_in_dir(
-        "Integration contract synchronization",
-        ROOT,
-        [
-            "uv",
-            "run",
-            "--project",
-            "kaji",
-            "python",
-            "kaji/scripts/sync_integration_contracts.py",
-            "--check",
-        ],
-        environment,
-    )
-    run_in_dir(
-        "Deterministic complexity and quick benchmark smoke",
-        ROOT,
-        list(
-            offline_command(
-                "uv",
-                "run",
-                "--project",
-                "kaji",
-                "--no-sync",
-                "python",
-                "kaji/scripts/run_beta_benchmarks.py",
-                "--quick",
-            )
-        ),
-        environment,
-        RELEASE_COMMAND_BUDGET,
-    )
-    run_in_dir(
-        "Deterministic integration quick benchmark",
-        ROOT,
-        list(
-            offline_command(
-                "uv",
-                "run",
-                "--project",
-                "kaji",
-                "--no-sync",
-                "python",
-                "kaji/scripts/integration_benchmark.py",
-                "--mode",
-                "quick",
-            )
-        ),
-        environment,
-        RELEASE_COMMAND_BUDGET,
-    )
+    run_gates(SHARED_GATES, environment)
+
+
+def run_ci_checks(environment: dict[str, str]) -> None:
+    run_gates(CI_GATES, environment)
 
 
 def run_common_checks(environment: dict[str, str]) -> None:
     run_shared_checks(environment)
     run_gates(common_gates(), environment)
-
-    run_in_dir(
-        "Python unit tests",
-        SDK,
-        list(
-            offline_command(
-                "uv",
-                "run",
-                "--no-sync",
-                "pytest",
-                "-m",
-                "not integration",
-                "--cov-fail-under=80",
-            )
-        ),
-        environment,
-    )
+    run_gates((PYTHON_CI_GATE,), environment)
     run_in_dir(
         "Python typecheck",
         SDK,
@@ -667,7 +694,16 @@ def run_release_checks(environment: dict[str, str]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--gate",
+        action="store_true",
+        help=(
+            "run the canonical repository-owned Kaji pull-request commands; "
+            "runner setup and protected external evidence are not claimed"
+        ),
+    )
+    mode.add_argument(
         "--release",
         action="store_true",
         help=(
@@ -690,24 +726,32 @@ def main() -> int:
         )
     try:
         require_command("bun", "TypeScript SDK release gates", environment)
-        require_command("node", "installed npm package proof", environment)
-        require_command("npm", "npm artifact construction", environment)
+        require_command("node", "TypeScript test runtime", environment)
         require_command("uv", "Python SDK release gates", environment)
-        if args.release:
-            run_shared_checks(environment)
-            run_release_checks(environment)
+        if args.gate:
+            run_ci_checks(environment)
         else:
-            run_common_checks(environment)
-            section("Protected keyed provider proof")
-            if environment.get("KAJI_RUN_KEYED_LIVE") == "1":
-                run_keyed_provider_proof(environment)
+            require_command("npm", "npm artifact construction", environment)
+            if args.release:
+                run_shared_checks(environment)
+                run_release_checks(environment)
             else:
-                print("SKIP: not requested; no keyed provider evidence is claimed.")
+                run_common_checks(environment)
+                section("Protected keyed provider proof")
+                if environment.get("KAJI_RUN_KEYED_LIVE") == "1":
+                    run_keyed_provider_proof(environment)
+                else:
+                    print("SKIP: not requested; no keyed provider evidence is claimed.")
     except GateFailure as error:
         return error.status
 
     print()
-    if args.release:
+    if args.gate:
+        print(
+            "PASS: local Kaji CI gate completed; protected matrix, provider, and "
+            "publication evidence NOT claimed"
+        )
+    elif args.release:
         if commit is None:
             print(
                 "PASS: local offline release rehearsal only; commit and "
