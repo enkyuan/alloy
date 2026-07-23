@@ -20,45 +20,105 @@ import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 
 import { assertCliListOutput } from "./cli_assertions";
-import { CommandError, runCommand as runBoundedCommand } from "./command";
+import {
+  classifyCommandFailure,
+  CommandError,
+  CommandExitError,
+  type CommandFailureKind,
+  runCommand as runBoundedCommand,
+} from "./command";
 
-type PackageManager = "npm" | "bun";
-type InstallStage = "package" | "bootstrap" | "generated";
-type GitHubTypeModule = "esm" | "cjs";
-type GitHubTypeCompilerLine = "5.7" | "current";
+const PACKAGE_MANAGERS = ["npm", "bun"] as const;
+const INSTALL_STAGES = ["package", "bootstrap", "generated"] as const;
+const HANDOFF_PHASES = [
+  "handoff:npm-install",
+  "handoff:bun-install",
+  "handoff:typescript57-version",
+  "handoff:typescriptCurrent-version",
+  "handoff:typescript57-esm",
+  "handoff:typescript57-cjs",
+  "handoff:typescriptCurrent-esm",
+  "handoff:typescriptCurrent-cjs",
+  "handoff:npm-github-proof",
+  "handoff:bun-github-proof",
+  "handoff:archive-list",
+  "handoff:archive-types",
+  "handoff:archive-extract",
+  "handoff:policy-before-token",
+  "handoff:node-version",
+  "handoff:npm-version",
+  "handoff:node-esm",
+  "handoff:node-commonjs",
+] as const;
+const STATIC_SMOKE_PHASES = [
+  "npm:pack",
+  "node:version",
+  "npm:audit",
+  "exports:esm",
+  "exports:cjs",
+  "cli:help",
+  "cli:help-cjs",
+  "docs:compile-typescript-current",
+  "docs:run",
+  "workspace:cleanup",
+] as const;
+const MANAGER_SMOKE_PHASE_SUFFIXES = [
+  "package-install",
+  "bootstrap-install",
+  "generated-install",
+  "cli-init",
+  "cli-owner-conflict",
+  "cli-owner-qualified",
+  "cli-add",
+  "cli-inspect",
+  "github-package-proof",
+  "cli-list",
+  "cli-replay",
+  "compile-typescript-5.7",
+  "compile-typescript-current",
+  "github-types-compiler-version-5.7",
+  "github-types-compiler-version-current",
+  "github-types-esm-typescript-5.7",
+  "github-types-esm-typescript-current",
+  "github-types-cjs-typescript-5.7",
+  "github-types-cjs-typescript-current",
+  "lifecycle-run",
+  "failure-history-run",
+  "docs-getting-started-run",
+  "docs-tthw-echo-run",
+  "cold-run",
+  "warm-run",
+] as const;
+const COMMAND_FAILURE_KINDS = [
+  "unsupported_host",
+  "start",
+  "exit",
+  "timeout",
+  "output_limit",
+  "cleanup",
+  "capture",
+  "shutting_down",
+  "unknown",
+] as const satisfies readonly CommandFailureKind[];
+
+type PackageManager = (typeof PACKAGE_MANAGERS)[number];
+type InstallStage = (typeof INSTALL_STAGES)[number];
 type HandoffMode = "artifact-contract" | "node";
+type HandoffPhase = (typeof HANDOFF_PHASES)[number];
 type SmokePhase =
-  | "npm:pack"
-  | "node:version"
-  | "npm:audit"
-  | "exports:esm"
-  | "exports:cjs"
-  | "cli:help"
-  | "cli:help-cjs"
-  | "docs:compile-typescript-current"
-  | "docs:run"
-  | `${PackageManager}:${InstallStage}-install`
-  | `${PackageManager}:cli-init`
-  | `${PackageManager}:cli-owner-conflict`
-  | `${PackageManager}:cli-owner-qualified`
-  | `${PackageManager}:cli-add`
-  | `${PackageManager}:cli-inspect`
-  | `${PackageManager}:github-package-proof`
-  | `${PackageManager}:cli-list`
-  | `${PackageManager}:cli-replay`
-  | `${PackageManager}:compile-typescript-5.7`
-  | `${PackageManager}:compile-typescript-current`
-  | `${PackageManager}:github-types-compiler-version-${GitHubTypeCompilerLine}`
-  | `${PackageManager}:github-types-${GitHubTypeModule}-typescript-${GitHubTypeCompilerLine}`
-  | `${PackageManager}:lifecycle-run`
-  | `${PackageManager}:failure-history-run`
-  | `${PackageManager}:docs-getting-started-run`
-  | `${PackageManager}:docs-tthw-echo-run`
-  | `${PackageManager}:cold-run`
-  | `${PackageManager}:warm-run`
-  | `handoff:${string}`;
+  | (typeof STATIC_SMOKE_PHASES)[number]
+  | `${PackageManager}:${(typeof MANAGER_SMOKE_PHASE_SUFFIXES)[number]}`
+  | HandoffPhase;
+const SMOKE_PHASES = new Set<string>([
+  ...STATIC_SMOKE_PHASES,
+  ...HANDOFF_PHASES,
+  ...PACKAGE_MANAGERS.flatMap((manager) =>
+    MANAGER_SMOKE_PHASE_SUFFIXES.map((suffix) => `${manager}:${suffix}`),
+  ),
+]);
 interface PackageManifest {
   version: string;
   peerDependencies: Record<string, string>;
@@ -87,6 +147,15 @@ interface SmokeArguments {
   artifactSha256?: string;
   handoffNodeBinary?: string;
   expectedNodeMajor?: 22 | 24;
+}
+
+export class SmokeCommandError extends Error {
+  constructor(
+    readonly phase: SmokePhase,
+    readonly kind: CommandFailureKind,
+  ) {
+    super("package smoke command failed");
+  }
 }
 
 interface GitHubPackageProof {
@@ -164,6 +233,8 @@ interface GitHubPackageProof {
     readonly doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token";
   };
   readonly githubObservabilitySinksVerified: true;
+  readonly unknownMutationPreserved: true;
+  readonly mutationRetries: 0;
   readonly lifecycle: {
     readonly githubFailure: LifecycleProof;
     readonly syntheticCompletion: LifecycleProof;
@@ -303,9 +374,10 @@ interface SourceMapDocument {
   readonly sourcesContent?: unknown;
 }
 
-const packageRoot = resolve(import.meta.dir, "..");
+const scriptRoot = dirname(fileURLToPath(import.meta.url));
+const packageRoot = resolve(scriptRoot, "..");
 const repositoryRoot = resolve(packageRoot, "../..");
-const INSTALLED_GITHUB_SMOKE = resolve(import.meta.dir, "installed-github-smoke.mts");
+const INSTALLED_GITHUB_SMOKE = resolve(scriptRoot, "installed-github-smoke.mts");
 let workdir = "";
 let installRoot = "";
 const nodeBinary = process.env.NODE_BINARY ?? "node";
@@ -313,6 +385,7 @@ const LOCAL_TIMEOUT_MS = 60_000;
 const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const PACKAGE_VERSION = "0.2.0-beta.2";
+const PACKAGE_TARBALL = `kaji-sdk-${PACKAGE_VERSION}.tgz`;
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
 
 function markedSnippet(path: string, name: string, language: string): string {
@@ -679,7 +752,7 @@ const legacyLedger: ToolIdempotencyLedger = {
 };
 void legacyLedger;
 `;
-const baseEnvironment = {
+const baseEnvironment: NodeJS.ProcessEnv = {
   ...process.env,
   npm_config_audit: "false",
   npm_config_fund: "false",
@@ -725,6 +798,32 @@ function tokenFreeHandoffEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessE
 
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function sanitizeRetainedCommit(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{40}$/.test(value) ? value : null;
+}
+
+function sanitizeRetainedSha256(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+function sanitizeRetainedArtifactSha256(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const hash = sanitizeRetainedSha256((value as Record<string, unknown>)[PACKAGE_TARBALL]);
+  return hash === null ? {} : { [PACKAGE_TARBALL]: hash };
+}
+
+function isRetainedNodeVersion(value: unknown): value is string {
+  return typeof value === "string" && /^v(?:22|24)\.[0-9]+\.[0-9]+$/.test(value);
+}
+
+function isSmokePhase(value: unknown): value is SmokePhase {
+  return typeof value === "string" && SMOKE_PHASES.has(value);
+}
+
+function isCommandFailureKind(value: unknown): value is CommandFailureKind {
+  return typeof value === "string" && (COMMAND_FAILURE_KINDS as readonly string[]).includes(value);
 }
 
 function filesBelow(directory: string): string[] {
@@ -871,7 +970,7 @@ function parseArguments(argv: string[]): SmokeArguments {
     parsed.output === undefined ||
     parsed.releaseManifest !== undefined ||
     parsed.expectedCommit !== undefined ||
-    !/^[0-9a-f]{40}$/.test(parsed.sourceCommit) ||
+    sanitizeRetainedCommit(parsed.sourceCommit) === null ||
     !/^[0-9a-f]{64}$/.test(parsed.artifactSha256)
   ) {
     throw new Error("incomplete or invalid supplied-tarball handoff arguments");
@@ -918,38 +1017,34 @@ function artifactIdentity(
   const artifactHash = sha256(tarball);
   if (releaseManifest === undefined || expectedCommit === undefined) {
     return {
-      commit: process.env.KAJI_RELEASE_COMMIT ?? process.env.GITHUB_SHA ?? null,
+      commit:
+        sanitizeRetainedCommit(process.env.KAJI_RELEASE_COMMIT) ??
+        sanitizeRetainedCommit(process.env.GITHUB_SHA),
       manifestSha256: null,
-      artifactSha256: { [basename(tarball)]: artifactHash },
+      artifactSha256: { [PACKAGE_TARBALL]: artifactHash },
     };
+  }
+  const commit = sanitizeRetainedCommit(expectedCommit);
+  if (basename(tarball) !== PACKAGE_TARBALL) {
+    throw new Error("release manifest requires the canonical npm tarball filename");
   }
   const manifestPath = resolve(releaseManifest);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
     commit?: unknown;
     artifacts?: Array<{ file?: unknown; sha256?: unknown }>;
   };
-  if (manifest.commit !== expectedCommit) {
+  if (commit === null || manifest.commit !== commit) {
     throw new Error("release manifest commit differs from the expected commit");
   }
-  const entry = manifest.artifacts?.find((candidate) => candidate.file === basename(tarball));
+  const entry = manifest.artifacts?.find((candidate) => candidate.file === PACKAGE_TARBALL);
   if (entry?.sha256 !== artifactHash) {
     throw new Error("supplied npm tarball differs from its release manifest identity");
   }
   return {
-    commit: expectedCommit,
+    commit,
     manifestSha256: sha256(manifestPath),
-    artifactSha256: { [basename(tarball)]: artifactHash },
+    artifactSha256: { [PACKAGE_TARBALL]: artifactHash },
   };
-}
-
-function emitReceipt(receipt: Record<string, unknown>, output: string | undefined): void {
-  const encoded = `${JSON.stringify(receipt)}\n`;
-  if (output !== undefined) {
-    const path = resolve(output);
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, encoded);
-  }
-  process.stdout.write(encoded);
 }
 
 function stableValue(value: unknown): unknown {
@@ -962,8 +1057,7 @@ function stableValue(value: unknown): unknown {
   );
 }
 
-function emitHandoffReceipt(receipt: Record<string, unknown>, output: string): void {
-  const encoded = `${JSON.stringify(stableValue(receipt), null, 2)}\n`;
+function writeAtomicReceipt(output: string, encoded: string): void {
   const path = resolve(output);
   mkdirSync(dirname(path), { recursive: true });
   const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
@@ -986,7 +1080,66 @@ function emitHandoffReceipt(receipt: Record<string, unknown>, output: string): v
     rmSync(temporary, { force: true });
     throw error;
   }
+}
+
+function emitReceipt(receipt: Record<string, unknown>, output: string | undefined): void {
+  const encoded = `${JSON.stringify(receipt)}\n`;
+  if (output !== undefined) writeAtomicReceipt(output, encoded);
   process.stdout.write(encoded);
+}
+
+function emitHandoffReceipt(receipt: Record<string, unknown>, output: string): void {
+  const encoded = `${JSON.stringify(stableValue(receipt), null, 2)}\n`;
+  writeAtomicReceipt(output, encoded);
+  process.stdout.write(encoded);
+}
+
+export interface PendingSmokeReceipt {
+  readonly kind: "ordinary" | "handoff";
+  readonly receipt: Record<string, unknown>;
+  readonly output: string | undefined;
+  readonly diagnostics?: readonly string[];
+}
+
+export interface SmokeFinalizerDependencies {
+  readonly removeWorkspace: (path: string) => void;
+  readonly emitOrdinary: (receipt: Record<string, unknown>, output: string | undefined) => void;
+  readonly emitHandoff: (receipt: Record<string, unknown>, output: string) => void;
+  readonly writeDiagnostic: (value: string) => void;
+}
+
+const smokeFinalizerDependencies: SmokeFinalizerDependencies = {
+  removeWorkspace: (path) => {
+    if (path !== "") rmSync(path, { recursive: true, force: true });
+  },
+  emitOrdinary: emitReceipt,
+  emitHandoff: emitHandoffReceipt,
+  writeDiagnostic: (value) => process.stdout.write(value),
+};
+
+export function finalizeSmokeRun(
+  workspace: string,
+  pending: PendingSmokeReceipt | null,
+  cleanupFailureReceipt: PendingSmokeReceipt | null,
+  dependencies: SmokeFinalizerDependencies = smokeFinalizerDependencies,
+): void {
+  try {
+    dependencies.removeWorkspace(workspace);
+  } catch {
+    if (cleanupFailureReceipt?.kind === "ordinary") {
+      dependencies.emitOrdinary(cleanupFailureReceipt.receipt, cleanupFailureReceipt.output);
+    }
+    throw new SmokeCommandError("workspace:cleanup", "cleanup");
+  }
+  if (pending === null) return;
+  for (const diagnostic of pending.diagnostics ?? []) {
+    dependencies.writeDiagnostic(`${diagnostic}\n`);
+  }
+  if (pending.kind === "ordinary") {
+    dependencies.emitOrdinary(pending.receipt, pending.output);
+  } else {
+    dependencies.emitHandoff(pending.receipt, pending.output!);
+  }
 }
 
 function githubProofEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -1130,6 +1283,8 @@ function assertGithubPackageProof(
       doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
     },
     githubObservabilitySinksVerified: true,
+    unknownMutationPreserved: true,
+    mutationRetries: 0,
     lifecycle: {
       githubFailure: {
         stages: ["requested", "started", "failed"],
@@ -1186,17 +1341,18 @@ async function runCommand(
       check: false,
     });
     if (completed.status !== expectedStatus) {
-      const diagnostic = phase.startsWith("handoff:")
-        ? safeHandoffDiagnostic(`${completed.stdout}\n${completed.stderr}`)
-        : "";
-      throw new CommandError(
-        `release command exited with status ${completed.status}, expected ${expectedStatus}${diagnostic === "" ? "" : `; child output: ${diagnostic}`}`,
-      );
+      if (phase.startsWith("handoff:")) {
+        const diagnostic = safeHandoffDiagnostic(completed.stderr);
+        if (diagnostic !== "") {
+          process.stderr.write(`package smoke child stderr at ${phase}: ${diagnostic}\n`);
+        }
+      }
+      throw new CommandExitError(completed.status);
     }
     return includeStderr ? `${completed.stdout}\n${completed.stderr}` : completed.stdout;
   } catch (error) {
     if (error instanceof CommandError) {
-      error.message = `package smoke failed at phase ${phase}: ${error.message}`;
+      throw new SmokeCommandError(phase, classifyCommandFailure(error));
     }
     throw error;
   }
@@ -1222,7 +1378,7 @@ function safeHandoffDiagnostic(output: string): string {
 }
 
 async function runHandoffCommand(
-  label: string,
+  phase: HandoffPhase,
   command: string,
   args: string[],
   cwd: string,
@@ -1241,7 +1397,7 @@ async function runHandoffCommand(
   if (PROTECTED_HANDOFF_TOKENS.some((name) => name in childEnvironment)) {
     throw new Error("supplied-tarball handoff child environment retained a protected token");
   }
-  return runCommand(`handoff:${label}`, command, args, cwd, childEnvironment, timeoutMs);
+  return runCommand(phase, command, args, cwd, childEnvironment, timeoutMs);
 }
 
 function handoffDependencyClosure(
@@ -1375,7 +1531,7 @@ async function installHandoffArtifact(
   };
   if (manager === "npm") {
     await runHandoffCommand(
-      `${manager}-install`,
+      `handoff:${manager}-install`,
       "npm",
       ["install", "--ignore-scripts", "--offline", "--install-links=false", ...closure.installArgs],
       root,
@@ -1383,7 +1539,7 @@ async function installHandoffArtifact(
     );
   } else {
     await runHandoffCommand(
-      `${manager}-install`,
+      `handoff:${manager}-install`,
       process.execPath,
       ["install", "--production", "--ignore-scripts", "--omit=dev", "--offline"],
       root,
@@ -1424,7 +1580,7 @@ async function compileHandoffGitHubTypes(
       compiler.name,
       semverFromVersionOutput(
         await runHandoffCommand(
-          `${compiler.name}-version`,
+          `handoff:${compiler.name}-version`,
           runtimeBinary,
           [compiler.binary, "--version"],
           root,
@@ -1434,7 +1590,7 @@ async function compileHandoffGitHubTypes(
     );
     for (const consumer of GITHUB_TYPE_CONSUMERS) {
       await runHandoffCommand(
-        `${compiler.name}-${consumer.module}`,
+        `handoff:${compiler.name}-${consumer.module}`,
         runtimeBinary,
         [compiler.binary, "--project", consumer.config, "--noEmit", ...compiler.extraArgs],
         root,
@@ -1474,7 +1630,7 @@ async function runInstalledHandoffProof(
   const runner = join(root, "installed-github-smoke.mts");
   copyFileSync(INSTALLED_GITHUB_SMOKE, runner);
   const output = await runHandoffCommand(
-    `${manager}-github-proof`,
+    `handoff:${manager}-github-proof`,
     process.execPath,
     [
       "--no-install",
@@ -1529,10 +1685,12 @@ async function extractCheckedArchive(tarball: string): Promise<{
   members: string[];
   membersSha256: string;
 }> {
-  const list = (await runHandoffCommand("archive-list", "tar", ["-tzf", tarball], workdir))
+  const list = (await runHandoffCommand("handoff:archive-list", "tar", ["-tzf", tarball], workdir))
     .split("\n")
     .filter(Boolean);
-  const verbose = (await runHandoffCommand("archive-types", "tar", ["-tvzf", tarball], workdir))
+  const verbose = (
+    await runHandoffCommand("handoff:archive-types", "tar", ["-tvzf", tarball], workdir)
+  )
     .split("\n")
     .filter(Boolean);
   if (list.length === 0 || list.length > 4096 || verbose.length !== list.length) {
@@ -1550,7 +1708,7 @@ async function extractCheckedArchive(tarball: string): Promise<{
   );
   const root = join(workdir, "archive");
   mkdirSync(root);
-  await runHandoffCommand("archive-extract", "tar", ["-xzf", tarball, "-C", root], workdir);
+  await runHandoffCommand("handoff:archive-extract", "tar", ["-xzf", tarball, "-C", root], workdir);
   assertNoLinksBelow(root);
   return {
     root,
@@ -1612,7 +1770,7 @@ function exactCatalogs(proof: GitHubPackageProof): void {
 async function proveCandidatePolicy(candidateRoot: string): Promise<void> {
   const candidatePackageRoot = realpathSync(join(candidateRoot, "kaji/ts"));
   await runHandoffCommand(
-    "policy-before-token",
+    "handoff:policy-before-token",
     process.execPath,
     ["test", "tests/github-registry.test.ts", "-t", POLICY_TEST_NAME],
     candidatePackageRoot,
@@ -1626,9 +1784,8 @@ async function runArtifactContractHandoff(
     candidateRoot: string;
     sourceCommit: string;
     artifactSha256: string;
-    output: string;
   },
-): Promise<void> {
+): Promise<Record<string, unknown>> {
   const archive = await extractCheckedArchive(arguments_.tarball);
   const packedRoot = join(archive.root, "package");
   const packedManifest = JSON.parse(readFileSync(join(packedRoot, "package.json"), "utf8")) as {
@@ -1679,7 +1836,9 @@ async function runArtifactContractHandoff(
     proof.policyBeforeRequest.testFile !== POLICY_TEST_FILE ||
     proof.policyBeforeRequest.testName !== POLICY_TEST_NAME ||
     proof.policyBeforeRequest.tokenLookups !== 0 ||
-    proof.policyBeforeRequest.requestAttempts !== 0
+    proof.policyBeforeRequest.requestAttempts !== 0 ||
+    !proof.unknownMutationPreserved ||
+    proof.mutationRetries !== 0
   ) {
     throw new Error("TypeScript package proof is downgraded or lacks policy evidence");
   }
@@ -1692,54 +1851,51 @@ async function runArtifactContractHandoff(
   const licenseSha256 = createHash("sha256")
     .update(readFileSync(join(packedRoot, "LICENSE")))
     .digest("hex");
-  emitHandoffReceipt(
-    {
-      id: "artifact-contract",
-      result: "passed",
-      sourceCommit: arguments_.sourceCommit,
-      artifactSha256: arguments_.artifactSha256,
-      evidence: {
-        subchecks: ARTIFACT_SUBCHECKS.map((id) => ({ id, result: "passed" })),
-        packlist: {
-          memberCount: archive.members.length,
-          membersSha256: archive.membersSha256,
-        },
-        package: {
-          exports: packedManifest.exports,
-          publicSymbols: GITHUB_PUBLIC_SYMBOLS,
-        },
-        typescript: {
-          minimumVersion: proof.typescriptDeclarationChecks.typescript57.version,
-          currentVersion: proof.typescriptDeclarationChecks.typescriptCurrent.version,
-        },
-        installs: {
-          npm: { artifactSha256: arguments_.artifactSha256, realCopy: true },
-          bun: { artifactSha256: arguments_.artifactSha256, realCopy: true },
-        },
-        catalogs: {
-          typescript: {
-            schemaVersion: proof.packageCatalog.schemaVersion,
-            catalogVersion: proof.packageCatalog.catalogVersion,
-            totalCount: proof.packageCatalog.toolCount,
-            readCount: proof.packageCatalog.readToolCount,
-            tools: proof.packageCatalog.tools,
-            readTools: proof.packageCatalog.readTools,
-          },
-          shared: {
-            manifestVersion: proof.cliCopiedCatalog.manifestVersion,
-            totalCount: proof.cliCopiedCatalog.toolCount,
-            readCount: proof.cliCopiedCatalog.readToolCount,
-            tools: proof.cliCopiedCatalog.tools,
-            readTools: proof.cliCopiedCatalog.readTools,
-          },
-        },
-        lifecycle: proof.lifecycle,
-        policy: proof.policyBeforeRequest,
-        license: { id: LICENSE_ID, sha256: licenseSha256 },
+  return {
+    id: "artifact-contract",
+    result: "passed",
+    sourceCommit: arguments_.sourceCommit,
+    artifactSha256: arguments_.artifactSha256,
+    evidence: {
+      subchecks: ARTIFACT_SUBCHECKS.map((id) => ({ id, result: "passed" })),
+      packlist: {
+        memberCount: archive.members.length,
+        membersSha256: archive.membersSha256,
       },
+      package: {
+        exports: packedManifest.exports,
+        publicSymbols: GITHUB_PUBLIC_SYMBOLS,
+      },
+      typescript: {
+        minimumVersion: proof.typescriptDeclarationChecks.typescript57.version,
+        currentVersion: proof.typescriptDeclarationChecks.typescriptCurrent.version,
+      },
+      installs: {
+        npm: { artifactSha256: arguments_.artifactSha256, realCopy: true },
+        bun: { artifactSha256: arguments_.artifactSha256, realCopy: true },
+      },
+      catalogs: {
+        typescript: {
+          schemaVersion: proof.packageCatalog.schemaVersion,
+          catalogVersion: proof.packageCatalog.catalogVersion,
+          totalCount: proof.packageCatalog.toolCount,
+          readCount: proof.packageCatalog.readToolCount,
+          tools: proof.packageCatalog.tools,
+          readTools: proof.packageCatalog.readTools,
+        },
+        shared: {
+          manifestVersion: proof.cliCopiedCatalog.manifestVersion,
+          totalCount: proof.cliCopiedCatalog.toolCount,
+          readCount: proof.cliCopiedCatalog.readToolCount,
+          tools: proof.cliCopiedCatalog.tools,
+          readTools: proof.cliCopiedCatalog.readTools,
+        },
+      },
+      lifecycle: proof.lifecycle,
+      policy: proof.policyBeforeRequest,
+      license: { id: LICENSE_ID, sha256: licenseSha256 },
     },
-    arguments_.output,
-  );
+  };
 }
 
 interface NodeFixtureResult {
@@ -1818,22 +1974,21 @@ async function runNodeHandoff(
     artifactSha256: string;
     handoffNodeBinary: string;
     expectedNodeMajor: 22 | 24;
-    output: string;
   },
-): Promise<void> {
+): Promise<Record<string, unknown>> {
   if (!arguments_.handoffNodeBinary.startsWith("/")) {
     throw new Error("--node-binary must be an explicit absolute binary path");
   }
   const runtimeBinary = realpathSync(arguments_.handoffNodeBinary);
   const nodeVersion = semverFromVersionOutput(
-    await runHandoffCommand("node-version", runtimeBinary, ["--version"], workdir),
+    await runHandoffCommand("handoff:node-version", runtimeBinary, ["--version"], workdir),
     "Node",
   );
   if (Number(nodeVersion.split(".", 1)[0]) !== arguments_.expectedNodeMajor) {
     throw new Error("explicit Node binary major differs from --expected-node-major");
   }
   const npmVersion = semverFromVersionOutput(
-    await runHandoffCommand("npm-version", "npm", ["--version"], workdir),
+    await runHandoffCommand("handoff:npm-version", "npm", ["--version"], workdir),
     "npm",
   );
   const installRoot = join(workdir, `node-${arguments_.expectedNodeMajor}`);
@@ -1843,11 +1998,11 @@ async function runNodeHandoff(
   writeFileSync(esmPath, nodeFixtureSource("esm", arguments_.artifactSha256));
   writeFileSync(cjsPath, nodeFixtureSource("commonjs", arguments_.artifactSha256));
   const esm = parseNodeFixture(
-    await runHandoffCommand("node-esm", runtimeBinary, [esmPath], installRoot),
+    await runHandoffCommand("handoff:node-esm", runtimeBinary, [esmPath], installRoot),
     "esm",
   );
   const commonjs = parseNodeFixture(
-    await runHandoffCommand("node-commonjs", runtimeBinary, [cjsPath], installRoot),
+    await runHandoffCommand("handoff:node-commonjs", runtimeBinary, [cjsPath], installRoot),
     "commonjs",
   );
   for (const [kind, result] of [
@@ -1868,26 +2023,23 @@ async function runNodeHandoff(
       throw new Error(`${kind} Node handoff fixture did not prove the supplied package`);
     }
   }
-  emitHandoffReceipt(
-    {
-      id: `node-${arguments_.expectedNodeMajor}`,
-      result: "passed",
-      sourceCommit: arguments_.sourceCommit,
-      artifactSha256: arguments_.artifactSha256,
-      evidence: {
-        nodeMajor: arguments_.expectedNodeMajor,
-        nodeVersion,
-        npmVersion,
-        installedArtifactSha256: arguments_.artifactSha256,
-        realCopy: true,
-        checks: NODE_HANDOFF_CHECKS.map((id) => ({ id, result: "passed" })),
-      },
+  return {
+    id: `node-${arguments_.expectedNodeMajor}`,
+    result: "passed",
+    sourceCommit: arguments_.sourceCommit,
+    artifactSha256: arguments_.artifactSha256,
+    evidence: {
+      nodeMajor: arguments_.expectedNodeMajor,
+      nodeVersion,
+      npmVersion,
+      installedArtifactSha256: arguments_.artifactSha256,
+      realCopy: true,
+      checks: NODE_HANDOFF_CHECKS.map((id) => ({ id, result: "passed" })),
     },
-    arguments_.output,
-  );
+  };
 }
 
-async function runSuppliedTarballHandoff(arguments_: SmokeArguments): Promise<void> {
+async function runSuppliedTarballHandoff(arguments_: SmokeArguments): Promise<PendingSmokeReceipt> {
   const requested = arguments_.tarball!;
   const requestedStat = lstatSync(resolve(requested));
   if (requestedStat.isSymbolicLink() || !requestedStat.isFile() || requestedStat.size < 1) {
@@ -1899,25 +2051,30 @@ async function runSuppliedTarballHandoff(arguments_: SmokeArguments): Promise<vo
     throw new Error("supplied npm tarball SHA-256 differs before install");
   }
   if (arguments_.forHandoff === "artifact-contract") {
-    await runArtifactContractHandoff({
-      ...arguments_,
-      tarball,
-      candidateRoot: arguments_.candidateRoot!,
-      sourceCommit: arguments_.sourceCommit!,
-      artifactSha256: digest,
+    return {
+      kind: "handoff",
       output: arguments_.output!,
-    });
-  } else {
-    await runNodeHandoff({
+      receipt: await runArtifactContractHandoff({
+        ...arguments_,
+        tarball,
+        candidateRoot: arguments_.candidateRoot!,
+        sourceCommit: arguments_.sourceCommit!,
+        artifactSha256: digest,
+      }),
+    };
+  }
+  return {
+    kind: "handoff",
+    output: arguments_.output!,
+    receipt: await runNodeHandoff({
       ...arguments_,
       tarball,
       sourceCommit: arguments_.sourceCommit!,
       artifactSha256: digest,
       handoffNodeBinary: arguments_.handoffNodeBinary!,
       expectedNodeMajor: arguments_.expectedNodeMajor!,
-      output: arguments_.output!,
-    });
-  }
+    }),
+  };
 }
 
 function readManifest(path: string): PackageManifest {
@@ -2261,7 +2418,7 @@ async function runScaffold(
     join(bootstrap, "package.json"),
     JSON.stringify({ name: `kaji-${manager}-bootstrap`, version: "1.0.0", private: true }),
   );
-  const environment = {
+  const environment: NodeJS.ProcessEnv = {
     ...baseEnvironment,
     npm_config_cache: join(root, "npm-cache"),
     BUN_INSTALL_CACHE_DIR: join(root, "bun-cache"),
@@ -2417,7 +2574,7 @@ async function runScaffold(
   for (const compiler of ["typescript57", "typescript"] as const) {
     const tsc = join(generated, `node_modules/${compiler}/bin/tsc`);
     if (!existsSync(tsc)) throw new Error(`generated scaffold is missing ${compiler}`);
-    const phase =
+    const phase: SmokePhase =
       compiler === "typescript57"
         ? `${manager}:compile-typescript-5.7`
         : `${manager}:compile-typescript-current`;
@@ -2527,104 +2684,147 @@ async function runScaffold(
   return { coldSetupToOutputMs, warmRunMs, githubProof };
 }
 
-const rawArguments = process.argv.slice(2);
-if (rawArguments.includes("--for-handoff")) {
-  try {
-    const handoffArguments = parseArguments(rawArguments);
-    workdir = mkdtempSync(join(tmpdir(), "kaji-handoff-smoke-"));
-    installRoot = workdir;
-    await runSuppliedTarballHandoff(handoffArguments);
-  } finally {
-    if (workdir !== "") rmSync(workdir, { recursive: true, force: true });
+export function ordinaryFailureReceipt(
+  error: unknown,
+  arguments_: SmokeArguments,
+  identity: ArtifactIdentity | null,
+  nodeVersion: string,
+): Record<string, unknown> {
+  const retainedIdentity =
+    identity === null
+      ? null
+      : {
+          commit: sanitizeRetainedCommit(identity.commit),
+          manifestSha256: sanitizeRetainedSha256(identity.manifestSha256),
+          artifactSha256: sanitizeRetainedArtifactSha256(identity.artifactSha256),
+        };
+  const retainedFailure =
+    error instanceof SmokeCommandError &&
+    isSmokePhase(error.phase) &&
+    isCommandFailureKind(error.kind)
+      ? { phase: error.phase, kind: error.kind }
+      : { phase: null, kind: "unknown" as const };
+  return {
+    schemaVersion: 1,
+    commit: retainedIdentity?.commit ?? sanitizeRetainedCommit(arguments_.expectedCommit),
+    releaseManifestSha256: retainedIdentity?.manifestSha256 ?? null,
+    artifactSha256: retainedIdentity?.artifactSha256 ?? {},
+    runtime: { version: isRetainedNodeVersion(nodeVersion) ? nodeVersion : process.version },
+    artifacts: {},
+    githubPackageProofs: {},
+    conclusion: "failed",
+    failureCode: identity === null ? "artifact_identity_failed" : "node_smoke_failed",
+    failedPhase: retainedFailure.phase,
+    failureKind: retainedFailure.kind,
+  };
+}
+
+async function main(rawArguments = process.argv.slice(2)): Promise<void> {
+  workdir = "";
+  installRoot = "";
+  if (rawArguments.includes("--for-handoff")) {
+    let pending: PendingSmokeReceipt | null = null;
+    let failure: unknown;
+    try {
+      const handoffArguments = parseArguments(rawArguments);
+      workdir = mkdtempSync(join(tmpdir(), "kaji-handoff-smoke-"));
+      installRoot = workdir;
+      pending = await runSuppliedTarballHandoff(handoffArguments);
+    } catch (error) {
+      failure = error;
+    }
+    finalizeSmokeRun(workdir, pending, null);
+    if (failure !== undefined) throw failure;
+    return;
   }
-} else {
-  const fallbackOutput = requestedOutput(rawArguments);
-  let arguments_: SmokeArguments = {};
-  let receiptIdentity: ArtifactIdentity | null = null;
-  let receiptTarball: string | null = null;
-  let installedPackagePath: string | null = null;
-  let receiptNodeVersion = process.version;
 
   try {
-    arguments_ = parseArguments(rawArguments);
-    workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
-    installRoot = join(workdir, "project");
-    mkdirSync(installRoot, { recursive: true });
-    const requestedTarball = arguments_.tarball;
-    let tarball: string;
-    if (requestedTarball === undefined) {
-      const environment = {
-        ...baseEnvironment,
-        npm_config_cache: join(workdir, "pack-cache"),
-      };
-      const packed = JSON.parse(
-        await runCommand(
-          "npm:pack",
-          "npm",
-          ["pack", "--json", "--ignore-scripts", "--pack-destination", workdir],
-          packageRoot,
-          environment,
-        ),
-      ) as Array<{ filename: string }>;
-      const filename = packed[0]?.filename;
-      if (!filename) throw new Error("npm pack did not report a tarball");
-      tarball = join(workdir, filename);
-    } else {
-      tarball = resolve(requestedTarball);
-      if (!existsSync(tarball)) throw new Error("supplied npm tarball does not exist");
-    }
-    tarball = realpathSync(tarball);
-    receiptTarball = tarball;
-    receiptIdentity = artifactIdentity(
-      tarball,
-      arguments_.releaseManifest,
-      arguments_.expectedCommit,
-    );
+    const fallbackOutput = requestedOutput(rawArguments);
+    let arguments_: SmokeArguments = {};
+    let receiptIdentity: ArtifactIdentity | null = null;
+    let receiptTarball: string | null = null;
+    let installedPackagePath: string | null = null;
+    let receiptNodeVersion = process.version;
+    let pending: PendingSmokeReceipt | null = null;
+    let failure: unknown;
 
-    const nodeVersion = (await runCommand("node:version", nodeBinary, ["--version"])).trim();
-    receiptNodeVersion = nodeVersion;
-    const nodeMajor = Number(/^v(\d+)/.exec(nodeVersion)?.[1]);
-    if (nodeMajor !== 22 && nodeMajor !== 24) {
-      throw new Error(
-        `package smoke requires the tested Node 22 or 24 line, received ${nodeVersion}`,
+    try {
+      arguments_ = parseArguments(rawArguments);
+      workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
+      installRoot = join(workdir, "project");
+      mkdirSync(installRoot, { recursive: true });
+      const requestedTarball = arguments_.tarball;
+      let tarball: string;
+      if (requestedTarball === undefined) {
+        const environment = {
+          ...baseEnvironment,
+          npm_config_cache: join(workdir, "pack-cache"),
+        };
+        const packed = JSON.parse(
+          await runCommand(
+            "npm:pack",
+            "npm",
+            ["pack", "--json", "--ignore-scripts", "--pack-destination", workdir],
+            packageRoot,
+            environment,
+          ),
+        ) as Array<{ filename: string }>;
+        const filename = packed[0]?.filename;
+        if (!filename) throw new Error("npm pack did not report a tarball");
+        tarball = join(workdir, filename);
+      } else {
+        tarball = resolve(requestedTarball);
+        if (!existsSync(tarball)) throw new Error("supplied npm tarball does not exist");
+      }
+      tarball = realpathSync(tarball);
+      receiptTarball = tarball;
+      receiptIdentity = artifactIdentity(
+        tarball,
+        arguments_.releaseManifest,
+        arguments_.expectedCommit,
       );
-    }
 
-    const npmEnvironment = {
-      ...baseEnvironment,
-      npm_config_cache: join(workdir, "npm-cache"),
-    };
-    writeFileSync(
-      join(installRoot, "package.json"),
-      JSON.stringify({ name: "kaji-package-smoke", version: "1.0.0", private: true }),
-    );
-    const packageManifest = readManifest(join(packageRoot, "package.json"));
-    const nodeTypesRange = packageManifest.devDependencies["@types/node"];
-    if (nodeTypesRange === undefined) {
-      throw new Error("package metadata has no supported @types/node range");
-    }
-    const nodeTypesPackage = `@types/node@${nodeTypesRange}`;
-    await install(
-      "npm",
-      "package",
-      installRoot,
-      [tarball, "zod@4.3.6", "openai@6.42.0", "@anthropic-ai/sdk@0.104.1", nodeTypesPackage],
-      npmEnvironment,
-    );
-    if (!existsSync(join(installRoot, "node_modules/@kaji/sdk/dist/cli/init-worker.js"))) {
-      throw new Error("installed package is missing the pinned init worker");
-    }
-    installedPackagePath = realpathSync(join(installRoot, "node_modules/@kaji/sdk"));
-    await runCommand(
-      "npm:audit",
-      "npm",
-      ["audit", "--omit=dev", "--audit-level=high"],
-      installRoot,
-      { ...npmEnvironment, npm_config_audit: "true" },
-      PACKAGE_TIMEOUT_MS,
-    );
+      const nodeVersion = (await runCommand("node:version", nodeBinary, ["--version"])).trim();
+      if (!isRetainedNodeVersion(nodeVersion)) {
+        throw new Error("package smoke requires exact official Node 22 or 24 version output");
+      }
+      receiptNodeVersion = nodeVersion;
 
-    const esm = `
+      const npmEnvironment = {
+        ...baseEnvironment,
+        npm_config_cache: join(workdir, "npm-cache"),
+      };
+      writeFileSync(
+        join(installRoot, "package.json"),
+        JSON.stringify({ name: "kaji-package-smoke", version: "1.0.0", private: true }),
+      );
+      const packageManifest = readManifest(join(packageRoot, "package.json"));
+      const nodeTypesRange = packageManifest.devDependencies["@types/node"];
+      if (nodeTypesRange === undefined) {
+        throw new Error("package metadata has no supported @types/node range");
+      }
+      const nodeTypesPackage = `@types/node@${nodeTypesRange}`;
+      await install(
+        "npm",
+        "package",
+        installRoot,
+        [tarball, "zod@4.3.6", "openai@6.42.0", "@anthropic-ai/sdk@0.104.1", nodeTypesPackage],
+        npmEnvironment,
+      );
+      if (!existsSync(join(installRoot, "node_modules/@kaji/sdk/dist/cli/init-worker.js"))) {
+        throw new Error("installed package is missing the pinned init worker");
+      }
+      installedPackagePath = realpathSync(join(installRoot, "node_modules/@kaji/sdk"));
+      await runCommand(
+        "npm:audit",
+        "npm",
+        ["audit", "--omit=dev", "--audit-level=high"],
+        installRoot,
+        { ...npmEnvironment, npm_config_audit: "true" },
+        PACKAGE_TIMEOUT_MS,
+      );
+
+      const esm = `
 import * as sdk from "@kaji/sdk";
 import * as testing from "@kaji/sdk/testing";
 import * as openai from "@kaji/sdk/openai";
@@ -2641,7 +2841,7 @@ githubRequester.close();
 gmailRequester.close();
 gmailRequester.close();
 `;
-    const cjs = `
+      const cjs = `
 const sdk = require("@kaji/sdk");
 const testing = require("@kaji/sdk/testing");
 const openai = require("@kaji/sdk/openai");
@@ -2658,97 +2858,107 @@ githubRequester.close();
 gmailRequester.close();
 gmailRequester.close();
 `;
-    writeFileSync(join(installRoot, "smoke.mjs"), esm);
-    writeFileSync(join(installRoot, "smoke.cjs"), cjs);
-    await runCommand("exports:esm", nodeBinary, ["smoke.mjs"]);
-    await runCommand("exports:cjs", nodeBinary, ["smoke.cjs"]);
-    const ownerOutput = await runCommand(
-      "cli:help",
-      "bun",
-      ["--no-install", "-e", 'import("@kaji/sdk/cli")', "--", "--help"],
-      installRoot,
-      { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
-    );
-    assertCliOwnerOutput(ownerOutput);
-    const cjsOwnerOutput = await runCommand(
-      "cli:help-cjs",
-      nodeBinary,
-      ["--eval", 'process.argv=[process.execPath,"--help"]; require("@kaji/sdk/cli");'],
-      installRoot,
-      npmEnvironment,
-    );
-    assertCliOwnerOutput(cjsOwnerOutput);
+      writeFileSync(join(installRoot, "smoke.mjs"), esm);
+      writeFileSync(join(installRoot, "smoke.cjs"), cjs);
+      await runCommand("exports:esm", nodeBinary, ["smoke.mjs"]);
+      await runCommand("exports:cjs", nodeBinary, ["smoke.cjs"]);
+      const ownerOutput = await runCommand(
+        "cli:help",
+        "bun",
+        ["--no-install", "-e", 'import("@kaji/sdk/cli")', "--", "--help"],
+        installRoot,
+        { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
+      );
+      assertCliOwnerOutput(ownerOutput);
+      const cjsOwnerOutput = await runCommand(
+        "cli:help-cjs",
+        nodeBinary,
+        ["--eval", 'process.argv=[process.execPath,"--help"]; require("@kaji/sdk/cli");'],
+        installRoot,
+        npmEnvironment,
+      );
+      assertCliOwnerOutput(cjsOwnerOutput);
 
-    const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
-    const quickstart = docs.match(
-      /<!-- installed-quickstart:typescript:start -->\s*```ts\n([\s\S]*?)\n```\s*<!-- installed-quickstart:typescript:end -->/,
-    )?.[1];
-    if (quickstart === undefined)
-      throw new Error("canonical TypeScript quickstart block is missing");
-    writeFileSync(join(installRoot, "docs-quickstart.mts"), quickstart);
-    writeFileSync(
-      join(installRoot, "tsconfig.docs.json"),
-      JSON.stringify({
-        compilerOptions: {
-          module: "NodeNext",
-          moduleResolution: "NodeNext",
-          noEmit: false,
-          outDir: "compiled-docs",
-          skipLibCheck: false,
-          strict: true,
-          target: "ES2022",
-          types: ["node"],
+      const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
+      const quickstart = docs.match(
+        /<!-- installed-quickstart:typescript:start -->\s*```ts\n([\s\S]*?)\n```\s*<!-- installed-quickstart:typescript:end -->/,
+      )?.[1];
+      if (quickstart === undefined)
+        throw new Error("canonical TypeScript quickstart block is missing");
+      writeFileSync(join(installRoot, "docs-quickstart.mts"), quickstart);
+      writeFileSync(
+        join(installRoot, "tsconfig.docs.json"),
+        JSON.stringify({
+          compilerOptions: {
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: false,
+            outDir: "compiled-docs",
+            skipLibCheck: false,
+            strict: true,
+            target: "ES2022",
+            types: ["node"],
+          },
+          include: ["docs-quickstart.mts"],
+        }),
+      );
+      const tsc = join(packageRoot, "node_modules/typescript/bin/tsc");
+      if (!existsSync(tsc)) throw new Error("current TypeScript compiler is missing");
+      await runCommand("docs:compile-typescript-current", nodeBinary, [
+        tsc,
+        "--project",
+        "tsconfig.docs.json",
+      ]);
+      await runCommand("docs:run", nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
+
+      const npmTiming = await runScaffold("npm", tarball, nodeTypesPackage);
+      const bunTiming = await runScaffold("bun", tarball, nodeTypesPackage);
+      assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/@kaji/sdk"));
+      pending = {
+        kind: "ordinary",
+        output: arguments_.output,
+        diagnostics: [
+          JSON.stringify({ npm: npmTiming, bun: bunTiming }),
+          "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",
+        ],
+        receipt: {
+          schemaVersion: 1,
+          commit: receiptIdentity.commit,
+          releaseManifestSha256: receiptIdentity.manifestSha256,
+          artifactSha256: receiptIdentity.artifactSha256,
+          runtime: { version: receiptNodeVersion },
+          artifacts: { tarball: receiptTarball, package: installedPackagePath },
+          githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
+          conclusion: "passed",
+          failureCode: null,
         },
-        include: ["docs-quickstart.mts"],
-      }),
-    );
-    const tsc = join(packageRoot, "node_modules/typescript/bin/tsc");
-    if (!existsSync(tsc)) throw new Error("current TypeScript compiler is missing");
-    await runCommand("docs:compile-typescript-current", nodeBinary, [
-      tsc,
-      "--project",
-      "tsconfig.docs.json",
-    ]);
-    await runCommand("docs:run", nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
-
-    const npmTiming = await runScaffold("npm", tarball, nodeTypesPackage);
-    const bunTiming = await runScaffold("bun", tarball, nodeTypesPackage);
-    assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/@kaji/sdk"));
-    console.log(JSON.stringify({ npm: npmTiming, bun: bunTiming }));
-    console.log(
-      "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",
-    );
-    emitReceipt(
-      {
-        schemaVersion: 1,
-        commit: receiptIdentity.commit,
-        releaseManifestSha256: receiptIdentity.manifestSha256,
-        artifactSha256: receiptIdentity.artifactSha256,
-        runtime: { version: receiptNodeVersion },
-        artifacts: { tarball: receiptTarball, package: installedPackagePath },
-        githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
-        conclusion: "passed",
-        failureCode: null,
-      },
-      arguments_.output,
-    );
-  } catch (error) {
-    emitReceipt(
-      {
-        schemaVersion: 1,
-        commit: receiptIdentity?.commit ?? arguments_.expectedCommit ?? null,
-        releaseManifestSha256: receiptIdentity?.manifestSha256 ?? null,
-        artifactSha256: receiptIdentity?.artifactSha256 ?? {},
-        runtime: { version: receiptNodeVersion },
-        artifacts: { tarball: receiptTarball, package: installedPackagePath },
-        githubPackageProofs: {},
-        conclusion: "failed",
-        failureCode: receiptIdentity === null ? "artifact_identity_failed" : "node_smoke_failed",
-      },
-      arguments_.output ?? fallbackOutput,
-    );
-    throw error;
+      };
+    } catch (error) {
+      failure = error;
+      pending = {
+        kind: "ordinary",
+        output: arguments_.output ?? fallbackOutput,
+        receipt: ordinaryFailureReceipt(error, arguments_, receiptIdentity, receiptNodeVersion),
+      };
+    }
+    const cleanupFailure = new SmokeCommandError("workspace:cleanup", "cleanup");
+    finalizeSmokeRun(workdir, pending, {
+      kind: "ordinary",
+      output: arguments_.output ?? fallbackOutput,
+      receipt: ordinaryFailureReceipt(
+        cleanupFailure,
+        arguments_,
+        receiptIdentity,
+        receiptNodeVersion,
+      ),
+    });
+    if (failure !== undefined) throw failure;
   } finally {
-    if (workdir !== "") rmSync(workdir, { recursive: true, force: true });
+    workdir = "";
+    installRoot = "";
   }
+}
+
+if (import.meta.main) {
+  await main();
 }

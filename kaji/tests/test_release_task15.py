@@ -66,7 +66,7 @@ def _github_package_proof(runtime: str) -> dict[str, object]:
     assert runtime == "typescript"
     read_tools = TYPESCRIPT_GITHUB_TOOLS[2:]
     return {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "evidenceClass": "offline_exact_artifact_smoke",
         "integration": "github",
         "runtime": "typescript",
@@ -77,7 +77,7 @@ def _github_package_proof(runtime: str) -> dict[str, object]:
         "packageCatalogVersion": "0.2.0",
         "apiFixtureVersion": "1.0.0",
         "sharedFixtureCaseCount": 23,
-        "publicScenarioCount": 14,
+        "publicScenarioCount": 15,
         "packageCatalog": {
             "schemaVersion": "1.0.0",
             "catalogVersion": "0.2.0",
@@ -153,6 +153,15 @@ def _github_package_proof(runtime: str) -> dict[str, object]:
             "started",
             "completed",
         ],
+        "githubFailureRecovery": {
+            "error_code": "INTEGRATION_AUTH_REQUIRED",
+            "reason_code": "github_token_missing",
+            "recovery_code": "CONFIGURE_GITHUB_TOKEN",
+            "doc_url": ("https://kaji.dev/docs/integrations/recovery-v1#github-token"),
+        },
+        "githubObservabilitySinksVerified": True,
+        "unknownMutationPreserved": True,
+        "mutationRetries": 0,
         "lifecycle": {
             "githubFailure": {
                 "stages": ["requested", "started", "failed"],
@@ -2005,10 +2014,16 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert job.count("uses: actions/upload-artifact@") == 2
         assert "-initial" in job
         assert "compatibility-receipt.json" in job
-        assert '.conclusion == "passed" and .failureCode == null' in job
+        assert (
+            '.conclusion == "passed" and (keys == passed_keys) and .failureCode == null'
+        ) in job
         assert ".githubPackageProofs" in job
         assert 'runtime: "python", network: "scripted"' in job
-        assert 'schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke"' in job
+        assert 'schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke"' in job
+        assert "publicScenarioCount: 15" in job
+        assert 'reason_code: "github_token_missing"' in job
+        assert "githubObservabilitySinksVerified: true" in job
+        assert "unknownMutationPreserved: true, mutationRetries: 0" in job
         assert 'runtime: "typescript", network: "blocked"' in job
         assert "toolCount: 15" in job
         assert "readToolCount: 13" in job
@@ -2122,7 +2137,7 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
             ]["typescriptCurrent"]["version"] = version
         rejected, rejected_receipt = run_case(label, invalid_semver)
         assert rejected.returncode != 0
-        assert rejected_receipt["conclusion"] == "failed"
+        assert rejected_receipt["conclusion"] == "not_run"
         assert rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     for label, field, value in (
@@ -2139,7 +2154,7 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
             bun_proof["policyBeforeRequest"]["tokenLookups"] = value
         rejected, rejected_receipt = run_case(label, divergent)
         assert rejected.returncode != 0
-        assert rejected_receipt["conclusion"] == "failed"
+        assert rejected_receipt["conclusion"] == "not_run"
         assert rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
 
@@ -2218,6 +2233,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert setup_failure.returncode == 0
     assert setup_receipt["conclusion"] == "failed"
     assert setup_receipt["failureCode"] == "runtime_setup_not_completed"
+    assert setup_receipt["failedPhase"] is None
+    assert setup_receipt["failureKind"] == "unknown"
 
     verify_failure, verify_receipt, _ = run_case(
         "verify-failure",
@@ -2227,6 +2244,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert verify_failure.returncode == 0
     assert verify_receipt["conclusion"] == "failed"
     assert verify_receipt["failureCode"] == "artifact_verification_not_completed"
+    assert verify_receipt["failedPhase"] is None
+    assert verify_receipt["failureKind"] == "unknown"
 
     all_success: tuple[str, str, str, str, str, str] = (
         "success",
@@ -2242,7 +2261,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         outcomes=all_success,
     )
     assert nominal_missing.returncode != 0
-    assert nominal_receipt["conclusion"] == "failed"
+    assert nominal_receipt["conclusion"] == "not_run"
     assert nominal_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     identity_free_passed: dict[str, object] = {
@@ -2257,7 +2276,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         outcomes=all_success,
     )
     assert identity_free.returncode != 0
-    assert identity_free_receipt["conclusion"] == "failed"
+    assert identity_free_receipt["conclusion"] == "not_run"
     assert identity_free_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     if runtime_kind == "python":
@@ -2310,7 +2329,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             outcomes=all_success,
         )
         assert invalid_identity.returncode != 0
-        assert invalid_receipt["conclusion"] == "failed"
+        assert invalid_receipt["conclusion"] == "not_run"
         assert invalid_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     invalid_proofs = dict(cast(dict[str, object], passed["githubPackageProofs"]))
@@ -2325,7 +2344,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         outcomes=all_success,
     )
     assert invalid_proof.returncode != 0
-    assert invalid_proof_receipt["conclusion"] == "failed"
+    assert invalid_proof_receipt["conclusion"] == "not_run"
     assert invalid_proof_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     if runtime_kind == "node":
@@ -2357,19 +2376,66 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 outcomes=all_success,
             )
             assert rejected.returncode != 0
-            assert rejected_receipt["conclusion"] == "failed"
+            assert rejected_receipt["conclusion"] == "not_run"
             assert (
                 rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
             )
+
+    failed: dict[str, object] = {
+        "schemaVersion": 1,
+        "commit": commit,
+        "releaseManifestSha256": None,
+        "artifactSha256": {"attacker": "DO_NOT_RETAIN_ARTIFACT"},
+        "runtime": {"secret": "DO_NOT_RETAIN_RUNTIME"},
+        "artifacts": {"secret": "DO_NOT_RETAIN_PATH"},
+        "githubPackageProofs": {"secret": "DO_NOT_RETAIN_PROOF"},
+        "conclusion": "failed",
+        "failureCode": "node_smoke_failed",
+        "failedPhase": "npm:package-install",
+        "failureKind": "timeout",
+    }
+    classified_failure, classified_receipt, _ = run_case(
+        "classified-failure",
+        receipt=failed,
+        outcomes=("success", "success", "success", "success", "success", "failure"),
+    )
+    assert classified_failure.returncode == 0
+    assert classified_receipt["conclusion"] == "failed"
+    assert classified_receipt["failureCode"] == "node_smoke_failed"
+    assert classified_receipt["failedPhase"] == "npm:package-install"
+    assert classified_receipt["failureKind"] == "timeout"
+    assert classified_receipt["artifactSha256"] == {}
+    assert classified_receipt["artifacts"] == {}
+    assert classified_receipt["githubPackageProofs"] == {}
+    assert classified_receipt["runtime"] == {
+        "kind": runtime_kind,
+        "requestedVersion": runtime_version,
+    }
+    assert "DO_NOT_RETAIN" not in json.dumps(classified_receipt)
+
+    for label, override in (
+        ("invalid-failure-phase", {"failedPhase": "handoff:attacker"}),
+        ("invalid-failure-kind", {"failureKind": "attacker"}),
+        ("extra-failure-field", {"secretCanary": "DO_NOT_RETAIN_CANARY"}),
+    ):
+        rejected_failure, rejected_receipt, _ = run_case(
+            label,
+            receipt={**failed, **override},
+            outcomes=("success", "success", "success", "success", "success", "failure"),
+        )
+        assert rejected_failure.returncode != 0
+        assert rejected_receipt["conclusion"] == "not_run"
+        assert rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+        assert "DO_NOT_RETAIN" not in json.dumps(rejected_receipt)
 
     interrupted_passed, interrupted_receipt, _ = run_case(
         "interrupted-passed",
         receipt=passed,
         outcomes=("success", "success", "success", "success", "success", "cancelled"),
     )
-    assert interrupted_passed.returncode == 0
-    assert interrupted_receipt["conclusion"] == "failed"
-    assert interrupted_receipt["failureCode"] == "compatibility_smoke_not_completed"
+    assert interrupted_passed.returncode != 0
+    assert interrupted_receipt["conclusion"] == "not_run"
+    assert interrupted_receipt["failureCode"] == "compatibility_receipt_not_terminal"
 
     nominal_passed, passed_receipt, original = run_case(
         "nominal-passed",
@@ -2832,6 +2898,40 @@ def test_release_evidence_validator_requires_identical_typescript_installed_proo
     }
 
     validator.validate_github_package_proofs(matching, "typescript")
+
+    hostile_mutations = {
+        "schema-v4": ("schemaVersion", 4),
+        "scenario-count-14": ("publicScenarioCount", 14),
+        "mutation-retry": ("mutationRetries", 1),
+        "unknown-mutation-false": ("unknownMutationPreserved", False),
+    }
+    for label, (field, value) in hostile_mutations.items():
+        invalid = json.loads(json.dumps(matching))
+        for installer in ("npm", "bun"):
+            invalid[installer][field] = value
+        with pytest.raises(RuntimeError) as error:
+            validator.validate_github_package_proofs(invalid, "typescript")
+        assert str(error.value) == "github_package_proof_invalid", label
+
+    for field in (
+        "githubFailureRecovery",
+        "githubObservabilitySinksVerified",
+        "unknownMutationPreserved",
+        "mutationRetries",
+    ):
+        missing = json.loads(json.dumps(matching))
+        for installer in ("npm", "bun"):
+            del missing[installer][field]
+        with pytest.raises(RuntimeError) as error:
+            validator.validate_github_package_proofs(missing, "typescript")
+        assert str(error.value) == "github_package_proof_invalid", field
+
+    extra = json.loads(json.dumps(matching))
+    for installer in ("npm", "bun"):
+        extra[installer]["secretCanary"] = "sk-proof-canary"
+    with pytest.raises(RuntimeError) as extra_error:
+        validator.validate_github_package_proofs(extra, "typescript")
+    assert str(extra_error.value) == "github_package_proof_invalid"
 
     for _, version in HOSTILE_TYPESCRIPT_CURRENT_VERSIONS:
         invalid_semver = json.loads(json.dumps(matching))

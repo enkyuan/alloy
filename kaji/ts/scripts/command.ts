@@ -86,6 +86,29 @@ export class CommandShuttingDownError extends CommandError {
   }
 }
 
+export type CommandFailureKind =
+  | "unsupported_host"
+  | "start"
+  | "exit"
+  | "timeout"
+  | "output_limit"
+  | "cleanup"
+  | "capture"
+  | "shutting_down"
+  | "unknown";
+
+export function classifyCommandFailure(error: unknown): CommandFailureKind {
+  if (error instanceof UnsupportedReleaseHostError) return "unsupported_host";
+  if (error instanceof CommandStartError) return "start";
+  if (error instanceof CommandExitError) return "exit";
+  if (error instanceof CommandTimeoutError) return "timeout";
+  if (error instanceof CommandOutputLimitError) return "output_limit";
+  if (error instanceof CommandCleanupError) return "cleanup";
+  if (error instanceof CommandCaptureError) return "capture";
+  if (error instanceof CommandShuttingDownError) return "shutting_down";
+  return "unknown";
+}
+
 interface ActiveGroup {
   readonly settle: (bounded: boolean) => Promise<CommandError | undefined>;
 }

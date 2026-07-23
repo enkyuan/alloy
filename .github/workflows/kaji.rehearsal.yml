@@ -383,6 +383,15 @@ jobs:
               break
             fi
           done
+          smoke_began=true
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
+            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
+            "$VERIFICATION_OUTCOME"; do
+            if [ "$outcome" != success ]; then
+              smoke_began=false
+              break
+            fi
+          done
           terminal=false
           if [ -f "$receipt" ] && jq -e \
             --arg commit "$EXPECTED_COMMIT" \
@@ -390,6 +399,21 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def failure_kind:
+              type == "string" and . as $kind |
+              ["unsupported_host", "start", "exit", "timeout", "output_limit",
+               "cleanup", "capture", "shutting_down", "unknown"] |
+              index($kind) != null;
+            def smoke_phase:
+              type == "string" and
+              test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
+            def passed_keys:
+              ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
+               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion"];
+            def failed_keys:
+              ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
+               "failureCode", "failureKind", "githubPackageProofs",
+               "releaseManifestSha256", "runtime", "schemaVersion"];
             def github_tools: [
               "add_comment", "create_issue", "get_file", "get_issue", "list_issues",
               "search_code", "get_commit", "get_pull_request", "list_pull_request_files",
@@ -412,12 +436,12 @@ jobs:
               ($current | type == "string" and
                 test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$") and . != "5.7.3") and
               $proof == {
-                schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke",
+                schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke",
                 integration: "github", runtime: "typescript", network: "blocked",
                 liveProvider: false, sharedAbiVersion: "1.0.0",
                 packageAbiSchemaVersion: "1.0.0", packageCatalogVersion: "0.2.0",
                 apiFixtureVersion: "1.0.0", sharedFixtureCaseCount: 23,
-                publicScenarioCount: 14,
+                publicScenarioCount: 15,
                 packageCatalog: {
                   schemaVersion: "1.0.0", catalogVersion: "0.2.0", toolCount: 15,
                   readToolCount: 13, tools: github_tools, readTools: github_read_tools,
@@ -450,6 +474,11 @@ jobs:
                 repositoryDeniedBeforeCredentialAccess: true,
                 githubCatalogEventsVerified: ["requested", "started", "failed"],
                 genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+                githubFailureRecovery: {error_code: "INTEGRATION_AUTH_REQUIRED",
+                  reason_code: "github_token_missing", recovery_code: "CONFIGURE_GITHUB_TOKEN",
+                  doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token"},
+                githubObservabilitySinksVerified: true,
+                unknownMutationPreserved: true, mutationRetries: 0,
                 lifecycle: {
                   githubFailure: {stages: ["requested", "started", "failed"],
                     providerAlias: "github_get_file", catalogName: "github.get_file",
@@ -468,9 +497,11 @@ jobs:
               elif $runtime == "typescript" then typescript_github_proof
               else false end;
             (.schemaVersion == 1) and (.commit == $commit) and (
-              (.conclusion == "failed" and
-               (.failureCode | type == "string" and length > 0)) or
-              (.conclusion == "passed" and .failureCode == null and
+              (.conclusion == "failed" and (keys == failed_keys) and
+               (.failureCode == "artifact_identity_failed" or
+                .failureCode == "node_smoke_failed") and
+               (.failedPhase | smoke_phase) and (.failureKind | failure_kind)) or
+              (.conclusion == "passed" and (keys == passed_keys) and .failureCode == null and
                (.releaseManifestSha256 | sha256) and (
                 if $kind == "python" then
                   (.artifactSha256 |
@@ -517,13 +548,33 @@ jobs:
             [ "$(jq -r '.conclusion' "$receipt")" = passed ]; then
             terminal=false
           fi
-          if [ "$terminal" != true ]; then
-            if [ -f "$receipt" ] && jq -e --arg commit "$EXPECTED_COMMIT" \
-              'type == "object" and .schemaVersion == 1 and .commit == $commit' \
-              "$receipt" >/dev/null; then
-              jq --arg failureCode "$failure_code" \
-                '. + {conclusion: "failed", failureCode: $failureCode}' \
-                "$receipt" >"$temporary"
+          if [ "$terminal" = true ] && \
+            [ "$(jq -r '.conclusion' "$receipt")" = failed ]; then
+            jq --null-input \
+              --arg commit "$EXPECTED_COMMIT" \
+              --arg failureCode "$(jq -r '.failureCode' "$receipt")" \
+              --arg failedPhase "$(jq -r '.failedPhase' "$receipt")" \
+              --arg failureKind "$(jq -r '.failureKind' "$receipt")" \
+              --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+              --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                failureCode: $failureCode, failedPhase: $failedPhase,
+                failureKind: $failureKind,
+                runtime: {kind: $kind, requestedVersion: $version},
+                releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                githubPackageProofs: {}}' >"$temporary"
+            mv "$temporary" "$receipt"
+          elif [ "$terminal" != true ]; then
+            if [ "$smoke_began" = true ]; then
+              jq --null-input \
+                --arg commit "$EXPECTED_COMMIT" \
+                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+                '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+                  failureCode: "compatibility_receipt_not_terminal",
+                  runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                  githubPackageProofs: {}}' >"$temporary"
             else
               jq --null-input \
                 --arg commit "$EXPECTED_COMMIT" \
@@ -531,9 +582,10 @@ jobs:
                 --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
                 --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
                 '{schemaVersion: 1, commit: $commit, conclusion: "failed",
-                  failureCode: $failureCode, runtime: {kind: $kind, requestedVersion: $version},
-                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {}}' \
-                >"$temporary"
+                  failureCode: $failureCode, failedPhase: null, failureKind: "unknown",
+                  runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                  githubPackageProofs: {}}' >"$temporary"
             fi
             mv "$temporary" "$receipt"
           fi
@@ -545,6 +597,10 @@ jobs:
           mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
             echo "compatibility steps succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
+          if [ "$smoke_began" = true ] && [ "$terminal" != true ]; then
+            echo "compatibility smoke ran without classified terminal evidence" >&2
             exit 1
           fi
       - name: Retain final compatibility receipt
@@ -662,6 +718,15 @@ jobs:
               break
             fi
           done
+          smoke_began=true
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
+            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
+            "$VERIFICATION_OUTCOME"; do
+            if [ "$outcome" != success ]; then
+              smoke_began=false
+              break
+            fi
+          done
           terminal=false
           if [ -f "$receipt" ] && jq -e \
             --arg commit "$EXPECTED_COMMIT" \
@@ -669,6 +734,21 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def failure_kind:
+              type == "string" and . as $kind |
+              ["unsupported_host", "start", "exit", "timeout", "output_limit",
+               "cleanup", "capture", "shutting_down", "unknown"] |
+              index($kind) != null;
+            def smoke_phase:
+              type == "string" and
+              test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
+            def passed_keys:
+              ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
+               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion"];
+            def failed_keys:
+              ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
+               "failureCode", "failureKind", "githubPackageProofs",
+               "releaseManifestSha256", "runtime", "schemaVersion"];
             def github_tools: [
               "add_comment", "create_issue", "get_file", "get_issue", "list_issues",
               "search_code", "get_commit", "get_pull_request", "list_pull_request_files",
@@ -691,12 +771,12 @@ jobs:
               ($current | type == "string" and
                 test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$") and . != "5.7.3") and
               $proof == {
-                schemaVersion: 4, evidenceClass: "offline_exact_artifact_smoke",
+                schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke",
                 integration: "github", runtime: "typescript", network: "blocked",
                 liveProvider: false, sharedAbiVersion: "1.0.0",
                 packageAbiSchemaVersion: "1.0.0", packageCatalogVersion: "0.2.0",
                 apiFixtureVersion: "1.0.0", sharedFixtureCaseCount: 23,
-                publicScenarioCount: 14,
+                publicScenarioCount: 15,
                 packageCatalog: {
                   schemaVersion: "1.0.0", catalogVersion: "0.2.0", toolCount: 15,
                   readToolCount: 13, tools: github_tools, readTools: github_read_tools,
@@ -729,6 +809,11 @@ jobs:
                 repositoryDeniedBeforeCredentialAccess: true,
                 githubCatalogEventsVerified: ["requested", "started", "failed"],
                 genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+                githubFailureRecovery: {error_code: "INTEGRATION_AUTH_REQUIRED",
+                  reason_code: "github_token_missing", recovery_code: "CONFIGURE_GITHUB_TOKEN",
+                  doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token"},
+                githubObservabilitySinksVerified: true,
+                unknownMutationPreserved: true, mutationRetries: 0,
                 lifecycle: {
                   githubFailure: {stages: ["requested", "started", "failed"],
                     providerAlias: "github_get_file", catalogName: "github.get_file",
@@ -747,9 +832,11 @@ jobs:
               elif $runtime == "typescript" then typescript_github_proof
               else false end;
             (.schemaVersion == 1) and (.commit == $commit) and (
-              (.conclusion == "failed" and
-               (.failureCode | type == "string" and length > 0)) or
-              (.conclusion == "passed" and .failureCode == null and
+              (.conclusion == "failed" and (keys == failed_keys) and
+               (.failureCode == "artifact_identity_failed" or
+                .failureCode == "node_smoke_failed") and
+               (.failedPhase | smoke_phase) and (.failureKind | failure_kind)) or
+              (.conclusion == "passed" and (keys == passed_keys) and .failureCode == null and
                (.releaseManifestSha256 | sha256) and (
                 if $kind == "python" then
                   (.artifactSha256 |
@@ -796,13 +883,33 @@ jobs:
             [ "$(jq -r '.conclusion' "$receipt")" = passed ]; then
             terminal=false
           fi
-          if [ "$terminal" != true ]; then
-            if [ -f "$receipt" ] && jq -e --arg commit "$EXPECTED_COMMIT" \
-              'type == "object" and .schemaVersion == 1 and .commit == $commit' \
-              "$receipt" >/dev/null; then
-              jq --arg failureCode "$failure_code" \
-                '. + {conclusion: "failed", failureCode: $failureCode}' \
-                "$receipt" >"$temporary"
+          if [ "$terminal" = true ] && \
+            [ "$(jq -r '.conclusion' "$receipt")" = failed ]; then
+            jq --null-input \
+              --arg commit "$EXPECTED_COMMIT" \
+              --arg failureCode "$(jq -r '.failureCode' "$receipt")" \
+              --arg failedPhase "$(jq -r '.failedPhase' "$receipt")" \
+              --arg failureKind "$(jq -r '.failureKind' "$receipt")" \
+              --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+              --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
+                failureCode: $failureCode, failedPhase: $failedPhase,
+                failureKind: $failureKind,
+                runtime: {kind: $kind, requestedVersion: $version},
+                releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                githubPackageProofs: {}}' >"$temporary"
+            mv "$temporary" "$receipt"
+          elif [ "$terminal" != true ]; then
+            if [ "$smoke_began" = true ]; then
+              jq --null-input \
+                --arg commit "$EXPECTED_COMMIT" \
+                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
+                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
+                '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+                  failureCode: "compatibility_receipt_not_terminal",
+                  runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                  githubPackageProofs: {}}' >"$temporary"
             else
               jq --null-input \
                 --arg commit "$EXPECTED_COMMIT" \
@@ -810,9 +917,10 @@ jobs:
                 --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
                 --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
                 '{schemaVersion: 1, commit: $commit, conclusion: "failed",
-                  failureCode: $failureCode, runtime: {kind: $kind, requestedVersion: $version},
-                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {}}' \
-                >"$temporary"
+                  failureCode: $failureCode, failedPhase: null, failureKind: "unknown",
+                  runtime: {kind: $kind, requestedVersion: $version},
+                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+                  githubPackageProofs: {}}' >"$temporary"
             fi
             mv "$temporary" "$receipt"
           fi
@@ -824,6 +932,10 @@ jobs:
           mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
             echo "compatibility steps succeeded without a passed terminal receipt" >&2
+            exit 1
+          fi
+          if [ "$smoke_began" = true ] && [ "$terminal" != true ]; then
+            echo "compatibility smoke ran without classified terminal evidence" >&2
             exit 1
           fi
       - name: Retain final compatibility receipt

@@ -180,7 +180,7 @@ def _typescript_github_package_proof_valid(value: Any) -> bool:
     tools = list(TYPESCRIPT_GITHUB_TOOLS)
     read_tools = list(TYPESCRIPT_GITHUB_READ_TOOLS)
     expected = {
-        "schemaVersion": 4,
+        "schemaVersion": 5,
         "evidenceClass": "offline_exact_artifact_smoke",
         "integration": "github",
         "runtime": "typescript",
@@ -191,7 +191,7 @@ def _typescript_github_package_proof_valid(value: Any) -> bool:
         "packageCatalogVersion": "0.2.0",
         "apiFixtureVersion": "1.0.0",
         "sharedFixtureCaseCount": 23,
-        "publicScenarioCount": 14,
+        "publicScenarioCount": 15,
         "packageCatalog": {
             "schemaVersion": "1.0.0",
             "catalogVersion": "0.2.0",
@@ -267,6 +267,15 @@ def _typescript_github_package_proof_valid(value: Any) -> bool:
             "started",
             "completed",
         ],
+        "githubFailureRecovery": {
+            "error_code": "INTEGRATION_AUTH_REQUIRED",
+            "reason_code": "github_token_missing",
+            "recovery_code": "CONFIGURE_GITHUB_TOKEN",
+            "doc_url": ("https://kaji.dev/docs/integrations/recovery-v1#github-token"),
+        },
+        "githubObservabilitySinksVerified": True,
+        "unknownMutationPreserved": True,
+        "mutationRetries": 0,
         "lifecycle": {
             "githubFailure": {
                 "stages": ["requested", "started", "failed"],

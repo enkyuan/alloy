@@ -6,9 +6,13 @@ import process from "node:process";
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyCommandFailure,
+  CommandCaptureError,
+  CommandError,
   CommandExitError,
   CommandCleanupError,
   CommandOutputLimitError,
+  CommandShuttingDownError,
   CommandStartError,
   CommandTimeoutError,
   runCommand,
@@ -35,6 +39,21 @@ function findBun(): string | undefined {
 }
 
 describe("installed-package command runner", () => {
+  it.each([
+    [new UnsupportedReleaseHostError(), "unsupported_host"],
+    [new CommandStartError(), "start"],
+    [new CommandExitError(9), "exit"],
+    [new CommandTimeoutError(1_000), "timeout"],
+    [new CommandOutputLimitError("stdout", 64), "output_limit"],
+    [new CommandCleanupError(), "cleanup"],
+    [new CommandCaptureError("stderr"), "capture"],
+    [new CommandShuttingDownError(), "shutting_down"],
+    [new CommandError("opaque"), "unknown"],
+    [new Error("opaque"), "unknown"],
+  ] as const)("classifies %s by concrete error identity", (error, expected) => {
+    expect(classifyCommandFailure(error)).toBe(expected);
+  });
+
   it("captures bytes and returns intentional nonzero statuses", async () => {
     const result = await runCommand({
       command: process.execPath,

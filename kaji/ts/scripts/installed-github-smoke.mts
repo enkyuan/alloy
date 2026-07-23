@@ -94,6 +94,12 @@ const GITHUB_TOKEN_RECOVERY = Object.freeze({
   recovery_code: "CONFIGURE_GITHUB_TOKEN",
   doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
 });
+const GITHUB_MUTATION_RECOVERY = Object.freeze({
+  error_code: "TOOL_EXECUTION_FAILED",
+  reason_code: "github_mutation_unknown",
+  recovery_code: "RECONCILE_GITHUB_MUTATION",
+  doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-mutation-unknown",
+});
 
 interface ApiFixture {
   readonly version: "1.0.0";
@@ -421,6 +427,7 @@ async function executeCall(
   events: ReadonlyArray<{
     type: string;
     tool_name?: string;
+    outcome?: "not_started" | "failed" | "unknown";
     metadata: Readonly<Record<string, unknown>>;
   }>;
 }> {
@@ -450,6 +457,7 @@ async function executeCall(
     events: (await store.getEvents("installed-proof-session")) as Array<{
       type: string;
       tool_name?: string;
+      outcome?: "not_started" | "failed" | "unknown";
       metadata: Readonly<Record<string, unknown>>;
     }>,
   };
@@ -886,6 +894,12 @@ async function runProof(argv: string[]) {
       sdk.EventType.TOOL_CALL_FAILED,
     ]);
     publicScenarios.push("approval-rejection");
+    const policyBeforeRequest = {
+      testFile: "kaji/ts/tests/github-registry.test.ts" as const,
+      testName: "rejects approval for github_create_issue before token or HTTP" as const,
+      tokenLookups: approvalTokenCalls,
+      requestAttempts: networkAttempts,
+    };
 
     proofStage = "validation-failure";
     let validationTokenCalls = 0;
@@ -947,6 +961,38 @@ async function runProof(argv: string[]) {
     ) {
       throw new Error("installed GitHub failure lost its certified recovery tuple");
     }
+    const mutationAttemptsBefore = networkAttempts;
+    const mutationIntegration = github.createGithubIntegration({
+      tokenFor: async () => "artifact-proof-token",
+      repositories: [fixture.repository],
+    });
+    const mutation = await executeCall(sdk, mutationIntegration, {
+      id: "mutation",
+      name: "github_add_comment",
+      arguments: {
+        repository: fixture.repository,
+        issue_number: 1,
+        body: "installed artifact mutation ambiguity proof",
+      },
+    });
+    mutationIntegration.close();
+    const mutationFailedEvent = mutation.events.find(
+      (event) => event.type === sdk.EventType.TOOL_CALL_FAILED,
+    );
+    if (
+      networkAttempts - mutationAttemptsBefore !== 1 ||
+      !isDeepStrictEqual(recoveryTuple(mutation.results[0]), GITHUB_MUTATION_RECOVERY) ||
+      !isDeepStrictEqual(recoveryTuple(mutationFailedEvent), GITHUB_MUTATION_RECOVERY) ||
+      mutation.results[0]?.outcome !== "unknown" ||
+      mutationFailedEvent?.outcome !== "unknown"
+    ) {
+      throw new Error("installed GitHub mutation ambiguity was not preserved");
+    }
+    assertToolEvents(sdk, mutation.events, "github_add_comment", "github.add_comment", [
+      sdk.EventType.TOOL_CALL_REQUESTED,
+      sdk.EventType.TOOL_CALL_STARTED,
+      sdk.EventType.TOOL_CALL_FAILED,
+    ]);
     publicScenarios.push("execution-failure");
 
     proofStage = "completed-event";
@@ -1044,7 +1090,8 @@ async function runProof(argv: string[]) {
     proofStage = "assertions";
     if (
       JSON.stringify(publicScenarios) !== JSON.stringify(EXPECTED_PUBLIC_SCENARIOS) ||
-      networkAttempts !== 0
+      networkAttempts !== 1 ||
+      policyBeforeRequest.requestAttempts !== 0
     ) {
       throw new Error("installed GitHub public proof assertions failed");
     }
@@ -1104,16 +1151,13 @@ async function runProof(argv: string[]) {
       genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
       githubFailureRecovery: GITHUB_TOKEN_RECOVERY,
       githubObservabilitySinksVerified: true,
+      unknownMutationPreserved: true,
+      mutationRetries: 0,
       lifecycle: {
         githubFailure: githubFailureLifecycle,
         syntheticCompletion: syntheticCompletionLifecycle,
       },
-      policyBeforeRequest: {
-        testFile: "kaji/ts/tests/github-registry.test.ts",
-        testName: "rejects approval for github_create_issue before token or HTTP",
-        tokenLookups: approvalTokenCalls,
-        requestAttempts: networkAttempts,
-      },
+      policyBeforeRequest,
       aliasCollisionRejected: true,
       conclusion: "passed",
       failureCode: null,

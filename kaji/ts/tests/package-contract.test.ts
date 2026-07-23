@@ -21,6 +21,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { assertCliListOutput } from "../scripts/cli_assertions";
+import {
+  finalizeSmokeRun,
+  ordinaryFailureReceipt,
+  SmokeCommandError,
+  type PendingSmokeReceipt,
+  type SmokeFinalizerDependencies,
+} from "../scripts/smoke_package.mts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "..");
@@ -193,6 +200,8 @@ const GITHUB_PACKAGE_PROOF = {
     doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
   },
   githubObservabilitySinksVerified: true,
+  unknownMutationPreserved: true,
+  mutationRetries: 0,
   lifecycle: {
     githubFailure: {
       stages: ["requested", "started", "failed"],
@@ -533,7 +542,7 @@ describe("npm contract artifact", () => {
       "const nodeTypesPackage = `@types/node@${nodeTypesRange}`",
       "type SmokePhase =",
       "error instanceof CommandError",
-      "package smoke failed at phase ${phase}",
+      "new SmokeCommandError(phase, classifyCommandFailure(error))",
       "`${manager}:${stage}-install`",
       "`${manager}:cli-init`",
       "`${manager}:cli-owner-conflict`",
@@ -628,9 +637,7 @@ describe("npm contract artifact", () => {
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
     expect(source.match(/completed\.stderr/g)).toHaveLength(2);
-    expect(source).toContain(
-      'phase.startsWith("handoff:")\n        ? safeHandoffDiagnostic(`${completed.stdout}\\n${completed.stderr}`)',
-    );
+    expect(source).toContain("const diagnostic = safeHandoffDiagnostic(completed.stderr)");
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
     expect(source).not.toContain(
@@ -644,6 +651,461 @@ describe("npm contract artifact", () => {
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
     );
+  });
+
+  it("keeps package-smoke phases finite and cleanup inside the receipt boundary", () => {
+    const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
+    const handoffValues = source.slice(
+      source.indexOf("const HANDOFF_PHASES = ["),
+      source.indexOf("] as const;", source.indexOf("const HANDOFF_PHASES = [")),
+    );
+    expect([...handoffValues.matchAll(/"handoff:([^"]+)"/g)].map((match) => match[1])).toEqual([
+      "npm-install",
+      "bun-install",
+      "typescript57-version",
+      "typescriptCurrent-version",
+      "typescript57-esm",
+      "typescript57-cjs",
+      "typescriptCurrent-esm",
+      "typescriptCurrent-cjs",
+      "npm-github-proof",
+      "bun-github-proof",
+      "archive-list",
+      "archive-types",
+      "archive-extract",
+      "policy-before-token",
+      "node-version",
+      "npm-version",
+      "node-esm",
+      "node-commonjs",
+    ]);
+    expect(source).toContain('"workspace:cleanup",');
+    expect(source).toContain("const SMOKE_PHASES = new Set<string>");
+    expect(source).not.toContain("`handoff:${string}`");
+    expect(source).toContain("const PACKAGE_TIMEOUT_MS = 300_000");
+    expect(source).toContain("finalizeSmokeRun(");
+  });
+
+  it("retains only the classified phase and kind on smoke command failures", () => {
+    const error = new SmokeCommandError("npm:pack", "exit");
+    Reflect.set(error, "message", "sk-package-canary");
+
+    expect(Object.keys(error)).toEqual(["phase", "kind"]);
+    expect(JSON.parse(JSON.stringify(error))).toEqual({
+      phase: "npm:pack",
+      kind: "exit",
+    });
+    expect(JSON.stringify(error)).not.toContain("sk-package-canary");
+  });
+
+  it("rejects forged typed-error fields at the ordinary receipt boundary", () => {
+    const canary = "SK_FORGED_ERROR_CANARY";
+    const forged = Object.assign(new SmokeCommandError("npm:pack", "exit"), {
+      phase: `phase-${canary}`,
+      kind: `kind-${canary}`,
+      message: `message-${canary}`,
+      cause: { secret: `cause-${canary}` },
+      stdout: `stdout-${canary}`,
+      stderr: `stderr-${canary}`,
+      env: { SECRET: `env-${canary}` },
+    });
+    const forgedReceipt = ordinaryFailureReceipt(forged, {}, null, process.version);
+
+    expect(forgedReceipt).toMatchObject({
+      failedPhase: null,
+      failureKind: "unknown",
+      artifacts: {},
+      githubPackageProofs: {},
+    });
+    expect(JSON.stringify(forgedReceipt)).not.toContain(canary);
+
+    expect(
+      ordinaryFailureReceipt(
+        new SmokeCommandError("handoff:node-version", "output_limit"),
+        {},
+        null,
+        process.version,
+      ),
+    ).toMatchObject({
+      failedPhase: "handoff:node-version",
+      failureKind: "output_limit",
+    });
+  });
+
+  it("omits absolute workspace paths from raw ordinary failure receipts", () => {
+    const state = {
+      identity: {
+        commit: "a".repeat(40),
+        manifestSha256: "b".repeat(64),
+        artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": "c".repeat(64) },
+      },
+      receiptTarball: "/private/secret/sk-tarball-canary.tgz",
+      installedPackagePath: "/private/secret/sk-package-canary/node_modules/@kaji/sdk",
+      nodeVersion: "v24.11.0",
+    };
+    const receipt = ordinaryFailureReceipt(
+      new SmokeCommandError("npm:package-install", "timeout"),
+      { expectedCommit: state.identity.commit },
+      state.identity,
+      state.nodeVersion,
+    );
+    let stdout = "";
+    let output = "";
+    finalizeSmokeRun("", { kind: "ordinary", output: "/receipt.json", receipt }, null, {
+      removeWorkspace: () => {},
+      emitOrdinary: (document) => {
+        stdout = JSON.stringify(document);
+        output = JSON.stringify(document);
+      },
+      emitHandoff: () => {
+        throw new Error("ordinary failure used the handoff emitter");
+      },
+      writeDiagnostic: () => {},
+    });
+
+    expect(receipt).toMatchObject({
+      commit: state.identity.commit,
+      releaseManifestSha256: state.identity.manifestSha256,
+      artifactSha256: state.identity.artifactSha256,
+      artifacts: {},
+      conclusion: "failed",
+      failureCode: "node_smoke_failed",
+      failedPhase: "npm:package-install",
+      failureKind: "timeout",
+    });
+    for (const encoded of [stdout, output]) {
+      expect(encoded).not.toContain(state.receiptTarball);
+      expect(encoded).not.toContain(state.installedPackagePath);
+      expect(encoded).not.toContain("sk-");
+    }
+    expect(
+      ordinaryFailureReceipt(
+        new SmokeCommandError("npm:package-install", "timeout"),
+        { expectedCommit: "d".repeat(40) },
+        null,
+        state.nodeVersion,
+      ).commit,
+    ).toBe("d".repeat(40));
+
+    const unsafeCanary = "SK_RAW_RECEIPT_CANARY";
+    const unsafeReceipt = ordinaryFailureReceipt(
+      new SmokeCommandError("npm:package-install", "timeout"),
+      { expectedCommit: `/private/secret/${unsafeCanary}` },
+      {
+        commit: `/private/secret/${unsafeCanary}`,
+        manifestSha256: unsafeCanary,
+        artifactSha256: {
+          [`${unsafeCanary}.tgz`]: "c".repeat(64),
+          "kaji-sdk-0.2.0-beta.2.tgz": unsafeCanary,
+        },
+      },
+      `v24.0.0\n${unsafeCanary}`,
+    );
+    expect(unsafeReceipt).toEqual({
+      schemaVersion: 1,
+      commit: null,
+      releaseManifestSha256: null,
+      artifactSha256: {},
+      runtime: { version: process.version },
+      artifacts: {},
+      githubPackageProofs: {},
+      conclusion: "failed",
+      failureCode: "node_smoke_failed",
+      failedPhase: "npm:package-install",
+      failureKind: "timeout",
+    });
+    expect(JSON.stringify(unsafeReceipt)).not.toContain(unsafeCanary);
+  });
+
+  it("redacts invalid argument and manifest paths from direct failed receipts", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-failed-receipt-"));
+    const tarball = join(root, "sk-tarball-canary.tgz");
+    const manifest = join(root, "sk-manifest-canary.json");
+    const output = join(root, "receipt.json");
+    const expectedCommit = "/private/secret/sk-commit-canary";
+    writeFileSync(tarball, "artifact");
+    const artifactHash = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+    writeFileSync(
+      manifest,
+      JSON.stringify({
+        commit: expectedCommit,
+        artifacts: [{ file: "sk-tarball-canary.tgz", sha256: artifactHash }],
+      }),
+    );
+
+    try {
+      const completed = spawnSync(
+        "bun",
+        [
+          join(packageRoot, "scripts/smoke_package.mts"),
+          tarball,
+          "--release-manifest",
+          manifest,
+          "--expected-commit",
+          expectedCommit,
+          "--output",
+          output,
+        ],
+        {
+          cwd: packageRoot,
+          encoding: "utf8",
+          env: { ...process.env, NODE_BINARY: join(root, "missing-node") },
+        },
+      );
+      expect(completed.status).not.toBe(0);
+      const stdoutReceipt = JSON.parse(completed.stdout) as Record<string, unknown>;
+      const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
+      expect(stdoutReceipt).toEqual(outputReceipt);
+      expect(outputReceipt).toMatchObject({
+        commit: null,
+        releaseManifestSha256: null,
+        artifactSha256: {},
+        artifacts: {},
+        conclusion: "failed",
+        failureCode: "artifact_identity_failed",
+        failedPhase: null,
+        failureKind: "unknown",
+      });
+      for (const encoded of [completed.stdout, readFileSync(output, "utf8")]) {
+        expect(encoded).not.toContain(expectedCommit);
+        expect(encoded).not.toContain("sk-manifest-canary");
+        expect(encoded).not.toContain("sk-tarball-canary");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("sanitizes environment commit identity before direct failure retention", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-failed-env-"));
+    const tarball = join(root, "candidate.tgz");
+    const missingNode = join(root, "missing-node");
+    writeFileSync(tarball, "artifact");
+    const artifactHash = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+    const environment = { ...process.env };
+    delete environment.KAJI_RELEASE_COMMIT;
+    delete environment.GITHUB_SHA;
+
+    const runCase = (name: string, extraEnvironment: NodeJS.ProcessEnv) => {
+      const output = join(root, `${name}.json`);
+      const completed = spawnSync(
+        "bun",
+        [join(packageRoot, "scripts/smoke_package.mts"), tarball, "--output", output],
+        {
+          cwd: packageRoot,
+          encoding: "utf8",
+          env: { ...environment, ...extraEnvironment, NODE_BINARY: missingNode },
+        },
+      );
+      expect(completed.status).not.toBe(0);
+      const stdoutReceipt = JSON.parse(completed.stdout) as Record<string, unknown>;
+      const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
+      expect(stdoutReceipt).toEqual(outputReceipt);
+      expect(outputReceipt).toMatchObject({
+        artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": artifactHash },
+        artifacts: {},
+        conclusion: "failed",
+        failureCode: "node_smoke_failed",
+        failedPhase: "node:version",
+        failureKind: "start",
+      });
+      return { completed, outputReceipt };
+    };
+
+    try {
+      const invalidCommit = "/private/secret/sk-env-commit-canary";
+      const invalid = runCase("invalid", { KAJI_RELEASE_COMMIT: invalidCommit });
+      expect(invalid.outputReceipt.commit).toBeNull();
+      expect(invalid.completed.stdout).not.toContain(invalidCommit);
+
+      const releaseCommit = "e".repeat(40);
+      expect(runCase("release", { KAJI_RELEASE_COMMIT: releaseCommit }).outputReceipt.commit).toBe(
+        releaseCommit,
+      );
+
+      const githubCommit = "f".repeat(40);
+      expect(runCase("github", { GITHUB_SHA: githubCommit }).outputReceipt.commit).toBe(
+        githubCommit,
+      );
+      expect(
+        runCase("fallback", {
+          KAJI_RELEASE_COMMIT: invalidCommit,
+          GITHUB_SHA: githubCommit,
+        }).outputReceipt.commit,
+      ).toBe(githubCommit);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("canonicalizes supplied tarball keys in direct failed receipts", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-failed-tarball-key-"));
+    const tarballCanary = "SK_TARBALL_PATH_CANARY.tgz";
+    const tarball = join(root, tarballCanary);
+    const output = join(root, "receipt.json");
+    const missingNode = join(root, "missing-node");
+    writeFileSync(tarball, "artifact");
+    const artifactHash = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+
+    try {
+      const completed = spawnSync(
+        "bun",
+        [join(packageRoot, "scripts/smoke_package.mts"), tarball, "--output", output],
+        {
+          cwd: packageRoot,
+          encoding: "utf8",
+          env: { ...process.env, NODE_BINARY: missingNode },
+        },
+      );
+      expect(completed.status).not.toBe(0);
+      const stdoutReceipt = JSON.parse(completed.stdout) as Record<string, unknown>;
+      const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
+      expect(stdoutReceipt).toEqual(outputReceipt);
+      expect(outputReceipt).toMatchObject({
+        artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": artifactHash },
+        artifacts: {},
+        conclusion: "failed",
+        failureCode: "node_smoke_failed",
+        failedPhase: "node:version",
+        failureKind: "start",
+      });
+      for (const encoded of [completed.stdout, readFileSync(output, "utf8")]) {
+        expect(encoded).not.toContain(tarballCanary);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("retains direct child Node versions only after exact validation", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-failed-node-version-"));
+    const tarball = join(root, "candidate.tgz");
+    const fakeBin = join(root, "bin");
+    const fakeNode = join(fakeBin, "node");
+    const fakeNpm = join(fakeBin, "npm");
+    writeFileSync(tarball, "artifact");
+    mkdirSync(fakeBin);
+    writeFileSync(fakeNpm, "#!/bin/sh\nexit 17\n");
+    chmodSync(fakeNpm, 0o755);
+
+    const runCase = (name: string, childOutput: string) => {
+      const output = join(root, `${name}.json`);
+      writeFileSync(fakeNode, `#!/bin/sh\nprintf '%s\\n' ${JSON.stringify(childOutput)}\n`);
+      chmodSync(fakeNode, 0o755);
+      const completed = spawnSync(
+        "bun",
+        [join(packageRoot, "scripts/smoke_package.mts"), tarball, "--output", output],
+        {
+          cwd: packageRoot,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            NODE_BINARY: fakeNode,
+            PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          },
+        },
+      );
+      expect(completed.status).not.toBe(0);
+      const stdoutReceipt = JSON.parse(completed.stdout) as Record<string, unknown>;
+      const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
+      expect(stdoutReceipt).toEqual(outputReceipt);
+      expect(outputReceipt).toMatchObject({
+        artifacts: {},
+        conclusion: "failed",
+        failureCode: "node_smoke_failed",
+      });
+      return { completed, outputReceipt };
+    };
+
+    try {
+      const childOutputCanary = "SK_CHILD_OUTPUT_CANARY";
+      const invalid = runCase("invalid", `v24.0.0\n${childOutputCanary}`);
+      expect(invalid.outputReceipt.runtime).toEqual({
+        version: expect.stringMatching(/^v(?:22|24)\.[0-9]+\.[0-9]+$/),
+      });
+      expect(invalid.completed.stdout).not.toContain(childOutputCanary);
+      expect(readFileSync(join(root, "invalid.json"), "utf8")).not.toContain(childOutputCanary);
+
+      expect(runCase("node-22", "v22.17.1").outputReceipt.runtime).toEqual({
+        version: "v22.17.1",
+      });
+      expect(runCase("node-24", "v24.4.0").outputReceipt.runtime).toEqual({
+        version: "v24.4.0",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cleans before ordinary success and replaces cleanup failures with closed evidence", () => {
+    const calls: string[] = [];
+    const success: PendingSmokeReceipt = {
+      kind: "ordinary",
+      output: "/receipt.json",
+      diagnostics: ["ready"],
+      receipt: { conclusion: "passed" },
+    };
+    const cleanupFailure: PendingSmokeReceipt = {
+      kind: "ordinary",
+      output: "/receipt.json",
+      receipt: {
+        conclusion: "failed",
+        failedPhase: "workspace:cleanup",
+        failureKind: "cleanup",
+      },
+    };
+    const dependencies: SmokeFinalizerDependencies = {
+      removeWorkspace: () => calls.push("cleanup"),
+      writeDiagnostic: () => calls.push("diagnostic"),
+      emitOrdinary: () => calls.push("ordinary"),
+      emitHandoff: () => calls.push("handoff"),
+    };
+
+    finalizeSmokeRun("/workspace", success, cleanupFailure, dependencies);
+    expect(calls).toEqual(["cleanup", "diagnostic", "ordinary"]);
+
+    calls.length = 0;
+    expect(() =>
+      finalizeSmokeRun("/workspace", success, cleanupFailure, {
+        ...dependencies,
+        removeWorkspace: () => {
+          calls.push("cleanup");
+          throw new Error("cleanup failed");
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        phase: "workspace:cleanup",
+        kind: "cleanup",
+      }),
+    );
+    expect(calls).toEqual(["cleanup", "ordinary"]);
+  });
+
+  it("does not emit a trusted handoff pass when cleanup fails", () => {
+    const calls: string[] = [];
+    expect(() =>
+      finalizeSmokeRun(
+        "/workspace",
+        { kind: "handoff", output: "/receipt.json", receipt: { result: "passed" } },
+        null,
+        {
+          removeWorkspace: () => {
+            calls.push("cleanup");
+            throw new Error("cleanup failed");
+          },
+          writeDiagnostic: () => calls.push("diagnostic"),
+          emitOrdinary: () => calls.push("ordinary"),
+          emitHandoff: () => calls.push("handoff"),
+        },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        phase: "workspace:cleanup",
+        kind: "cleanup",
+      }),
+    );
+    expect(calls).toEqual(["cleanup"]);
   });
 
   it("compiles installed GitHub declarations through every NodeNext conditional branch", () => {
@@ -982,7 +1444,9 @@ exit 7
         { cwd: packageRoot, encoding: "utf8" },
       );
       expect(completed.status).not.toBe(0);
-      expect(completed.stderr).toContain("child output: safe-reason=fixture-failed");
+      expect(completed.stderr).toContain(
+        "package smoke child stderr at handoff:node-version: safe-reason=fixture-failed",
+      );
       expect(completed.stderr).toContain("token=[redacted]");
       expect(completed.stderr).toContain("Authorization: [redacted]");
       expect(completed.stderr).toContain("authorization=[redacted]");
@@ -1040,11 +1504,17 @@ exit 7
       'genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"]',
       "githubFailureRecovery: GITHUB_TOKEN_RECOVERY",
       "githubObservabilitySinksVerified: true",
+      "unknownMutationPreserved: true",
+      "mutationRetries: 0",
       'proofStage = "observability-sinks"',
       "metricsSink:",
       "traceSink:",
       "recoveryTuple(execution.results[0])",
       "recoveryTuple(failedEvent)",
+      '"github_mutation_unknown"',
+      '"RECONCILE_GITHUB_MUTATION"',
+      'name: "github_add_comment"',
+      "networkAttempts !== 1",
       "aliasCollisionRejected: true",
       'Reflect.set(Socket.prototype, "connect"',
       "createGithubIntegration",

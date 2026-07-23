@@ -1500,7 +1500,7 @@ describe("Kaji workflow contracts", () => {
     },
   );
 
-  it("normalizes interrupted compatibility receipts and preserves terminal evidence", () => {
+  it("fails closed on interrupted compatibility receipts and preserves terminal evidence", () => {
     const job = readWorkflow("kaji.rehearsal.yml").workflow.jobs?.["python-compat"];
     const script = job?.steps?.find((step) => step.name === "Normalize compatibility receipt")?.run;
     expect(script).toBeDefined();
@@ -1538,10 +1538,10 @@ describe("Kaji workflow contracts", () => {
         encoding: "utf8",
         env: environment,
       });
-      expect(interrupted.status, interrupted.stderr).toBe(0);
+      expect(interrupted.status, interrupted.stderr).not.toBe(0);
       expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
-        conclusion: "failed",
-        failureCode: "compatibility_smoke_not_completed",
+        conclusion: "not_run",
+        failureCode: "compatibility_receipt_not_terminal",
       });
 
       environment.SMOKE_OUTCOME = "success";
@@ -1560,7 +1560,7 @@ describe("Kaji workflow contracts", () => {
       });
       expect(identityFree.status).not.toBe(0);
       expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
-        conclusion: "failed",
+        conclusion: "not_run",
         failureCode: "compatibility_receipt_not_terminal",
       });
 
