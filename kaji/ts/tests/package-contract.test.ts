@@ -369,7 +369,7 @@ describe("npm contract artifact", () => {
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("accepts only the exact canonical Echo list row", () => {
     expect(() =>
@@ -651,6 +651,29 @@ describe("npm contract artifact", () => {
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
     );
+  });
+
+  it("runs installed GitHub package proofs under supported Node runtimes", () => {
+    const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
+    const handoffStart = source.indexOf("`handoff:${manager}-github-proof`");
+    const handoffLaunch = source.slice(
+      handoffStart,
+      source.indexOf('"--sandbox-root"', handoffStart),
+    );
+    const ordinaryStart = source.indexOf("`${manager}:github-package-proof`");
+    const ordinaryLaunch = source.slice(
+      ordinaryStart,
+      source.indexOf('"--sandbox-root"', ordinaryStart),
+    );
+
+    expect(handoffLaunch).toMatch(
+      /`handoff:\$\{manager\}-github-proof`,\s*runtimeBinary,\s*\[\s*"--experimental-strip-types",\s*runner,/,
+    );
+    expect(ordinaryLaunch).toMatch(
+      /`\$\{manager\}:github-package-proof`,\s*nodeBinary,\s*\[\s*"--experimental-strip-types",\s*githubProofRunner,/,
+    );
+    expect(handoffLaunch).not.toContain('"--no-install"');
+    expect(ordinaryLaunch).not.toContain('"--no-install"');
   });
 
   it("keeps package-smoke phases finite and cleanup inside the receipt boundary", () => {

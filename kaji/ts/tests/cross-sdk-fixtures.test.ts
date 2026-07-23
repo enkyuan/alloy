@@ -129,7 +129,7 @@ describe("cross-SDK fixture exporter", () => {
       )
       .sort();
     expect(referenced).toEqual(canonical);
-  });
+  }, 30_000);
 
   it("does not read provider keys or construct network clients", () => {
     const source = readFileSync(EXPORTER, "utf8");

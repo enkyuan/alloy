@@ -1105,7 +1105,7 @@ fix(kaji): close package smoke evidence
 - Create: `kaji/tests/test_github_proof_cleanup.py`
 - Modify: `kaji/tests/test_release_smoke.py`
 - Modify: `kaji/tests/test_release_task15.py`
-- Modify: `docs/kaji/integrations.md`
+- Modify: `docs/kaji/integration-manifests.md`
 - Modify: `kaji/RELEASE_MATRIX.md`
 
 **Interfaces:**

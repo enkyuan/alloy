@@ -1631,9 +1631,9 @@ async function runInstalledHandoffProof(
   copyFileSync(INSTALLED_GITHUB_SMOKE, runner);
   const output = await runHandoffCommand(
     `handoff:${manager}-github-proof`,
-    process.execPath,
+    runtimeBinary,
     [
-      "--no-install",
+      "--experimental-strip-types",
       runner,
       "--sandbox-root",
       root,
@@ -2589,9 +2589,9 @@ async function runScaffold(
   const githubProof = assertGithubPackageProof(
     await runCommand(
       `${manager}:github-package-proof`,
-      "bun",
+      nodeBinary,
       [
-        "--no-install",
+        "--experimental-strip-types",
         githubProofRunner,
         "--sandbox-root",
         root,
