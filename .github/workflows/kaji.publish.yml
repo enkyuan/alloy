@@ -149,13 +149,14 @@ jobs:
   performance:
     name: performance evidence
     needs: [verify-tag, offline-gates]
-    runs-on: [self-hosted, linux, x64, kaji-benchmark]
+    runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]
     # 35-minute benchmark + 42-minute soak + 18-minute setup/validation/upload,
     # plus a five-minute job-level shutdown margin.
     timeout-minutes: 100
     env:
       KAJI_BENCHMARK_PINNED_RUNNER: "1"
-      KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST: ${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}
+      KAJI_BENCHMARK_RUNNER_MANIFEST: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}
+      KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
     steps:
       - name: Initialize exact-commit performance status before setup
@@ -223,19 +224,21 @@ jobs:
           soak=.artifacts/kaji-soak/results.json
           expected_fingerprint="$(
             uv run --project kaji python -c \
-              'import json, sys; sys.path.insert(0, "kaji/scripts"); from beta_benchmark_gate import fingerprint; print(json.dumps(fingerprint(), sort_keys=True))'
+              'import json, sys; sys.path.insert(0, "kaji/scripts"); from beta_benchmark_gate import fingerprint; print(json.dumps(fingerprint(protected=True), sort_keys=True))'
           )"
           validate_report() {
             jq -e \
               --arg commit "$KAJI_RELEASE_COMMIT" \
-              --arg imageDigest "$KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST" \
               --argjson fingerprint "$expected_fingerprint" \
               '($commit | test("^[0-9a-f]{40}$")) and
-               ($imageDigest | test("^sha256:[0-9a-f]{64}$")) and
                .schemaVersion == 1 and .passed == true and
                .protected == true and .commit == $commit and
                .fingerprint == $fingerprint and
-               .fingerprint.runner.imageDigest == $imageDigest and
+               ((.fingerprint.runner | keys) == ["arch", "bootstrapManifestSha256", "os", "platformVersion"]) and
+               .fingerprint.runner.os == "Darwin" and
+               .fingerprint.runner.arch == "arm64" and
+               (.fingerprint.runner.platformVersion | type == "string" and test("^[0-9]+(\\.[0-9]+){1,2}$")) and
+               (.fingerprint.runner.bootstrapManifestSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
                (.fingerprint.dependencyLockHash | type == "string" and test("^[0-9a-f]{64}$")) and
                (.fingerprint.sourceHash | type == "string" and test("^[0-9a-f]{64}$")) and
                .fingerprint.versions.python == "3.11.9" and
@@ -253,6 +256,8 @@ jobs:
           }
           validate_report "$benchmark"
           validate_report "$soak"
+          jq -e --argjson fingerprint "$expected_fingerprint" \
+            '.baselineFingerprint == $fingerprint' "$benchmark" >/dev/null
           jq -e -s \
             '.[0].commit == .[1].commit and .[0].fingerprint == .[1].fingerprint and
              .[0].releaseManifestSha256 == .[1].releaseManifestSha256 and

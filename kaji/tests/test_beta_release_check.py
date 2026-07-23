@@ -1384,6 +1384,161 @@ def test_beta_benchmark_timing_runs_only_in_full_mode() -> None:
     assert module._include_timing("full") is True
 
 
+def _protected_runner_environment(
+    monkeypatch: pytest.MonkeyPatch, manifest: Path
+) -> dict[str, str]:
+    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    environment = {
+        "KAJI_BENCHMARK_PINNED_RUNNER": "1",
+        "KAJI_BENCHMARK_RUNNER_MANIFEST": str(manifest),
+        "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256": digest,
+    }
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    return environment
+
+
+def test_protected_benchmark_runner_measures_closed_macos_fingerprint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    manifest = tmp_path / "bootstrap-manifest.json"
+    manifest.write_text('{"runner":"reviewed"}\n')
+    environment = _protected_runner_environment(monkeypatch, manifest)
+    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(module.platform, "mac_ver", lambda: ("15.5", ("", "", ""), ""))
+
+    runner = module.require_protected_macos_arm64(protected=True, calibrating=False)
+
+    assert runner == {
+        "os": "Darwin",
+        "arch": "arm64",
+        "platformVersion": "15.5",
+        "bootstrapManifestSha256": environment["KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256"],
+    }
+    assert module.validate_retained_runner(runner) == runner
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "version", "pinned", "expected"),
+    [
+        ("Linux", "arm64", "15.5", "1", "arm64 macOS"),
+        ("Darwin", "x86_64", "15.5", "1", "arm64 macOS"),
+        ("Darwin", "arm64", "", "1", "numeric macOS version"),
+        ("Darwin", "arm64", "15", "1", "numeric macOS version"),
+        ("Darwin", "arm64", "15.5-beta", "1", "numeric macOS version"),
+        ("Darwin", "arm64", "15.5", "0", "pinned runner"),
+    ],
+)
+def test_protected_benchmark_runner_rejects_wrong_host_or_unpinned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    system: str,
+    machine: str,
+    version: str,
+    pinned: str,
+    expected: str,
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    manifest = tmp_path / "bootstrap-manifest.json"
+    manifest.write_text("{}\n")
+    _protected_runner_environment(monkeypatch, manifest)
+    monkeypatch.setenv("KAJI_BENCHMARK_PINNED_RUNNER", pinned)
+    monkeypatch.setattr(module.platform, "system", lambda: system)
+    monkeypatch.setattr(module.platform, "machine", lambda: machine)
+    monkeypatch.setattr(module.platform, "mac_ver", lambda: (version, ("", "", ""), ""))
+
+    with pytest.raises(RuntimeError, match=expected):
+        module.require_protected_macos_arm64(protected=True, calibrating=False)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-path",
+        "missing-file",
+        "directory",
+        "symlink",
+        "oversize",
+        "missing-hash",
+        "uppercase-hash",
+        "hash-mismatch",
+    ],
+)
+def test_protected_benchmark_runner_rejects_unsafe_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    manifest = tmp_path / "bootstrap-manifest.json"
+    manifest.write_text("{}\n")
+    _protected_runner_environment(monkeypatch, manifest)
+    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(module.platform, "mac_ver", lambda: ("15.5", ("", "", ""), ""))
+    if case == "missing-path":
+        monkeypatch.delenv("KAJI_BENCHMARK_RUNNER_MANIFEST")
+    elif case == "missing-file":
+        monkeypatch.setenv(
+            "KAJI_BENCHMARK_RUNNER_MANIFEST", str(tmp_path / "missing.json")
+        )
+    elif case == "directory":
+        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST", str(tmp_path))
+    elif case == "symlink":
+        link = tmp_path / "manifest-link"
+        link.symlink_to(manifest)
+        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST", str(link))
+    elif case == "oversize":
+        manifest.write_bytes(b"x" * (64 * 1024 + 1))
+        monkeypatch.setenv(
+            "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256",
+            hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        )
+    elif case == "missing-hash":
+        monkeypatch.delenv("KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256")
+    elif case == "uppercase-hash":
+        monkeypatch.setenv(
+            "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256",
+            hashlib.sha256(manifest.read_bytes()).hexdigest().upper(),
+        )
+    elif case == "hash-mismatch":
+        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256", "0" * 64)
+
+    with pytest.raises(RuntimeError, match="bootstrap manifest"):
+        module.require_protected_macos_arm64(protected=True, calibrating=False)
+
+
+@pytest.mark.parametrize(
+    "runner",
+    [
+        {
+            "os": "Darwin",
+            "arch": "arm64",
+            "platformVersion": "15.5",
+            "imageDigest": "sha256:" + "a" * 64,
+        },
+        {
+            "os": "Darwin",
+            "arch": "arm64",
+            "platformVersion": "15.5",
+            "bootstrapManifestSha256": "a" * 64,
+            "extra": True,
+        },
+        {
+            "os": "Linux",
+            "arch": "arm64",
+            "platformVersion": "15.5",
+            "bootstrapManifestSha256": "a" * 64,
+        },
+    ],
+)
+def test_retained_benchmark_runner_shape_is_closed(runner: dict[str, object]) -> None:
+    module = _load_root_script("benchmark_platform.py")
+
+    with pytest.raises(RuntimeError, match="runner fingerprint"):
+        module.validate_retained_runner(runner)
+
+
 def test_beta_benchmark_candidate_requires_all_eight_cases() -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     incomplete = {"python": {}, "typescript": {}}
@@ -1410,13 +1565,22 @@ def _complete_benchmark_results(module: object) -> dict[str, dict[str, Any]]:
     }
 
 
+def _closed_benchmark_runner() -> dict[str, str]:
+    return {
+        "os": "Darwin",
+        "arch": "arm64",
+        "platformVersion": "15.5",
+        "bootstrapManifestSha256": "a" * 64,
+    }
+
+
 def _complete_benchmark_baseline(module: object) -> dict[str, Any]:
     cases = getattr(module, "CASES")
     return {
         "schemaVersion": 1,
         "status": "calibrated",
         "calibrationCommit": "a" * 40,
-        "runner": {"imageDigest": "pinned"},
+        "runner": _closed_benchmark_runner(),
         "versions": {"python": "3", "node": "24", "bun": "1"},
         "dependencyLockHash": "lock",
         "sourceHash": "b" * 64,
@@ -1454,9 +1618,9 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
             mode=mode, output=output, candidate_baseline=candidate
         ),
     )
-    current = {"runner": {"imageDigest": "pinned"}}
+    current = {"runner": _closed_benchmark_runner()}
     monkeypatch.setattr(module, "_checked_out_commit", lambda: "a" * 40)
-    monkeypatch.setattr(module, "fingerprint", lambda: current)
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: current)
     monkeypatch.setattr(
         module,
         "_run_case",
@@ -1490,7 +1654,7 @@ def test_beta_benchmark_full_mode_reports_malformed_baseline_json(
             mode="full", output=output, candidate_baseline=None
         ),
     )
-    monkeypatch.setattr(module, "fingerprint", lambda: {})
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: {})
 
     assert module.main() == 1
     report = json.loads(output.read_text())
@@ -1516,7 +1680,7 @@ def test_protected_performance_provenance_fails_closed(
     if configured is not None:
         monkeypatch.setenv("KAJI_RELEASE_COMMIT", configured)
     monkeypatch.setattr(module, "_checked_out_commit", lambda: "a" * 40)
-    monkeypatch.setattr(module, "fingerprint", lambda: {"runner": "exact"})
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: {"runner": "exact"})
 
     with pytest.raises(RuntimeError, match=expected):
         module.performance_provenance(protected=True)
@@ -1528,12 +1692,12 @@ def test_performance_provenance_binds_commit_and_local_mode_is_explicit(
     module = _load_root_script("beta_benchmark_gate.py")
     commit = "a" * 40
     fingerprint = {
-        "runner": {"imageDigest": "sha256:pinned"},
+        "runner": _closed_benchmark_runner(),
         "versions": {"python": "3.11.9", "node": "v22.14.0", "bun": "1.3.11"},
         "dependencyLockHash": "b" * 64,
     }
     monkeypatch.setattr(module, "_checked_out_commit", lambda: commit)
-    monkeypatch.setattr(module, "fingerprint", lambda: fingerprint)
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: fingerprint)
     monkeypatch.setenv("KAJI_RELEASE_COMMIT", commit)
 
     assert module.performance_provenance(protected=True) == {
@@ -1930,6 +2094,7 @@ def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> 
         Path("kaji/scripts/beta_soak_gate.py"),
         Path("kaji/scripts/run_beta_soak.py"),
         Path("kaji/scripts/process_runner.py"),
+        Path("kaji/scripts/benchmark_platform.py"),
         Path("kaji/scripts/installed_release_runtime.py"),
         Path("kaji/scripts/verify_release_artifacts.py"),
         Path("kaji/benchmarks/beta-budgets.json"),
@@ -2002,6 +2167,15 @@ def test_beta_benchmark_baseline_rejects_stale_source_hash() -> None:
         module._validate_baseline(baseline, current)
 
 
+def test_beta_benchmark_baseline_rejects_legacy_runner_shape() -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    baseline["runner"] = {"imageDigest": "sha256:" + "a" * 64}
+
+    with pytest.raises(RuntimeError, match="runner fingerprint"):
+        module._baseline_fingerprint(baseline)
+
+
 def test_uncalibrated_baseline_placeholder_stays_provenance_free_and_fails_closed() -> (
     None
 ):
@@ -2036,7 +2210,7 @@ def test_soak_report_reuses_complete_performance_provenance(
     provenance = {
         "commit": "a" * 40,
         "fingerprint": {
-            "runner": {"imageDigest": "sha256:pinned"},
+            "runner": _closed_benchmark_runner(),
             "versions": {
                 "python": "3.11.9",
                 "node": "v22.14.0",
@@ -2124,7 +2298,7 @@ def test_beta_benchmark_full_mode_reports_malformed_nested_baseline(
             mode="full", output=output, candidate_baseline=None
         ),
     )
-    monkeypatch.setattr(module, "fingerprint", lambda: current)
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: current)
 
     assert module.main() == 1
     report = json.loads(output.read_text())
@@ -2382,42 +2556,39 @@ def test_release_matrix_names_pending_protected_release_gate_truthfully() -> Non
     assert "passed" not in row.lower()
 
 
-@pytest.mark.parametrize(
-    ("environment", "image_digest", "expected"),
-    [
-        (
-            {"KAJI_BENCHMARK_PINNED_RUNNER": "1"},
-            "pinned",
-            "calibration requires KAJI_BENCHMARK_CALIBRATION=1",
-        ),
-        (
-            {"KAJI_BENCHMARK_CALIBRATION": "1"},
-            "pinned",
-            "calibration requires KAJI_BENCHMARK_PINNED_RUNNER=1",
-        ),
-        (
-            {
-                "KAJI_BENCHMARK_CALIBRATION": "1",
-                "KAJI_BENCHMARK_PINNED_RUNNER": "1",
-            },
-            "local-unpinned",
-            "calibration requires a pinned runner image digest",
-        ),
-    ],
-)
-def test_beta_benchmark_calibration_fails_closed_without_runner_guards(
+def test_beta_benchmark_calibration_requires_explicit_operator_mode(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    environment: dict[str, str],
-    image_digest: str,
-    expected: str,
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     output = tmp_path / "calibration.json"
     monkeypatch.delenv("KAJI_BENCHMARK_CALIBRATION", raising=False)
-    monkeypatch.delenv("KAJI_BENCHMARK_PINNED_RUNNER", raising=False)
-    for name, value in environment.items():
-        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            mode="calibrate",
+            output=output,
+            candidate_baseline=tmp_path / "candidate.json",
+        ),
+    )
+    monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: {})
+
+    assert module.main() == 1
+    assert (
+        "calibration requires KAJI_BENCHMARK_CALIBRATION=1"
+        in json.loads(output.read_text())["failures"]
+    )
+
+
+def test_beta_benchmark_calibration_requests_protected_runner_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    output = tmp_path / "calibration.json"
+    calls: list[dict[str, bool]] = []
+    monkeypatch.setenv("KAJI_BENCHMARK_CALIBRATION", "1")
     monkeypatch.setattr(
         module,
         "_parse_args",
@@ -2430,8 +2601,8 @@ def test_beta_benchmark_calibration_fails_closed_without_runner_guards(
     monkeypatch.setattr(
         module,
         "fingerprint",
-        lambda: {"runner": {"imageDigest": image_digest}},
+        lambda **kwargs: calls.append(kwargs) or {"runner": _closed_benchmark_runner()},
     )
 
     assert module.main() == 1
-    assert expected in json.loads(output.read_text())["failures"]
+    assert calls == [{"protected": False, "calibrating": True}]

@@ -17,6 +17,7 @@ import statistics
 import sys
 from typing import Any
 
+from benchmark_platform import runner_fingerprint, validate_retained_runner
 from installed_release_runtime import (
     InstalledReleaseRuntime,
     installed_release_runtime,
@@ -60,6 +61,7 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/beta_soak_gate.py"),
     Path("kaji/scripts/run_beta_soak.py"),
     Path("kaji/scripts/process_runner.py"),
+    Path("kaji/scripts/benchmark_platform.py"),
     Path("kaji/scripts/installed_release_runtime.py"),
     Path("kaji/scripts/installed-typescript-runtime/package.core.json"),
     Path("kaji/scripts/installed-typescript-runtime/package-lock.core.json"),
@@ -84,24 +86,6 @@ def _command_version(command: list[str]) -> str:
         .stdout.decode("utf-8")
         .strip()
     )
-
-
-def _cpu_model() -> str:
-    cpuinfo = Path("/proc/cpuinfo")
-    if cpuinfo.exists():
-        for line in cpuinfo.read_text(errors="replace").splitlines():
-            if line.lower().startswith("model name"):
-                return line.split(":", 1)[1].strip()
-    return platform.processor() or platform.machine()
-
-
-def _ram_mib() -> int:
-    try:
-        pages = int(os.sysconf("SC_PHYS_PAGES"))
-        page_size = int(os.sysconf("SC_PAGE_SIZE"))
-    except (OSError, ValueError):
-        return 0
-    return pages * page_size // (1024 * 1024)
 
 
 def _lock_hash() -> str:
@@ -155,17 +139,14 @@ def _commit() -> str:
     return _checked_out_commit()
 
 
-def fingerprint() -> dict[str, Any]:
+def fingerprint(
+    *, protected: bool = False, calibrating: bool = False
+) -> dict[str, Any]:
     return {
-        "runner": {
-            "imageDigest": os.environ.get("KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST")
-            or "local-unpinned",
-            "os": platform.system(),
-            "arch": platform.machine(),
-            "cpuModel": _cpu_model(),
-            "cpuCount": os.cpu_count(),
-            "ramMiB": _ram_mib(),
-        },
+        "runner": runner_fingerprint(
+            protected=protected,
+            calibrating=calibrating,
+        ),
         "versions": {
             "python": platform.python_version(),
             "node": _command_version(["node", "--version"]),
@@ -190,10 +171,15 @@ def release_commit(*, protected: bool) -> str:
     return configured or checked_out
 
 
-def performance_provenance(*, protected: bool) -> dict[str, Any]:
+def performance_provenance(
+    *, protected: bool, calibrating: bool = False
+) -> dict[str, Any]:
     return {
         "commit": release_commit(protected=protected),
-        "fingerprint": fingerprint(),
+        "fingerprint": fingerprint(
+            protected=protected,
+            calibrating=calibrating,
+        ),
         "protected": protected,
     }
 
@@ -551,6 +537,7 @@ def _baseline_fingerprint(baseline: dict[str, Any]) -> dict[str, Any]:
     source_hash = baseline.get("sourceHash")
     if not isinstance(runner, dict):
         raise RuntimeError("baseline runner must be an object")
+    runner = validate_retained_runner(runner)
     if not isinstance(versions, dict):
         raise RuntimeError("baseline versions must be an object")
     if not isinstance(dependency_lock_hash, str):
@@ -795,8 +782,12 @@ def main() -> int:
     budgets = json.loads(BUDGETS_PATH.read_text())
     failures: list[str] = []
     protected = getattr(args, "protected", False)
+    calibrating = args.mode == "calibrate"
     try:
-        provenance = performance_provenance(protected=protected)
+        provenance = performance_provenance(
+            protected=protected,
+            calibrating=calibrating,
+        )
     except (CommandError, OSError, RuntimeError) as error:
         provenance = {
             "commit": os.environ.get("KAJI_RELEASE_COMMIT"),
@@ -809,6 +800,7 @@ def main() -> int:
         fingerprint_value if isinstance(fingerprint_value, dict) else {}
     )
     baseline: dict[str, Any] | None = None
+    baseline_fingerprint: dict[str, Any] | None = None
     installed_required = protected or args.mode in {"full", "calibrate"}
     artifact_identity: dict[str, Any] = (
         {
@@ -827,10 +819,6 @@ def main() -> int:
     if args.mode == "calibrate":
         if os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1":
             failures.append("calibration requires KAJI_BENCHMARK_CALIBRATION=1")
-        if os.environ.get("KAJI_BENCHMARK_PINNED_RUNNER") != "1":
-            failures.append("calibration requires KAJI_BENCHMARK_PINNED_RUNNER=1")
-        if current.get("runner", {}).get("imageDigest") == "local-unpinned":
-            failures.append("calibration requires a pinned runner image digest")
         if args.candidate_baseline is None:
             failures.append("calibration requires --candidate-baseline")
     elif args.mode == "full":
@@ -840,6 +828,7 @@ def main() -> int:
                 raise RuntimeError("baseline must be an object")
             baseline = loaded_baseline
             _validate_baseline(baseline, current)
+            baseline_fingerprint = _baseline_fingerprint(baseline)
         except (
             OSError,
             UnicodeError,
@@ -908,6 +897,7 @@ def main() -> int:
         "mode": args.mode,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         **provenance,
+        "baselineFingerprint": baseline_fingerprint,
         **artifact_identity,
         "results": results,
         "failures": failures,

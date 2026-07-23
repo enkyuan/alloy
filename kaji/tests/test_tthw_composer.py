@@ -445,7 +445,12 @@ def _complete_baseline(module: ModuleType) -> dict[str, Any]:
         "commit": "a" * 40,
         "releaseManifestSha256": "b" * 64,
         "artifacts": {"python": {"sha256": "c" * 64}},
-        "runner": {"imageDigest": "sha256:pinned"},
+        "runner": {
+            "os": "Darwin",
+            "arch": "arm64",
+            "platformVersion": "15.5",
+            "bootstrapManifestSha256": "c" * 64,
+        },
         "versions": {"python": "3.14", "node": "24", "bun": "1.3"},
         "dependencyLockHash": "d" * 64,
         "sourceHash": "e" * 64,

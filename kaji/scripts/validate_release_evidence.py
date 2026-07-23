@@ -12,6 +12,7 @@ import re
 import tempfile
 from typing import Any, Callable, NoReturn
 
+from benchmark_platform import BenchmarkPlatformError, validate_retained_runner
 from validate_tthw_evidence import (
     EvidenceError as TthwEvidenceError,
     validate_bindings as validate_tthw_bindings,
@@ -423,6 +424,18 @@ def validate_resolved_packages(value: Any, args: argparse.Namespace) -> dict[str
     return {"python": value["python"], "typescript": value["typescript"]}
 
 
+def validate_performance_fingerprint(value: Any) -> dict[str, Any]:
+    require(
+        isinstance(value, dict) and bool(value),
+        "performance_fingerprint_invalid",
+    )
+    try:
+        validate_retained_runner(value.get("runner"))
+    except BenchmarkPlatformError:
+        reject("performance_runner_invalid")
+    return value
+
+
 def validate_performance_report(
     document: dict[str, Any],
     *,
@@ -442,10 +455,7 @@ def validate_performance_report(
         document.get("artifacts") == runtime_artifacts(release),
         "artifact_hash_mismatch",
     )
-    require(
-        isinstance(document.get("fingerprint"), dict) and bool(document["fingerprint"]),
-        "performance_fingerprint_invalid",
-    )
+    fingerprint = validate_performance_fingerprint(document.get("fingerprint"))
     resolved = validate_resolved_packages(document.get("resolvedPackages"), args)
     results = document.get("results")
     if not isinstance(results, dict):
@@ -454,6 +464,13 @@ def validate_performance_report(
 
     if kind == "benchmark":
         require(document.get("mode") == "full", "performance_mode_invalid")
+        baseline_fingerprint = validate_performance_fingerprint(
+            document.get("baselineFingerprint")
+        )
+        require(
+            baseline_fingerprint == fingerprint,
+            "performance_fingerprint_mismatch",
+        )
         for runtime, cases in results.items():
             require(
                 isinstance(cases, dict) and bool(cases),
@@ -497,6 +514,7 @@ def validate_performance_status(
         "performance_status_invalid",
     )
     fingerprint = document.get("fingerprint")
+    validate_performance_fingerprint(fingerprint)
     require(
         fingerprint == benchmark.get("fingerprint") == soak.get("fingerprint"),
         "performance_fingerprint_mismatch",

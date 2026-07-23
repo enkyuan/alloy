@@ -272,6 +272,28 @@ def test_performance_workflow_timeouts_cover_child_and_cleanup_budgets() -> None
     assert "timeout-minutes: 45" in calibrate_job
 
 
+def test_protected_performance_jobs_use_only_macos_arm64_runner() -> None:
+    benchmark = _read(".github/workflows/kaji.benchmark.yml")
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
+    selector = "runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]"
+
+    assert benchmark.count(selector) == 3
+    assert rehearsal.count(selector) == 1
+    assert publish.count(selector) == 1
+    assert "runs-on: [self-hosted, linux, x64, kaji-benchmark]" not in (
+        benchmark + rehearsal + publish
+    )
+    assert (
+        "  release-artifacts:\n    name: release artifacts\n    runs-on: ubuntu-latest"
+        in (benchmark)
+    )
+    assert (
+        "  offline-release:\n    name: offline release\n    runs-on: ubuntu-latest"
+        in (rehearsal)
+    )
+
+
 def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     script = _read("kaji/scripts/beta_release_check.py")
 
@@ -560,6 +582,15 @@ def test_performance_evidence_is_bound_before_retention(
 
     assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in performance
     assert (
+        "KAJI_BENCHMARK_RUNNER_MANIFEST: "
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}" in performance
+    )
+    assert (
+        "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: "
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}" in performance
+    )
+    assert "KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST" not in performance
+    assert (
         "KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
         in performance
     )
@@ -578,7 +609,11 @@ def test_performance_evidence_is_bound_before_retention(
     for expected in (
         ".commit == $commit",
         ".protected == true",
-        ".fingerprint.runner.imageDigest == $imageDigest",
+        '.fingerprint.runner.os == "Darwin"',
+        '.fingerprint.runner.arch == "arm64"',
+        ".fingerprint.runner.platformVersion",
+        ".fingerprint.runner.bootstrapManifestSha256",
+        '(.fingerprint.runner | keys) == ["arch", "bootstrapManifestSha256", "os", "platformVersion"]',
         ".fingerprint.dependencyLockHash",
         ".fingerprint.sourceHash",
         ".fingerprint.versions.python",
@@ -589,6 +624,7 @@ def test_performance_evidence_is_bound_before_retention(
         'versions.bun == "1.3.11"',
         ".[0].fingerprint == .[1].fingerprint",
         ".[0].commit == .[1].commit",
+        ".baselineFingerprint == $fingerprint",
     ):
         assert expected in validation
     assert performance.index(
@@ -2515,7 +2551,12 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         )
 
     fingerprint = {
-        "runner": {"imageDigest": "sha256:" + "c" * 64},
+        "runner": {
+            "os": "Darwin",
+            "arch": "arm64",
+            "platformVersion": "15.5",
+            "bootstrapManifestSha256": "c" * 64,
+        },
         "dependencyLockHash": "d" * 64,
         "sourceHash": "e" * 64,
     }
@@ -2525,6 +2566,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "protected": True,
         "commit": commit,
         "fingerprint": fingerprint,
+        "baselineFingerprint": fingerprint,
         "releaseManifestSha256": manifest_hash,
         "artifacts": runtime_artifacts,
         "resolvedPackages": benchmark_packages,
@@ -2867,6 +2909,11 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
         ("invalid_ts_counts", "github_package_proof_invalid"),
         ("invalid_ts_proof_version_divergence", "github_package_proof_invalid"),
         ("source_path", "source_path_detected"),
+        ("legacy_performance_runner", "performance_runner_invalid"),
+        ("extra_performance_runner", "performance_runner_invalid"),
+        ("linux_performance_runner", "performance_runner_invalid"),
+        ("baseline_fingerprint_mismatch", "performance_fingerprint_mismatch"),
+        ("cross_report_fingerprint_mismatch", "performance_fingerprint_mismatch"),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
         ("invalid_tthw_raw", "tthw_evidence_invalid"),
@@ -2895,6 +2942,11 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "invalid_ts_counts": "compat-node-22",
             "invalid_ts_proof_version_divergence": "compat-node-22",
             "source_path": "benchmark-results",
+            "legacy_performance_runner": "benchmark-results",
+            "extra_performance_runner": "benchmark-results",
+            "linux_performance_runner": "benchmark-results",
+            "baseline_fingerprint_mismatch": "benchmark-results",
+            "cross_report_fingerprint_mismatch": "soak-results",
             "missing_provider_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
             "invalid_tthw_raw": "tthw-evidence",
@@ -2942,6 +2994,18 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["resolvedPackages"]["typescript"] = str(
                 fixture.workspace / "kaji/ts/dist/node_modules/@kaji/sdk"
             )
+        elif hostile_case == "legacy_performance_runner":
+            document["fingerprint"]["runner"] = {"imageDigest": "sha256:" + "0" * 64}
+        elif hostile_case == "extra_performance_runner":
+            document["fingerprint"]["runner"]["extra"] = True
+        elif hostile_case == "linux_performance_runner":
+            document["fingerprint"]["runner"]["os"] = "Linux"
+        elif hostile_case == "baseline_fingerprint_mismatch":
+            document["baselineFingerprint"]["runner"]["bootstrapManifestSha256"] = (
+                "0" * 64
+            )
+        elif hostile_case == "cross_report_fingerprint_mismatch":
+            document["fingerprint"]["runner"]["bootstrapManifestSha256"] = "0" * 64
         elif hostile_case == "missing_provider_cell":
             document["proofs"].pop()
         elif hostile_case == "mixed_tthw_status":

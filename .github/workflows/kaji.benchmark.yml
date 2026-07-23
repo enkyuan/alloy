@@ -26,10 +26,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  KAJI_BENCHMARK_PINNED_RUNNER: "1"
-  KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST: ${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}
-
 jobs:
   release-artifacts:
     name: release artifacts
@@ -78,10 +74,13 @@ jobs:
       github.event_name == 'push' ||
       inputs.job == 'benchmark' ||
       inputs.job == 'all'
-    runs-on: [self-hosted, linux, x64, kaji-benchmark]
+    runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]
     # 35-minute benchmark + 10-minute setup/upload allowance.
     timeout-minutes: 45
     env:
+      KAJI_BENCHMARK_PINNED_RUNNER: "1"
+      KAJI_BENCHMARK_RUNNER_MANIFEST: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}
+      KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}
       KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -129,10 +128,13 @@ jobs:
       github.event_name == 'push' ||
       inputs.job == 'soak' ||
       inputs.job == 'all'
-    runs-on: [self-hosted, linux, x64, kaji-benchmark]
+    runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]
     # 42-minute soak + 8-minute setup/upload allowance.
     timeout-minutes: 50
     env:
+      KAJI_BENCHMARK_PINNED_RUNNER: "1"
+      KAJI_BENCHMARK_RUNNER_MANIFEST: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}
+      KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}
       KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -176,11 +178,14 @@ jobs:
     name: baseline calibration
     needs: release-artifacts
     if: github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate'
-    runs-on: [self-hosted, linux, x64, kaji-benchmark]
+    runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]
     # 35-minute calibration + 10-minute setup/upload allowance.
     timeout-minutes: 45
     env:
       KAJI_BENCHMARK_CALIBRATION: "1"
+      KAJI_BENCHMARK_PINNED_RUNNER: "1"
+      KAJI_BENCHMARK_RUNNER_MANIFEST: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}
+      KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}
       KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

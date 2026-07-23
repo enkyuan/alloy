@@ -2022,18 +2022,49 @@ describe("Kaji workflow contracts", () => {
     expect(source).not.toMatch(/^\s+python(?:3)?\s+kaji\/scripts\/validate_release_evidence\.py/m);
   });
 
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "binds %s performance evidence to the measured macOS runner",
+    (workflowName) => {
+      const { workflow } = readWorkflow(workflowName);
+      const job = workflow.jobs?.performance;
+      expect(job?.["runs-on"]).toEqual(["self-hosted", "macOS", "ARM64", "kaji-benchmark"]);
+      const environment = effectiveEnvironment(workflow, job!);
+      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST).toBe(
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}",
+      );
+      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256).toBe(
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}",
+      );
+      expect(environment.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST).toBeUndefined();
+      const validation = job?.steps?.find((step) =>
+        step.run?.includes("expected_fingerprint"),
+      )?.run;
+      expect(validation).toContain("fingerprint(protected=True)");
+      expect(validation).toContain('.fingerprint.runner.os == "Darwin"');
+      expect(validation).toContain('.fingerprint.runner.arch == "arm64"');
+      expect(validation).toContain(".fingerprint.runner.platformVersion");
+      expect(validation).toContain(".fingerprint.runner.bootstrapManifestSha256");
+      expect(validation).toContain(".baselineFingerprint == $fingerprint");
+      expect(validation).not.toContain("imageDigest");
+    },
+  );
+
   it("keeps calibration on the protected pinned runner", () => {
     const { workflow } = readWorkflow("kaji.benchmark.yml");
     const jobs = workflow.jobs ?? {};
     expect(jobs["release-artifacts"]?.["runs-on"]).toBe("ubuntu-latest");
     for (const jobId of ["benchmark", "soak", "calibrate"] as const) {
       const job = jobs[jobId]!;
-      expect(job["runs-on"], jobId).toEqual(["self-hosted", "linux", "x64", "kaji-benchmark"]);
+      expect(job["runs-on"], jobId).toEqual(["self-hosted", "macOS", "ARM64", "kaji-benchmark"]);
       const environment = effectiveEnvironment(workflow, job);
       expect(environment.KAJI_BENCHMARK_PINNED_RUNNER, jobId).toBe("1");
-      expect(environment.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST, jobId).toBe(
-        "${{ vars.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST }}",
+      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST, jobId).toBe(
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}",
       );
+      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256, jobId).toBe(
+        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}",
+      );
+      expect(environment.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_CALIBRATION, jobId).toBe(
         jobId === "calibrate" ? "1" : undefined,
       );
@@ -2043,16 +2074,21 @@ describe("Kaji workflow contracts", () => {
     );
 
     const runtimeGuard = readFileSync(
-      resolve(repositoryRoot, "kaji/scripts/beta_benchmark_gate.py"),
+      resolve(repositoryRoot, "kaji/scripts/benchmark_platform.py"),
       "utf8",
     );
     for (const guard of [
-      'os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1"',
       'os.environ.get("KAJI_BENCHMARK_PINNED_RUNNER") != "1"',
-      'current.get("runner", {}).get("imageDigest") == "local-unpinned"',
+      'platform.system() != "Darwin"',
+      'platform.machine().lower() != "arm64"',
+      "os.O_NOFOLLOW",
+      "os.fstat(descriptor)",
+      "MAX_MANIFEST_BYTES = 64 * 1024",
+      "validate_retained_runner",
     ]) {
       expect(runtimeGuard).toContain(guard);
     }
+    expect(runtimeGuard).not.toContain("imageDigest");
   });
 });
 
