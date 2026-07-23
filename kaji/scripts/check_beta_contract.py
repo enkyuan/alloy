@@ -51,6 +51,7 @@ REQUIRED_JSON = {
     "parity/scenarios.schema.json",
     "providers/cost-conformance.json",
     "release/tthw-automated-timings.template.json",
+    "release/github-proof-v1.schema.json",
     "release/tthw-evidence-v1.schema.json",
     "release/kaji-ts-consumer-handoff-v1.schema.json",
     "release/tthw-participant.template.json",

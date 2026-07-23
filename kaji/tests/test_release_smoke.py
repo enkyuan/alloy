@@ -748,3 +748,35 @@ def test_repo_root_editable_import_resolves_sdk_package() -> None:
     assert result.returncode == 0, result.stderr
     imported = Path(json.loads(result.stdout)["file"]).resolve()
     assert imported == SDK_ROOT / "src" / "kaji" / "__init__.py"
+
+
+def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -> None:
+    source_tools = (
+        SDK_ROOT / "scripts" / "live_github_proof.py",
+        SDK_ROOT / "scripts" / "github_proof_cleanup.py",
+        SDK_ROOT / "scripts" / "github_proof_control.py",
+        SDK_ROOT / "scripts" / "installed_github_live.py",
+        REPO_ROOT / "kaji" / "ts" / "scripts" / "installed-github-live.mts",
+    )
+    assert all(path.is_file() for path in source_tools)
+    assert all(not path.is_relative_to(SDK_ROOT / "src") for path in source_tools)
+
+    canonical = (
+        REPO_ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
+    ).read_bytes()
+    assert (
+        SDK_ROOT
+        / "src"
+        / "kaji"
+        / "contracts"
+        / "release"
+        / "github-proof-v1.schema.json"
+    ).read_bytes() == canonical
+    assert (
+        REPO_ROOT
+        / "kaji"
+        / "ts"
+        / "contracts"
+        / "release"
+        / "github-proof-v1.schema.json"
+    ).read_bytes() == canonical

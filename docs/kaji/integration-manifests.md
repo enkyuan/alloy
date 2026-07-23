@@ -65,3 +65,33 @@ bun run typecheck:registry
 
 Corrupt or unreadable indexed manifests are fatal. List commands must not hide
 them or silently skip an entry.
+
+## Exact-artifact GitHub proof
+
+The source-only `live_github_proof.py` operator tool can prove one
+`github.get_issue` read and one exactly approved `github.add_comment` call from
+the candidate wheel and npm tarball. It accepts an owner-only fixture for an
+existing private-repository issue, binds both installed-runtime cells to the
+same protected compatibility run, and publishes a redacted receipt only after
+the temporary comments are independently read back and deleted.
+
+Proof and standalone cleanup commands take one exclusive owner-only lock for
+the selected state file. A concurrent invocation fails before transport; rerun
+it only after the active operator command exits.
+
+If cleanup reports a pending absence, wait for GitHub visibility to converge
+and rerun the ordinary cleanup command. Only after an ordinary run has observed
+zero exact-marker comments may an operator perform a fresh, explicit absence
+check with `github_proof_cleanup.py --confirm-absence`. That confirmation never
+retries the comment mutation and closes the proof as failed rather than
+converting an unknown dispatch into a pass.
+
+If an exact marker is observed on an issue other than the designated fixture,
+cleanup stays pending for manual review. Do not use absence confirmation to
+clear that state, and do not automatically delete the out-of-scope comment.
+
+This tooling does not promote GitHub by itself. GitHub remains experimental
+until a protected operator run retains a valid
+`github-proof-v1.schema.json` receipt for the exact release artifacts. The
+reviewed checkpoint does not include a Gmail runtime; Gmail remains outside
+this proof and is recorded as `GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT`.

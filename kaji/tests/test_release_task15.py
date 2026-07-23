@@ -3137,3 +3137,30 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
     assert repeated.returncode != 0
     assert fixture.output.read_bytes() == first_output
     assert repeated.stdout == first.stdout
+
+
+def test_github_exact_artifact_proof_contract_and_operator_wiring() -> None:
+    contract_checker = _load_root_script("check_beta_contract.py")
+    assert "release/github-proof-v1.schema.json" in contract_checker.REQUIRED_JSON
+
+    live = _read("kaji/scripts/live_github_proof.py")
+    cleanup = _read("kaji/scripts/github_proof_cleanup.py")
+    documentation = _read("docs/kaji/integration-manifests.md")
+    release_matrix = _read("kaji/RELEASE_MATRIX.md")
+    for option in (
+        "--artifacts-dir",
+        "--expected-commit",
+        "--python-compat",
+        "--typescript-compat",
+        "--fixture",
+        "--state",
+        "--output",
+    ):
+        assert option in live
+    assert "--state" in cleanup
+    assert "--expected-commit" in cleanup
+    assert "--confirm-absence" in cleanup
+    assert "GitHub remains experimental" in documentation
+    assert "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT" in documentation
+    assert "confirm-absence" in documentation
+    assert "Exact-artifact GitHub proof" in release_matrix

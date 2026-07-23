@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/release/github-proof-v1.schema.json",
+  "title": "Kaji exact-artifact GitHub proof",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commit",
+    "releaseManifestSha256",
+    "cells",
+    "approvalRejectedBeforeTransport",
+    "readPassed",
+    "approvedCommentPassed",
+    "controlReadbackPassed",
+    "ambiguousMutationRetried",
+    "cleanup",
+    "redacted"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "releaseManifestSha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "cells": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/pythonCell"
+        },
+        {
+          "$ref": "#/$defs/typescriptCell"
+        }
+      ],
+      "items": false
+    },
+    "approvalRejectedBeforeTransport": {
+      "const": true
+    },
+    "readPassed": {
+      "const": true
+    },
+    "approvedCommentPassed": {
+      "const": true
+    },
+    "controlReadbackPassed": {
+      "const": true
+    },
+    "ambiguousMutationRetried": {
+      "const": false
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "conclusion"
+      ],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "conclusion": {
+          "const": "passed"
+        }
+      }
+    },
+    "redacted": {
+      "const": true
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runtime",
+        "artifactSha256",
+        "packageProofSha256",
+        "conclusion"
+      ],
+      "properties": {
+        "runtime": {
+          "type": "string"
+        },
+        "artifactSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "packageProofSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "conclusion": {
+          "const": "passed"
+        }
+      }
+    },
+    "pythonCell": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/cell"
+        },
+        {
+          "properties": {
+            "runtime": {
+              "const": "python"
+            }
+          }
+        }
+      ]
+    },
+    "typescriptCell": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/cell"
+        },
+        {
+          "properties": {
+            "runtime": {
+              "const": "typescript"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
