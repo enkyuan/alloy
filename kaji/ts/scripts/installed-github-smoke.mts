@@ -148,6 +148,21 @@ interface TypeScriptDeclarationChecks {
   };
 }
 
+type ProofFailureCode =
+  | "arguments_incomplete"
+  | "arguments_invalid"
+  | "environment_not_isolated"
+  | "proof_failed";
+
+class ProofFailure extends Error {
+  readonly code: ProofFailureCode;
+
+  constructor(code: ProofFailureCode) {
+    super("installed GitHub package proof failed");
+    this.code = code;
+  }
+}
+
 function contained(path: string, root: string, label: string): string {
   const resolved = realpathSync(path);
   const boundary = realpathSync(root);
@@ -174,11 +189,11 @@ function parseArguments(argv: string[]): {
       value === undefined ||
       value.startsWith("--")
     ) {
-      throw new Error("invalid installed GitHub proof arguments");
+      throw new ProofFailure("arguments_invalid");
     }
     values.set(flag!, value);
   }
-  if (values.size !== 3) throw new Error("incomplete installed GitHub proof arguments");
+  if (values.size !== 3) throw new ProofFailure("arguments_incomplete");
   return {
     sandboxRoot: values.get("--sandbox-root")!,
     packageRoot: values.get("--package-root")!,
@@ -472,7 +487,7 @@ async function runProof(argv: string[]) {
     "NPM_TOKEN" in process.env ||
     "NODE_PATH" in process.env
   ) {
-    throw new Error("installed TypeScript proof environment is not isolated");
+    throw new ProofFailure("environment_not_isolated");
   }
   const args = parseArguments(argv);
   const sandbox = realpathSync(args.sandboxRoot);
@@ -1174,8 +1189,9 @@ async function main(): Promise<number> {
   try {
     console.log(JSON.stringify(await runProof(process.argv.slice(2))));
     return 0;
-  } catch {
-    console.error(`installed GitHub package proof failed at ${proofStage}`);
+  } catch (error) {
+    const code = error instanceof ProofFailure ? error.code : "proof_failed";
+    console.error(`installed GitHub package proof failed at ${proofStage} code=${code}`);
     return 1;
   }
 }

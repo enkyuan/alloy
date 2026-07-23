@@ -24,6 +24,7 @@ import { assertCliListOutput } from "../scripts/cli_assertions";
 import {
   finalizeSmokeRun,
   ordinaryFailureReceipt,
+  safeGitHubProofFailureCode,
   SmokeCommandError,
   type PendingSmokeReceipt,
   type SmokeFinalizerDependencies,
@@ -636,7 +637,8 @@ describe("npm contract artifact", () => {
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
-    expect(source.match(/completed\.stderr/g)).toHaveLength(2);
+    expect(source.match(/completed\.stderr/g)).toHaveLength(3);
+    expect(source).toContain("safeGitHubProofFailureCode(completed.stderr)");
     expect(source).toContain("const diagnostic = safeHandoffDiagnostic(completed.stderr)");
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
@@ -719,6 +721,25 @@ describe("npm contract artifact", () => {
       kind: "exit",
     });
     expect(JSON.stringify(error)).not.toContain("sk-package-canary");
+  });
+
+  it("retains only allowlisted installed GitHub proof diagnostics", () => {
+    const canary = "sk-github-proof-canary";
+
+    expect(
+      safeGitHubProofFailureCode(
+        `warning=${canary}\ninstalled GitHub package proof failed at environment code=arguments_incomplete\n`,
+      ),
+    ).toBe("arguments_incomplete");
+    expect(
+      safeGitHubProofFailureCode(
+        `installed GitHub package proof failed at environment code=${canary}`,
+      ),
+    ).toBe("proof_failed");
+
+    const source = readFileSync(resolve(packageRoot, "scripts/smoke_package.mts"), "utf8");
+    expect(source).toContain("safeGitHubProofFailureCode(completed.stderr)");
+    expect(source).toContain("package smoke child failure at ${phase}: code=${code}");
   });
 
   it("rejects forged typed-error fields at the ordinary receipt boundary", () => {
@@ -1563,6 +1584,26 @@ exit 7
     expect(runner).not.toContain("sourceRuntimeDetected");
     expect(runner).not.toContain("logicalCatalogEventsVerified");
     expect(runner).not.toContain("privateGitHubCompositionSourcesPacked: false");
+  });
+
+  it("reports a closed cause for incomplete installed GitHub proof arguments", () => {
+    const runner = resolve(packageRoot, "scripts/installed-github-smoke.mts");
+    const environment = Object.fromEntries(
+      ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((name) =>
+        process.env[name] === undefined ? [] : [[name, process.env[name]]],
+      ),
+    );
+    const completed = spawnSync(process.execPath, ["--experimental-strip-types", runner], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: environment,
+    });
+
+    expect(completed.status).toBe(1);
+    expect(completed.stdout).toBe("");
+    expect(completed.stderr.trim()).toBe(
+      "installed GitHub package proof failed at environment code=arguments_incomplete",
+    );
   });
 
   it("proves installed ESM and CommonJS GitHub class identity through the package root", () => {

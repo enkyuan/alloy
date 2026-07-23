@@ -103,11 +103,18 @@ const COMMAND_FAILURE_KINDS = [
   "shutting_down",
   "unknown",
 ] as const satisfies readonly CommandFailureKind[];
+const INSTALLED_GITHUB_PROOF_FAILURE_CODES = [
+  "arguments_incomplete",
+  "arguments_invalid",
+  "environment_not_isolated",
+  "proof_failed",
+] as const;
 
 type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 type InstallStage = (typeof INSTALL_STAGES)[number];
 type HandoffMode = "artifact-contract" | "node";
 type HandoffPhase = (typeof HANDOFF_PHASES)[number];
+type InstalledGitHubProofFailureCode = (typeof INSTALLED_GITHUB_PROOF_FAILURE_CODES)[number];
 type SmokePhase =
   | (typeof STATIC_SMOKE_PHASES)[number]
   | `${PackageManager}:${(typeof MANAGER_SMOKE_PHASE_SUFFIXES)[number]}`
@@ -1341,7 +1348,15 @@ async function runCommand(
       check: false,
     });
     if (completed.status !== expectedStatus) {
-      if (phase.startsWith("handoff:")) {
+      if (
+        phase === "npm:github-package-proof" ||
+        phase === "bun:github-package-proof" ||
+        phase === "handoff:npm-github-proof" ||
+        phase === "handoff:bun-github-proof"
+      ) {
+        const code = safeGitHubProofFailureCode(completed.stderr);
+        process.stderr.write(`package smoke child failure at ${phase}: code=${code}\n`);
+      } else if (phase.startsWith("handoff:")) {
         const diagnostic = safeHandoffDiagnostic(completed.stderr);
         if (diagnostic !== "") {
           process.stderr.write(`package smoke child stderr at ${phase}: ${diagnostic}\n`);
@@ -1356,6 +1371,18 @@ async function runCommand(
     }
     throw error;
   }
+}
+
+export function safeGitHubProofFailureCode(output: string): InstalledGitHubProofFailureCode {
+  for (const match of output.matchAll(
+    /^installed GitHub package proof failed at [a-z][a-z-]* code=([a-z_]+)\r?$/gmu,
+  )) {
+    const code = match[1]!;
+    if (INSTALLED_GITHUB_PROOF_FAILURE_CODES.includes(code as InstalledGitHubProofFailureCode)) {
+      return code as InstalledGitHubProofFailureCode;
+    }
+  }
+  return "proof_failed";
 }
 
 function safeHandoffDiagnostic(output: string): string {
