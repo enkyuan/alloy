@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 from types import SimpleNamespace
 from typing import Any, cast
@@ -26,6 +27,25 @@ def _load(path: Path):
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_soak_gate_help_starts_in_installed_runtime_safe_environment(
+    tmp_path: Path,
+) -> None:
+    installed_runtime = _load(SCRIPTS / "installed_release_runtime.py")
+    environment = installed_runtime._safe_environment(tmp_path)
+
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS / "beta_soak_gate.py"), "--help"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout
 
 
 def _memory_samples(runtime: str) -> list[dict[str, float]]:

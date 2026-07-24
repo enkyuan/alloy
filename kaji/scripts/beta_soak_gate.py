@@ -8,8 +8,10 @@ import json
 import math
 from pathlib import Path
 import statistics
+import sys
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from beta_benchmark_gate import COMMIT_PATTERN, HASH_PATTERN, performance_provenance
 
 
