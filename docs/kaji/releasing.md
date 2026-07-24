@@ -63,9 +63,11 @@ Complete these once before creating the release tag:
    check that proves a token may create a new unscoped package, so the protected
    publisher remains the fail-closed authorization check.
 6. Configure `kaji-beta` with required reviewers and only
-   `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `KAJI_TTHW_EVIDENCE_JSON`.
-   Configure `kaji-beta-publish` with separate required reviewers,
-   `NPM_TOKEN`, and `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
+   `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. Leave the final
+   `KAJI_TTHW_EVIDENCE_JSON` value unset until the tag-triggered workflow has
+   built the exact artifacts used by the five participants. Configure
+   `kaji-beta-publish` with separate required reviewers, `NPM_TOKEN`, and
+   `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
 7. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
    run on GitHub-hosted `macos-15` ARM64 and fail closed unless GitHub's runner
    classification, the actual host, and the image's `imagedata.json` agree.
@@ -105,21 +107,82 @@ later run is not acceptable evidence.
 
 1. Confirm the exact Python and TypeScript beta versions are unused on both
    registries.
-2. Create a signed, annotated tag targeting the approved commit directly:
+2. Before creating the tag, configure the required `kaji-beta` reviewer and
+   provider keys. Leave `KAJI_TTHW_EVIDENCE_JSON` unset; remove any value from
+   a prior run because it cannot bind the artifact bytes that this run will
+   build. Keep the environment approval requirement enabled.
+3. Create and push the signed, annotated tag targeting the approved commit
+   directly:
 
    ```bash
    git tag -s -a kaji-v0.2.0-beta.2 <approved-commit> -m "Kaji 0.2.0 beta 2"
    git push origin refs/tags/kaji-v0.2.0-beta.2
    ```
 
-3. Approve `kaji-beta` only after offline and compatibility jobs, all three
-   paired benchmark replicas and their aggregate, and the separate 30-minute
-   soak pass. `KAJI_TTHW_EVIDENCE_JSON` must contain the redacted five-user
-   document for the exact current-run manifest and wheel, sdist, and npm
-   artifacts. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both required; each
-   must complete a normalized tool loop in Python and TypeScript. Missing-key
-   hygiene is not release evidence.
-4. Review the exact manifest, checksums, offline summary, provider status,
+4. Wait for the exact tag-triggered workflow run to upload
+   `kaji-beta-artifacts` and for every ungated job to pass: offline gates,
+   Python and Node compatibility, all three paired benchmark replicas and
+   their aggregate, and the separate 30-minute soak. Do not approve the waiting
+   `tthw-evidence` job yet. The `kaji-beta` approval is the safe pause that
+   permits the final secret to be created from the current run. Do not remove
+   the approval requirement.
+5. Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID,
+   not by a mutable branch or a same-named artifact from another run. In the
+   operator shell, set `RUN_ID` to that numeric tag-triggered workflow run ID,
+   then run:
+
+   ```bash
+   set -euo pipefail
+   umask 077
+
+   : "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"
+   case "$RUN_ID" in
+     "" | *[!0-9]*)
+       echo "RUN_ID must be one numeric workflow run ID" >&2
+       exit 1
+       ;;
+   esac
+
+   ARTIFACT_ID="$(
+     gh api "repos/enkyuan/alloy/actions/runs/$RUN_ID/artifacts?per_page=100" \
+       --jq '.artifacts[] | select(.name == "kaji-beta-artifacts" and .expired == false) | .id'
+   )"
+   case "$ARTIFACT_ID" in
+     "" | *[!0-9]*)
+       echo "expected exactly one numeric kaji-beta-artifacts ID" >&2
+       exit 1
+       ;;
+   esac
+
+   EVIDENCE_ROOT="$(mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX")"
+   ARTIFACTS_DIR="$EVIDENCE_ROOT/artifacts"
+   ARCHIVE="$EVIDENCE_ROOT/kaji-beta-artifacts.zip"
+   mkdir -m 700 "$ARTIFACTS_DIR"
+   gh api "repos/enkyuan/alloy/actions/artifacts/$ARTIFACT_ID/zip" \
+     >"$ARCHIVE"
+   unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"
+   ```
+
+   Confirm the query returned one ID and record both IDs with the private
+   operator evidence. Keep the fresh owner-only directory until release
+   evidence is complete; verify its downloaded manifest and all three artifacts
+   before distributing them.
+
+6. Generate five candidate-bound participant skeletons from that manifest and
+   artifact directory, collect the five real arm64 macOS runs, fill the
+   automated timing receipt from those same bytes, and compose the final
+   document by following [the TTHW evidence operator guide](tthw-evidence.md).
+   Prior release, rehearsal, and performance artifacts are invalid substitutes.
+7. Set `KAJI_TTHW_EVIDENCE_JSON` to the exact composed document bytes. Only then
+   approve the waiting `tthw-evidence` job. Protected environment secrets are
+   read when that job starts, so it validates the value just set against the
+   current run's downloaded manifest, wheel, sdist, and npm tarball. After it
+   passes, approve the downstream provider proof under `kaji-beta` if prompted;
+   both provider keys must complete a normalized tool loop in Python and
+   TypeScript. Missing-key hygiene is not release evidence.
+   `kaji-beta-publish` remains a separate approval boundary and is not approved
+   at this stage.
+8. Review the exact manifest, checksums, offline summary, provider status,
    paired benchmark, soak, SBOM, and provenance evidence. The first
    `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
    requires `NPM_TOKEN`, requires `KAJI_NPM_PUBLISHER` to match `npm whoami`,
@@ -127,23 +190,23 @@ later run is not acceptable evidence.
    exists. For the first publication it instead requires an unambiguous `E404`
    for the unscoped package name and records that npm cannot prove new-package
    write authorization without performing the protected publication.
-5. After publisher preflight passes, the Python and npm publisher jobs become
+9. After publisher preflight passes, the Python and npm publisher jobs become
    eligible together under `kaji-beta-publish`. Approve both pending jobs in
    one final approval batch. Do not approve one publisher and defer or reject
    the other; neither registry write is intentionally ordered after the other.
    After approval, each publisher independently revalidates the artifact
    manifest and reverifies the same signed tag object/direct commit immediately
    before its registry write.
-6. The workflow records a final registry status. After both publisher jobs
-   report success it polls at most eight times with delays capped at 20 seconds
-   (a 90-second total backoff window), compares PyPI's exact filename/size/
-   SHA-256 metadata to the manifest, downloads and hashes the npm tarball, and
-   verifies npm integrity metadata. Only byte-exact convergence is
-   `byte_verified`; `both_published` is not a success terminal.
-   It attaches the
-   exact wheel, sdist, npm tarball, manifest, checksums, offline test evidence,
-   provider/performance evidence, SPDX SBOM, provenance bundle, attestation ID
-   and URL, and publication status to the GitHub prerelease.
+10. The workflow records a final registry status. After both publisher jobs
+    report success it polls at most eight times with delays capped at 20 seconds
+    (a 90-second total backoff window), compares PyPI's exact filename/size/
+    SHA-256 metadata to the manifest, downloads and hashes the npm tarball, and
+    verifies npm integrity metadata. Only byte-exact convergence is
+    `byte_verified`; `both_published` is not a success terminal.
+    It attaches the
+    exact wheel, sdist, npm tarball, manifest, checksums, offline test evidence,
+    provider/performance evidence, SPDX SBOM, provenance bundle, attestation ID
+    and URL, and publication status to the GitHub prerelease.
 
 The GitHub prerelease step is safe to retry only after both registry jobs have
 succeeded: it reuses the existing prerelease, compares every existing asset's
@@ -214,8 +277,10 @@ mismatch.
 
 ## Human TTHW evidence
 
-Store one redacted evidence document in the protected `kaji-beta` environment
-as `KAJI_TTHW_EVIDENCE_JSON`. Both protected release workflows validate it with
+Create the redacted evidence document only from the current tag-triggered
+release artifacts, then store it in the protected `kaji-beta` environment as
+`KAJI_TTHW_EVIDENCE_JSON` while the `tthw-evidence` job is waiting for approval.
+Both protected release workflows validate it with
 `kaji/scripts/validate_tthw_evidence.py` and retain `kaji-tthw-evidence`; they
 do not retain the document when validation fails. It must bind one 40-hex commit
 and release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,

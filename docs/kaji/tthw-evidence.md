@@ -8,11 +8,25 @@ the complete document passes.
 
 ## Inputs and cohort
 
-Retain the exact release `manifest.json`, wheel, sdist, and npm tarball in one
-read-only artifact directory. Give each participant only the generated receipt
-skeleton, manifest, and artifact selected for their path. Do not give them a
-repository archive, editable install, linked workspace, or local registry
-override.
+Retain the exact release `manifest.json`, wheel, sdist, and npm tarball from the
+exact `kaji-beta-artifacts` upload from the current tag-triggered `publish /
+kaji` run in one read-only artifact directory. Record the workflow run ID and
+artifact ID, and download the archive by that artifact ID while the
+`tthw-evidence` job remains paused at its protected environment. Prior release,
+rehearsal, and performance artifacts are invalid substitutes. Give each
+participant only the generated receipt skeleton, manifest, and artifact
+selected for their path. Do not give them a repository archive, editable
+install, linked workspace, or local registry override.
+
+Continue in the same operator shell used by the release runbook and create the
+private cohort directory once:
+
+```bash
+: "${EVIDENCE_ROOT:?follow the release runbook first}"
+: "${ARTIFACTS_DIR:?follow the release runbook first}"
+TTHW_DIR="$EVIDENCE_ROOT/tthw"
+mkdir -m 700 "$TTHW_DIR"
+```
 
 The checked-in participant template documents the closed receipt shape; its
 placeholder candidate fields are not collection evidence. Generate each
@@ -22,14 +36,15 @@ collecting results. For example:
 ```bash
 uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
   --generate-participant-template python \
-  --release-manifest /secure/kaji-release/manifest.json \
-  --artifacts-dir /secure/kaji-release \
-  --output /secure/tthw/user-001.json
+  --release-manifest "$ARTIFACTS_DIR/manifest.json" \
+  --artifacts-dir "$ARTIFACTS_DIR" \
+  --output "$TTHW_DIR/user-001.json"
 ```
 
 Repeat that command for all five assignments, changing the selected path and
 output file. Copy
-`kaji/contracts/release/tthw-automated-timings.template.json` once per release.
+`kaji/contracts/release/tthw-automated-timings.template.json` once per release
+to `"$TTHW_DIR/automated-timings.json"`.
 The generator verifies the canonical manifest and all three artifacts, then
 atomically binds the selected wheel or npm tarball into an owner-only skeleton.
 
@@ -248,15 +263,15 @@ once:
 
 ```bash
 uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
-  --participant /secure/tthw/user-001.json \
-  --participant /secure/tthw/user-002.json \
-  --participant /secure/tthw/user-003.json \
-  --participant /secure/tthw/user-004.json \
-  --participant /secure/tthw/user-005.json \
-  --automated-timings /secure/tthw/automated-timings.json \
-  --release-manifest /secure/kaji-release/manifest.json \
-  --artifacts-dir /secure/kaji-release \
-  --output /secure/tthw/KAJI_TTHW_EVIDENCE_JSON.json
+  --participant "$TTHW_DIR/user-001.json" \
+  --participant "$TTHW_DIR/user-002.json" \
+  --participant "$TTHW_DIR/user-003.json" \
+  --participant "$TTHW_DIR/user-004.json" \
+  --participant "$TTHW_DIR/user-005.json" \
+  --automated-timings "$TTHW_DIR/automated-timings.json" \
+  --release-manifest "$ARTIFACTS_DIR/manifest.json" \
+  --artifacts-dir "$ARTIFACTS_DIR" \
+  --output "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"
 ```
 
 The output is written atomically with owner-only permissions after

@@ -1492,6 +1492,68 @@ describe("Kaji workflow contracts", () => {
     expect(classifier?.run).toContain('[ "$NPM_PUBLISH_RESULT" = skipped ]');
   });
 
+  it("collects TTHW from current tag artifacts before environment approval", () => {
+    const runbookSource = readFileSync(resolve(repositoryRoot, "docs/kaji/releasing.md"), "utf8");
+    const runbook = runbookSource.replace(/\s+/gu, " ");
+    const orderedSteps = [
+      "Before creating the tag, configure the required `kaji-beta` reviewer",
+      "Leave `KAJI_TTHW_EVIDENCE_JSON` unset",
+      "Create and push the signed, annotated tag",
+      "Wait for the exact tag-triggered workflow run",
+      "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
+      "Generate five candidate-bound participant skeletons",
+      "Set `KAJI_TTHW_EVIDENCE_JSON`",
+      "Only then approve the waiting `tthw-evidence` job",
+    ];
+    const positions = orderedSteps.map((step) => runbook.indexOf(step));
+
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(runbook).toContain("`kaji-beta` approval is the safe pause");
+    expect(runbook).toContain("Do not remove the approval requirement");
+    for (const exactBinding of [
+      "set -euo pipefail",
+      "umask 077",
+      ': "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"',
+      "actions/runs/$RUN_ID/artifacts?per_page=100",
+      'select(.name == "kaji-beta-artifacts" and .expired == false)',
+      'case "$ARTIFACT_ID" in',
+      "*[!0-9]*",
+      'mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX"',
+      "actions/artifacts/$ARTIFACT_ID/zip",
+      'unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"',
+    ]) {
+      expect(runbook).toContain(exactBinding);
+    }
+    expect(runbook).not.toContain("RUN_ID=<tag-triggered-publish-run-id>");
+    expect(runbook).not.toContain("/secure/");
+    const artifactShell =
+      "set -euo pipefail" + runbookSource.split("set -euo pipefail", 2)[1]!.split("```", 1)[0]!;
+    const syntax = spawnSync("/bin/bash", ["-n"], {
+      encoding: "utf8",
+      input: artifactShell,
+    });
+    expect(syntax.status, syntax.stderr).toBe(0);
+    expect(runbook).toContain(
+      "Prior release, rehearsal, and performance artifacts are invalid substitutes.",
+    );
+    expect(runbook).toContain("`kaji-beta-publish` remains a separate");
+
+    const guide = readFileSync(
+      resolve(repositoryRoot, "docs/kaji/tthw-evidence.md"),
+      "utf8",
+    ).replace(/\s+/gu, " ");
+    expect(guide).toContain("exact `kaji-beta-artifacts` upload from the current tag-triggered");
+    expect(guide).toContain("workflow run ID and artifact ID");
+    expect(guide).toContain(': "${EVIDENCE_ROOT:?follow the release runbook first}"');
+    expect(guide).toContain(': "${ARTIFACTS_DIR:?follow the release runbook first}"');
+    expect(guide).toContain('TTHW_DIR="$EVIDENCE_ROOT/tthw"');
+    expect(guide).not.toContain("/secure/");
+    expect(guide).toContain(
+      "Prior release, rehearsal, and performance artifacts are invalid substitutes.",
+    );
+  });
+
   it("binds the current TypeScript candidate to the beta.2 package and tarball identity", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;

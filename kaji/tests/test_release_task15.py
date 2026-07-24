@@ -733,6 +733,72 @@ def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
     assert "Configuration alone does not claim that the cohort passed" in docs
 
 
+def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approval() -> (
+    None
+):
+    runbook_source = _read("docs/kaji/releasing.md")
+    runbook = " ".join(runbook_source.split())
+    ordered_steps = (
+        "Before creating the tag, configure the required `kaji-beta` reviewer",
+        "Leave `KAJI_TTHW_EVIDENCE_JSON` unset",
+        "Create and push the signed, annotated tag",
+        "Wait for the exact tag-triggered workflow run",
+        "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
+        "Generate five candidate-bound participant skeletons",
+        "Set `KAJI_TTHW_EVIDENCE_JSON`",
+        "Only then approve the waiting `tthw-evidence` job",
+    )
+    positions = [runbook.index(step) for step in ordered_steps]
+
+    assert positions == sorted(positions)
+    assert "`kaji-beta` approval is the safe pause" in runbook
+    assert "Do not remove the approval requirement" in runbook
+    for exact_binding in (
+        "set -euo pipefail",
+        "umask 077",
+        ': "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"',
+        "actions/runs/$RUN_ID/artifacts?per_page=100",
+        'select(.name == "kaji-beta-artifacts" and .expired == false)',
+        'case "$ARTIFACT_ID" in',
+        "*[!0-9]*",
+        'mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX"',
+        "actions/artifacts/$ARTIFACT_ID/zip",
+        'unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"',
+    ):
+        assert exact_binding in runbook
+    assert "RUN_ID=<tag-triggered-publish-run-id>" not in runbook
+    assert "/secure/" not in runbook
+    artifact_shell = (
+        "set -euo pipefail"
+        + runbook_source.split("set -euo pipefail", 1)[1].split("```", 1)[0]
+    )
+    syntax = subprocess.run(
+        ["/bin/bash", "-n"],
+        input=artifact_shell,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    assert (
+        "Prior release, rehearsal, and performance artifacts are invalid substitutes."
+        in runbook
+    )
+    assert "`kaji-beta-publish` remains a separate" in runbook
+
+    guide = " ".join(_read("docs/kaji/tthw-evidence.md").split())
+    assert "exact `kaji-beta-artifacts` upload from the current tag-triggered" in guide
+    assert "workflow run ID and artifact ID" in guide
+    assert ': "${EVIDENCE_ROOT:?follow the release runbook first}"' in guide
+    assert ': "${ARTIFACTS_DIR:?follow the release runbook first}"' in guide
+    assert 'TTHW_DIR="$EVIDENCE_ROOT/tthw"' in guide
+    assert "/secure/" not in guide
+    assert (
+        "Prior release, rehearsal, and performance artifacts are invalid substitutes."
+        in guide
+    )
+
+
 @pytest.mark.parametrize(
     "workflow_name",
     [".github/workflows/kaji.rehearsal.yml", ".github/workflows/kaji.publish.yml"],
