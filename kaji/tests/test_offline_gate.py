@@ -137,9 +137,7 @@ def test_offline_gate_preserves_virtualenv_launcher_identity(
     module = _load_offline_gate(monkeypatch)
     launcher = "/tmp/kaji-venv/bin/python"
     captured: list[str] = []
-    monkeypatch.setattr(
-        module.shutil, "which", lambda _value, **_options: launcher
-    )
+    monkeypatch.setattr(module.shutil, "which", lambda _value, **_options: launcher)
 
     def run_checked(command: list[str], **_options: object) -> object:
         captured.extend(command)

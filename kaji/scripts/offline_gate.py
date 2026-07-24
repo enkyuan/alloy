@@ -104,9 +104,7 @@ def main(arguments: list[str] | None = None) -> int:
         print("offline gate command could not be started", file=sys.stderr)
         return 1
     command[0] = str(Path(executable).absolute())
-    toolchain_directories = _selected_toolchain_directories(
-        os.environ.get("PATH", "")
-    )
+    toolchain_directories = _selected_toolchain_directories(os.environ.get("PATH", ""))
     with tempfile.TemporaryDirectory(prefix="kaji-offline-") as root_text:
         root = Path(root_text)
         home = root / "home"

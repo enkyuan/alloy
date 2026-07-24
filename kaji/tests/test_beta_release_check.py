@@ -435,7 +435,7 @@ def test_release_environment_preserves_explicit_toolchain_precedence(
     environment = module.release_environment()
 
     assert environment["PATH"].split(os.pathsep)[0] == pinned_bin
-    assert f"/Users/release/.bun/bin" in environment["PATH"].split(os.pathsep)
+    assert "/Users/release/.bun/bin" in environment["PATH"].split(os.pathsep)
 
 
 def test_beta_release_check_wraps_required_gates() -> None:
