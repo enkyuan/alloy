@@ -936,6 +936,53 @@ def test_protected_benchmark_modes_retain_hosted_image_data(
     ]
 
 
+@pytest.mark.parametrize(
+    ("mode", "protected"),
+    [("full", True), ("calibrate", False)],
+)
+def test_failed_protected_benchmark_modes_retain_hosted_image_data(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mode: str,
+    protected: bool,
+) -> None:
+    module = _load_root_script("run_beta_benchmarks.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            mode=mode,
+            protected=protected,
+            artifacts_dir=tmp_path / "release",
+        ),
+    )
+    monkeypatch.setattr(module, "commands", lambda: (["python"], ["pytest"]))
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", "a" * 40)
+    retained: list[Path] = []
+
+    def failed_gate(command: list[str], **_kwargs: object) -> int:
+        output = Path(command[command.index("--output") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({"passed": False, "fingerprint": {"runner": {}}}))
+        return 17
+
+    monkeypatch.setattr(module, "run", failed_gate)
+    monkeypatch.setattr(
+        module,
+        "retain_reported_github_image_data",
+        lambda report: retained.append(report),
+    )
+
+    assert module.main() == 17
+    assert retained == [
+        tmp_path
+        / ".artifacts"
+        / "kaji-benchmarks"
+        / ("results.json" if mode == "full" else "calibration-results.json")
+    ]
+
+
 def test_protected_soak_retains_hosted_image_data(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

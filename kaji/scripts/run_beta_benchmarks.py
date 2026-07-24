@@ -190,12 +190,12 @@ def main() -> int:
             ],
             budget=BENCHMARK_ORCHESTRATOR_BUDGET,
         )
-        if status == 0 and args.protected:
+        if args.protected and (status == 0 or output.is_file()):
             try:
                 retain_reported_github_image_data(output)
             except BenchmarkPlatformError as error:
                 print(f"FAIL: {error}", file=sys.stderr)
-                return 1
+                return status if status != 0 else 1
         if status == 0:
             print("PASS: full benchmark budgets and calibrated regression baseline")
         return status
@@ -217,13 +217,13 @@ def main() -> int:
         ],
         budget=BENCHMARK_ORCHESTRATOR_BUDGET,
     )
-    if status == 0:
+    if status == 0 or output.is_file():
         try:
             retain_reported_github_image_data(output)
         except BenchmarkPlatformError as error:
             candidate.unlink(missing_ok=True)
             print(f"FAIL: {error}", file=sys.stderr)
-            return 1
+            return status if status != 0 else 1
     if status == 0:
         print("PASS: candidate baseline written for review")
     return status
