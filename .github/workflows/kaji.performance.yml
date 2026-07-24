@@ -108,7 +108,12 @@ jobs:
         run: |
           echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
           exit 1
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
       - name: Initialize paired replica status
+        if: ${{ always() && github.run_attempt == 1 }}
         shell: bash
         run: |
           mkdir -p "$KAJI_PAIRED_DIR"
@@ -121,10 +126,6 @@ jobs:
               conclusion: "not_run", failureCode: "paired_replica_not_completed",
               workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
             >"$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}-status.json"
-      - id: checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ inputs.candidate-commit }}
       - id: setup_node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -146,6 +147,7 @@ jobs:
         with:
           artifact-ids: ${{ inputs.candidate-artifact-id }}
           path: .artifacts/kaji-candidate
+          merge-multiple: true
       - name: Download immutable reference artifact
         id: reference
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -256,7 +258,12 @@ jobs:
         run: |
           echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
           exit 1
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
       - name: Initialize paired aggregate status
+        if: ${{ always() && github.run_attempt == 1 }}
         shell: bash
         run: |
           mkdir -p "$KAJI_AGGREGATE_DIR"
@@ -268,10 +275,6 @@ jobs:
               failureCode: "paired_aggregate_not_completed",
               workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
             >"$KAJI_AGGREGATE_DIR/aggregate-status.json"
-      - id: checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ inputs.candidate-commit }}
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
@@ -358,7 +361,12 @@ jobs:
         run: |
           echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
           exit 1
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
       - name: Initialize soak status
+        if: ${{ always() && github.run_attempt == 1 }}
         shell: bash
         run: |
           mkdir -p "$KAJI_SOAK_EVIDENCE_DIR"
@@ -370,10 +378,6 @@ jobs:
               failureCode: "soak_not_completed",
               workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
             >"$KAJI_SOAK_EVIDENCE_DIR/soak-status.json"
-      - id: checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ inputs.candidate-commit }}
       - id: setup_node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -395,6 +399,7 @@ jobs:
         with:
           artifact-ids: ${{ inputs.candidate-artifact-id }}
           path: .artifacts/kaji-candidate
+          merge-multiple: true
       - name: Verify exact candidate artifacts before soaking
         id: verify
         run: >-

@@ -150,6 +150,35 @@ def test_every_protected_job_rejects_partial_reruns_before_work() -> None:
         assert "always() && github.run_attempt == 1" in section
 
 
+def test_candidate_artifacts_are_flat_and_evidence_starts_after_checkout() -> None:
+    workflow = _read(PERFORMANCE)
+    boundaries = (
+        ("paired-replica", "paired-aggregate"),
+        ("paired-aggregate", "soak"),
+        ("soak", "performance-evidence"),
+    )
+
+    for job, next_job in boundaries:
+        section = workflow.split(f"  {job}:", 1)[1].split(f"  {next_job}:", 1)[0]
+        rerun_rejection = section.index("- name: Reject protected rerun attempt")
+        checkout = section.index("- id: checkout")
+        initialize = section.index("- name: Initialize")
+        initialization = section[initialize:].split("\n      - ", 1)[0]
+        assert rerun_rejection < checkout < initialize
+        assert "if: ${{ always() && github.run_attempt == 1 }}" in initialization
+
+    for job, next_job in (
+        ("paired-replica", "paired-aggregate"),
+        ("soak", "performance-evidence"),
+    ):
+        section = workflow.split(f"  {job}:", 1)[1].split(f"  {next_job}:", 1)[0]
+        candidate = section.split("- name: Download immutable candidate artifact", 1)[
+            1
+        ].split("- name:", 1)[0]
+        assert "artifact-ids: ${{ inputs.candidate-artifact-id }}" in candidate
+        assert "merge-multiple: true" in candidate
+
+
 def test_authoritative_workflows_call_shared_performance_without_legacy_full_gate() -> (
     None
 ):

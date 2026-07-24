@@ -1379,6 +1379,41 @@ describe("Kaji workflow contracts", () => {
     },
   );
 
+  it("flattens exact candidate artifacts and initializes workspace evidence after checkout", () => {
+    const jobs = readWorkflow("kaji.performance.yml").workflow.jobs ?? {};
+
+    for (const jobId of ["paired-replica", "paired-aggregate", "soak"]) {
+      const job = jobs[jobId];
+      if (job?.steps === undefined) throw new Error(`missing ${jobId} steps`);
+      const checkoutIndex = job.steps.findIndex((step) =>
+        step.uses?.startsWith("actions/checkout@"),
+      );
+      const rerunRejectionIndex = job.steps.findIndex(
+        (step) => step.name === "Reject protected rerun attempt",
+      );
+      const initializationIndex = job.steps.findIndex((step) =>
+        step.name?.startsWith("Initialize"),
+      );
+      expect(rerunRejectionIndex, jobId).toBeGreaterThanOrEqual(0);
+      expect(checkoutIndex, jobId).toBeGreaterThanOrEqual(0);
+      expect(checkoutIndex, jobId).toBeGreaterThan(rerunRejectionIndex);
+      expect(initializationIndex, jobId).toBeGreaterThan(checkoutIndex);
+      expect(job.steps[initializationIndex]?.if, jobId).toBe(
+        "${{ always() && github.run_attempt == 1 }}",
+      );
+    }
+
+    for (const jobId of ["paired-replica", "soak"]) {
+      const job = jobs[jobId];
+      if (job === undefined) throw new Error(`missing ${jobId} job`);
+      expect(workflowStep(job, "Download immutable candidate artifact").with).toMatchObject({
+        "artifact-ids": "${{ inputs.candidate-artifact-id }}",
+        path: ".artifacts/kaji-candidate",
+        "merge-multiple": true,
+      });
+    }
+  });
+
   it("bounds every Kaji job and keeps effective permissions narrow", () => {
     for (const name of workflowFiles) {
       const { workflow } = readWorkflow(name);
