@@ -114,7 +114,9 @@ Kaji quickstart and current support boundary.
 
 ## License
 
-Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
-The source is public and contributions are welcome, but commercial use and
-redistribution are not permitted. This is not an OSI-approved open-source
-license.
+Source-available under the
+[Functional Source License 1.1, ALv2 Future License](LICENSE). It permits
+internal commercial use, modification, and redistribution for permitted
+purposes, but excludes competing commercial products and services. Each
+version becomes Apache-2.0 after two years. FSL is not an OSI-approved
+open-source license.

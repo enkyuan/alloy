@@ -353,7 +353,7 @@ const NODE_HANDOFF_CHECKS = [
   "commonjs-require",
   "catalog-15-13",
 ] as const;
-const LICENSE_ID = "PolyForm-Noncommercial-1.0.0";
+const LICENSE_ID = "FSL-1.1-ALv2";
 const POLICY_TEST_FILE = "kaji/ts/tests/github-registry.test.ts";
 const POLICY_TEST_NAME = "rejects approval for github_create_issue before token or HTTP";
 const PRIVATE_GITHUB_COMPOSITION_PATHS = [
@@ -1822,7 +1822,7 @@ async function runArtifactContractHandoff(
   };
   if (
     packedManifest.name !== "@kaji/sdk" ||
-    packedManifest.license !== "SEE LICENSE IN LICENSE" ||
+    packedManifest.license !== LICENSE_ID ||
     typeof packedManifest.exports !== "object" ||
     packedManifest.exports === null ||
     Array.isArray(packedManifest.exports)

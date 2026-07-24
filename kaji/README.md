@@ -620,7 +620,8 @@ langchain / langserve.
 ## License
 
 Kaji is source-available under the
-[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
-It permits use, modification, and distribution for noncommercial purposes,
-subject to its terms and notice requirements; commercial use is not permitted,
-and this is not an OSI-approved open-source license.
+[Functional Source License 1.1, ALv2 Future License](https://spdx.org/licenses/FSL-1.1-ALv2.html).
+It permits internal commercial use, modification, and redistribution for
+permitted purposes, but excludes competing commercial products and services;
+each version becomes Apache-2.0 after two years. FSL is not an OSI-approved
+open-source license.

@@ -621,7 +621,7 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
 
     assert version is not None
     assert pyproject["project"]["version"] == version.group(1) == "0.2.0b1"
-    assert pyproject["project"]["license"] == "PolyForm-Noncommercial-1.0.0"
+    assert pyproject["project"]["license"] == "FSL-1.1-ALv2"
     assert pyproject["project"]["license-files"] == ["LICENSE"]
     assert (SDK_ROOT / "LICENSE").read_bytes() == (REPO_ROOT / "LICENSE").read_bytes()
     assert (SDK_ROOT / "MANIFEST.in").is_file()
@@ -644,20 +644,22 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
     assert 'version: "0.11.25"' in setup_action
 
 
-def test_package_readmes_describe_noncommercial_license_accurately() -> None:
+def test_package_readmes_describe_fsl_license_accurately() -> None:
     expected = (
         "Kaji is source-available under the "
-        "[PolyForm Noncommercial License 1.0.0]"
-        "(https://polyformproject.org/licenses/noncommercial/1.0.0). "
-        "It permits use, modification, and distribution for noncommercial purposes, "
-        "subject to its terms and notice requirements; commercial use is not permitted, "
-        "and this is not an OSI-approved open-source license."
+        "[Functional Source License 1.1, ALv2 Future License]"
+        "(https://spdx.org/licenses/FSL-1.1-ALv2.html). "
+        "It permits internal commercial use, modification, and redistribution for "
+        "permitted purposes, but excludes competing commercial products and services; "
+        "each version becomes Apache-2.0 after two years. "
+        "FSL is not an OSI-approved open-source license."
     )
 
     for path in (SDK_ROOT / "README.md", SDK_ROOT / "ts" / "README.md"):
         readme = " ".join(path.read_text().split())
         assert expected in readme
         assert "redistribution are not permitted" not in readme
+        assert "commercial use is not permitted" not in readme
 
 
 def test_npm_verifier_derives_expected_files_from_package_allowlist(

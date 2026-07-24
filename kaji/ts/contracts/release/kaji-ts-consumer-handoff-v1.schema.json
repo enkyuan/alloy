@@ -865,7 +865,7 @@
           "additionalProperties": false,
           "required": ["id", "sha256"],
           "properties": {
-            "id": { "const": "PolyForm-Noncommercial-1.0.0" },
+            "id": { "const": "FSL-1.1-ALv2" },
             "sha256": { "$ref": "#/$defs/hex64" }
           }
         }
@@ -1051,7 +1051,7 @@
       "additionalProperties": false,
       "required": [
         "mode", "registry", "signerWorkflow", "toolchain", "publicReleaseClaim",
-        "commercialUseClaim", "receiptSha256", "checks"
+        "licenseUseClaim", "receiptSha256", "checks"
       ],
       "properties": {
         "mode": { "const": "release" },
@@ -1069,7 +1069,7 @@
           }
         },
         "publicReleaseClaim": { "const": "eligible" },
-        "commercialUseClaim": { "const": "not-approved" },
+        "licenseUseClaim": { "const": "permitted-purpose-only" },
         "receiptSha256": { "$ref": "#/$defs/receiptDigests6" },
         "checks": { "$ref": "#/$defs/releaseChecks6" }
       }
@@ -1079,7 +1079,7 @@
       "additionalProperties": false,
       "required": [
         "mode", "registry", "signerWorkflow", "toolchain", "publicReleaseClaim",
-        "commercialUseClaim", "receiptSha256", "checks"
+        "licenseUseClaim", "receiptSha256", "checks"
       ],
       "properties": {
         "mode": { "const": "internal-evaluation" },
@@ -1087,7 +1087,7 @@
         "signerWorkflow": { "$ref": "#/$defs/signerWorkflowIdentity" },
         "toolchain": { "$ref": "#/$defs/toolchain" },
         "publicReleaseClaim": { "const": "not-claimed" },
-        "commercialUseClaim": { "const": "not-approved" },
+        "licenseUseClaim": { "const": "permitted-purpose-only" },
         "receiptSha256": { "$ref": "#/$defs/receiptDigests6" },
         "checks": { "$ref": "#/$defs/internalChecks5" }
       }
@@ -1236,14 +1236,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "file", "sha256", "commercialUseApproved", "intendedUse"
+        "id", "file", "sha256", "competingUseApproved", "futureLicense",
+        "futureLicenseAfter"
       ],
       "properties": {
-        "id": { "const": "PolyForm-Noncommercial-1.0.0" },
+        "id": { "const": "FSL-1.1-ALv2" },
         "file": { "const": "LICENSE" },
         "sha256": { "$ref": "#/$defs/hex64" },
-        "commercialUseApproved": { "const": false },
-        "intendedUse": { "const": "internal-evaluation-only" }
+        "competingUseApproved": { "const": false },
+        "futureLicense": { "const": "Apache-2.0" },
+        "futureLicenseAfter": { "const": "second-anniversary" }
       }
     },
     "failure": {

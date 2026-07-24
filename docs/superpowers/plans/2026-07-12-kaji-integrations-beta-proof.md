@@ -1576,7 +1576,7 @@ Commit the macOS contract/tests/docs and consume-only runner changes with `chore
 - Create canonical runnable examples `kaji/sdk/examples/github_agent.py`, `gmail_agent.py`, `kaji/ts/examples/github-agent/index.ts`, and `gmail-agent/index.ts`, plus deterministic no-network smoke fixtures.
 - Modify `docs/kaji/README.md`, `integration-manifests.md`, `tool-contracts.md`, `cli.md`, `troubleshooting.md`, `production-beta.md`, `testing.md`, and `releasing.md`.
 - Modify `docs/MVP.md`, `apps/docs/content/install.mdx`, and `apps/docs/content/cli.mdx`.
-- Modify the root/site open-source wording, `CONTRIBUTING.md`, and copied-bundle license assets to state the actual source-available/noncommercial terms, current commercial-license availability/contact path, and integration contribution checklist.
+- Modify the root/site open-source wording, `CONTRIBUTING.md`, and copied-bundle license assets to state the actual FSL permitted-purpose and competing-use terms, Apache-2.0 future-license transition, and integration contribution checklist.
 - Create `apps/docs/content/integrations/github.mdx` and `gmail.mdx`; modify docs `meta.json`, sidebar config, and version-switcher data so both pages are publicly findable and labeled with the beta version.
 - Modify `kaji/sdk/README.md` and `kaji/ts/README.md`.
 - Modify both package metadata documentation/homepage links to the exact signed beta-tag docs path instead of mutable `main`; keep public-site latest pages as discovery aliases.

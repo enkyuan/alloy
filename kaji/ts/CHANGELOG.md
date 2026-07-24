@@ -5,8 +5,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
-## [0.2.0-beta.2] - unreleased pre-beta build
+## [0.2.0-beta.2] - 2026-07-23
 
+- Adopted `FSL-1.1-ALv2`, with Apache-2.0 becoming available for each version
+  on the second anniversary of that version's first availability.
 - Removed ambient Node.js stream namespace requirements from the public CLI approval declarations.
 - Bumped current TypeScript package, release, installed-runtime, and evidence identities to beta.2.
 

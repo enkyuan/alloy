@@ -28,8 +28,8 @@ if TYPE_CHECKING:
 
 BundleState = Literal["current", "absent", "outdated", "modified", "demoted"]
 _SIDECAR = ".kaji-integration-provenance.json"
-_LICENSE_IDENTIFIER = "PolyForm-Noncommercial-1.0.0"
-_LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0"
+_LICENSE_IDENTIFIER = "FSL-1.1-ALv2"
+_LICENSE_URL = "https://spdx.org/licenses/FSL-1.1-ALv2.html"
 _SYSTEM_ROOT_ALIASES = (
     (Path("/var"), Path("/private/var")),
     (Path("/tmp"), Path("/private/tmp")),

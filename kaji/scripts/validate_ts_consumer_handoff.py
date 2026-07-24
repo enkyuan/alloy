@@ -94,8 +94,8 @@ PACKAGE_NAME = "@kaji/sdk"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 SIGNER_REPOSITORY = "enkyuan/alloy"
 SIGNER_FILE_PATH = ".github/workflows/kaji.handoff.trusted.yml"
-LICENSE_ID = "PolyForm-Noncommercial-1.0.0"
-LICENSE_METADATA = "SEE LICENSE IN LICENSE"
+LICENSE_ID = "FSL-1.1-ALv2"
+LICENSE_METADATA = LICENSE_ID
 
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 10_000
@@ -627,8 +627,9 @@ def _validate_relations(
             "id": LICENSE_ID,
             "file": "LICENSE",
             "sha256": license_digest,
-            "commercialUseApproved": False,
-            "intendedUse": "internal-evaluation-only",
+            "competingUseApproved": False,
+            "futureLicense": "Apache-2.0",
+            "futureLicenseAfter": "second-anniversary",
         }
         or artifact_contract["license"] != {"id": LICENSE_ID, "sha256": license_digest}
     ):
@@ -653,7 +654,7 @@ def _validate_relations(
         or gate["evidence"]["signerWorkflow"] != expected_signer
         or gate["evidence"]["toolchain"] != pack["toolchain"]
         or gate["evidence"]["publicReleaseClaim"] != expected_public_claim
-        or gate["evidence"]["commercialUseClaim"] != "not-approved"
+        or gate["evidence"]["licenseUseClaim"] != "permitted-purpose-only"
         or gate["evidence"]["receiptSha256"] != receipt_digests
     ):
         _reject("RECEIPT_INVALID")

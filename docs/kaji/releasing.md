@@ -44,10 +44,15 @@ Complete these once before creating the release tag:
    Never tag a feature-branch-only commit: package metadata and READMEs link to
    canonical documentation on the default branch, and the publish workflow
    rejects a tag whose commit is not already contained there.
-3. In PyPI account publishing settings, add a pending trusted publisher for
+3. Verify that the root and both package license files are byte-identical,
+   package metadata declares `FSL-1.1-ALv2`, and the notice identifies
+   `Copyright 2026 Enkang Yuan`. Record each version's first-public-availability
+   date in its changelog and release notes: that version becomes available
+   under Apache-2.0 on the second anniversary of that date.
+4. In PyPI account publishing settings, add a pending trusted publisher for
    project `kaji-sdk`, owner `enkyuan`, repository `alloy`, workflow `kaji.publish.yml`,
    and environment `kaji-beta-publish`.
-4. Confirm the npm publisher is a member of the `kaji` organization's
+5. Confirm the npm publisher is a member of the `kaji` organization's
    `developers` team (create the organization first if needed) and that the team
    retains read/write access for new `@kaji` packages. Owners are added to
    `developers` by default, but ownership alone is not the policy checked by this
@@ -56,11 +61,11 @@ Complete these once before creating the release tag:
    bypass 2FA enabled. Store it only as `NPM_TOKEN` in `kaji-beta-publish`; after
    the first release, migrate the package to npm trusted publishing and revoke
    this bootstrap token.
-5. Configure `kaji-beta` with required reviewers and only
+6. Configure `kaji-beta` with required reviewers and only
    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `KAJI_TTHW_EVIDENCE_JSON`.
    Configure `kaji-beta-publish` with separate required reviewers,
    `NPM_TOKEN`, and `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
-6. Set repository variables `KAJI_RELEASE_SIGNER_EMAIL`,
+7. Set repository variables `KAJI_RELEASE_SIGNER_EMAIL`,
    `KAJI_BENCHMARK_RUNNER_MANIFEST`, and
    `KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256`. Register the pinned arm64 macOS
    performance runner with labels `self-hosted`, `macOS`, `ARM64`, and

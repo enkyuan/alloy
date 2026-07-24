@@ -176,7 +176,7 @@ def _tar_files(
     package = {
         "name": "@kaji/sdk",
         "version": VERSION,
-        "license": "SEE LICENSE IN LICENSE",
+        "license": "FSL-1.1-ALv2",
         "exports": exports,
     }
     package.update(package_patch or {})
@@ -396,7 +396,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
             },
         },
         "policy": policy,
-        "license": {"id": "PolyForm-Noncommercial-1.0.0", "sha256": license_sha},
+        "license": {"id": "FSL-1.1-ALv2", "sha256": license_sha},
     }
     node22 = {
         "nodeMajor": 22,
@@ -433,7 +433,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "signerWorkflow": SIGNER,
         "toolchain": toolchain,
         "publicReleaseClaim": "eligible" if release else "not-claimed",
-        "commercialUseClaim": "not-approved",
+        "licenseUseClaim": "permitted-purpose-only",
         "receiptSha256": receipt_digests,
         "checks": _passed(
             [
@@ -497,11 +497,12 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "upstreamVerification": [*first_six, gate],
         "securityEvidence": {"policyBeforeRequest": {**policy, "result": "passed"}},
         "license": {
-            "id": "PolyForm-Noncommercial-1.0.0",
+            "id": "FSL-1.1-ALv2",
             "file": "LICENSE",
             "sha256": license_sha,
-            "commercialUseApproved": False,
-            "intendedUse": "internal-evaluation-only",
+            "competingUseApproved": False,
+            "futureLicense": "Apache-2.0",
+            "futureLicenseAfter": "second-anniversary",
         },
     }
     fx = {

@@ -1517,11 +1517,12 @@ def _manifest_document(
             }
         },
         "license": {
-            "id": "PolyForm-Noncommercial-1.0.0",
+            "id": "FSL-1.1-ALv2",
             "file": "LICENSE",
             "sha256": artifact_contract["license"]["sha256"],
-            "commercialUseApproved": False,
-            "intendedUse": "internal-evaluation-only",
+            "competingUseApproved": False,
+            "futureLicense": "Apache-2.0",
+            "futureLicenseAfter": "second-anniversary",
         },
     }
 
@@ -1669,7 +1670,7 @@ def finalize(
             "signerWorkflow": signer,
             "toolchain": candidate_toolchain,
             "publicReleaseClaim": "eligible" if release else "not-claimed",
-            "commercialUseClaim": "not-approved",
+            "licenseUseClaim": "permitted-purpose-only",
             "receiptSha256": digest_values,
             "checks": [
                 {"id": check, "result": "passed"}

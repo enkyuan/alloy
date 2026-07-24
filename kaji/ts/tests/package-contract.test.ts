@@ -2213,7 +2213,7 @@ console.log(JSON.stringify({
       expect(manifest.version).toBe("0.2.0-beta.2");
       expect(packed[0]!.filename).toBe(`kaji-sdk-${manifest.version}.tgz`);
       expect(packed[0]!.filename).not.toBe("kaji-sdk-0.2.0-beta.1.tgz");
-      expect(manifest.license).toBe("SEE LICENSE IN LICENSE");
+      expect(manifest.license).toBe("FSL-1.1-ALv2");
       expect(manifest.files).toContain("LICENSE");
       expect(manifest.exports["./cli"]).toEqual({
         import: {

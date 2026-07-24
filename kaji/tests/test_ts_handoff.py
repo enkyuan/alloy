@@ -259,7 +259,7 @@ def _manifest(mode: str) -> dict[str, Any]:
         },
         "policy": policy,
         "license": {
-            "id": "PolyForm-Noncommercial-1.0.0",
+            "id": "FSL-1.1-ALv2",
             "sha256": LICENSE_SHA256,
         },
     }
@@ -305,7 +305,7 @@ def _manifest(mode: str) -> dict[str, Any]:
             "uv": "0.11.25",
         },
         "publicReleaseClaim": "eligible" if release else "not-claimed",
-        "commercialUseClaim": "not-approved",
+        "licenseUseClaim": "permitted-purpose-only",
         "receiptSha256": receipt_digests,
         "checks": _passed(
             [
@@ -374,11 +374,12 @@ def _manifest(mode: str) -> dict[str, Any]:
         "upstreamVerification": receipts,
         "securityEvidence": {"policyBeforeRequest": {**policy, "result": "passed"}},
         "license": {
-            "id": "PolyForm-Noncommercial-1.0.0",
+            "id": "FSL-1.1-ALv2",
             "file": "LICENSE",
             "sha256": LICENSE_SHA256,
-            "commercialUseApproved": False,
-            "intendedUse": "internal-evaluation-only",
+            "competingUseApproved": False,
+            "futureLicense": "Apache-2.0",
+            "futureLicenseAfter": "second-anniversary",
         },
     }
 
@@ -1300,7 +1301,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
     preflight_path, stage_dir, preflight, _commands, _integrity = _stage_fixture(
         tmp_path, monkeypatch, handoff
     )
-    license_bytes = b"PolyForm fixture"
+    license_bytes = b"FSL fixture"
     artifact_contract, node22, node24, artifact_sha = _external_receipts(
         stage_dir, handoff, license_bytes
     )
@@ -1346,7 +1347,8 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         *handoff.RECEIPT_IDS,
         "internal-evaluation-gate",
     ]
-    assert manifest["license"]["commercialUseApproved"] is False
+    assert manifest["license"]["competingUseApproved"] is False
+    assert manifest["license"]["futureLicense"] == "Apache-2.0"
     assert len(verified_archive_paths) == 1
     receipt_set = preflight_path.parent / "receipt-set"
     assert [path.name for path in sorted(receipt_set.iterdir())] == sorted(
@@ -1362,7 +1364,7 @@ def test_finalize_rejects_adversarial_copy_bytes_before_receipt_publication(
     preflight_path, stage_dir, preflight, _commands, _integrity = _stage_fixture(
         tmp_path, monkeypatch, handoff
     )
-    license_bytes = b"PolyForm fixture"
+    license_bytes = b"FSL fixture"
     artifact_contract, node22, node24, _artifact_sha = _external_receipts(
         stage_dir, handoff, license_bytes
     )
@@ -1419,7 +1421,7 @@ def test_finalize_rejects_copied_package_or_license_identity_mismatch(
     preflight_path, stage_dir, preflight, _commands, _integrity = _stage_fixture(
         tmp_path, monkeypatch, handoff
     )
-    license_bytes = b"PolyForm fixture"
+    license_bytes = b"FSL fixture"
     artifact_contract, node22, node24, _artifact_sha = _external_receipts(
         stage_dir, handoff, license_bytes
     )
@@ -1567,7 +1569,7 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
                 stage_dir, handoff, handoff.SIGNATURE_RECEIPT_NAME, signature
             )
 
-    license_bytes = b"PolyForm fixture"
+    license_bytes = b"FSL fixture"
     artifact_contract, node22, node24, _artifact_sha = _external_receipts(
         stage_dir, handoff, license_bytes, mode=mode
     )
@@ -1611,7 +1613,7 @@ def test_finalize_rejects_cross_receipt_digest_mutation(
     preflight_path, stage_dir, preflight, _commands, _integrity = _stage_fixture(
         tmp_path, monkeypatch, handoff
     )
-    license_bytes = b"PolyForm fixture"
+    license_bytes = b"FSL fixture"
     artifact_contract, node22, node24, _artifact_sha = _external_receipts(
         stage_dir, handoff, license_bytes
     )

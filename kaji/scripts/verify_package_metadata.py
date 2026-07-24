@@ -135,14 +135,12 @@ def main() -> None:
         fail("Python package license differs from root LICENSE")
     if (ts / "LICENSE").read_bytes() != root_license:
         fail("TypeScript package license differs from root LICENSE")
-    if python_metadata["project"].get(
-        "license"
-    ) != "PolyForm-Noncommercial-1.0.0" or python_metadata["project"].get(
-        "license-files"
-    ) != ["LICENSE"]:
+    if python_metadata["project"].get("license") != "FSL-1.1-ALv2" or python_metadata[
+        "project"
+    ].get("license-files") != ["LICENSE"]:
         fail("Python metadata does not declare its SPDX license and packaged file")
-    if typescript_metadata.get("license") != "SEE LICENSE IN LICENSE":
-        fail("TypeScript metadata does not reference its packaged LICENSE")
+    if typescript_metadata.get("license") != "FSL-1.1-ALv2":
+        fail("TypeScript metadata does not declare its SPDX license")
 
     dev = set(python_metadata["dependency-groups"]["dev"])
     if not {"twine==6.2.0", "pip-audit==2.10.1"}.issubset(dev):

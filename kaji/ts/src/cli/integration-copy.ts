@@ -87,8 +87,8 @@ const SIDECAR = ".kaji-integration-provenance.json";
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const CONTRACTS_ROOT = join(PACKAGE_ROOT, "contracts/integrations");
 const PACKAGE_LICENSE = join(PACKAGE_ROOT, "LICENSE");
-const LICENSE_IDENTIFIER = "PolyForm-Noncommercial-1.0.0";
-const LICENSE_URL = "https://polyformproject.org/licenses/noncommercial/1.0.0";
+const LICENSE_IDENTIFIER = "FSL-1.1-ALv2";
+const LICENSE_URL = "https://spdx.org/licenses/FSL-1.1-ALv2.html";
 const SYSTEM_ROOT_ALIASES = [
   ["/var", "/private/var"],
   ["/tmp", "/private/tmp"],

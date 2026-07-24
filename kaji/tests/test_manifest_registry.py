@@ -224,8 +224,8 @@ def test_copy_provenance_is_closed_and_supports_demotion_detection() -> None:
         "abiSha256": digest,
         "manifestSha256": digest,
         "license": {
-            "identifier": "PolyForm-Noncommercial-1.0.0",
-            "url": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+            "identifier": "FSL-1.1-ALv2",
+            "url": "https://spdx.org/licenses/FSL-1.1-ALv2.html",
             "sha256": digest,
         },
         "files": {"index.ts": digest},

@@ -5,8 +5,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
-## [0.2.0b1] - unreleased pre-beta build
+## [0.2.0b1] - 2026-07-23
 
+- Adopted `FSL-1.1-ALv2`, with Apache-2.0 becoming available for each version
+  on the second anniversary of that version's first availability.
 - Added bounded durable tool arguments, fail-closed package verification, and
   reproducible wheel/sdist release gates for shared contract version `1.0.0`.
 - Added the cross-SDK no-key `kaji init [path]` grammar with mock default,
