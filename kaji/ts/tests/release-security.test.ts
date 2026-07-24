@@ -1483,6 +1483,10 @@ describe("Kaji workflow contracts", () => {
         expect(steps[normalize]?.run).toContain('conclusion == "passed"');
         expect(steps[normalize]?.run).toContain('conclusion == "failed"');
         expect(steps[normalize]?.run).toContain("compatibility_receipt_not_terminal");
+        expect(steps[normalize]?.run).toContain(".timings");
+        expect(steps[normalize]?.run).toContain('keys == ["sdist", "wheel"]');
+        expect(steps[normalize]?.run).toContain('keys == ["bun", "npm"]');
+        expect(steps[normalize]?.run).toContain("9007199254740991");
         const source = steps.map((step) => step.run ?? "").join("\n");
         expect(source).not.toContain("uv build");
         expect(source).not.toContain("npm pack");
@@ -1668,6 +1672,10 @@ describe("Kaji workflow contracts", () => {
           wheel: githubProof,
           sdist: githubProof,
         },
+        timings: {
+          wheel: { coldSetupToOutputMs: 11, warmRunMs: 2 },
+          sdist: { coldSetupToOutputMs: 13, warmRunMs: 3 },
+        },
       })}\n`;
       writeFileSync(receipt, terminal);
       const preserved = spawnSync("/bin/bash", ["-c", script!], {
@@ -1680,6 +1688,14 @@ describe("Kaji workflow contracts", () => {
         workflowRun: "https://github.example/example/alloy/actions/runs/1234",
         workflowRunAttempt: 1,
       });
+      environment.SMOKE_OUTCOME = "cancelled";
+      writeFileSync(receipt, terminal);
+      const failed = spawnSync("/bin/bash", ["-c", script!], {
+        encoding: "utf8",
+        env: environment,
+      });
+      expect(failed.status).not.toBe(0);
+      expect(JSON.parse(readFileSync(receipt, "utf8"))).not.toHaveProperty("timings");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

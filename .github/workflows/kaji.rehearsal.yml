@@ -203,6 +203,15 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def safe_nonnegative_integer:
+              type == "number" and . >= 0 and . <= 9007199254740991 and
+              (tojson | test("^(0|[1-9][0-9]*)$"));
+            def python_timing:
+              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
+              all(.[]; safe_nonnegative_integer);
+            def typescript_timing:
+              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
+              all(.[]; safe_nonnegative_integer);
             def failure_kind:
               type == "string" and . as $kind |
               ["unsupported_host", "start", "exit", "timeout", "output_limit",
@@ -213,7 +222,8 @@ jobs:
               test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
             def passed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
-               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion"];
+               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
+               "timings"];
             def failed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
                "failureCode", "failureKind", "githubPackageProofs",
@@ -324,7 +334,10 @@ jobs:
                   (.githubPackageProofs |
                     type == "object" and keys == ["sdist", "wheel"] and
                     (.sdist | github_proof("python")) and
-                    (.wheel | github_proof("python")))
+                    (.wheel | github_proof("python"))) and
+                  (.timings |
+                    type == "object" and keys == ["sdist", "wheel"] and
+                    all(.[]; python_timing))
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -341,7 +354,10 @@ jobs:
                     type == "object" and keys == ["bun", "npm"] and
                     (.bun == .npm) and
                     (.bun | github_proof("typescript")) and
-                    (.npm | github_proof("typescript")))
+                    (.npm | github_proof("typescript"))) and
+                  (.timings |
+                    type == "object" and keys == ["bun", "npm"] and
+                    all(.[]; typescript_timing))
                 end
               ))
             )
@@ -538,6 +554,15 @@ jobs:
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
             def nonempty: type == "string" and length > 0;
             def sha256: type == "string" and test("^[0-9a-f]{64}$");
+            def safe_nonnegative_integer:
+              type == "number" and . >= 0 and . <= 9007199254740991 and
+              (tojson | test("^(0|[1-9][0-9]*)$"));
+            def python_timing:
+              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
+              all(.[]; safe_nonnegative_integer);
+            def typescript_timing:
+              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
+              all(.[]; safe_nonnegative_integer);
             def failure_kind:
               type == "string" and . as $kind |
               ["unsupported_host", "start", "exit", "timeout", "output_limit",
@@ -548,7 +573,8 @@ jobs:
               test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
             def passed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
-               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion"];
+               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
+               "timings"];
             def failed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
                "failureCode", "failureKind", "githubPackageProofs",
@@ -659,7 +685,10 @@ jobs:
                   (.githubPackageProofs |
                     type == "object" and keys == ["sdist", "wheel"] and
                     (.sdist | github_proof("python")) and
-                    (.wheel | github_proof("python")))
+                    (.wheel | github_proof("python"))) and
+                  (.timings |
+                    type == "object" and keys == ["sdist", "wheel"] and
+                    all(.[]; python_timing))
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -676,7 +705,10 @@ jobs:
                     type == "object" and keys == ["bun", "npm"] and
                     (.bun == .npm) and
                     (.bun | github_proof("typescript")) and
-                    (.npm | github_proof("typescript")))
+                    (.npm | github_proof("typescript"))) and
+                  (.timings |
+                    type == "object" and keys == ["bun", "npm"] and
+                    all(.[]; typescript_timing))
                 end
               ))
             )

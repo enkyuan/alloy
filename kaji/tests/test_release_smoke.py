@@ -47,7 +47,9 @@ def _load_script(name: str) -> ModuleType:
 
 
 def test_release_smoke_preserves_build_verify_install_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = _load_script("release_smoke.py")
     sdk_root = tmp_path / "sdk"
@@ -61,6 +63,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     wheel.touch()
     sdist.touch()
     commands: list[list[str]] = []
+    receipt_path = tmp_path / "receipt.json"
 
     monkeypatch.setattr(module, "SDK_ROOT", sdk_root)
     monkeypatch.setattr(module, "SCRIPTS", scripts)
@@ -89,7 +92,18 @@ def test_release_smoke_preserves_build_verify_install_order(
     monkeypatch.setattr(module, "assert_list_integrations_output", lambda *_args: None)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
 
-    receipt = module.release_smoke(Path("dist"))
+    assert (
+        module.main(
+            [
+                "--dist-dir",
+                str(dist),
+                "--output",
+                str(receipt_path),
+            ]
+        )
+        == 0
+    )
+    receipt = json.loads(receipt_path.read_text())
 
     assert commands[0] == [sys.executable, str(scripts / "clean_caches.py")]
     assert commands[1][:4] == ["uv", "build", "--sdist", "--wheel"]
@@ -153,6 +167,71 @@ def test_release_smoke_preserves_build_verify_install_order(
         )
         == 2
     )
+    timings = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"artifact"' in line and '"coldSetupToOutputMs"' in line
+    ]
+    assert len(timings) == 2
+    assert all(
+        type(timing[field]) is int
+        for timing in timings
+        for field in ("coldSetupToOutputMs", "warmRunMs")
+    )
+    assert set(receipt["timings"]) == {"wheel", "sdist"}
+    assert set(receipt["timings"]["wheel"]) == {
+        "coldSetupToOutputMs",
+        "warmRunMs",
+    }
+    assert set(receipt["timings"]["sdist"]) == {
+        "coldSetupToOutputMs",
+        "warmRunMs",
+    }
+    assert all(
+        type(value) is int and value >= 0
+        for timing in receipt["timings"].values()
+        for value in timing.values()
+    )
+    assert receipt["conclusion"] == "passed"
+
+
+@pytest.mark.parametrize(
+    ("elapsed_ns", "expected_ms"),
+    [
+        (0, 0),
+        (1, 1),
+        (999_999, 1),
+        (1_000_000, 1),
+        (1_000_001, 2),
+    ],
+)
+def test_elapsed_milliseconds_ceil_normalizes_nanoseconds(
+    elapsed_ns: int, expected_ms: int
+) -> None:
+    module = _load_script("release_smoke.py")
+
+    elapsed_ms = module.elapsed_milliseconds(10, 10 + elapsed_ns)
+
+    assert elapsed_ms == expected_ms
+    assert type(elapsed_ms) is int
+
+
+def test_elapsed_milliseconds_rejects_negative_monotonic_delta() -> None:
+    module = _load_script("release_smoke.py")
+
+    with pytest.raises(ValueError, match="monotonic clock moved backwards"):
+        module.elapsed_milliseconds(11, 10)
+
+
+def test_elapsed_milliseconds_bounds_safe_integer_output() -> None:
+    module = _load_script("release_smoke.py")
+    max_safe = 9_007_199_254_740_991
+
+    assert module.elapsed_milliseconds(0, max_safe * 1_000_000) == max_safe
+    with pytest.raises(
+        ValueError, match="elapsed milliseconds exceed Number.MAX_SAFE_INTEGER"
+    ):
+        module.elapsed_milliseconds(0, (max_safe + 1) * 1_000_000)
 
 
 def test_run_capture_can_assert_an_expected_stderr_diagnostic(
@@ -380,6 +459,79 @@ def test_release_smoke_consume_failure_overwrites_receipt(
     assert receipt["commit"] == "a" * 40
     assert receipt["conclusion"] == "failed"
     assert receipt["failureCode"] == "artifact_verification_failed"
+    assert "timings" not in receipt
+
+
+def test_release_smoke_failure_overwrites_partial_timings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script("release_smoke.py")
+    artifacts = tmp_path / "release"
+    artifacts.mkdir()
+    wheel = artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl"
+    sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.2.tgz"
+    for path in (wheel, sdist, npm):
+        path.touch()
+    identity = SimpleNamespace(
+        root=artifacts.resolve(),
+        commit="a" * 40,
+        manifest_sha256="b" * 64,
+        python_wheel=wheel.resolve(),
+        python_sdist=sdist.resolve(),
+        npm_tarball=npm.resolve(),
+        artifact_sha256=MappingProxyType(
+            {
+                wheel.name: "c" * 64,
+                sdist.name: "d" * 64,
+                npm.name: "e" * 64,
+            }
+        ),
+    )
+    receipt_path = tmp_path / "receipt.json"
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "timings": {
+                    "wheel": {
+                        "coldSetupToOutputMs": 1,
+                        "warmRunMs": 2,
+                    }
+                }
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        module.verify_release_artifacts,
+        "verify",
+        lambda _root, _expected: identity,
+    )
+    monkeypatch.setattr(
+        module,
+        "smoke_archives",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            SystemExit("FAIL: sdist smoke failed")
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="sdist smoke failed"):
+        module.main(
+            [
+                "--artifacts-dir",
+                str(artifacts),
+                "--expected-commit",
+                identity.commit,
+                "--output",
+                str(receipt_path),
+            ]
+        )
+
+    receipt = json.loads(receipt_path.read_text())
+    assert receipt["conclusion"] == "failed"
+    assert receipt["failureCode"] == "python_smoke_failed"
+    assert "timings" not in receipt
 
 
 def test_release_smoke_asserts_all_installed_stable_cli_results(

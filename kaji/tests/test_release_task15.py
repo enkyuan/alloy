@@ -2015,6 +2015,10 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
             '.conclusion == "passed" and (keys == passed_keys) and .failureCode == null'
         ) in job
         assert ".githubPackageProofs" in job
+        assert ".timings" in job
+        assert 'keys == ["sdist", "wheel"]' in job
+        assert 'keys == ["bun", "npm"]' in job
+        assert "9007199254740991" in job
         assert 'runtime: "python", network: "scripted"' in job
         assert 'schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke"' in job
         assert "publicScenarioCount: 15" in job
@@ -2042,6 +2046,15 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
     for job in (rehearsal_node, publish_node):
         assert "--release-manifest .artifacts/kaji-release/manifest.json" in job
         assert '--expected-commit "$EXPECTED_COMMIT"' in job
+
+    timing_docs = _read("docs/kaji/tthw-evidence.md")
+    for path in (
+        "receipt.timings.wheel",
+        "receipt.timings.sdist",
+        "receipt.timings.npm",
+        "receipt.timings.bun",
+    ):
+        assert path in timing_docs
 
 
 def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
@@ -2119,6 +2132,10 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
             "npm": proof,
             "bun": json.loads(json.dumps(proof)),
         },
+        "timings": {
+            "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+            "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
+        },
         "conclusion": "passed",
         "failureCode": None,
     }
@@ -2188,6 +2205,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         name: str,
         *,
         receipt: dict[str, object] | None,
+        raw_receipt: str | None = None,
         outcomes: tuple[str, str, str, str, str, str],
     ) -> tuple[subprocess.CompletedProcess[str], dict[str, object], bytes | None]:
         directory = tmp_path / name
@@ -2196,6 +2214,9 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         original: bytes | None = None
         if receipt is not None:
             path.write_text(json.dumps(receipt) + "\n")
+            original = path.read_bytes()
+        elif raw_receipt is not None:
+            path.write_text(raw_receipt + "\n")
             original = path.read_bytes()
         environment = {
             **base_environment,
@@ -2297,6 +2318,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "wheel": _github_package_proof("python"),
                 "sdist": _github_package_proof("python"),
             },
+            "timings": {
+                "wheel": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+                "sdist": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
+            },
         }
     else:
         passed = {
@@ -2311,6 +2336,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             "githubPackageProofs": {
                 "npm": _github_package_proof("typescript"),
                 "bun": _github_package_proof("typescript"),
+            },
+            "timings": {
+                "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+                "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
             },
         }
     valid_hashes = passed["artifactSha256"]
@@ -2343,6 +2372,97 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert invalid_proof.returncode != 0
     assert invalid_proof_receipt["conclusion"] == "not_run"
     assert invalid_proof_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+
+    valid_timings = cast(dict[str, object], passed["timings"])
+    first_runtime = next(iter(valid_timings))
+    for label, invalid_timings in (
+        ("missing-runtime-timing", {first_runtime: valid_timings[first_runtime]}),
+        (
+            "extra-runtime-timing",
+            {**valid_timings, "extra": valid_timings[first_runtime]},
+        ),
+        (
+            "negative-timing",
+            {
+                **valid_timings,
+                first_runtime: {
+                    **cast(dict[str, object], valid_timings[first_runtime]),
+                    "warmRunMs": -1,
+                },
+            },
+        ),
+        (
+            "fractional-timing",
+            {
+                **valid_timings,
+                first_runtime: {
+                    **cast(dict[str, object], valid_timings[first_runtime]),
+                    "warmRunMs": 1.5,
+                },
+            },
+        ),
+        (
+            "extra-timing-field",
+            {
+                **valid_timings,
+                first_runtime: {
+                    **cast(dict[str, object], valid_timings[first_runtime]),
+                    "githubProof": "DO_NOT_RETAIN_PROOF",
+                },
+            },
+        ),
+    ):
+        invalid_timing, invalid_timing_receipt, _ = run_case(
+            label,
+            receipt={**passed, "timings": invalid_timings},
+            outcomes=all_success,
+        )
+        assert invalid_timing.returncode != 0
+        assert invalid_timing_receipt["conclusion"] == "not_run"
+        assert (
+            invalid_timing_receipt["failureCode"]
+            == "compatibility_receipt_not_terminal"
+        )
+        assert "timings" not in invalid_timing_receipt
+
+    if runtime_kind == "node":
+        unsafe_timings = json.loads(json.dumps(valid_timings))
+        unsafe_timings[first_runtime]["coldSetupToOutputMs"] = 9007199254740992
+        unsafe_timing, unsafe_timing_receipt, _ = run_case(
+            "unsafe-timing",
+            receipt={**passed, "timings": unsafe_timings},
+            outcomes=all_success,
+        )
+        assert unsafe_timing.returncode != 0
+        assert unsafe_timing_receipt["conclusion"] == "not_run"
+        assert (
+            unsafe_timing_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+        )
+        assert "timings" not in unsafe_timing_receipt
+
+    for label, literal in (
+        ("forged-fractional-timing", "9007199254740990.5"),
+        ("overflow-timing", "9007199254740992"),
+        ("nonfinite-ish-timing", "1e999"),
+    ):
+        raw_receipt = json.dumps(passed)
+        assert '"warmRunMs": 2' in raw_receipt
+        raw_receipt = raw_receipt.replace(
+            '"warmRunMs": 2', f'"warmRunMs": {literal}', 1
+        )
+        invalid_timing, invalid_timing_receipt, _ = run_case(
+            label,
+            receipt=None,
+            raw_receipt=raw_receipt,
+            outcomes=all_success,
+        )
+        assert invalid_timing.returncode != 0
+        assert invalid_timing_receipt["conclusion"] == "not_run"
+        assert (
+            invalid_timing_receipt["failureCode"]
+            == "compatibility_receipt_not_terminal"
+        )
+        assert "timings" not in invalid_timing_receipt
 
     if runtime_kind == "node":
         for label in (
@@ -2404,11 +2524,29 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert classified_receipt["artifactSha256"] == {}
     assert classified_receipt["artifacts"] == {}
     assert classified_receipt["githubPackageProofs"] == {}
+    assert "timings" not in classified_receipt
     assert classified_receipt["runtime"] == {
         "kind": runtime_kind,
         "requestedVersion": runtime_version,
     }
     assert "DO_NOT_RETAIN" not in json.dumps(classified_receipt)
+
+    rejected_timing_failure, rejected_timing_failure_receipt, _ = run_case(
+        "failed-with-partial-timing",
+        receipt={
+            **failed,
+            "timings": {
+                first_runtime: {
+                    "coldSetupToOutputMs": 1,
+                    "warmRunMs": 2,
+                }
+            },
+        },
+        outcomes=("success", "success", "success", "success", "success", "failure"),
+    )
+    assert rejected_timing_failure.returncode != 0
+    assert rejected_timing_failure_receipt["conclusion"] == "not_run"
+    assert "timings" not in rejected_timing_failure_receipt
 
     for label, override in (
         ("invalid-failure-phase", {"failedPhase": "handoff:attacker"}),
@@ -2433,6 +2571,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
     assert interrupted_passed.returncode != 0
     assert interrupted_receipt["conclusion"] == "not_run"
     assert interrupted_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+    assert "timings" not in interrupted_receipt
 
     nominal_passed, passed_receipt, original = run_case(
         "nominal-passed",
@@ -2600,6 +2739,10 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "wheel": _github_package_proof("python"),
                     "sdist": _github_package_proof("python"),
                 },
+                "timings": {
+                    "wheel": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+                    "sdist": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
+                },
                 "conclusion": "passed",
                 "failureCode": None,
                 **run_identity,
@@ -2625,6 +2768,10 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "githubPackageProofs": {
                     "npm": _github_package_proof("typescript"),
                     "bun": _github_package_proof("typescript"),
+                },
+                "timings": {
+                    "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+                    "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
                 },
                 "conclusion": "passed",
                 "failureCode": None,

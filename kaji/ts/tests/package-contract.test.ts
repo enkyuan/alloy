@@ -22,8 +22,10 @@ import { describe, expect, it } from "vitest";
 
 import { assertCliListOutput } from "../scripts/cli_assertions";
 import {
+  elapsedMilliseconds,
   finalizeSmokeRun,
   ordinaryFailureReceipt,
+  ordinarySuccessReceipt,
   safeGitHubProofFailureCode,
   SmokeCommandError,
   type PendingSmokeReceipt,
@@ -133,8 +135,8 @@ const GITHUB_PACKAGE_PROOF = {
   packageCatalog: {
     schemaVersion: GITHUB_PACKAGE_ABI.schema_version,
     catalogVersion: GITHUB_PACKAGE_ABI.catalog_version,
-    toolCount: GITHUB_PACKAGE_ABI.tools.length,
-    readToolCount: GITHUB_PACKAGE_ABI.tools.filter((tool) => tool.risk === "read").length,
+    toolCount: 15,
+    readToolCount: 13,
     tools: GITHUB_PACKAGE_ABI.tools.map((tool) => tool.name),
     readTools: GITHUB_PACKAGE_ABI.tools
       .filter((tool) => tool.risk === "read")
@@ -144,8 +146,8 @@ const GITHUB_PACKAGE_PROOF = {
   },
   cliCopiedCatalog: {
     manifestVersion: GITHUB_COPIED_MANIFEST.version,
-    toolCount: GITHUB_COPIED_MANIFEST.tools.length,
-    readToolCount: GITHUB_COPIED_MANIFEST.tools.filter((tool) => tool.risk === "read").length,
+    toolCount: 6,
+    readToolCount: 4,
     tools: GITHUB_COPIED_MANIFEST.tools.map((tool) => tool.name),
     readTools: GITHUB_COPIED_MANIFEST.tools
       .filter((tool) => tool.risk === "read")
@@ -225,7 +227,10 @@ const GITHUB_PACKAGE_PROOF = {
   aliasCollisionRejected: true,
   conclusion: "passed",
   failureCode: null,
-};
+} as const;
+
+const typedGitHubPackageProof: Parameters<typeof ordinarySuccessReceipt>[4]["githubProof"] =
+  GITHUB_PACKAGE_PROOF;
 
 const EXPECTED_PACKED_REGISTRY_FILES = [
   "registry/echo/index.ts",
@@ -283,6 +288,88 @@ function exportTargets(value: unknown): string[] {
 }
 
 describe("npm contract artifact", () => {
+  it("ceiling-normalizes monotonic nanoseconds to integer milliseconds", () => {
+    for (const [elapsedNs, expectedMs] of [
+      [0n, 0],
+      [1n, 1],
+      [999_999n, 1],
+      [1_000_000n, 1],
+      [1_000_001n, 2],
+    ] as const) {
+      const elapsedMs = elapsedMilliseconds(10n, 10n + elapsedNs);
+
+      expect(elapsedMs).toBe(expectedMs);
+      expect(Number.isInteger(elapsedMs)).toBe(true);
+    }
+    expect(() => elapsedMilliseconds(11n, 10n)).toThrowError("monotonic clock moved backwards");
+    const maxSafeMilliseconds = BigInt(Number.MAX_SAFE_INTEGER);
+    expect(elapsedMilliseconds(0n, maxSafeMilliseconds * 1_000_000n)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(() => elapsedMilliseconds(0n, (maxSafeMilliseconds + 1n) * 1_000_000n)).toThrowError(
+      "elapsed milliseconds exceed Number.MAX_SAFE_INTEGER",
+    );
+    const receiptTiming = {
+      coldSetupToOutputMs: elapsedMilliseconds(10n, 11n),
+      warmRunMs: elapsedMilliseconds(10n, 1_000_011n),
+    };
+    expect(Object.values(receiptTiming).every(Number.isInteger)).toBe(true);
+  });
+
+  it("retains closed npm and Bun timings in the written success receipt", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-success-receipt-"));
+    const output = join(root, "receipt.json");
+    try {
+      const receipt = ordinarySuccessReceipt(
+        {
+          commit: "a".repeat(40),
+          manifestSha256: "b".repeat(64),
+          artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": "c".repeat(64) },
+        },
+        "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
+        "/tmp/node_modules/kaji-sdk",
+        "v24.4.0",
+        { coldSetupToOutputMs: 11, warmRunMs: 2, githubProof: typedGitHubPackageProof },
+        { coldSetupToOutputMs: 13, warmRunMs: 3, githubProof: typedGitHubPackageProof },
+      );
+      finalizeSmokeRun("", { kind: "ordinary", output, receipt }, null);
+
+      const retained = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
+      expect(retained).toEqual(receipt);
+      expect(retained).toMatchObject({
+        conclusion: "passed",
+        timings: {
+          npm: { coldSetupToOutputMs: 11, warmRunMs: 2 },
+          bun: { coldSetupToOutputMs: 13, warmRunMs: 3 },
+        },
+      });
+      expect(Object.keys(retained.timings as object).sort()).toEqual(["bun", "npm"]);
+      for (const timing of Object.values(retained.timings as Record<string, object>)) {
+        expect(Object.keys(timing).sort()).toEqual(["coldSetupToOutputMs", "warmRunMs"]);
+        expect(Object.values(timing).every(Number.isSafeInteger)).toBe(true);
+      }
+      expect(JSON.stringify(retained.timings)).not.toContain("githubProof");
+      expect(() =>
+        ordinarySuccessReceipt(
+          {
+            commit: "a".repeat(40),
+            manifestSha256: "b".repeat(64),
+            artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": "c".repeat(64) },
+          },
+          "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
+          "/tmp/node_modules/kaji-sdk",
+          "v24.4.0",
+          {
+            coldSetupToOutputMs: Number.MAX_SAFE_INTEGER + 1,
+            warmRunMs: 2,
+            githubProof: typedGitHubPackageProof,
+          },
+          { coldSetupToOutputMs: 13, warmRunMs: 3, githubProof: typedGitHubPackageProof },
+        ),
+      ).toThrowError("retained scaffold timings must be nonnegative safe integers");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("pins the installed-release consumer dependency closure", () => {
     const fixture = resolve(repositoryRoot, "kaji/scripts/installed-typescript-runtime");
     const manifest = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8"));
@@ -555,6 +642,10 @@ describe("npm contract artifact", () => {
       'types: ["node"]',
       "coldSetupToOutputMs",
       "warmRunMs",
+      "const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint())",
+      "const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint())",
+      "return { coldSetupToOutputMs, warmRunMs, githubProof };",
+      "JSON.stringify({ npm: npmTiming, bun: bunTiming })",
       "assertRootDeclarationsVendorNeutral",
       'generated.devDependencies["@types/node"]',
       'installed.devDependencies["@types/node"]',
@@ -781,6 +872,7 @@ describe("npm contract artifact", () => {
       artifacts: {},
       githubPackageProofs: {},
     });
+    expect(forgedReceipt).not.toHaveProperty("timings");
     expect(JSON.stringify(forgedReceipt)).not.toContain(canary);
 
     expect(
@@ -837,6 +929,7 @@ describe("npm contract artifact", () => {
       failedPhase: "npm:package-install",
       failureKind: "timeout",
     });
+    expect(receipt).not.toHaveProperty("timings");
     for (const encoded of [stdout, output]) {
       expect(encoded).not.toContain(state.receiptTarball);
       expect(encoded).not.toContain(state.installedPackagePath);
@@ -1078,6 +1171,7 @@ describe("npm contract artifact", () => {
         conclusion: "failed",
         failureCode: "node_smoke_failed",
       });
+      expect(outputReceipt).not.toHaveProperty("timings");
       return { completed, outputReceipt };
     };
 
@@ -1103,11 +1197,16 @@ describe("npm contract artifact", () => {
 
   it("cleans before ordinary success and replaces cleanup failures with closed evidence", () => {
     const calls: string[] = [];
+    let emittedReceipt: Record<string, unknown> | undefined;
     const success: PendingSmokeReceipt = {
       kind: "ordinary",
       output: "/receipt.json",
       diagnostics: ["ready"],
-      receipt: { conclusion: "passed" },
+      receipt: {
+        conclusion: "passed",
+        githubPackageProofs: { npm: "PROOF_CANARY" },
+        timings: { npm: { coldSetupToOutputMs: 1, warmRunMs: 2 } },
+      },
     };
     const cleanupFailure: PendingSmokeReceipt = {
       kind: "ordinary",
@@ -1121,7 +1220,10 @@ describe("npm contract artifact", () => {
     const dependencies: SmokeFinalizerDependencies = {
       removeWorkspace: () => calls.push("cleanup"),
       writeDiagnostic: () => calls.push("diagnostic"),
-      emitOrdinary: () => calls.push("ordinary"),
+      emitOrdinary: (receipt) => {
+        calls.push("ordinary");
+        emittedReceipt = receipt;
+      },
       emitHandoff: () => calls.push("handoff"),
     };
 
@@ -1144,6 +1246,8 @@ describe("npm contract artifact", () => {
       }),
     );
     expect(calls).toEqual(["cleanup", "ordinary"]);
+    expect(emittedReceipt).not.toHaveProperty("timings");
+    expect(JSON.stringify(emittedReceipt)).not.toContain("PROOF_CANARY");
   });
 
   it("does not emit a trusted handoff pass when cleanup fails", () => {

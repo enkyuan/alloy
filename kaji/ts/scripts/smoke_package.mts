@@ -19,7 +19,6 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import { assertCliListOutput } from "./cli_assertions";
@@ -163,6 +162,16 @@ export class SmokeCommandError extends Error {
   ) {
     super("package smoke command failed");
   }
+}
+
+export function elapsedMilliseconds(startedNs: bigint, endedNs: bigint): number {
+  const elapsedNs = endedNs - startedNs;
+  if (elapsedNs < 0n) throw new RangeError("monotonic clock moved backwards");
+  const elapsedMs = (elapsedNs + 999_999n) / 1_000_000n;
+  if (elapsedMs > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError("elapsed milliseconds exceed Number.MAX_SAFE_INTEGER");
+  }
+  return Number(elapsedMs);
 }
 
 interface GitHubPackageProof {
@@ -2428,16 +2437,36 @@ async function compileInstalledGitHubTypes(
   };
 }
 
+interface ScaffoldTiming {
+  readonly coldSetupToOutputMs: number;
+  readonly warmRunMs: number;
+  readonly githubProof: GitHubPackageProof;
+}
+
+function retainedScaffoldTiming(timing: ScaffoldTiming): {
+  coldSetupToOutputMs: number;
+  warmRunMs: number;
+} {
+  if (
+    !Number.isSafeInteger(timing.coldSetupToOutputMs) ||
+    timing.coldSetupToOutputMs < 0 ||
+    !Number.isSafeInteger(timing.warmRunMs) ||
+    timing.warmRunMs < 0
+  ) {
+    throw new RangeError("retained scaffold timings must be nonnegative safe integers");
+  }
+  return {
+    coldSetupToOutputMs: timing.coldSetupToOutputMs,
+    warmRunMs: timing.warmRunMs,
+  };
+}
+
 async function runScaffold(
   manager: PackageManager,
   tarball: string,
   nodeTypesPackage: string,
-): Promise<{
-  coldSetupToOutputMs: number;
-  warmRunMs: number;
-  githubProof: GitHubPackageProof;
-}> {
-  const started = performance.now();
+): Promise<ScaffoldTiming> {
+  const startedNs = process.hrtime.bigint();
   const root = join(workdir, `${manager}-scaffold`);
   const bootstrap = join(root, "bootstrap");
   const generated = join(root, "generated");
@@ -2698,8 +2727,8 @@ async function runScaffold(
       : runCommand(phase, "bun", ["run", "start"], generated, environment);
   const coldOutput = await run(`${manager}:cold-run`);
   const coldResult = assertScaffoldOutput(coldOutput);
-  const coldSetupToOutputMs = Math.round((performance.now() - started) * 1000) / 1000;
-  const warmStarted = performance.now();
+  const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint());
+  const warmStartedNs = process.hrtime.bigint();
   const warmOutput = await run(`${manager}:warm-run`);
   const warmResult = assertScaffoldOutput(warmOutput);
   if (
@@ -2708,8 +2737,33 @@ async function runScaffold(
   ) {
     throw new Error("cold and warm generated scaffold outputs differed");
   }
-  const warmRunMs = Math.round((performance.now() - warmStarted) * 1000) / 1000;
+  const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint());
   return { coldSetupToOutputMs, warmRunMs, githubProof };
+}
+
+export function ordinarySuccessReceipt(
+  identity: ArtifactIdentity,
+  tarball: string,
+  installedPackagePath: string,
+  nodeVersion: string,
+  npmTiming: ScaffoldTiming,
+  bunTiming: ScaffoldTiming,
+): Record<string, unknown> {
+  return {
+    schemaVersion: 1,
+    commit: identity.commit,
+    releaseManifestSha256: identity.manifestSha256,
+    artifactSha256: identity.artifactSha256,
+    runtime: { version: nodeVersion },
+    artifacts: { tarball, package: installedPackagePath },
+    githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
+    timings: {
+      npm: retainedScaffoldTiming(npmTiming),
+      bun: retainedScaffoldTiming(bunTiming),
+    },
+    conclusion: "passed",
+    failureCode: null,
+  };
 }
 
 export function ordinaryFailureReceipt(
@@ -2949,17 +3003,14 @@ gmailRequester.close();
           JSON.stringify({ npm: npmTiming, bun: bunTiming }),
           "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",
         ],
-        receipt: {
-          schemaVersion: 1,
-          commit: receiptIdentity.commit,
-          releaseManifestSha256: receiptIdentity.manifestSha256,
-          artifactSha256: receiptIdentity.artifactSha256,
-          runtime: { version: receiptNodeVersion },
-          artifacts: { tarball: receiptTarball, package: installedPackagePath },
-          githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
-          conclusion: "passed",
-          failureCode: null,
-        },
+        receipt: ordinarySuccessReceipt(
+          receiptIdentity,
+          receiptTarball,
+          installedPackagePath,
+          receiptNodeVersion,
+          npmTiming,
+          bunTiming,
+        ),
       };
     } catch (error) {
       failure = error;

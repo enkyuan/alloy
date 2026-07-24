@@ -235,9 +235,13 @@ terminal event may occur.
 ## Automated timings and composition
 
 Populate the automated-timings template from the retained exact-artifact
-Python, npm, and Bun cold/warm smoke receipts. Do not substitute participant
-wall-clock estimates. Keep raw participant receipts outside the repository and
-redact confusion notes before composition.
+Python, npm, and Bun cold/warm smoke receipts. Copy their already
+ceiling-normalized integer values verbatim; do not substitute participant
+wall-clock estimates. For the single `automatedTimings.python` slot, use the
+Python `receipt.timings.wheel` values and retain `receipt.timings.sdist` only
+as compatibility evidence. Extract the TypeScript values from
+`receipt.timings.npm` and `receipt.timings.bun`. Keep raw participant receipts
+outside the repository and redact confusion notes before composition.
 
 Run the composer from the release checkout, listing each participant exactly
 once:
