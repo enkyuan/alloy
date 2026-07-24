@@ -190,6 +190,88 @@ def test_python_soak_reclaims_closed_sessions_before_store_capacity(
     assert result["offline"] is True
 
 
+def test_python_timeout_probes_survive_slow_ledger_claim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load(PYTHON_SOAK)
+    original_claim = module.InMemoryToolIdempotencyLedger.claim
+
+    async def delayed_claim(self: object, **kwargs: object):
+        await asyncio.sleep(0.01)
+        return await original_claim(self, **kwargs)
+
+    monkeypatch.setattr(
+        module.InMemoryToolIdempotencyLedger,
+        "claim",
+        delayed_claim,
+    )
+
+    async def exercise_probes() -> tuple[int, int]:
+        return (
+            await module._exercise_cooperative_timeout(1),
+            await module._exercise_noncooperative_timeouts(1),
+        )
+
+    cooperative, noncooperative = asyncio.run(exercise_probes())
+
+    assert cooperative == 1
+    assert noncooperative == 4
+
+
+def test_python_soak_samples_after_subscriber_probe_is_purged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load(PYTHON_SOAK)
+    store_type = module.InMemoryEventStore
+    journal_type = module.InMemoryEventJournal
+    stores: list[Any] = []
+    journals: list[Any] = []
+    sample_states: list[tuple[tuple[str, ...], tuple[str, ...], int]] = []
+
+    def tracked_store(**kwargs: object):
+        store = store_type(**kwargs)
+        stores.append(store)
+        return store
+
+    def tracked_journal(*args: object, **kwargs: object):
+        journal = journal_type(*args, **kwargs)
+        journals.append(journal)
+        return journal
+
+    def tracked_sample(minute: float) -> dict[str, float]:
+        assert len(stores) == 1
+        assert len(journals) == 1
+        sample_states.append(
+            (
+                tuple(stores[0]._events),
+                tuple(journals[0]._subscribers),
+                stores[0].active_listener_count,
+            )
+        )
+        return {"minute": minute, "heapMiB": 50.0, "rssMiB": 100.0}
+
+    monkeypatch.setattr(module, "InMemoryEventStore", tracked_store)
+    monkeypatch.setattr(module, "InMemoryEventJournal", tracked_journal)
+    monkeypatch.setattr(module, "_sample_memory", tracked_sample)
+
+    result = asyncio.run(module._run(0.0001, 13))
+
+    assert sample_states
+    assert all(
+        not any(session.startswith("slow-subscriber-") for session in sessions)
+        and not any(
+            session.startswith("slow-subscriber-") for session in subscriber_sessions
+        )
+        and listener_count == 0
+        for sessions, subscriber_sessions, listener_count in sample_states
+    )
+    assert result["internal"]["maxSubscriberQueueDepth"] == 1_024
+    assert result["internal"]["subscriberOverflows"] == 1
+    assert result["internal"]["metricSubscriberOverflows"] == 1
+    assert result["internal"]["subscriberResumes"] == 1
+    assert result["internal"]["subscriberCount"] == 0
+
+
 @pytest.mark.parametrize("runtime", ["python", "typescript"])
 def test_soak_gate_rejects_unexpected_non_cancelled_turn_failures(
     runtime: str,

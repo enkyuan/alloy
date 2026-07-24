@@ -37,6 +37,10 @@ from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 
 
+_REAL_PROBE_TIMEOUT_SECONDS = 1.0
+_SUBSCRIBER_PROBE_EVENTS = 1_025
+
+
 class _Ids:
     def __init__(self, seed: int) -> None:
         self.seed = seed
@@ -171,7 +175,10 @@ class _Approve:
 async def _exercise_noncooperative_timeouts(sequence: int) -> int:
     releases = [asyncio.Event() for _ in range(4)]
     controller = ToolExecutionController(
-        ToolExecutionLimits(max_parallel=4, timeout_seconds=0.002)
+        ToolExecutionLimits(
+            max_parallel=4,
+            timeout_seconds=_REAL_PROBE_TIMEOUT_SECONDS,
+        )
     )
     spec = ToolSpec(
         name="timeout",
@@ -232,7 +239,10 @@ async def _exercise_noncooperative_timeouts(sequence: int) -> int:
 
 async def _exercise_cooperative_timeout(sequence: int) -> int:
     controller = ToolExecutionController(
-        ToolExecutionLimits(max_parallel=1, timeout_seconds=0.002)
+        ToolExecutionLimits(
+            max_parallel=1,
+            timeout_seconds=_REAL_PROBE_TIMEOUT_SECONDS,
+        )
     )
     spec = ToolSpec(
         name="cooperative-timeout",
@@ -303,6 +313,79 @@ def _ledger_counts(
     return counts
 
 
+async def _exercise_subscriber_overflow(
+    runtime: AgentRuntime,
+    journal: InMemoryEventJournal,
+    store: InMemoryEventStore,
+    diagnostics: _Diagnostics,
+) -> dict[str, int]:
+    session_id = "slow-subscriber-probe"
+    subscriber = await journal.open_subscription(session_id)
+    resumed = None
+    try:
+        for sequence in range(1, _SUBSCRIBER_PROBE_EVENTS + 1):
+            await runtime.append_event(
+                UserMessage(
+                    id=f"subscriber-probe-{sequence}",
+                    timestamp=0.0,
+                    session_id=session_id,
+                    content=f"subscriber-{sequence}",
+                )
+            )
+
+        try:
+            await anext(subscriber)
+        except EventBufferOverflowError as overflow:
+            if (
+                overflow.last_sequence != 0
+                or overflow.latest_sequence != _SUBSCRIBER_PROBE_EVENTS
+            ):
+                raise RuntimeError("subscriber overflow cursor was not exact")
+        else:
+            raise RuntimeError("slow subscriber did not overflow at capacity")
+
+        replayed = await store.get_events(session_id)
+        if [event.sequence for event in replayed] != list(
+            range(1, _SUBSCRIBER_PROBE_EVENTS + 1)
+        ):
+            raise RuntimeError("subscriber overflow replay was not lossless")
+        del replayed
+
+        resumed = await journal.open_subscription(
+            session_id,
+            after_sequence=_SUBSCRIBER_PROBE_EVENTS - 1,
+        )
+        if (await anext(resumed)).sequence != _SUBSCRIBER_PROBE_EVENTS:
+            raise RuntimeError("subscriber did not resume from its cursor")
+    finally:
+        if resumed is not None:
+            await resumed.aclose()
+        await subscriber.aclose()
+        await runtime.purge_session(session_id)
+
+    if journal._subscribers or store.active_listener_count:
+        raise RuntimeError("subscriber probe did not release its subscribers")
+    if await store.last_sequence(session_id):
+        raise RuntimeError("subscriber probe did not purge its session")
+
+    result = {
+        "subscriberCount": 0,
+        "maxSubscriberQueueDepth": diagnostics.max_subscriber_depth,
+        "subscriberOverflows": 1,
+        "metricSubscriberOverflows": diagnostics.subscriber_overflows,
+        "subscriberResumes": 1,
+    }
+    if result != {
+        "subscriberCount": 0,
+        "maxSubscriberQueueDepth": 1_024,
+        "subscriberOverflows": 1,
+        "metricSubscriberOverflows": 1,
+        "subscriberResumes": 1,
+    }:
+        raise RuntimeError("subscriber probe diagnostics were not exact")
+    return result
+
+
 async def _run(minutes: float, seed: int) -> dict[str, Any]:
     randomizer = random.Random(seed)
     provider = _SoakProvider()
@@ -370,14 +453,13 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
     timeout_unknown = 0
     cooperative_timeout_unknown = 0
     batch = 0
-    subscriber_generation = 0
-    subscriber_session = f"slow-subscriber-{subscriber_generation}"
-    subscriber = await journal.open_subscription(subscriber_session)
-    subscriber_events = 0
-    subscriber_count = 1
-    subscriber_resumes = 0
-    subscriber_overflows = 0
     samples: list[dict[str, float]] = []
+    subscriber_diagnostics = await _exercise_subscriber_overflow(
+        runtime,
+        journal,
+        store,
+        diagnostics,
+    )
     started = time.monotonic()
     deadline = started + minutes * 60
     next_sample = started + 60
@@ -431,44 +513,6 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
                     batch
                 )
 
-            for _ in range(2):
-                await runtime.append_event(
-                    UserMessage(
-                        id=ids.next("event"),
-                        timestamp=clock.now_wall_seconds(),
-                        session_id=subscriber_session,
-                        content=f"subscriber-{subscriber_events + 1}",
-                    )
-                )
-                subscriber_events += 1
-                if subscriber_events != 1_025:
-                    continue
-                try:
-                    await anext(subscriber)
-                except EventBufferOverflowError as overflow:
-                    if overflow.last_sequence != 0 or overflow.latest_sequence != 1_025:
-                        raise RuntimeError("subscriber overflow cursor was not exact")
-                else:
-                    raise RuntimeError("slow subscriber did not overflow at capacity")
-                subscriber_count = 0
-                replayed = await store.get_events(subscriber_session)
-                if [event.sequence for event in replayed] != list(range(1, 1_026)):
-                    raise RuntimeError("subscriber overflow replay was not lossless")
-                resumed = await journal.open_subscription(
-                    subscriber_session, after_sequence=1_024
-                )
-                if (await anext(resumed)).sequence != 1_025:
-                    raise RuntimeError("subscriber did not resume from its cursor")
-                await resumed.aclose()
-                subscriber_resumes += 1
-                subscriber_overflows += 1
-                await close_and_purge(subscriber_session)
-                subscriber_generation += 1
-                subscriber_session = f"slow-subscriber-{subscriber_generation}"
-                subscriber = await journal.open_subscription(subscriber_session)
-                subscriber_events = 0
-                subscriber_count = 1
-
             for session_id in set(session_ids):
                 await close_and_purge(session_id)
 
@@ -482,9 +526,6 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
         _append_memory_sample(samples, elapsed_seconds / 60)
         tracemalloc.stop()
 
-    await subscriber.aclose()
-    subscriber_count = 0
-    await close_and_purge(subscriber_session)
     stuck = await controller.drain_tools(0)
     internal = {
         "coordinatorEntries": coordinator.entry_count,
@@ -496,11 +537,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
         "ledgerLimit": 10_000,
         "ledgerCounts": _ledger_counts(ledger),
         "stuckToolCalls": len(stuck),
-        "subscriberCount": subscriber_count,
-        "maxSubscriberQueueDepth": diagnostics.max_subscriber_depth,
-        "subscriberOverflows": subscriber_overflows,
-        "metricSubscriberOverflows": diagnostics.subscriber_overflows,
-        "subscriberResumes": subscriber_resumes,
+        **subscriber_diagnostics,
         "maxToolActive": diagnostics.max_tool_active,
         "maxContextMessages": diagnostics.max_context_messages,
         "maxContextCharacters": diagnostics.max_context_characters,
