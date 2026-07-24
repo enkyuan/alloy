@@ -176,6 +176,7 @@ def test_candidate_artifacts_are_flat_and_evidence_starts_after_checkout() -> No
             1
         ].split("- name:", 1)[0]
         assert "artifact-ids: ${{ inputs.candidate-artifact-id }}" in candidate
+        assert "path: .artifacts/kaji-candidate" in candidate
         assert "merge-multiple: true" in candidate
 
 
