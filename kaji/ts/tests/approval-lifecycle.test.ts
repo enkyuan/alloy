@@ -10,6 +10,7 @@ import type { EventBackedApprovalHandler, TypedApprovalHandler } from "@/runtime
 import { AgentRuntime } from "@/runtime/runtime";
 import { MockProvider } from "@/providers/mock";
 import { approvalKey, replaySession } from "@/sessions/replay";
+import { DEFAULT_TOOL_EXECUTION_LIMITS } from "@/tools/execution";
 import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 
@@ -64,6 +65,7 @@ async function flushMicrotasks(): Promise<void> {
 async function executeApproval(
   handler: TypedApprovalHandler | undefined,
   options: {
+    approvalTimeoutMs?: number;
     deadlineMonotonicMs?: number;
     onEvent?: (type: string) => void;
     controller?: AbortController;
@@ -77,7 +79,10 @@ async function executeApproval(
     policy: new ToolPolicy({ requireApprovalFor: new Set(["write"]) }),
     approvalHandler: handler,
     approvalCommitter: committer,
-    executionLimits: { approvalTimeoutMs: 10 },
+    executionLimits: {
+      approvalTimeoutMs:
+        options.approvalTimeoutMs ?? DEFAULT_TOOL_EXECUTION_LIMITS.approvalTimeoutMs,
+    },
     specs: new Map([[SPEC.name, SPEC]]),
   });
   const controller = options.controller ?? new AbortController();
@@ -105,34 +110,51 @@ async function executeApproval(
 
 describe("approval lifecycle closure", () => {
   it("records the exact timeout sequence and leaves replay closed", async () => {
-    const { store, executor, results } = await executeApproval(new EventApprovalHandler());
-    const events = await store.getEvents("session");
+    vi.useFakeTimers();
+    try {
+      let requestRecorded!: () => void;
+      const sawRequest = new Promise<void>((resolve) => {
+        requestRecorded = resolve;
+      });
+      const pending = executeApproval(new EventApprovalHandler(), {
+        approvalTimeoutMs: 10,
+        onEvent: (type) => {
+          if (type === EventType.TOOL_APPROVAL_REQUESTED) requestRecorded();
+        },
+      });
+      await sawRequest;
+      await vi.advanceTimersByTimeAsync(10);
+      const { store, executor, results } = await pending;
+      const events = await store.getEvents("session");
 
-    expect(events.map((event) => event.type)).toEqual([
-      EventType.TOOL_CALL_REQUESTED,
-      EventType.TOOL_APPROVAL_REQUESTED,
-      EventType.TOOL_APPROVAL_REJECTED,
-      EventType.TOOL_CALL_FAILED,
-    ]);
-    expect(events[2]).toMatchObject({
-      error_code: "APPROVAL_TIMEOUT",
-      reason: "Tool approval timed out",
-    });
-    expect(events[3]).toMatchObject({
-      error_code: "APPROVAL_TIMEOUT",
-      retryable: true,
-      outcome: "not_started",
-    });
-    expect(results[0]).toMatchObject({
-      error_code: "APPROVAL_TIMEOUT",
-      retryable: true,
-      outcome: "not_started",
-    });
-    expect(executor).not.toHaveBeenCalled();
-    expect(events).not.toContainEqual(
-      expect.objectContaining({ type: EventType.TOOL_CALL_STARTED }),
-    );
-    expect(replaySession(events).pendingApprovals.size).toBe(0);
+      expect(events.map((event) => event.type)).toEqual([
+        EventType.TOOL_CALL_REQUESTED,
+        EventType.TOOL_APPROVAL_REQUESTED,
+        EventType.TOOL_APPROVAL_REJECTED,
+        EventType.TOOL_CALL_FAILED,
+      ]);
+      expect(events[2]).toMatchObject({
+        error_code: "APPROVAL_TIMEOUT",
+        reason: "Tool approval timed out",
+      });
+      expect(events[3]).toMatchObject({
+        error_code: "APPROVAL_TIMEOUT",
+        retryable: true,
+        outcome: "not_started",
+      });
+      expect(results[0]).toMatchObject({
+        error_code: "APPROVAL_TIMEOUT",
+        retryable: true,
+        outcome: "not_started",
+      });
+      expect(executor).not.toHaveBeenCalled();
+      expect(events).not.toContainEqual(
+        expect.objectContaining({ type: EventType.TOOL_CALL_STARTED }),
+      );
+      expect(replaySession(events).pendingApprovals.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([
@@ -876,14 +898,16 @@ describe("approval lifecycle closure", () => {
     "treats malformed rejection reason length %s as unavailable",
     async (reason) => {
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      const request = vi.fn(async () => ({
+        granted: false as const,
+        code: "rejected" as const,
+        reason,
+      }));
       const { store, results } = await executeApproval({
-        request: async () => ({
-          granted: false,
-          code: "rejected",
-          reason,
-        }),
+        request,
       });
       const events = await store.getEvents("session");
+      expect(request).toHaveBeenCalledOnce();
       expect(events[1]).toMatchObject({ type: EventType.TOOL_APPROVAL_REQUESTED });
       expect(events[2]).toMatchObject({
         type: EventType.TOOL_APPROVAL_REJECTED,
