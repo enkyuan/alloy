@@ -26,9 +26,14 @@ MANIFEST_SCHEMA = (
 
 def _snippet(path: Path, name: str, language: str) -> str:
     text = path.read_text()
+    escaped = re.escape(name)
+
+    def marker(edge: str) -> str:
+        return rf"(?:<!-- {escaped}:{edge} -->|\{{/\* {escaped}:{edge} \*/\}})"
+
     matches = re.findall(
-        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n[ \t]*```\s*"
-        rf"<!-- {re.escape(name)}:end -->",
+        rf"{marker('start')}\s*```{language}\n"
+        rf"(.*?)\n[ \t]*```\s*{marker('end')}",
         text,
         flags=re.DOTALL,
     )
@@ -66,7 +71,7 @@ def test_exact_getting_started_python_no_key_snippet_runs(tmp_path: Path) -> Non
 def test_getting_started_proves_no_key_success_before_provider_setup() -> None:
     guide = REPO_ROOT / "apps/docs/content/getting-started.mdx"
     text = guide.read_text()
-    no_key = text.index("<!-- getting-started:no-key:python:start -->")
+    no_key = text.index("{/* getting-started:no-key:python:start */}")
     first_provider_setup = min(
         text.index("OPENAI_API_KEY"),
         text.index('get_provider("openai")'),

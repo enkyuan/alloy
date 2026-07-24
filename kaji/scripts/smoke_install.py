@@ -21,9 +21,14 @@ import textwrap
 
 
 def marked_snippet(path: Path, name: str, language: str) -> str:
+    escaped = re.escape(name)
+
+    def marker(edge: str) -> str:
+        return rf"(?:<!-- {escaped}:{edge} -->|\{{/\* {escaped}:{edge} \*/\}})"
+
     matches = re.findall(
-        rf"<!-- {re.escape(name)}:start -->\s*```{language}\n(.*?)\n[ \t]*```\s*"
-        rf"<!-- {re.escape(name)}:end -->",
+        rf"{marker('start')}\s*```{language}\n"
+        rf"(.*?)\n[ \t]*```\s*{marker('end')}",
         path.read_text(),
         flags=re.DOTALL,
     )

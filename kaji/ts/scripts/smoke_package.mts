@@ -397,9 +397,10 @@ const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
 
 function markedSnippet(path: string, name: string, language: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const marker = (edge: "start" | "end") =>
+    `(?:<!-- ${escaped}:${edge} -->|\\{/\\* ${escaped}:${edge} \\*/\\})`;
   const pattern = new RegExp(
-    `<!-- ${escaped}:start -->\\s*\`{3}${language}\\n([\\s\\S]*?)\\n[ \\t]*\`{3}\\s*` +
-      `<!-- ${escaped}:end -->`,
+    `${marker("start")}\\s*\`{3}${language}\\n([\\s\\S]*?)\\n[ \\t]*\`{3}\\s*` + marker("end"),
     "gu",
   );
   const matches = [...readFileSync(path, "utf8").matchAll(pattern)];

@@ -16,14 +16,10 @@ function read(path: string): string {
 
 function snippet(document: string, name: string, language: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const marker = (edge: "start" | "end") =>
+    `(?:<!-- ${escaped}:${edge} -->|\\{/\\* ${escaped}:${edge} \\*/\\})`;
   const pattern =
-    "<!-- " +
-    escaped +
-    ":start -->\\s*`{3}" +
-    language +
-    "\\n([\\s\\S]*?)\\n[ \\t]*`{3}\\s*<!-- " +
-    escaped +
-    ":end -->";
+    marker("start") + "\\s*`{3}" + language + "\\n([\\s\\S]*?)\\n[ \\t]*`{3}\\s*" + marker("end");
   const matches = [...document.matchAll(new RegExp(pattern, "gu"))];
   expect(matches, `expected exactly one ${name}`).toHaveLength(1);
   return matches[0]?.[1] ?? "";

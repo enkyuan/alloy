@@ -16,7 +16,7 @@ Install `kaji-sdk`, `zod`, your provider SDK, and `@dotenvx/dotenvx`, then put
 environment file. Replace `owner/repo` with every exact repository the agent may
 read.
 
-<!-- docs-test:github-read-only:start -->
+{/* docs-test:github-read-only:start */}
 
 ```ts
 import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji-sdk";
@@ -64,7 +64,7 @@ try {
 }
 ```
 
-<!-- docs-test:github-read-only:end -->
+{/* docs-test:github-read-only:end */}
 
 `tokenFor` is lazy and receives the complete `ToolExecutionContext`. Return the
 raw token; Kaji validates it and adds the authorization scheme. Repository
