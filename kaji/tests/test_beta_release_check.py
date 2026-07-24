@@ -1952,6 +1952,23 @@ def test_benchmark_child_must_report_matching_installed_package(
         module._run_case("python", "replay10k", 1, 1, installed)
 
 
+def test_benchmark_child_failure_identifies_runtime_and_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise module.CommandError("redacted child failure")
+
+    monkeypatch.setattr(module, "run_checked", fail)
+
+    with pytest.raises(
+        RuntimeError,
+        match="python replay10k failed: redacted child failure",
+    ):
+        module._run_case("python", "replay10k", 1, 1)
+
+
 def _complete_soak_receipt(
     runtime: str = "python",
     *,

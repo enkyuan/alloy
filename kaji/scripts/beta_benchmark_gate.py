@@ -228,19 +228,22 @@ def _run_case(
     warmups: int,
     installed: InstalledReleaseRuntime | None = None,
 ) -> dict[str, Any]:
-    completed = run_checked(
-        _runtime_command(runtime, case, samples, warmups, installed),
-        cwd=(
-            installed.typescript_workdir
-            if installed is not None and runtime == "typescript"
-            else installed.root
-            if installed is not None
-            else ROOT
-        ),
-        budget=BENCHMARK_COMMAND_BUDGET,
-        capture=True,
-        env=installed.environment if installed is not None else None,
-    )
+    try:
+        completed = run_checked(
+            _runtime_command(runtime, case, samples, warmups, installed),
+            cwd=(
+                installed.typescript_workdir
+                if installed is not None and runtime == "typescript"
+                else installed.root
+                if installed is not None
+                else ROOT
+            ),
+            budget=BENCHMARK_COMMAND_BUDGET,
+            capture=True,
+            env=installed.environment if installed is not None else None,
+        )
+    except CommandError as error:
+        raise RuntimeError(f"{runtime} {case} failed: {error}") from error
     try:
         result = json.loads(completed.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
