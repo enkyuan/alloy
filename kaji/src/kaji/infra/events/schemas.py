@@ -475,12 +475,6 @@ def _load_wire_schema(filename: str) -> dict[str, Any]:
 
 _NEW_EVENT_SCHEMA = _load_wire_schema("new-kaji-event-v1.schema.json")
 _STORED_EVENT_SCHEMA = _load_wire_schema("stored-kaji-event-v1.schema.json")
-_NEW_EVENT_VALIDATOR = Draft202012Validator(
-    _NEW_EVENT_SCHEMA, format_checker=FormatChecker()
-)
-_STORED_EVENT_VALIDATOR = Draft202012Validator(
-    _STORED_EVENT_SCHEMA, format_checker=FormatChecker()
-)
 
 
 def _schema_def_name(event_type: str) -> str:
@@ -525,18 +519,11 @@ def _schema_error_pointer(error: JsonSchemaValidationError) -> str:
 
 
 def _first_schema_error_pointer(value: dict[str, Any], *, stored: bool) -> str | None:
-    validator = _STORED_EVENT_VALIDATOR if stored else _NEW_EVENT_VALIDATOR
-    errors = list(validator.iter_errors(value))
+    event_type = value.get("type")
+    assert isinstance(event_type, str)
+    errors = list(_variant_validator(stored, event_type).iter_errors(value))
     if not errors:
         return None
-
-    event_type = value.get("type")
-    if isinstance(event_type, str) and event_type in {item.value for item in EventType}:
-        selected_errors = list(
-            _variant_validator(stored, event_type).iter_errors(value)
-        )
-        if selected_errors:
-            errors = selected_errors
 
     candidates = [
         (_schema_error_pointer(item), list(item.absolute_schema_path))

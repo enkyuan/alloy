@@ -7,6 +7,7 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import TypeAdapter, ValidationError
 
+from kaji.infra.events import schemas as event_schemas
 from kaji.runtime.sessions.replay import replay_session
 from kaji.infra.events.schemas import (
     AgentTurnExhausted,
@@ -207,6 +208,40 @@ def test_wire_validation_runs_before_constructor_defaults() -> None:
         validate_new_event_python({"type": "session.created", "session_id": "s"})
     assert raised.value.code == "EVENT_SCHEMA_INCOMPATIBLE"
     assert raised.value.path == "/id"
+
+
+@pytest.mark.parametrize(
+    ("stored", "schema_path", "validator"),
+    [
+        (False, NEW_EVENT_SCHEMA, validate_new_event_python),
+        (True, STORED_EVENT_SCHEMA, validate_stored_event_python),
+    ],
+)
+def test_wire_validation_uses_the_discriminated_variant(
+    monkeypatch: pytest.MonkeyPatch,
+    stored: bool,
+    schema_path: Path,
+    validator: object,
+) -> None:
+    payload = json.loads(CONFORMANCE_FIXTURE.read_text())["events"][1]
+    document = dict(payload)
+    if not stored:
+        document.pop("sequence")
+
+    selected: list[tuple[bool, str]] = []
+    select_variant = event_schemas._variant_validator
+
+    def track_variant(stored: bool, event_type: str) -> Any:
+        selected.append((stored, event_type))
+        return select_variant(stored, event_type)
+
+    monkeypatch.setattr(event_schemas, "_variant_validator", track_variant)
+    assert Draft202012Validator(
+        json.loads(schema_path.read_text()),
+        format_checker=FormatChecker(),
+    ).is_valid(document)
+    assert cast(Any, validator)(document).type.value == document["type"]
+    assert selected == [(stored, document["type"])]
 
 
 def test_injected_event_id_defaults_are_validated() -> None:
