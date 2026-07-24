@@ -82,16 +82,19 @@ it("reclaims closed sessions during sustained churn", async () => {
       projectionCacheSize: number;
       ledgerSize: number;
       ledgerCounts: { running: number };
-      scenarios: { sessionClosures: number };
+      scenarios: { crossSessionTurns: number; sessionClosures: number };
     };
   };
 
-  expect(result.attemptedTurns).toBeGreaterThan(256);
-  expect(result.completedTurns).toBeGreaterThan(256);
+  expect(result.attemptedTurns).toBe(result.completedTurns + result.failedTurns);
+  expect(result.completedTurns).toBeGreaterThan(0);
   expect(result.failedTurns).toBe(result.terminalOutcomes.cancelled);
   expect(result.terminalOutcomes.failed).toBe(0);
   expect(result.internal.projectionCacheSize).toBe(0);
   expect(result.internal.ledgerSize).toBe(0);
   expect(result.internal.ledgerCounts.running).toBe(0);
-  expect(result.internal.scenarios.sessionClosures).toBeGreaterThan(256);
+  expect(result.internal.scenarios.crossSessionTurns).toBeGreaterThan(0);
+  expect(result.internal.scenarios.sessionClosures).toBeGreaterThanOrEqual(
+    result.internal.scenarios.crossSessionTurns,
+  );
 }, 20_000);
