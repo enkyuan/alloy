@@ -2272,6 +2272,7 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
     )
     current = {"runner": _closed_benchmark_runner()}
     monkeypatch.setattr(module, "_checked_out_commit", lambda: "a" * 40)
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", "a" * 40)
     monkeypatch.setattr(module, "fingerprint", lambda **_kwargs: current)
     monkeypatch.setattr(
         module,
