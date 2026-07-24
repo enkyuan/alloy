@@ -748,6 +748,8 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
         "Set `KAJI_TTHW_EVIDENCE_JSON`",
         "Only then approve the waiting `tthw-evidence` job",
     )
+    missing_steps = [step for step in ordered_steps if step not in runbook]
+    assert not missing_steps, f"missing release runbook steps: {missing_steps}"
     positions = [runbook.index(step) for step in ordered_steps]
 
     assert positions == sorted(positions)
