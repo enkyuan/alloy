@@ -538,7 +538,7 @@ describe("kaji add", () => {
     for (const name of [
       "index.ts",
       "client.ts",
-      "github_vitest.ts",
+      "tests/github.test.ts",
       "owner-fixtures.json",
       "LICENSE",
       ".kaji-integration-provenance.json",

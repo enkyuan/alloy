@@ -17,6 +17,7 @@ import sys
 import tarfile
 import tomllib
 import zipfile
+from collections.abc import Callable
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -40,6 +41,11 @@ MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_GENERATED_METADATA_BYTES = 1024 * 1024
+GITHUB_MANIFEST_PATH = f"{registry_root}/github/manifest.json"
+GITHUB_OWNER_FIXTURE_RELATIVE_PATH = "tests/test_github.py"
+GITHUB_OWNER_FIXTURE_PATH = (
+    f"{registry_root}/github/{GITHUB_OWNER_FIXTURE_RELATIVE_PATH}"
+)
 
 
 def fail(message: str) -> None:
@@ -91,7 +97,32 @@ def load_archives(dist_dir: Path) -> None:
     expected_sdist_root = f"{wheel_distribution}-{project_version}"
 
 
-def forbidden_artifacts(paths: set[str]) -> list[str]:
+def manifest_declared_owner_fixture_paths(
+    paths: set[str],
+    read_bytes: Callable[[str], bytes],
+    *,
+    prefix: str = "",
+) -> set[str]:
+    """Return the exact packaged owner fixture when its manifest declares it."""
+    manifest_path = f"{prefix}{GITHUB_MANIFEST_PATH}"
+    fixture_path = f"{prefix}{GITHUB_OWNER_FIXTURE_PATH}"
+    if manifest_path not in paths or fixture_path not in paths:
+        return set()
+    try:
+        manifest = json.loads(read_bytes(manifest_path))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        fail("GitHub registry manifest is not valid JSON")
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(files, list) or GITHUB_OWNER_FIXTURE_RELATIVE_PATH not in files:
+        return set()
+    return {fixture_path}
+
+
+def forbidden_artifacts(
+    paths: set[str],
+    *,
+    allowed_test_paths: set[str] | frozenset[str] = frozenset(),
+) -> list[str]:
     forbidden: list[str] = []
     for path in sorted(paths):
         parts = path.split("/")
@@ -102,7 +133,7 @@ def forbidden_artifacts(paths: set[str]) -> list[str]:
             forbidden.append(path)
         elif path.endswith((".pyc", ".pyo", ".log")):
             forbidden.append(path)
-        elif "tests" in parts:
+        elif "tests" in parts and path not in allowed_test_paths:
             forbidden.append(path)
     return forbidden
 
@@ -432,7 +463,14 @@ def verify_archives() -> None:
     with zipfile.ZipFile(wheel) as zf:
         members = checked_zip_members(zf)
         names = {name for name, info in members.items() if not info.is_dir()}
-        forbidden = forbidden_artifacts(names)
+        allowed_test_paths = manifest_declared_owner_fixture_paths(
+            names,
+            lambda path: zf.read(members[path]),
+        )
+        forbidden = forbidden_artifacts(
+            names,
+            allowed_test_paths=allowed_test_paths,
+        )
         if forbidden:
             fail(f"forbidden artifacts in wheel: {forbidden[:5]}")
 
@@ -549,7 +587,22 @@ def verify_archives() -> None:
         if root != expected_sdist_root:
             fail(f"sdist root directory is not canonical: {root}")
         relative_names = {path.removeprefix(f"{root}/") for path in names}
-        forbidden = forbidden_artifacts(relative_names)
+
+        def sdist_bytes(relative: str) -> bytes:
+            extracted = tf.extractfile(members[f"{root}/{relative}"])
+            if extracted is None:
+                fail(f"sdist file cannot be read: {relative}")
+            return extracted.read()
+
+        allowed_test_paths = manifest_declared_owner_fixture_paths(
+            relative_names,
+            sdist_bytes,
+            prefix="src/",
+        )
+        forbidden = forbidden_artifacts(
+            relative_names,
+            allowed_test_paths=allowed_test_paths,
+        )
         if forbidden:
             fail(f"forbidden artifacts in sdist: {forbidden[:5]}")
 
@@ -600,12 +653,6 @@ def verify_archives() -> None:
         for relative in generated_sdist_metadata:
             if members[f"{root}/{relative}"].size > MAX_GENERATED_METADATA_BYTES:
                 fail(f"sdist generated metadata exceeds size limit: {relative}")
-
-        def sdist_bytes(relative: str) -> bytes:
-            extracted = tf.extractfile(members[f"{root}/{relative}"])
-            if extracted is None:
-                fail(f"sdist file cannot be read: {relative}")
-            return extracted.read()
 
         root_pkg_info = sdist_bytes("PKG-INFO")
         egg_pkg_info = sdist_bytes(f"{egg_info}/PKG-INFO")

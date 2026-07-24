@@ -232,10 +232,10 @@ const EXPECTED_PACKED_REGISTRY_FILES = [
   "registry/echo/manifest.json",
   "registry/github/LICENSE",
   "registry/github/client.ts",
-  "registry/github/github_vitest.ts",
   "registry/github/index.ts",
   "registry/github/manifest.json",
   "registry/github/owner-fixtures.json",
+  "registry/github/tests/github.test.ts",
   "registry/index.json",
   "registry/index.schema.json",
   "registry/schema.json",
@@ -2284,7 +2284,6 @@ console.log(JSON.stringify({
       );
       for (const privatePath of [
         "registry/_template/manifest.json",
-        "registry/github/github_pytest.py",
         "registry/github/package-tools.ts",
         "registry/github/package.ts",
         "registry/github/package-internal.ts",
@@ -2306,7 +2305,8 @@ console.log(JSON.stringify({
       }
       const forbidden = [...paths].filter(
         (path) =>
-          /(^|\/)(src|scripts|tests?|__pycache__|logs?|\.cache)(\/|$)/i.test(path) ||
+          /(^|\/)(src|scripts|__pycache__|logs?|\.cache)(\/|$)/i.test(path) ||
+          (!path.startsWith("registry/") && /(^|\/)tests?(\/|$)/i.test(path)) ||
           /(^|\/)(?:tsconfig(?:\.[^/]+)?\.json|tsup\.config\.[cm]?ts|vitest(?:\.[^/]+)?\.config\.[cm]?ts)$/i.test(
             path,
           ) ||

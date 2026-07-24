@@ -11,10 +11,7 @@
   "files": [
     "github.py",
     "client.py",
-    "github.ts",
-    "client.ts",
-    "github_pytest.py",
-    "github_vitest.ts",
+    "tests/test_github.py",
     "owner-fixtures.json",
     "LICENSE"
   ],

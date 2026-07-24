@@ -146,6 +146,18 @@ def mutate_oversized_metadata(files: WheelFiles) -> None:
     rewrite_record(files)
 
 
+def mutate_wheel_package_test(files: WheelFiles) -> None:
+    source = next(name for name in files if name.endswith("/tests/test_github.py"))
+    source_info, _payload = files[source]
+    path = "kaji/integrations/registry/github/tests/test_extra.py"
+    info = copy.copy(source_info)
+    info.filename = path
+    payload = b"def test_unexpected_package_payload():\n    pass\n"
+    info.file_size = len(payload)
+    files[path] = (info, payload)
+    rewrite_record(files)
+
+
 def replace_sdist_file(files: TarFiles, suffix: str, payload: bytes) -> None:
     for index, (member, _old) in enumerate(files):
         if member.name.endswith(suffix):
@@ -193,6 +205,20 @@ def mutate_sdist_project_url_mismatch(files: TarFiles) -> None:
     if original not in root_pkg:
         fail("sdist PKG-INFO canonical Project-URL is missing")
     replace_sdist_file(files, "/PKG-INFO", root_pkg.replace(original, replacement))
+
+
+def mutate_sdist_package_test(files: TarFiles) -> None:
+    source = next(
+        member
+        for member, _payload in files
+        if member.name.endswith("/tests/test_github.py")
+    )
+    root = source.name.split("/", 1)[0]
+    member = copy.copy(source)
+    member.name = f"{root}/src/kaji/integrations/registry/github/tests/test_extra.py"
+    payload = b"def test_unexpected_package_payload():\n    pass\n"
+    member.size = len(payload)
+    files.append((member, payload))
 
 
 def run_case(
@@ -277,6 +303,12 @@ def main() -> None:
                 mutate_oversized_metadata,
                 None,
             ),
+            (
+                "wheel-package-test",
+                "forbidden artifacts in wheel",
+                mutate_wheel_package_test,
+                None,
+            ),
             ("sdist-setup", "setup.cfg is not the canonical", None, mutate_setup_cfg),
             (
                 "sdist-metadata",
@@ -289,6 +321,12 @@ def main() -> None:
                 "Project-URL differs from pyproject",
                 None,
                 mutate_sdist_project_url_mismatch,
+            ),
+            (
+                "sdist-package-test",
+                "forbidden artifacts in sdist",
+                None,
+                mutate_sdist_package_test,
             ),
         ]
         for name, expected, wheel_mutation, sdist_mutation in cases:

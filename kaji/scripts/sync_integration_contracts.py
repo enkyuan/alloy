@@ -39,7 +39,7 @@ COPIES = {
         / "LICENSE",
         ROOT / "kaji" / "ts" / "registry" / "github" / "LICENSE",
     ),
-    ROOT / "kaji" / "ts" / "registry" / "github" / "github_pytest.py": (
+    ROOT / "kaji" / "ts" / "registry" / "github" / "owner-fixtures.json": (
         ROOT
         / "kaji"
         / "src"
@@ -47,7 +47,7 @@ COPIES = {
         / "integrations"
         / "registry"
         / "github"
-        / "github_pytest.py",
+        / "owner-fixtures.json",
     ),
 }
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
@@ -107,28 +107,6 @@ def _manifests(name: str) -> tuple[Path, Path]:
     )
 
 
-def _registry_asset_copies(name: str) -> list[tuple[Path, Path]]:
-    python_manifest = json.loads((PYTHON_REGISTRY / name / "manifest.json").read_text())
-    typescript_manifest = json.loads(
-        (TYPESCRIPT_REGISTRY / name / "manifest.json").read_text()
-    )
-    python_files = set(python_manifest["files"])
-    copies: list[tuple[Path, Path]] = []
-    for relative in typescript_manifest["files"]:
-        target_relative = f"{name}.ts" if relative == "index.ts" else relative
-        if target_relative not in python_files:
-            raise ValueError(
-                f"Python manifest for {name} does not declare TypeScript copy {target_relative}"
-            )
-        copies.append(
-            (
-                TYPESCRIPT_REGISTRY / name / relative,
-                PYTHON_REGISTRY / name / target_relative,
-            )
-        )
-    return copies
-
-
 def write() -> None:
     for source, targets in COPIES.items():
         for target in targets:
@@ -137,9 +115,6 @@ def write() -> None:
     for name, abi_path in _abi_contracts().items():
         for manifest in _manifests(name):
             manifest.write_text(_expected_manifest(manifest, abi_path))
-        for source, target in _registry_asset_copies(name):
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, target)
 
 
 def _diff_bytes(
@@ -170,10 +145,6 @@ def check() -> list[str]:
             expected = _expected_manifest(manifest, abi_path).encode()
             actual = manifest.read_bytes() if manifest.exists() else b""
             diffs.extend(_diff_bytes(actual, expected, manifest, abi_path))
-        for source, target in _registry_asset_copies(name):
-            expected_source = source.read_bytes()
-            actual_source = target.read_bytes() if target.exists() else b""
-            diffs.extend(_diff_bytes(actual_source, expected_source, target, source))
     return diffs
 
 
@@ -186,7 +157,7 @@ def main() -> int:
 
     if args.write:
         write()
-        print("OK: integration schemas, indexed ABIs, and source copies updated")
+        print("OK: integration schemas, indexed ABIs, and shared assets updated")
         return 0
 
     diffs = check()
@@ -194,7 +165,7 @@ def main() -> int:
         print("FAIL: integration schema package copies are stale")
         print("".join(diffs), end="")
         return 1
-    print("OK: integration schemas, indexed ABIs, and source copies are synchronized")
+    print("OK: integration schemas, indexed ABIs, and shared assets are synchronized")
     return 0
 
 

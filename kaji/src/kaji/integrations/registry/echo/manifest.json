@@ -7,8 +7,7 @@
     "kind": "none"
   },
   "files": [
-    "echo.py",
-    "echo.ts"
+    "echo.py"
   ],
   "tools": [
     {

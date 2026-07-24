@@ -1,9 +1,4 @@
-"""Tests for the echo integration's registry entry.
-
-Echo is the cross-language proof: a trivial integration registered in the
-shared on-disk registry with both a .py and a .ts source. These tests verify
-the Python loader handles the manifest and installs both files.
-"""
+"""Tests for the echo integration's Python registry entry."""
 
 from __future__ import annotations
 
@@ -23,14 +18,14 @@ def test_echo_manifest_loads():
     assert m.name == "echo"
     assert m.namespace == "echo"
     assert m.auth.kind == "none"
-    assert {"echo.py", "echo.ts"} <= set(m.files)
+    assert m.files == ("echo.py",)
     assert {t.name for t in m.tools} == {"say", "shout"}
 
 
-def test_echo_install_copies_both_files(tmp_path: Path):
+def test_echo_install_copies_python_file(tmp_path: Path):
     written = install_integration("echo", tmp_path)
     names = {p.name for p in written}
-    assert {"echo.py", "echo.ts"} <= names
+    assert names == {"echo.py"}
     assert (tmp_path / "echo.py").read_text().startswith('"""Echo integration')
 
 
@@ -77,13 +72,6 @@ def test_echo_executable_specs_match_authoritative_abi() -> None:
     assert echo_mod.tools == (echo_mod.say, echo_mod.shout)
 
 
-def test_bundled_typescript_echo_is_the_authoritative_source_copy() -> None:
-    root = Path(__file__).resolve().parents[2]
-    source = root / "kaji/ts/registry/echo/index.ts"
-    bundled = root / "kaji/src/kaji/integrations/registry/echo/echo.ts"
-    assert bundled.read_bytes() == source.read_bytes()
-
-
 def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
     root = Path(__file__).resolve().parents[2]
     contract = json.loads(
@@ -99,9 +87,26 @@ def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
     for manifest in (python_manifest, typescript_manifest):
         assert manifest["namespace"] == contract["namespace"]
         assert manifest["tools"] == contract["tools"]
-    assert python_manifest["files"] == ["echo.py", "echo.ts"]
+    assert python_manifest["files"] == ["echo.py"]
     assert typescript_manifest["files"] == ["index.ts"]
     assert typescript_manifest["peerDeps"] == {}
+
+
+def test_registry_sources_are_owned_by_their_runtime() -> None:
+    root = Path(__file__).resolve().parents[2]
+    python_registry = root / "kaji/src/kaji/integrations/registry"
+    typescript_registry = root / "kaji/ts/registry"
+
+    assert not [
+        path
+        for path in python_registry.rglob("*")
+        if path.suffix in {".js", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"}
+    ]
+    assert not [
+        path
+        for path in typescript_registry.rglob("*")
+        if path.suffix in {".py", ".pyi"}
+    ]
 
 
 def _load_repo_script(name: str, path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -124,7 +129,7 @@ def test_integration_sync_detects_newline_byte_drift(
         monkeypatch,
     )
     source = tmp_path / "index.ts"
-    copy = tmp_path / "echo.ts"
+    copy = tmp_path / "copy.ts"
     source.write_bytes(b"export const value = 1;\n")
     copy.write_bytes(b"export const value = 1;\r\n")
     assert sync._diff_bytes(copy.read_bytes(), source.read_bytes(), copy, source), (
