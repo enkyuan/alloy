@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -133,18 +133,35 @@ def test_python_soak_reclaims_closed_sessions_before_store_capacity(
 ) -> None:
     module = _load(PYTHON_SOAK)
     store_type = module.InMemoryEventStore
+    stores: list[Any] = []
 
     def bounded_store(**kwargs: object):
-        return store_type(
+        store = store_type(
             max_sessions=16,
             max_events_per_session=kwargs["max_events_per_session"],
         )
+        stores.append(store)
+        return store
 
     monkeypatch.setattr(module, "InMemoryEventStore", bounded_store)
 
-    result = asyncio.run(module._run(0.03, 13))
+    async def run_and_fill_store() -> dict[str, Any]:
+        result = await module._run(0.03, 13)
+        assert len(stores) == 1
+        for index in range(16):
+            await stores[0].append(
+                module.UserMessage(
+                    id=f"capacity-{index}",
+                    timestamp=0.0,
+                    session_id=f"capacity-{index}",
+                    content="post-soak capacity probe",
+                )
+            )
+        return cast(dict[str, Any], result)
 
-    assert result["attemptedTurns"] >= 32
+    result = asyncio.run(run_and_fill_store())
+
+    assert result["attemptedTurns"] >= 16
     assert result["failedTurns"] == result["terminalOutcomes"]["cancelled"]
     assert result["terminalOutcomes"]["failed"] == 0
     assert result["internal"]["projectionCacheSize"] == 0
