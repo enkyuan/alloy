@@ -2,6 +2,7 @@ name: gate / kaji
 
 on:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read

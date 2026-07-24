@@ -478,6 +478,8 @@ def test_beta_release_check_wraps_required_gates() -> None:
         "        with:\n"
         "          working-directory: kaji/ts"
     ) in python_workflow
+    gate_workflow = (REPO_ROOT / ".github" / "workflows" / "kaji.gate.yml").read_text()
+    assert "  pull_request:\n  workflow_dispatch:\n" in gate_workflow
     typescript_workflow = (
         REPO_ROOT / ".github" / "workflows" / "ts.test.yml"
     ).read_text()
