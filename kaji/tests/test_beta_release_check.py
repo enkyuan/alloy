@@ -473,6 +473,11 @@ def test_beta_release_check_wraps_required_gates() -> None:
         'pytest tests/ -m "not integration" --cov=kaji --cov-report=xml '
         "--cov-fail-under=80"
     ) in python_workflow
+    assert (
+        "- uses: ./.github/actions/setup-bun-cache\n"
+        "        with:\n"
+        "          working-directory: kaji/ts"
+    ) in python_workflow
     typescript_workflow = (
         REPO_ROOT / ".github" / "workflows" / "ts.test.yml"
     ).read_text()
@@ -615,6 +620,8 @@ if name == "npm" and args and args[0] == "pack":
             "PATH": str(binaries),
         }
     )
+    environment.pop("GITHUB_SHA", None)
+    environment.pop("KAJI_RELEASE_COMMIT", None)
     completed = subprocess.run(
         [sys.executable, str(scripts / "beta_release_check.py"), "--release"],
         cwd=checkout,
@@ -902,7 +909,7 @@ def test_installed_runtime_rejects_source_and_workspace_resolution(
     for unsafe in (
         REPO_ROOT / "kaji" / "src" / "kaji" / "__init__.py",
         REPO_ROOT / "kaji" / "ts" / "src",
-        REPO_ROOT / "kaji" / "ts" / "dist",
+        REPO_ROOT / "kaji" / "ts" / "package.json",
     ):
         with pytest.raises(RuntimeError, match="outside the isolated runtime"):
             module._require_contained(unsafe, isolated, "package")
