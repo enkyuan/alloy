@@ -291,6 +291,34 @@ describe("kaji init", () => {
     rmSync(out, { recursive: true, force: true });
   });
 
+  it("preserves a raced-in symlink during non-forced cleanup", async () => {
+    const out = mkdtempSync(join(tmpdir(), "kaji-init-race-"));
+    const packagePath = join(out, "package.json");
+    const victim = join(out, "victim.txt");
+    writeFileSync(victim, "untouched victim\n");
+
+    await expect(
+      writeScaffoldFiles(
+        out,
+        {
+          "package.json": "generated package\n",
+        },
+        false,
+        {
+          verifyTarget: async () => {
+            rmSync(packagePath);
+            symlinkSync(victim, packagePath);
+            throw new Error("injected verification failure");
+          },
+        },
+      ),
+    ).rejects.toThrow("injected verification failure");
+
+    expect(lstatSync(packagePath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(victim, "utf8")).toBe("untouched victim\n");
+    rmSync(out, { recursive: true, force: true });
+  });
+
   it("reports only the generated recovery directory after rollback failure", async () => {
     const out = mkdtempSync(join(tmpdir(), "kaji-init-recovery-message-"));
     const recoveryDirectory = basename(mkdtempSync(join(out, ".kaji-scaffold-backup-")));

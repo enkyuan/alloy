@@ -715,7 +715,12 @@ export async function writeScaffoldFiles(
         try {
           if (destinationKind(item.destination) === "missing") continue;
           const destinationStat = await lstatAsync(item.destination, { bigint: true });
-          if (destinationStat.dev !== item.dev || destinationStat.ino !== item.ino) {
+          if (
+            !destinationStat.isFile() ||
+            destinationStat.isSymbolicLink() ||
+            destinationStat.dev !== item.dev ||
+            destinationStat.ino !== item.ino
+          ) {
             throw new Error("scaffold destination changed during rollback");
           }
           await rm(item.destination, { force: true });
@@ -745,7 +750,12 @@ export async function writeScaffoldFiles(
       for (const item of committed) {
         try {
           const destinationStat = await lstatAsync(item.destination, { bigint: true });
-          if (destinationStat.dev === item.dev && destinationStat.ino === item.ino) {
+          if (
+            destinationStat.isFile() &&
+            !destinationStat.isSymbolicLink() &&
+            destinationStat.dev === item.dev &&
+            destinationStat.ino === item.ino
+          ) {
             await rm(item.destination, { force: true });
           }
         } catch (cleanupError) {
