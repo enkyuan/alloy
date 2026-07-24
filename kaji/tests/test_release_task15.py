@@ -424,7 +424,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "environment: kaji-beta",
         "environment: kaji-beta-publish",
         "pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b",
-        "npm publish",
+        "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
         "--provenance",
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
@@ -467,8 +467,10 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "publisher-preflight:",
         "NPM_TOKEN is required",
         "npm access list packages",
-        "npm team ls @kaji:developers",
-        "npm identity is not a member of the kaji developers team",
+        "npm view kaji-sdk name --json",
+        "npm identity lacks write access to the existing kaji-sdk package",
+        "Verified npm publisher identity for the first unscoped kaji-sdk publication.",
+        "npm package ownership preflight was ambiguous",
         "verify_release_artifacts.py",
         "verify_npm_package.py",
         "verify_archives.py",
@@ -1689,11 +1691,11 @@ def test_npm_missing_target_is_retryable_propagation(
     ("audit", "expected_error"),
     [
         (
-            {"missing": [{"name": "@kaji/sdk", "version": "0.2.0-beta.2"}]},
+            {"missing": [{"name": "kaji-sdk", "version": "0.2.0-beta.2"}]},
             "VerificationUnavailable",
         ),
         (
-            {"invalid": [{"name": "@kaji/sdk", "version": "0.2.0-beta.2"}]},
+            {"invalid": [{"name": "kaji-sdk", "version": "0.2.0-beta.2"}]},
             "VerificationMismatch",
         ),
     ],
@@ -1741,7 +1743,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
         if command[:2] == ["npm", "view"]:
             stdout = json.dumps(
                 {
-                    "tarball": "https://registry.npmjs.org/@kaji/sdk/-/sdk.tgz",
+                    "tarball": "https://registry.npmjs.org/kaji-sdk/-/sdk.tgz",
                     "integrity": integrity,
                     "shasum": hashlib.sha1(payload).hexdigest(),  # noqa: S324
                 }
@@ -1751,7 +1753,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
                 {
                     "verified": [
                         {
-                            "name": "@kaji/sdk",
+                            "name": "kaji-sdk",
                             "version": "0.2.0-beta.2",
                             "attestations": [{}],
                         }
@@ -1803,7 +1805,7 @@ def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
             stdout = json.dumps(
                 {
                     "verified": [
-                        {"name": "@kaji/sdk", "version": "0.2.0-beta.2"},
+                        {"name": "kaji-sdk", "version": "0.2.0-beta.2"},
                         {
                             "name": "transitive-dependency",
                             "version": "1.0.0",
@@ -1854,7 +1856,7 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "partial_or_ambiguous",
         "never reuse either old version",
         'git tag -s -a kaji-v0.2.0-beta.2 <approved-commit> -m "Kaji 0.2.0 beta 2"',
-        "npm deprecate @kaji/sdk@0.2.0-beta.2",
+        "npm deprecate kaji-sdk@0.2.0-beta.2",
         "compares every existing asset's",
         "SHA-256 digest",
         "`KAJI_RELEASE_SIGNER_EMAIL`",
@@ -1864,14 +1866,14 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "workflow `kaji.publish.yml`",
         "Land the approved release commit on the default branch",
         "Never tag a feature-branch-only commit",
-        "create the organization first if needed",
-        "both an approved `kaji` organization role and `developers`-team membership",
-        "migrate the package to npm trusted publishing",
+        "first unscoped publication requires a short-lived",
+        "after the first release, configure npm trusted publishing",
+        "npm exposes no non-mutating",
+        "requires `KAJI_NPM_PUBLISHER` to match `npm whoami`",
+        "verifies existing `kaji-sdk` write access",
+        "unambiguous `E404`",
     ):
         assert expected in runbook
-    assert "ownership alone is not the policy checked by this workflow" in " ".join(
-        runbook.split()
-    )
 
 
 def test_release_metadata_rejects_non_commit_provenance() -> None:
@@ -2166,7 +2168,7 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
         "runtime": {"version": "v22.1.0"},
         "artifacts": {
             "tarball": "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
-            "package": "/tmp/node_modules/@kaji/sdk",
+            "package": "/tmp/node_modules/kaji-sdk",
         },
         "githubPackageProofs": {
             "npm": proof,
@@ -2359,7 +2361,7 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             "runtime": {"version": f"v{runtime_version}.1.0"},
             "artifacts": {
                 "tarball": "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
-                "package": "/tmp/node_modules/@kaji/sdk",
+                "package": "/tmp/node_modules/kaji-sdk",
             },
             "githubPackageProofs": {
                 "npm": _github_package_proof("typescript"),
@@ -2582,11 +2584,11 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     workspace.mkdir()
     benchmark_packages = {
         "python": "/opt/kaji-installed-release-benchmark/python/lib/python3.11/site-packages/kaji/__init__.py",
-        "typescript": "/opt/kaji-installed-release-benchmark/typescript/node_modules/@kaji/sdk",
+        "typescript": "/opt/kaji-installed-release-benchmark/typescript/node_modules/kaji-sdk",
     }
     soak_packages = {
         "python": "/opt/kaji-installed-release-soak/python/lib/python3.11/site-packages/kaji/__init__.py",
-        "typescript": "/opt/kaji-installed-release-soak/typescript/node_modules/@kaji/sdk",
+        "typescript": "/opt/kaji-installed-release-soak/typescript/node_modules/kaji-sdk",
     }
     run_identity = {
         "workflowRun": workflow_run,
@@ -2654,7 +2656,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "runtime": {"version": f"v{version}.14.0"},
                 "artifacts": {
                     "tarball": "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
-                    "package": f"/opt/kaji-node-{version}/node_modules/@kaji/sdk",
+                    "package": f"/opt/kaji-node-{version}/node_modules/kaji-sdk",
                 },
                 "githubPackageProofs": {
                     "npm": _github_package_proof("typescript"),
@@ -3142,7 +3144,7 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             ]["version"] = "6.0.3"
         elif hostile_case == "source_path":
             document["resolvedPackages"]["typescript"] = str(
-                fixture.workspace / "kaji/ts/dist/node_modules/@kaji/sdk"
+                fixture.workspace / "kaji/ts/dist/node_modules/kaji-sdk"
             )
         elif hostile_case == "legacy_performance_runner":
             document["fingerprint"]["runner"] = {"imageDigest": "sha256:" + "0" * 64}

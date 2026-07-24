@@ -13,8 +13,8 @@ import {
   snapshotIntegrationResult,
   type IntegrationRecoveryFields,
   type IntegrationRecoveryReason,
-} from "@kaji/sdk/integrations";
-import * as integrations from "@kaji/sdk/integrations";
+} from "kaji-sdk/integrations";
+import * as integrations from "kaji-sdk/integrations";
 
 import { INTEGRATION_RECOVERY as INTERNAL_INTEGRATION_RECOVERY } from "@/contracts/integration-recovery";
 

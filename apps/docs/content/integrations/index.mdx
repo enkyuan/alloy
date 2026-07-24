@@ -37,9 +37,9 @@ discoverable or installable catalog entries.
   </Tab>
   <Tab value="typescript">
     ```bash
-    npx --package=@kaji/sdk kaji list-integrations
-    npx --package=@kaji/sdk kaji add echo --out ./integrations
-    npx --package=@kaji/sdk kaji add github --out ./integrations --allow-experimental
+    npx --package=kaji-sdk kaji list-integrations
+    npx --package=kaji-sdk kaji add echo --out ./integrations
+    npx --package=kaji-sdk kaji add github --out ./integrations --allow-experimental
     ```
 
   </Tab>
@@ -56,7 +56,7 @@ The copied experimental GitHub bundle exposes four parallel-safe reads:
 external effects: `create_issue` and `add_comment`. The integration namespace
 is applied before provider dispatch.
 
-The TypeScript package also exports `@kaji/sdk/integrations/github`. Its catalog
+The TypeScript package also exports `kaji-sdk/integrations/github`. Its catalog
 adds nine bounded evidence reads for commits, pull requests, check runs, Actions
 workflow runs and jobs, file history, releases, and deployments. Use
 `toolExposure: "read-only"` to register only the 13 read tools; the compatibility

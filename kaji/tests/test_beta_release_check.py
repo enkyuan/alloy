@@ -424,6 +424,20 @@ def test_release_metadata_command_distinguishes_local_and_commit_bound(
     ]
 
 
+def test_release_environment_preserves_explicit_toolchain_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_beta_gate()
+    pinned_bin = "/private/tmp/kaji-release-bun-1.3.11/.bun/bin"
+    monkeypatch.setenv("HOME", "/Users/release")
+    monkeypatch.setenv("PATH", f"{pinned_bin}:/usr/bin:/bin")
+
+    environment = module.release_environment()
+
+    assert environment["PATH"].split(os.pathsep)[0] == pinned_bin
+    assert f"/Users/release/.bun/bin" in environment["PATH"].split(os.pathsep)
+
+
 def test_beta_release_check_wraps_required_gates() -> None:
     script = BETA_GATE.read_text()
 
@@ -769,7 +783,7 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
         },
         "resolvedPackages": {
             "python": str(runtime_root / "python/kaji/__init__.py"),
-            "typescript": str(typescript / "node_modules/@kaji/sdk"),
+            "typescript": str(typescript / "node_modules/kaji-sdk"),
         },
         "typescriptConsumerLock": {
             "templateSha256": "e" * 64,
@@ -909,7 +923,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
                 "private": True,
                 "type": "module",
                 "dependencies": {
-                    "@kaji/sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
                     "zod": "4.4.3",
                 },
             }
@@ -923,11 +937,11 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
             "": {
                 "name": "kaji-installed-release-runtime",
                 "dependencies": {
-                    "@kaji/sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
                     "zod": "4.4.3",
                 },
             },
-            "node_modules/@kaji/sdk": {
+            "node_modules/kaji-sdk": {
                 "version": "0.2.0-beta.2",
                 "resolved": "file:kaji-sdk-0.2.0-beta.2.tgz",
                 "integrity": "sha512-template",
@@ -959,7 +973,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         rendered["packages"]["node_modules/zod"]
         == template["packages"]["node_modules/zod"]
     )
-    assert rendered["packages"]["node_modules/@kaji/sdk"]["integrity"].startswith(
+    assert rendered["packages"]["node_modules/kaji-sdk"]["integrity"].startswith(
         "sha512-"
     )
     assert lock.read_text() == json.dumps(template)
@@ -972,11 +986,11 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
 
     assert lock["lockfileVersion"] == 3
     assert lock["packages"][""]["dependencies"] == manifest["dependencies"]
-    assert lock["packages"]["node_modules/@kaji/sdk"]["resolved"] == (
+    assert lock["packages"]["node_modules/kaji-sdk"]["resolved"] == (
         "file:kaji-sdk-0.2.0-beta.2.tgz"
     )
     for name, package in lock["packages"].items():
-        if not name or name == "node_modules/@kaji/sdk":
+        if not name or name == "node_modules/kaji-sdk":
             continue
         assert package["resolved"].startswith("https://registry.npmjs.org/")
         assert re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", package["integrity"])
@@ -1130,7 +1144,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
 
     def fake_typescript(root: Path, *_args, **_kwargs):
         consumer = root / "typescript"
-        package = consumer / "node_modules" / "@kaji" / "sdk"
+        package = consumer / "node_modules" / "kaji-sdk"
         consumer.mkdir()
         package.mkdir(parents=True)
         benchmark = consumer / "runtime-benchmark.ts"
@@ -2190,7 +2204,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
         },
         "resolvedPackages": {
             "python": "/isolated/python/kaji/__init__.py",
-            "typescript": "/isolated/typescript/@kaji/sdk",
+            "typescript": "/isolated/typescript/kaji-sdk",
         },
         "typescriptConsumerLock": {
             "templateSha256": "e" * 64,
@@ -2283,12 +2297,29 @@ def test_typescript_source_benchmark_maps_every_public_subpath() -> None:
     config = (REPO_ROOT / "kaji" / "ts" / "tsconfig.json").read_text()
 
     for package, source in {
-        "@kaji/sdk": "./src/index.ts",
-        "@kaji/sdk/openai": "./src/providers/openai.ts",
-        "@kaji/sdk/anthropic": "./src/providers/anthropic.ts",
-        "@kaji/sdk/testing": "./src/testing.ts",
+        "kaji-sdk": "./src/index.ts",
+        "kaji-sdk/openai": "./src/providers/openai.ts",
+        "kaji-sdk/anthropic": "./src/providers/anthropic.ts",
+        "kaji-sdk/testing": "./src/testing.ts",
     }.items():
         assert f'"{package}": ["{source}"]' in config
+
+
+def test_release_runbook_requires_checkout_bound_single_rehearsal_command() -> None:
+    runbook = (REPO_ROOT / "docs" / "kaji" / "releasing.md").read_text()
+
+    assert "real Git checkout with its `.git` metadata present" in runbook
+    assert "Source archives are unsupported" in runbook
+    assert (
+        runbook.count(
+            "uv run --project kaji python kaji/scripts/beta_release_check.py --release"
+        )
+        == 1
+    )
+    assert (
+        "uv run --project kaji python kaji/scripts/verify_package_metadata.py"
+        not in runbook
+    )
 
 
 @pytest.mark.parametrize(

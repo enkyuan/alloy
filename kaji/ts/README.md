@@ -1,6 +1,6 @@
 # Kaji (TypeScript)
 
-`@kaji/sdk` is an embeddable SDK for building agents in TypeScript: import
+`kaji-sdk` is an embeddable SDK for building agents in TypeScript: import
 the pieces you need and compose them. The core is infra-free (no database,
 server, or environment configured). It mirrors the runtime core of the Python
 `kaji` SDK.
@@ -16,10 +16,10 @@ the full five-step developer path and scope definition.
 ## Install
 
 ```bash
-npm install @kaji/sdk@0.2.0-beta.2 zod openai        # OpenAI
+npm install kaji-sdk@0.2.0-beta.2 zod openai        # OpenAI
 # or
-npm install @kaji/sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
-# or: bun add @kaji/sdk@0.2.0-beta.2 zod openai
+npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
+# or: bun add kaji-sdk@0.2.0-beta.2 zod openai
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
@@ -33,8 +33,8 @@ First prove a text-only turn without credentials. No principal is required
 because this runtime has no enabled tools:
 
 ```ts
-import { AgentBuilder } from "@kaji/sdk";
-import { MockProvider } from "@kaji/sdk/testing";
+import { AgentBuilder } from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 
 const runtime = new AgentBuilder()
   .provider(new MockProvider({ reply: "hello" }))
@@ -66,7 +66,7 @@ caught typed provider error and `normalizeProviderError()` where applicable.
 Always page until an empty page; a short page is not proof of exhaustion.
 
 ```ts
-import type { AgentRuntime, StoredKajiEvent } from "@kaji/sdk";
+import type { AgentRuntime, StoredKajiEvent } from "kaji-sdk";
 
 async function pageHistory(runtime: AgentRuntime, sessionId: string, limit = 128) {
   const events: StoredKajiEvent[] = [];
@@ -184,7 +184,7 @@ import {
   Integration,
   deadlineAfter,
   tool,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -230,8 +230,8 @@ not registered or sent to the model.
 
 <!-- docs-test:github-read-only:start -->
 ```ts
-import { AgentBuilder, OpenAIProvider, deadlineAfter } from "@kaji/sdk";
-import { createGithubIntegration } from "@kaji/sdk/integrations/github";
+import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji-sdk";
+import { createGithubIntegration } from "kaji-sdk/integrations/github";
 
 const principalId = "github-investigator";
 const github = createGithubIntegration({
@@ -403,7 +403,7 @@ import {
   AgentBuilder,
   cliApprovalHandler,
   openai,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 
 const agent = new AgentBuilder()
   .provider(openai())
@@ -432,7 +432,7 @@ kaji list-integrations                 # enumerate the registry catalog
 kaji replay <session.jsonl>            # render a stored JSONL session log
 ```
 
-This is the embedded `@kaji/sdk` CLI. The standalone cross-language
+This is the embedded `kaji-sdk` CLI. The standalone cross-language
 `@kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
 package also exposes additional Python-only maintenance commands.
 Generated projects pin dotenvx and load `.env` from their `start` script after
@@ -446,7 +446,7 @@ catalog entry and requires `--allow-experimental` when copied.
 For simple setups you can use the process-level registry:
 
 ```ts
-import { executeTool, registerTool, toolSpecFromSchema } from "@kaji/sdk";
+import { executeTool, registerTool, toolSpecFromSchema } from "kaji-sdk";
 import { z } from "zod";
 
 registerTool(
@@ -534,11 +534,11 @@ ANTHROPIC_API_KEY=... bun run test:integration
 ```
 
 `MockProvider` is a deterministic stub that exercises the full tool loop. It is
-available from `@kaji/sdk/testing` for unit tests, not from the main package
+available from `kaji-sdk/testing` for unit tests, not from the main package
 entrypoint used to build real agents.
 
 ```ts
-import { MockProvider } from "@kaji/sdk/testing";
+import { MockProvider } from "kaji-sdk/testing";
 ```
 
 ## Development

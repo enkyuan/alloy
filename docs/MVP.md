@@ -1,7 +1,7 @@
 # Kaji MVP
 
 This document defines the MVP scope for the Kaji SDKs. It is focused on the
-Python (`kaji`) and TypeScript (`@kaji/sdk`) packages; `kaji-serve`
+Python (`kaji`) and TypeScript (`kaji-sdk`) packages; `kaji-serve`
 is treated as out of scope for the SDK production-readiness path.
 
 Both SDKs target the same five-step developer path:
@@ -14,7 +14,7 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install @kaji/sdk@0.2.0-beta.2 zod`)
+1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install kaji-sdk@0.2.0-beta.2 zod`)
 2. **Install your provider SDK** (OpenAI or Anthropic; see below)
 3. **Set an API key for live providers** (`OPENAI_API_KEY` or
    `ANTHROPIC_API_KEY`). The installed-package mock quickstart needs no key.
@@ -62,7 +62,7 @@ it in [`docs/kaji/`](kaji/).
 | First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.             | Catalog contract implemented; production third-party integrations remain out of MVP. |
 | Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                   | Implemented.                                                                         |
 | Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                      | Implemented.                                                                         |
-| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `@kaji/sdk/testing`.                     | Implemented; keep docs honest.                                                       |
+| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji-sdk/testing`.                     | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
 
@@ -138,9 +138,9 @@ pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
 **TypeScript**
 
 ```bash
-npm install @kaji/sdk@0.2.0-beta.2 zod openai        # OpenAI
+npm install kaji-sdk@0.2.0-beta.2 zod openai        # OpenAI
 # or
-npm install @kaji/sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
+npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
 ```
 
 ### Step 2 - Configure provider
@@ -169,10 +169,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
-import { OpenAIProvider } from "@kaji/sdk";
+import { OpenAIProvider } from "kaji-sdk";
 const provider = new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! });
 // or
-import { AnthropicProvider } from "@kaji/sdk";
+import { AnthropicProvider } from "kaji-sdk";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
 
@@ -284,7 +284,7 @@ class WeatherIntegration(Integration):
 **TypeScript**
 
 ```ts
-import { Integration, tool } from "@kaji/sdk";
+import { Integration, tool } from "kaji-sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -330,7 +330,7 @@ asyncio.run(main())
 **TypeScript**
 
 ```ts
-import { AgentBuilder } from "@kaji/sdk";
+import { AgentBuilder } from "kaji-sdk";
 
 const runtime = new AgentBuilder()
   .provider(provider) // from step 2
@@ -519,7 +519,7 @@ Implemented Python changes:
 Target TypeScript shape:
 
 ```ts
-import { Integration, tool } from "@kaji/sdk";
+import { Integration, tool } from "kaji-sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -662,14 +662,14 @@ Status: implemented for the package entrypoints. The Python top-level `kaji`
 namespace includes the stable runtime plus documented experimental extensions;
 top-level importability does not promote RAG/retrieval into the beta promise.
 The TypeScript main entrypoint does not export the deterministic test provider;
-tests import it from `@kaji/sdk/testing`.
+tests import it from `kaji-sdk/testing`.
 
 Required changes:
 
 - Keep top-level exports for stable MVP names: events, builder/runtime,
   providers, integrations, tools, sessions, policies, and cancellation.
 - Move non-MVP features in docs to explicit subpackage imports.
-- Use `@kaji/sdk/testing` for TypeScript test-only helpers such as
+- Use `kaji-sdk/testing` for TypeScript test-only helpers such as
   `MockProvider`.
 - Add `test_public_api.py` assertions for the names that must stay available in
   the five-step path.

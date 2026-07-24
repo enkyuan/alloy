@@ -85,12 +85,12 @@ describe("kaji init", () => {
           break;
         case "openai-provider":
           expect(readFileSync(join(project, "agent.ts"), "utf8")).toContain(
-            'from "@kaji/sdk/openai"',
+            'from "kaji-sdk/openai"',
           );
           break;
         case "anthropic-provider":
           expect(readFileSync(join(project, "agent.ts"), "utf8")).toContain(
-            'from "@kaji/sdk/anthropic"',
+            'from "kaji-sdk/anthropic"',
           );
           break;
         case "force":
@@ -139,7 +139,7 @@ describe("kaji init", () => {
       readFileSync(join(import.meta.dirname, "../package.json"), "utf8"),
     );
     expect(pkg.dependencies).toEqual({
-      "@kaji/sdk": "0.2.0-beta.2",
+      "kaji-sdk": "0.2.0-beta.2",
       zod: ">=4.3 <5",
     });
     expect(pkg.devDependencies["@types/node"]).toBe(installed.devDependencies["@types/node"]);
@@ -151,8 +151,8 @@ describe("kaji init", () => {
     expect(tsconfig.compilerOptions.types).toEqual(["node"]);
     expect(tsconfig.compilerOptions.skipLibCheck).toBe(false);
     const agent = readFileSync(join(out, "agent.ts"), "utf8");
-    expect(agent).toContain('from "@kaji/sdk/testing"');
-    expect(agent).toContain('import { AgentBuilder } from "@kaji/sdk"');
+    expect(agent).toContain('from "kaji-sdk/testing"');
+    expect(agent).toContain('import { AgentBuilder } from "kaji-sdk"');
     expect(agent).toContain("new AgentBuilder().provider(provider).build()");
     expect(agent).not.toContain("InMemoryEventStore");
     expect(agent).not.toContain("purgeSession");
@@ -359,7 +359,7 @@ describe("kaji init", () => {
 
     expect(code).toBe(0);
     expect(pkg.dependencies).toEqual({
-      "@kaji/sdk": "0.2.0-beta.2",
+      "kaji-sdk": "0.2.0-beta.2",
       zod: ">=4.3 <5",
       [peer]: range,
     });

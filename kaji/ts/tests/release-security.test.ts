@@ -94,11 +94,11 @@ function independentAliasValid(schema: HandoffSchema, definition: string, value:
 }
 
 function npmPackBasenameV1(schema: HandoffSchema, name: string, version: string): string {
-  if (name !== "@kaji/sdk") throw new Error("unexpected package name");
+  if (name !== "kaji-sdk") throw new Error("unexpected package name");
   if (!independentAliasValid(schema, "semver", version)) {
     throw new Error("invalid package version");
   }
-  return `${name.slice(1).replace("/", "-")}-${version}.tgz`;
+  return `${name}-${version}.tgz`;
 }
 
 describe("TypeScript consumer handoff schema", () => {
@@ -120,13 +120,13 @@ describe("TypeScript consumer handoff schema", () => {
       expect(semver(testCase.value), testCase.value).toBe(testCase.valid);
       if (testCase.valid) {
         expect(independentAliasValid(schema, "semver", testCase.value)).toBe(true);
-        const derived = npmPackBasenameV1(schema, "@kaji/sdk", testCase.value);
+        const derived = npmPackBasenameV1(schema, "kaji-sdk", testCase.value);
         expect(derived).toBe(testCase.basename);
         expect(basename(derived), derived).toBe(true);
       } else {
         expect(testCase.basename).toBeUndefined();
         expect(independentAliasValid(schema, "semver", testCase.value)).toBe(false);
-        expect(() => npmPackBasenameV1(schema, "@kaji/sdk", testCase.value)).toThrow(
+        expect(() => npmPackBasenameV1(schema, "kaji-sdk", testCase.value)).toThrow(
           "invalid package version",
         );
       }
@@ -1381,6 +1381,7 @@ describe("Kaji workflow contracts", () => {
       packageManifest.version,
     );
 
+    expect(packageManifest.name).toBe("kaji-sdk");
     expect(packageManifest.version).toBe("0.2.0-beta.2");
     expect(packageManifest.version).not.toBe("0.2.0-beta.1");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);

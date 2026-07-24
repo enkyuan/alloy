@@ -22,7 +22,7 @@ buildable subpackages.
 | ------------ | ------------ | --------------------------- | ----------------------------------------------------- |
 | `kaji-sdk`   | `kaji/`      | `kaji/src/kaji`             | Python embedded agent SDK, imported as `kaji`         |
 | `kaji-serve` | `kaji/serve` | `kaji/serve/src/kaji_serve` | Experimental FastAPI and Soniox STT reference service |
-| `@kaji/sdk`  | `kaji/ts`    | `kaji/ts/src`               | TypeScript embedded agent SDK                         |
+| `kaji-sdk`  | `kaji/ts`    | `kaji/ts/src`               | TypeScript embedded agent SDK                         |
 
 Canonical contracts, release scripts, benchmarks, and fixtures live once at
 the Kaji root and are consumed by both SDKs. Package-specific source remains

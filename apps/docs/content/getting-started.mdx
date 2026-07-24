@@ -19,7 +19,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```bash
-        bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5"
+        bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5"
         ```
       </Tab>
     </Tabs>
@@ -61,8 +61,8 @@ tool wired in.
       <Tab value="typescript">
         <!-- getting-started:no-key:typescript:start -->
         ```ts
-        import { AgentBuilder } from "@kaji/sdk";
-        import { MockProvider } from "@kaji/sdk/testing";
+        import { AgentBuilder } from "kaji-sdk";
+        import { MockProvider } from "kaji-sdk/testing";
 
         const runtime = new AgentBuilder().provider(new MockProvider()).build();
         const result = await runtime.turn("Say hello.");
@@ -139,7 +139,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { functionTool } from "@kaji/sdk";
+        import { functionTool } from "kaji-sdk";
         import { z } from "zod";
 
         const getWeather = functionTool(
@@ -183,7 +183,7 @@ tool wired in.
       </Tab>
       <Tab value="typescript">
         ```ts
-        import { AgentBuilder, deadlineAfter, OpenAIProvider } from "@kaji/sdk";
+        import { AgentBuilder, deadlineAfter, OpenAIProvider } from "kaji-sdk";
 
         const runtime = new AgentBuilder()
           .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))

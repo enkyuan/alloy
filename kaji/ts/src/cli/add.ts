@@ -92,7 +92,7 @@ function nextCommand(status: BundleStatus, manifest: LoadedIntegrationManifest):
     "bun",
     "--no-install",
     "-e",
-    'import("@kaji/sdk/cli")',
+    'import("kaji-sdk/cli")',
     "--",
     "add",
     manifest.name,

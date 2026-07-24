@@ -46,7 +46,7 @@ const CANONICAL_ECHO_ROW = {
   experimental_opt_in_required: false,
   next_commands: {
     python: "python -m kaji.cli add echo",
-    typescript: "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
+    typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo",
   },
 };
 
@@ -59,8 +59,7 @@ const CANONICAL_GITHUB_ROW = {
   experimental_opt_in_required: true,
   next_commands: {
     python: "python -m kaji.cli add github --allow-experimental",
-    typescript:
-      "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
+    typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
   },
 };
 
@@ -291,14 +290,14 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["@kaji/sdk"]).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
-    expect(lock.packages["node_modules/@kaji/sdk"].version).toBe("0.2.0-beta.2");
-    expect(lock.packages["node_modules/@kaji/sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
-    expect(manifest.dependencies["@kaji/sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.1.tgz");
+    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
+    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.2");
+    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
+    expect(manifest.dependencies["kaji-sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.1.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
     >) {
-      if (name === "" || name === "node_modules/@kaji/sdk") continue;
+      if (name === "" || name === "node_modules/kaji-sdk") continue;
       expect(value.resolved).toMatch(/^https:\/\/registry\.npmjs\.org\//);
       expect(value.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/);
     }
@@ -307,10 +306,10 @@ describe("npm contract artifact", () => {
   it("keeps the installed provider proof public-only and receipt-redacted", () => {
     const source = readFileSync(join(packageRoot, "scripts/installed-provider-proof.mts"), "utf8");
 
-    expect(source).toContain('from "@kaji/sdk"');
-    expect(source).toContain('from "@kaji/sdk/openai"');
-    expect(source).toContain('from "@kaji/sdk/anthropic"');
-    expect(source).toContain('import.meta.resolve("@kaji/sdk")');
+    expect(source).toContain('from "kaji-sdk"');
+    expect(source).toContain('from "kaji-sdk/openai"');
+    expect(source).toContain('from "kaji-sdk/anthropic"');
+    expect(source).toContain('import.meta.resolve("kaji-sdk")');
     expect(source).toContain(".build({ store: new InMemoryEventStore() })");
     for (const field of [
       "sdk",
@@ -564,9 +563,9 @@ describe("npm contract artifact", () => {
       "`${manager}:github-package-proof`",
       '"--sandbox-root"',
       '"--package-root"',
-      'from "@kaji/sdk/integrations/github"',
-      'import * as github from "@kaji/sdk/integrations/github";',
-      'const github = require("@kaji/sdk/integrations/github");',
+      'from "kaji-sdk/integrations/github"',
+      'import * as github from "kaji-sdk/integrations/github";',
+      'const github = require("kaji-sdk/integrations/github");',
       'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
       'writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE)',
       "githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof }",
@@ -578,7 +577,7 @@ describe("npm contract artifact", () => {
       'const nestedWorkdir = join(bootstrap, "nested", "deeper")',
       'BUN_CONFIG_REGISTRY: "http://127.0.0.1:9"',
       "nestedConflictProof: true",
-      'const cli = ["--no-install", "-e", \'import("@kaji/sdk/cli")\', "--"]',
+      'const cli = ["--no-install", "-e", \'import("kaji-sdk/cli")\', "--"]',
       "assertCliOwnerOutput(ownerOutput)",
       '[...cli, "--no-color", "add", "echo", "--out", echo]',
       '[...cli, "--no-color", "add", "github", "--out", deniedGithub]',
@@ -632,7 +631,7 @@ describe("npm contract artifact", () => {
     }
 
     const scaffoldSource = readFileSync(join(packageRoot, "src/cli/init.ts"), "utf8");
-    expect(scaffoldSource).toContain('import { AgentBuilder } from "@kaji/sdk"');
+    expect(scaffoldSource).toContain('import { AgentBuilder } from "kaji-sdk"');
     expect(scaffoldSource).toContain("new AgentBuilder().provider(provider).build()");
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
@@ -645,7 +644,7 @@ describe("npm contract artifact", () => {
     expect(source).not.toContain(
       'const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));',
     );
-    expect(source).not.toContain("node_modules/@kaji/sdk/dist/cli/bin.js");
+    expect(source).not.toContain("node_modules/kaji-sdk/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
     const expectedIntegrationExportList =
       '["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"]';
@@ -784,7 +783,7 @@ describe("npm contract artifact", () => {
         artifactSha256: { "kaji-sdk-0.2.0-beta.2.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
-      installedPackagePath: "/private/secret/sk-package-canary/node_modules/@kaji/sdk",
+      installedPackagePath: "/private/secret/sk-package-canary/node_modules/kaji-sdk",
       nodeVersion: "v24.11.0",
     };
     const receipt = ordinaryFailureReceipt(
@@ -1174,8 +1173,8 @@ describe("npm contract artifact", () => {
       'source: "github-types.cts"',
       'config: "tsconfig.github-types-esm.json"',
       'config: "tsconfig.github-types-cjs.json"',
-      'import sdk = require("@kaji/sdk");',
-      'import github = require("@kaji/sdk/integrations/github");',
+      'import sdk = require("kaji-sdk");',
+      'import github = require("kaji-sdk/integrations/github");',
       "const roots: Integration[] = [direct, created, inspected]",
       "const roots: sdk.Integration[] = [direct, created, inspected]",
       'module: "NodeNext"',
@@ -1214,7 +1213,7 @@ describe("npm contract artifact", () => {
       expect(esmFixture).toContain(required);
     }
     for (const required of [
-      'import sdk = require("@kaji/sdk");',
+      'import sdk = require("kaji-sdk");',
       "const approvalInput: sdk.CliApprovalInput = {",
       "const approvalOutput: sdk.CliApprovalOutput = {",
       "const approvalOptions: sdk.CliApprovalOptions = {",
@@ -1523,9 +1522,9 @@ exit 7
       "publicScenarioCount: publicScenarios.length",
       "packageCatalog:",
       "cliCopiedCatalog:",
-      'const sdk = await import("@kaji/sdk");',
-      'const testing = (await import("@kaji/sdk/testing"))',
-      'await import("@kaji/sdk/integrations/github")',
+      'const sdk = await import("kaji-sdk");',
+      'const testing = (await import("kaji-sdk/testing"))',
+      'await import("kaji-sdk/integrations/github")',
       "const requirePackage = createRequire(import.meta.url);",
       'exactToolSpecs(inspected, packageAbi, "ESM")',
       'exactToolSpecs(requiredInspected, packageAbi, "CommonJS")',
@@ -1539,7 +1538,7 @@ exit 7
       "privateSourceContainment.privateGitHubCompositionSourcesPacked",
       "privateSourceContainment.privateGitHubCompositionSourceImportsRejected",
       '"registry/github/package-tools.ts"',
-      '"@kaji/sdk/registry/github/package-tools.ts"',
+      '"kaji-sdk/registry/github/package-tools.ts"',
       '"export function createPackageGitHubToolBindings("',
       "closedCallsDeniedBeforeCredentialAccess: true",
       "approvalDeniedBeforeCredentialAccess: true",
@@ -1570,9 +1569,9 @@ exit 7
     ]) {
       expect(runner).toContain(required);
     }
-    expect(runner).not.toMatch(/import\s+\{[^}]*\}\s+from "@kaji\/sdk";/);
+    expect(runner).not.toMatch(/import\s+\{[^}]*\}\s+from "kaji-sdk";/);
     expect(runner.indexOf('Reflect.set(Socket.prototype, "connect"')).toBeLessThan(
-      runner.indexOf('const sdk = await import("@kaji/sdk");'),
+      runner.indexOf('const sdk = await import("kaji-sdk");'),
     );
     expect(runner).not.toContain("process.env.GITHUB_TOKEN");
     expect(runner).not.toContain("createGitHubRequester");
@@ -1609,8 +1608,8 @@ exit 7
   it("proves installed ESM and CommonJS GitHub class identity through the package root", () => {
     const runner = readFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), "utf8");
     for (const required of [
-      'requirePackage.resolve("@kaji/sdk")',
-      'requirePackage.resolve("@kaji/sdk/integrations/github")',
+      'requirePackage.resolve("kaji-sdk")',
+      'requirePackage.resolve("kaji-sdk/integrations/github")',
       "esmIdentityInspected instanceof sdk.Integration",
       "cjsIdentityInspected instanceof requiredSdk.Integration",
       "esmIdentityCreated instanceof github.GitHubIntegration",
@@ -1705,8 +1704,8 @@ exit 7
 
       const installed = realpathSync(join(extracted, "package"));
       const bootstrap = join(workdir, "bootstrap");
-      mkdirSync(join(bootstrap, "node_modules", "@kaji"), { recursive: true });
-      symlinkSync(installed, join(bootstrap, "node_modules", "@kaji", "sdk"), "dir");
+      mkdirSync(join(bootstrap, "node_modules"), { recursive: true });
+      symlinkSync(installed, join(bootstrap, "node_modules", "kaji-sdk"), "dir");
       symlinkSync(join(packageRoot, "node_modules"), join(installed, "node_modules"), "dir");
       symlinkSync(
         join(packageRoot, "node_modules", "@types"),
@@ -1725,13 +1724,13 @@ exit 7
   type CliApprovalInput,
   type CliApprovalOptions,
   type CliApprovalOutput,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 import {
   GitHubIntegration,
   createGithubIntegration,
   inspectIntegration,
   type CreateGitHubIntegrationOptions,
-} from "@kaji/sdk/integrations/github";
+} from "kaji-sdk/integrations/github";
 const options: CreateGitHubIntegrationOptions = {
   tokenFor: async () => "proof",
   repositories: [],
@@ -1776,8 +1775,8 @@ void approvalOptions;
       );
       writeFileSync(
         join(bootstrap, "github-types.cts"),
-        `import sdk = require("@kaji/sdk");
-import github = require("@kaji/sdk/integrations/github");
+        `import sdk = require("kaji-sdk");
+import github = require("kaji-sdk/integrations/github");
 const options: github.CreateGitHubIntegrationOptions = {
   tokenFor: async () => "proof",
   repositories: [],
@@ -2058,7 +2057,7 @@ void approvalOptions;
         ],
         installOptions,
       );
-      writeConsumerManifest({ ...localDependencies, "@kaji/sdk": `file:${tarball}` });
+      writeConsumerManifest({ ...localDependencies, "kaji-sdk": `file:${tarball}` });
       runText(
         "npm",
         [
@@ -2071,7 +2070,7 @@ void approvalOptions;
         ],
         installOptions,
       );
-      const installed = join(consumer, "node_modules/@kaji/sdk");
+      const installed = join(consumer, "node_modules/kaji-sdk");
       expect(lstatSync(installed).isSymbolicLink()).toBe(false);
       expect(realpathSync(installed).startsWith(`${realpathSync(consumer)}/`)).toBe(true);
       const exercise = `
@@ -2111,7 +2110,7 @@ console.log(JSON.stringify({
           [
             "--input-type=module",
             "--eval",
-            `const testing=await import("@kaji/sdk/testing"); const root=await import("@kaji/sdk"); const openai=await import("@kaji/sdk/openai"); ${exercise}`,
+            `const testing=await import("kaji-sdk/testing"); const root=await import("kaji-sdk"); const openai=await import("kaji-sdk/openai"); ${exercise}`,
           ],
           { cwd: consumer },
         ),
@@ -2126,7 +2125,7 @@ console.log(JSON.stringify({
           "node",
           [
             "--eval",
-            `void (async()=>{ const testing=require("@kaji/sdk/testing"); const root=require("@kaji/sdk"); const openai=require("@kaji/sdk/openai"); ${exercise} })();`,
+            `void (async()=>{ const testing=require("kaji-sdk/testing"); const root=require("kaji-sdk"); const openai=require("kaji-sdk/openai"); ${exercise} })();`,
           ],
           { cwd: consumer },
         ),
@@ -2142,13 +2141,13 @@ console.log(JSON.stringify({
         [
           "--input-type=module",
           "--eval",
-          'process.argv=["node","--help"]; await import("@kaji/sdk/cli");',
+          'process.argv=["node","--help"]; await import("kaji-sdk/cli");',
         ],
         { cwd: consumer },
       );
       const cjsCli = runText(
         "node",
-        ["--eval", 'process.argv=["node","--help"]; require("@kaji/sdk/cli");'],
+        ["--eval", 'process.argv=["node","--help"]; require("kaji-sdk/cli");'],
         { cwd: consumer },
       );
       expect(esmCli).toContain("usage: kaji");

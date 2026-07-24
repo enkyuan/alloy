@@ -22,7 +22,7 @@ TypeScript project.
 | [`apps/web`](apps/web)               | Ryo          | Studio: configure agents and payment providers              | React, TanStack Router, shadcn/ui |
 | [`kaji`](kaji)                       | Kaji         | `kaji`: agent runtime, toolgen, providers                   | Python 3.11+                      |
 | [`kaji/serve`](kaji/serve)           | Kaji         | `kaji-serve`: experimental REST + Soniox STT edge           | Python, FastAPI, Soniox           |
-| [`kaji/ts`](kaji/ts)                 | Kaji         | `@kaji/sdk`: TypeScript runtime                             | TypeScript                        |
+| [`kaji/ts`](kaji/ts)                 | Kaji         | `kaji-sdk`: TypeScript runtime                             | TypeScript                        |
 | [`apps/cli`](apps/cli)               | Kaji tooling | `@kaji/cli`: cross-language scaffolding and code generation | Bun, TypeScript                   |
 | [`apps/docs`](apps/docs)             | Kaji tooling | `@kaji/docs`: public documentation site                     | Next.js, Fumadocs                 |
 | [`packages/ui`](packages/ui)         | Shared       | `@kaji/ui`: shared UI and development helpers               | React, TypeScript                 |
@@ -59,7 +59,7 @@ is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  kaji runtime            │   kaji or @kaji/sdk
+   │  kaji runtime            │   kaji or kaji-sdk
    │  llm loop · toolgen      │   optional serve edge: fastapi + soniox stt
    └──────────────────────────┘
 ```

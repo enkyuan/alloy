@@ -7,8 +7,8 @@ import {
   type ToolHandler,
   type ToolSpec,
   type TraceSink,
-} from "@kaji/sdk";
-import { createGitHubRequester } from "@kaji/sdk/integrations";
+} from "kaji-sdk";
+import { createGitHubRequester } from "kaji-sdk/integrations";
 
 import { GitHubClient } from "./client";
 

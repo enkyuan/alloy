@@ -49,5 +49,5 @@ All notable changes to Kaji are documented here.
 
 | Package | Status | Notes |
 |---|---|---|
-| `@kaji/sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers + OpenRouter/Kimi/Gemini factories (OpenAI-compatible), CI green. Deferred: RAG, voice, Redis, CLI. |
+| `kaji-sdk` (TS) | Beta candidate | Core agent loop, tools, policy, OpenAI/Anthropic providers + OpenRouter/Kimi/Gemini factories (OpenAI-compatible), CI green. Deferred: RAG, voice, Redis, CLI. |
 | `kaji` (Python) | Pre-beta | Suitable for internal embedded agents. Static checks pass on hardened paths. Multi-process platform (Redis, voice workers) not production-hardened. |

@@ -324,7 +324,7 @@ describe("cross-SDK release matrix docs", () => {
     const guideExample = snippet(guide, "docs-test:github-read-only", "ts");
 
     expect(guideExample).toBe(readmeExample);
-    expect(readmeExample).toContain('from "@kaji/sdk/integrations/github"');
+    expect(readmeExample).toContain('from "kaji-sdk/integrations/github"');
     expect(readmeExample).toContain('toolExposure: "read-only"');
     expect(readmeExample).toContain("await runtime.drainTools(10_000)");
     expect(readmeExample).toContain("github.close()");

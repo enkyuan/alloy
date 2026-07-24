@@ -64,7 +64,7 @@
       "outputs": ["dist/**"],
       "cache": true
     },
-    "@kaji/sdk#build": {
+    "kaji-sdk#build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
       "cache": true

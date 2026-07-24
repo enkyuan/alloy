@@ -133,7 +133,7 @@ async function packageVersion(): Promise<string> {
     version?: unknown;
   };
   if (typeof value.version !== "string" || value.version.length === 0) {
-    throw new Error("Installed @kaji/sdk package metadata is incomplete");
+    throw new Error("Installed kaji-sdk package metadata is incomplete");
   }
   return value.version;
 }

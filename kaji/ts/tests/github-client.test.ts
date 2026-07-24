@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { ToolExecutionError, type ToolExecutionContext } from "@kaji/sdk";
+import { ToolExecutionError, type ToolExecutionContext } from "kaji-sdk";
 import {
   IntegrationAuthRequiredError,
   IntegrationPolicyError,
   snapshotIntegrationResult,
   type BoundedResponse,
   type FixedOriginRequester,
-} from "@kaji/sdk/integrations";
+} from "kaji-sdk/integrations";
 import { recoveryForReason } from "@/contracts/integration-recovery";
 import { GitHubClient } from "../registry/github/client";
 
@@ -55,7 +55,7 @@ const packageAbi = JSON.parse(
 ) as { readonly catalog_version: string };
 
 const TYPESCRIPT_REQUEST_IDENTITY = {
-  "user-agent": "@kaji/sdk-github/0.2.0",
+  "user-agent": "kaji-sdk-github/0.2.0",
   "x-github-api-version": "2026-03-10",
 } as const;
 
@@ -688,7 +688,7 @@ describe("shared GitHub client conformance", () => {
       },
     });
     expect(TYPESCRIPT_REQUEST_IDENTITY["user-agent"]).toBe(
-      `@kaji/sdk-github/${packageAbi.catalog_version}`,
+      `kaji-sdk-github/${packageAbi.catalog_version}`,
     );
   });
 

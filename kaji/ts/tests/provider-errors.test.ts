@@ -8,9 +8,10 @@ import {
   ProviderError,
   ProviderOutputLimitError,
   ProviderRateLimitedError,
+  ToolExecutionError,
   normalizeProviderError,
   type NormalizedProviderError,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 import { providerAPIErrorFromUnknown } from "@/providers/errors";
 import { inspect } from "node:util";
 
@@ -31,6 +32,15 @@ const providerNormalizationCases = (
 ).cases;
 
 describe("provider error semantics", () => {
+  it("recognizes the legacy package brand across package copies", () => {
+    const foreign = new Error("safe public message");
+    Object.defineProperty(foreign, Symbol.for("@kaji/sdk.ToolExecutionError.v1"), {
+      value: true,
+    });
+
+    expect(foreign).toBeInstanceOf(ToolExecutionError);
+  });
+
   it("exports a redaction-safe typed output-limit error", () => {
     const error = new ProviderOutputLimitError("tool_arguments", 65_536);
     expect(error).toMatchObject({

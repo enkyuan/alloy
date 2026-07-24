@@ -25,7 +25,7 @@ from process_runner import METADATA_BUDGET, CommandError, run_checked
 PYPI_PROJECT = "kaji-sdk"
 PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
-NPM_PACKAGE = "@kaji/sdk"
+NPM_PACKAGE = "kaji-sdk"
 NPM_VERSION = "0.2.0-beta.2"
 NPM_SPEC = f"{NPM_PACKAGE}@{NPM_VERSION}"
 NPM_REGISTRY = "https://registry.npmjs.org/"
@@ -391,7 +391,7 @@ def _verify_npm_audit(*, repository_dir: Path, evidence_file: Path) -> dict[str,
         + "\n"
     )
     (repository_dir / ".npmrc").write_text(
-        f"registry={NPM_REGISTRY}\n@kaji:registry={NPM_REGISTRY}\nignore-scripts=true\n"
+        f"registry={NPM_REGISTRY}\nignore-scripts=true\n"
     )
     _run_npm_registry_command(
         ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"],

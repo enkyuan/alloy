@@ -22,7 +22,7 @@ import tarfile
 import tempfile
 import time
 from typing import Any, NoReturn
-from urllib import request
+from urllib import error, request
 
 from jsonschema import Draft202012Validator
 
@@ -35,7 +35,7 @@ from process_runner import (
 )
 
 
-PACKAGE_NAME = "@kaji/sdk"
+PACKAGE_NAME = "kaji-sdk"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 BASE_REF = "refs/remotes/origin/main"
 SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
@@ -79,9 +79,9 @@ RECEIPT_DIGEST_KEYS = (
     "node24",
 )
 
-REGISTRY_URL = "https://registry.npmjs.org/@kaji%2Fsdk"
+REGISTRY_URL = "https://registry.npmjs.org/kaji-sdk"
 REGISTRY_ORIGIN = "https://registry.npmjs.org"
-REGISTRY_PATH = "/@kaji%2Fsdk"
+REGISTRY_PATH = "/kaji-sdk"
 REGISTRY_MAX_BYTES = 5 * 1024 * 1024
 REGISTRY_DEADLINE_SECONDS = 30.0
 
@@ -240,7 +240,7 @@ def _positive_integer(value: str | None) -> int:
 def npm_pack_basename_v1(name: str, version: str) -> str:
     if name != PACKAGE_NAME or not _valid_semver(version):
         _reject("INVALID_ARGUMENT")
-    return f"{name.removeprefix('@').replace('/', '-')}-{version}.tgz"
+    return f"{name}-{version}.tgz"
 
 
 def _canonical_json(document: Any) -> bytes:
@@ -797,13 +797,18 @@ def _registry_get(url: str, token: str) -> tuple[int, str, bytes]:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RegistryDeadlineExceeded
-        with request.build_opener(_NoRedirect()).open(
-            registry_request, timeout=remaining
-        ) as response:
+        opener = request.build_opener(_NoRedirect())
+        try:
+            response = opener.open(registry_request, timeout=remaining)
+        except error.HTTPError as registry_error:
+            if registry_error.code != 404:
+                raise
+            response = registry_error
+        with response:
             body = response.read(REGISTRY_MAX_BYTES + 1)
             if time.monotonic() > deadline:
                 raise RegistryDeadlineExceeded
-            return response.status, response.geturl(), body
+            return response.getcode(), response.geturl(), body
 
 
 def _registry_proof(
@@ -822,19 +827,25 @@ def _registry_proof(
         _reject("REGISTRY_UNAVAILABLE", source_commit=source_commit)
     try:
         status, final_url, encoded = registry_get(REGISTRY_URL, token)
-        if (
-            status != 200
-            or final_url != REGISTRY_URL
-            or len(encoded) > REGISTRY_MAX_BYTES
-        ):
+        if final_url != REGISTRY_URL or len(encoded) > REGISTRY_MAX_BYTES:
             raise ValueError
         document = json.loads(encoded.decode("utf-8"))
-        versions = document.get("versions") if isinstance(document, dict) else None
-        if (
-            document.get("name") != PACKAGE_NAME
-            or not isinstance(versions, dict)
-            or version in versions
-        ):
+        if not isinstance(document, dict):
+            raise ValueError
+        if status == 200:
+            versions = document.get("versions")
+            if (
+                document.get("name") != PACKAGE_NAME
+                or not isinstance(versions, dict)
+                or version in versions
+            ):
+                raise ValueError
+            result = "version-unused"
+        elif status == 404:
+            if document != {"error": "Not found"}:
+                raise ValueError
+            result = "package-absent"
+        else:
             raise ValueError
     except Exception:
         _reject("REGISTRY_UNAVAILABLE", source_commit=source_commit)
@@ -845,9 +856,9 @@ def _registry_proof(
         "requestPath": REGISTRY_PATH,
         "package": PACKAGE_NAME,
         "version": version,
-        "httpStatus": 200,
-        "result": "version-unused",
-        "packumentSha256": _sha256_bytes(encoded),
+        "httpStatus": status,
+        "result": result,
+        "responseSha256": _sha256_bytes(encoded),
         "sourceCommit": source_commit,
         "workflow": dict(workflow),
     }
@@ -1013,7 +1024,7 @@ def _validate_preflight(document: Mapping[str, Any], mode: str) -> None:
                 "version",
                 "httpStatus",
                 "result",
-                "packumentSha256",
+                "responseSha256",
                 "sourceCommit",
                 "workflow",
             },
@@ -1026,9 +1037,12 @@ def _validate_preflight(document: Mapping[str, Any], mode: str) -> None:
             or registry.get("requestPath") != REGISTRY_PATH
             or registry.get("package") != PACKAGE_NAME
             or registry.get("version") != package.get("version")
-            or registry.get("httpStatus") != 200
-            or registry.get("result") != "version-unused"
-            or not _valid_hex64(registry.get("packumentSha256"))
+            or (
+                registry.get("httpStatus"),
+                registry.get("result"),
+            )
+            not in {(200, "version-unused"), (404, "package-absent")}
+            or not _valid_hex64(registry.get("responseSha256"))
             or registry.get("sourceCommit") != document.get("sourceCommit")
             or registry.get("workflow") != workflow
         ):
@@ -1162,7 +1176,11 @@ def stage(
             **signature,
             "rawResultSha256": _sha256_bytes(signature_bytes),
         }
-        registry_status = "version-unused" if mode == "release" else "not-claimed"
+        registry_status = (
+            preflight_document["registry"]["result"]
+            if mode == "release"
+            else "not-claimed"
+        )
         pack_evidence = {
             "mode": mode,
             "package": {"name": PACKAGE_NAME, "version": package["version"]},
@@ -1666,7 +1684,9 @@ def finalize(
             _reject("RECEIPT_INVALID")
         gate_evidence = {
             "mode": mode,
-            "registry": "version-unused" if release else "not-claimed",
+            "registry": (
+                preflight_document["registry"]["result"] if release else "not-claimed"
+            ),
             "signerWorkflow": signer,
             "toolchain": candidate_toolchain,
             "publicReleaseClaim": "eligible" if release else "not-claimed",

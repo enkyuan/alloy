@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from email.message import Message
 import base64
 import hashlib
 import importlib.util
+import io
 import json
 from pathlib import Path
 import re
 import runpy
 import sys
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -194,7 +197,7 @@ def _manifest(mode: str) -> dict[str, Any]:
     reproducibility = {"comparison": "not-run"}
     pack_evidence = {
         "mode": mode,
-        "package": {"name": "@kaji/sdk", "version": "0.2.0"},
+        "package": {"name": "kaji-sdk", "version": "0.2.0"},
         "artifact": {
             "filename": "kaji-sdk-0.2.0.tgz",
             "size": 1024,
@@ -339,7 +342,7 @@ def _manifest(mode: str) -> dict[str, Any]:
             "reproducibility": reproducibility,
         },
         "package": {
-            "name": "@kaji/sdk",
+            "name": "kaji-sdk",
             "version": "0.2.0",
             "exports": exports,
             "publicSymbols": {"github": PUBLIC_SYMBOLS},
@@ -406,11 +409,11 @@ def _independent_alias_valid(
 
 
 def _npm_pack_basename_v1(schema: dict[str, Any], name: str, version: str) -> str:
-    if name != "@kaji/sdk":
+    if name != "kaji-sdk":
         raise ValueError("unexpected package name")
     if not _independent_alias_valid(schema, "semver", version):
         raise ValueError("invalid package version")
-    return f"{name.removeprefix('@').replace('/', '-')}-{version}.tgz"
+    return f"{name}-{version}.tgz"
 
 
 def _walk_schema(value: Any) -> list[dict[str, Any]]:
@@ -458,6 +461,16 @@ def test_handoff_schema_accepts_both_closed_seven_receipt_modes() -> None:
     }
     signed_tag["source"]["signature"]["mechanism"] = signature["mechanism"]
     validator.validate(signed_tag)
+
+
+def test_handoff_schema_accepts_first_publication_registry_evidence() -> None:
+    manifest = _manifest("release")
+    manifest["upstreamVerification"][2]["evidence"]["registry"] = {
+        "status": "package-absent"
+    }
+    manifest["upstreamVerification"][6]["evidence"]["registry"] = "package-absent"
+
+    Draft202012Validator(_schema()).validate(manifest)
 
 
 def test_handoff_schema_accepts_exact_root_policy_projection() -> None:
@@ -556,14 +569,14 @@ def test_handoff_semver_basename_and_alias_tables_are_shared_and_closed() -> Non
         assert semver.is_valid(case["value"]) is case["valid"]
         if case["valid"]:
             assert _independent_alias_valid(schema, "semver", case["value"])
-            derived = _npm_pack_basename_v1(schema, "@kaji/sdk", case["value"])
+            derived = _npm_pack_basename_v1(schema, "kaji-sdk", case["value"])
             assert derived == case["basename"]
             assert basename.is_valid(derived)
         else:
             assert "basename" not in case
             assert not _independent_alias_valid(schema, "semver", case["value"])
             with pytest.raises(ValueError, match="invalid package version"):
-                _npm_pack_basename_v1(schema, "@kaji/sdk", case["value"])
+                _npm_pack_basename_v1(schema, "kaji-sdk", case["value"])
 
     for definition, cases in conformance["aliases"].items():
         validator = _fragment_validator(schema, definition)
@@ -650,6 +663,7 @@ def _preflight_fixture(
     root: Path,
     *,
     mode: str = "internal-evaluation",
+    registry_result: str = "version-unused",
 ) -> tuple[Path, dict[str, Any], dict[str, Any], dict[str, Any], bytes, bytes]:
     inputs = root / "inputs"
     source_dir = inputs / "source"
@@ -673,11 +687,11 @@ def _preflight_fixture(
             "producer": "ts-handoff-preflight",
             "origin": handoff.REGISTRY_ORIGIN,
             "requestPath": handoff.REGISTRY_PATH,
-            "package": "@kaji/sdk",
+            "package": "kaji-sdk",
             "version": "0.2.0-beta.2",
-            "httpStatus": 200,
-            "result": "version-unused",
-            "packumentSha256": DIGEST,
+            "httpStatus": 404 if registry_result == "package-absent" else 200,
+            "result": registry_result,
+            "responseSha256": DIGEST,
             "sourceCommit": HEAD,
             "workflow": workflow,
         }
@@ -691,7 +705,7 @@ def _preflight_fixture(
         "sourceCommit": HEAD,
         "treeSha": TREE,
         "trustedVerifierCommit": VERIFIER,
-        "package": {"name": "@kaji/sdk", "version": "0.2.0-beta.2"},
+        "package": {"name": "kaji-sdk", "version": "0.2.0-beta.2"},
         "rawInputs": {
             "source": {
                 "filename": handoff.RAW_SOURCE_NAME,
@@ -732,7 +746,7 @@ def _patch_source_boundary(
         handoff,
         "_package_metadata",
         lambda _root: {
-            "name": "@kaji/sdk",
+            "name": "kaji-sdk",
             "version": "0.2.0-beta.2",
             "scripts": {"prebuild": "bun run validate:registry"},
         },
@@ -774,7 +788,7 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
     monkeypatch.setattr(
         handoff,
         "_package_metadata",
-        lambda _root: {"name": "@kaji/sdk", "version": "0.2.0-beta.2"},
+        lambda _root: {"name": "kaji-sdk", "version": "0.2.0-beta.2"},
     )
     monkeypatch.setattr(
         handoff,
@@ -806,37 +820,44 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
 
 
 @pytest.mark.parametrize(
-    ("status", "url", "body", "expected"),
+    ("status", "url", "body", "expected_result"),
     [
         (
             200,
-            "https://registry.npmjs.org/@kaji%2Fsdk",
-            {"name": "@kaji/sdk", "versions": {}},
-            True,
+            "https://registry.npmjs.org/kaji-sdk",
+            {"name": "kaji-sdk", "versions": {}},
+            "version-unused",
         ),
-        (404, "https://registry.npmjs.org/@kaji%2Fsdk", {}, False),
-        (302, "https://example.com/redirect", {}, False),
-        (401, "https://registry.npmjs.org/@kaji%2Fsdk", {}, False),
-        (403, "https://registry.npmjs.org/@kaji%2Fsdk", {}, False),
-        (429, "https://registry.npmjs.org/@kaji%2Fsdk", {}, False),
-        (500, "https://registry.npmjs.org/@kaji%2Fsdk", {}, False),
+        (
+            404,
+            "https://registry.npmjs.org/kaji-sdk",
+            {"error": "Not found"},
+            "package-absent",
+        ),
+        (404, "https://registry.npmjs.org/kaji-sdk", {}, None),
+        (404, "https://example.com/redirect", {"error": "Not found"}, None),
+        (302, "https://example.com/redirect", {}, None),
+        (401, "https://registry.npmjs.org/kaji-sdk", {}, None),
+        (403, "https://registry.npmjs.org/kaji-sdk", {}, None),
+        (429, "https://registry.npmjs.org/kaji-sdk", {}, None),
+        (500, "https://registry.npmjs.org/kaji-sdk", {}, None),
         (
             200,
-            "https://registry.npmjs.org/@kaji%2Fsdk",
+            "https://registry.npmjs.org/kaji-sdk",
             {"name": "wrong", "versions": {}},
-            False,
+            None,
         ),
         (
             200,
-            "https://registry.npmjs.org/@kaji%2Fsdk",
-            {"name": "@kaji/sdk", "versions": []},
-            False,
+            "https://registry.npmjs.org/kaji-sdk",
+            {"name": "kaji-sdk", "versions": []},
+            None,
         ),
         (
             200,
-            "https://registry.npmjs.org/@kaji%2Fsdk",
-            {"name": "@kaji/sdk", "versions": {"0.2.0-beta.2": {}}},
-            False,
+            "https://registry.npmjs.org/kaji-sdk",
+            {"name": "kaji-sdk", "versions": {"0.2.0-beta.2": {}}},
+            None,
         ),
     ],
 )
@@ -845,7 +866,7 @@ def test_release_registry_proof_is_one_bounded_closed_lookup(
     status: int,
     url: str,
     body: dict[str, Any],
-    expected: bool,
+    expected_result: str | None,
 ) -> None:
     handoff = _handoff_module()
     monkeypatch.setenv("NODE_AUTH_TOKEN", "registry-secret")
@@ -855,15 +876,47 @@ def test_release_registry_proof_is_one_bounded_closed_lookup(
         calls.append((request_url, token))
         return status, url, json.dumps(body).encode()
 
-    if expected:
+    if expected_result is not None:
         proof = handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
-        assert proof["result"] == "version-unused"
+        assert proof["httpStatus"] == status
+        assert proof["result"] == expected_result
+        assert (
+            proof["responseSha256"]
+            == hashlib.sha256(json.dumps(body).encode()).hexdigest()
+        )
         assert proof["workflow"] == _workflow()
         assert "registry-secret" not in json.dumps(proof)
     else:
         with pytest.raises(handoff.HandoffError, match="REGISTRY_UNAVAILABLE"):
             handoff._registry_proof("0.2.0-beta.2", HEAD, _workflow(), registry_get)
     assert calls == [(handoff.REGISTRY_URL, "registry-secret")]
+
+
+def test_registry_get_preserves_one_bounded_canonical_not_found_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handoff = _handoff_module()
+    body = b'{"error":"Not found"}'
+
+    class Opener:
+        def open(self, request: Any, timeout: float) -> Any:
+            assert request.full_url == handoff.REGISTRY_URL
+            assert timeout > 0
+            raise HTTPError(
+                handoff.REGISTRY_URL,
+                404,
+                "Not Found",
+                Message(),
+                io.BytesIO(body),
+            )
+
+    monkeypatch.setattr(handoff.request, "build_opener", lambda *_handlers: Opener())
+
+    assert handoff._registry_get(handoff.REGISTRY_URL, "registry-secret") == (
+        404,
+        handoff.REGISTRY_URL,
+        body,
+    )
 
 
 def test_release_registry_rejects_missing_token_without_network(
@@ -886,10 +939,10 @@ def test_release_registry_rejects_missing_token_without_network(
 @pytest.mark.parametrize(
     "result",
     [
-        (200, "https://registry.npmjs.org/@kaji%2Fsdk", b"{"),
+        (200, "https://registry.npmjs.org/kaji-sdk", b"{"),
         (
             200,
-            "https://registry.npmjs.org/@kaji%2Fsdk",
+            "https://registry.npmjs.org/kaji-sdk",
             b"x" * (5 * 1024 * 1024 + 1),
         ),
         TimeoutError("registry timeout"),
@@ -1001,9 +1054,12 @@ def _stage_fixture(
     handoff: Any,
     *,
     mode: str = "internal-evaluation",
+    registry_result: str = "version-unused",
 ) -> tuple[Path, Path, dict[str, Any], list[tuple[str, ...]], str]:
     preflight_path, preflight, source, signature, source_bytes, signature_bytes = (
-        _preflight_fixture(handoff, tmp_path, mode=mode)
+        _preflight_fixture(
+            handoff, tmp_path, mode=mode, registry_result=registry_result
+        )
     )
     candidate = tmp_path / "candidate"
     (candidate / "kaji" / "ts").mkdir(parents=True)
@@ -1053,6 +1109,22 @@ def _stage_fixture(
         command_runner=runner,
     )
     return preflight_path, stage_dir, preflight, commands, integrity
+
+
+def test_stage_preserves_first_publication_registry_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    handoff = _handoff_module()
+    _preflight, stage_dir, _document, _commands, _integrity = _stage_fixture(
+        tmp_path,
+        monkeypatch,
+        handoff,
+        mode="release",
+        registry_result="package-absent",
+    )
+
+    pack = json.loads((stage_dir / handoff.PACK_RECEIPT_NAME).read_text())
+    assert pack["evidence"]["registry"] == {"status": "package-absent"}
 
 
 def test_stage_runs_frozen_commands_builds_once_and_packs_once(
@@ -1314,7 +1386,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         assert path.parent != stage_dir
         return (
             {
-                "name": "@kaji/sdk",
+                "name": "kaji-sdk",
                 "version": "0.2.0-beta.2",
                 "exports": _exports(),
             },
@@ -1433,7 +1505,7 @@ def test_finalize_rejects_copied_package_or_license_identity_mismatch(
     def mismatched_identity(path: Path) -> tuple[dict[str, Any], bytes]:
         assert path.parent.name.startswith(".bundle.tmp-")
         package = {
-            "name": "@kaji/sdk",
+            "name": "kaji-sdk",
             "version": "0.2.0-beta.2",
             "exports": _exports(),
         }
@@ -1582,7 +1654,7 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
         "_verify_archive_identity",
         lambda _path: (
             {
-                "name": "@kaji/sdk",
+                "name": "kaji-sdk",
                 "version": "0.2.0-beta.2",
                 "exports": _exports(),
             },

@@ -17,6 +17,7 @@ export interface OutdatedEntry {
 }
 
 const PREFIX = "@kaji/";
+const KAJI_SDK_PACKAGE = "kaji-sdk";
 
 export async function findOutdated(
   cwd: string,
@@ -26,7 +27,11 @@ export async function findOutdated(
   if (!pkg) return [];
   const collect = (obj: Record<string, string> | undefined, depType: "prod" | "dev") =>
     Object.entries(obj ?? {})
-      .filter(([name, v]) => name.startsWith(PREFIX) && !v.startsWith("workspace:"))
+      .filter(
+        ([name, version]) =>
+          (name === KAJI_SDK_PACKAGE || name.startsWith(PREFIX)) &&
+          !version.startsWith("workspace:"),
+      )
       .map(([name, current]) => ({ name, current, depType }));
   const candidates = [
     ...collect(pkg.dependencies as Record<string, string>, "prod"),
@@ -65,7 +70,7 @@ async function run(cmd: string[], cwd: string): Promise<void> {
 }
 
 export const upgrade = new Command("upgrade")
-  .description("upgrade @kaji/* packages to latest")
+  .description("upgrade kaji-sdk and @kaji/* packages to latest")
   .option("-c, --cwd <cwd>", "working directory", process.cwd())
   .option("-y, --yes", "skip confirmation", false)
   .action(async (opts: { cwd: string; yes: boolean }) => {

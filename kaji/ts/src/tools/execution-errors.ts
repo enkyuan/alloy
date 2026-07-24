@@ -16,6 +16,8 @@ export interface ToolFailureFields {
   readonly doc_url?: string;
 }
 
+// Keep the pre-publication brand stable so errors remain recognizable across
+// package copies created before the npm package moved to its unscoped name.
 const TOOL_EXECUTION_ERROR_BRAND = Symbol.for("@kaji/sdk.ToolExecutionError.v1");
 
 function nativeInstanceOf(constructor: Function, value: unknown): boolean {

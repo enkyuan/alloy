@@ -28,16 +28,16 @@ import {
   type TimerScheduler,
   type ToolExecutionContext,
   type ToolSpec,
-} from "@kaji/sdk";
-import { OpenAIProvider } from "@kaji/sdk/openai";
+} from "kaji-sdk";
+import { OpenAIProvider } from "kaji-sdk/openai";
 import {
   createSessionState,
   type ProviderResponseDiagnostics,
   withProviderResponseDiagnostics,
-} from "@kaji/sdk/testing";
+} from "kaji-sdk/testing";
 
 const RESOLVED_PACKAGE = realpathSync(
-  join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
+  join(dirname(fileURLToPath(import.meta.resolve("kaji-sdk"))), ".."),
 );
 
 const CASES = [

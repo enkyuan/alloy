@@ -174,7 +174,7 @@ def _tar_files(
 ) -> dict[str, bytes]:
     exports = _exports()
     package = {
-        "name": "@kaji/sdk",
+        "name": "kaji-sdk",
         "version": VERSION,
         "license": "FSL-1.1-ALv2",
         "exports": exports,
@@ -338,7 +338,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         }
     pack = {
         "mode": mode,
-        "package": {"name": "@kaji/sdk", "version": VERSION},
+        "package": {"name": "kaji-sdk", "version": VERSION},
         "artifact": {
             "filename": ARTIFACT_NAME,
             "size": size,
@@ -462,7 +462,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
             "reproducibility": reproducibility,
         },
         "package": {
-            "name": "@kaji/sdk",
+            "name": "kaji-sdk",
             "version": VERSION,
             "exports": exports,
             "publicSymbols": {"github": PUBLIC_SYMBOLS},
@@ -580,6 +580,17 @@ def test_validates_both_modes_and_emits_exact_closed_success(
         == hashlib.sha256(fx["tarball"].read_bytes()).hexdigest()
     )
     assert result["checks"] == list(VALIDATOR.CHECKS)
+
+
+def test_validates_first_publication_registry_evidence(tmp_path: Path) -> None:
+    fx = _fixture(tmp_path, "release")
+    fx["manifest"]["upstreamVerification"][2]["evidence"]["registry"] = {
+        "status": "package-absent"
+    }
+    fx["manifest"]["upstreamVerification"][6]["evidence"]["registry"] = "package-absent"
+    _persist(fx)
+
+    assert _validate(fx)["result"] == "passed"
 
 
 def test_cli_writes_one_canonical_success_document_without_repacking(

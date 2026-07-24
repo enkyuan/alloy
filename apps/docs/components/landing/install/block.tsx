@@ -7,9 +7,9 @@ import { CopyIcon, CheckIcon, EyeIcon } from "@components/docs/icons/ui";
 import { McpDropdown } from "../install/mcp-dropdown";
 import { PromptDialog } from "../install/prompt-dialog";
 
-const aiPromptText = `Set up a TypeScript agent in my project using @kaji/sdk.
+const aiPromptText = `Set up a TypeScript agent in my project using kaji-sdk.
 
-1. Install @kaji/sdk@0.2.0-beta.2, zod@>=4.3 <5, and openai.
+1. Install kaji-sdk@0.2.0-beta.2, zod@>=4.3 <5, and openai.
 
 2. Create agent.ts with AgentBuilder and the OpenAI provider. Use the default
    in-memory event store/committer; do not add a database or server.
@@ -22,7 +22,7 @@ const aiPromptText = `Set up a TypeScript agent in my project using @kaji/sdk.
 5. Read OPENAI_API_KEY from the environment. Do not invent a Kaji-specific
    provider key or log credentials, prompts, tool arguments, or raw errors.
 
-Use only public @kaji/sdk exports and follow https://kaji.dev/docs/getting-started.`;
+Use only public kaji-sdk exports and follow https://kaji.dev/docs/getting-started.`;
 
 type UIState = { copied: boolean; pmOpen: boolean; promptOpen: boolean };
 type UIAction =
@@ -151,15 +151,14 @@ export function InstallBlock() {
                     >
                       <span className="text-purple-600/90 dark:text-purple-400/90">bunx</span>{" "}
                       <span className="text-neutral-700 dark:text-neutral-300">
-                        --package=@kaji/sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai
-                        --yes
+                        --package=kaji-sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai --yes
                       </span>
                     </code>
                     <button
                       type="button"
                       onClick={() =>
                         copy(
-                          "bunx --package=@kaji/sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai --yes",
+                          "bunx --package=kaji-sdk@0.2.0-beta.2 kaji init ./my-agent --provider openai --yes",
                         )
                       }
                       className="text-neutral-400 dark:text-neutral-500 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors p-1"
@@ -191,11 +190,11 @@ export function InstallBlock() {
                 ) : (
                   <div className="bg-neutral-100/50 dark:bg-[#050505] px-5 py-4">
                     <p className="text-[13px] font-medium text-neutral-700 dark:text-neutral-200 leading-relaxed">
-                      Set up a TypeScript agent using @kaji/sdk.
+                      Set up a TypeScript agent using kaji-sdk.
                     </p>
                     <div className="relative mt-1.5">
                       <p className="text-[11px] text-neutral-400 dark:text-neutral-500 leading-relaxed line-clamp-2">
-                        Install @kaji/sdk. Create agent.ts with the{" "}
+                        Install kaji-sdk. Create agent.ts with the{" "}
                         <code className="text-neutral-500 dark:text-neutral-400">
                           agent runtime
                         </code>

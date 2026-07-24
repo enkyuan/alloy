@@ -238,7 +238,7 @@ describe("kaji add", () => {
       "scopes: scope.a, scope.b",
       "docs: https://example.test/oauth",
       "python -m kaji.cli connect github --principal <stable-host-principal-id>",
-      "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- connect github --principal <stable-host-principal-id>",
+      "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- connect github --principal <stable-host-principal-id>",
     ]) {
       expect(rendered).toContain(expected);
     }

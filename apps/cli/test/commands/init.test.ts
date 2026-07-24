@@ -23,7 +23,7 @@ describe("init command", () => {
     expect(existsSync(join(dir, "agent.ts"))).toBe(true);
     expect(existsSync(join(dir, ".env.example"))).toBe(true);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
-    expect(agent).toMatch(/@kaji\/sdk/);
+    expect(agent).toMatch(/kaji-sdk/);
     expect(agent).toMatch(/new OpenAIProvider\(\{ apiKey \}\)/);
     expect(agent).toMatch(/\.provider\(provider\)/);
     expect(agent).toMatch(/\.turn\("Say hello\."\)/);
@@ -38,7 +38,7 @@ describe("init command", () => {
     expect(pkg.scripts.start).toBe("dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts");
     expect(pkg.scripts.typecheck).toBe("tsc --noEmit");
     expect(pkg.devDependencies["@dotenvx/dotenvx"]).toBe("2.9.0");
-    expect(pkg.dependencies["@kaji/sdk"]).toBe("^0.2.0-beta.2");
+    expect(pkg.dependencies["kaji-sdk"]).toBe("^0.2.0-beta.2");
     expect(pkg.dependencies.zod).toBe(">=4.3 <5");
     expect(pkg.dependencies.openai).toBe(">=4 <8");
     expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
@@ -48,7 +48,7 @@ describe("init command", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
     await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "ts", "--yes"]);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
-    expect(agent).toContain('import { MockProvider } from "@kaji/sdk/testing"');
+    expect(agent).toContain('import { MockProvider } from "kaji-sdk/testing"');
     expect(agent).toContain("const provider = new MockProvider()");
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(pkg.dependencies.openai).toBeUndefined();

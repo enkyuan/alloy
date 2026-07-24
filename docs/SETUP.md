@@ -8,7 +8,7 @@
 │   ├── src/kaji/        # the `kaji` SDK (Python)
 │   ├── pyproject.toml   # `kaji-sdk` project metadata
 │   ├── serve/           # `kaji-serve` -- REST + Soniox STT (path-depends on ..)
-│   └── ts/              # `@kaji/sdk` -- TypeScript SDK
+│   └── ts/              # `kaji-sdk` -- TypeScript SDK
 └── docker/
     ├── kaji/        # Postgres and Supabase for kaji-serve
     └── ryo/        # docker stack for the ryo product

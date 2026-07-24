@@ -11,8 +11,8 @@ import {
   ToolPlanner,
   ToolPolicy,
   ToolRegistry,
-} from "@kaji/sdk";
-import { createGithubIntegration } from "@kaji/sdk/integrations/github";
+} from "kaji-sdk";
+import { createGithubIntegration } from "kaji-sdk/integrations/github";
 
 const MAX_INPUT_BYTES = 64 * 1024;
 const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
@@ -235,7 +235,7 @@ async function main(): Promise<void> {
   const sandbox = realpathSync(args.sandboxRoot);
   const packageRoot = contained(args.packageRoot, sandbox);
   contained(fileURLToPath(import.meta.url), sandbox);
-  const entry = fileURLToPath(import.meta.resolve("@kaji/sdk"));
+  const entry = fileURLToPath(import.meta.resolve("kaji-sdk"));
   if (realpathSync(join(dirname(entry), "..")) !== packageRoot) fail();
   const input = inputDocument(process.env.KAJI_GITHUB_PROOF_INPUT);
   delete process.env.KAJI_GITHUB_PROOF_INPUT;

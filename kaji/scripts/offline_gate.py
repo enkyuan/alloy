@@ -18,13 +18,37 @@ from process_runner import (
 
 
 USAGE = "usage: offline_gate.py -- <command> [argument ...]"
+TOOLCHAIN_COMMANDS = ("bun", "node", "npm", "npx", "uv")
 
 
-def offline_environment(*, home: Path, temporary: Path) -> dict[str, str]:
+def _selected_toolchain_directories(path: str) -> tuple[str, ...]:
+    selected = {
+        os.path.normpath(str(Path(executable).absolute().parent))
+        for command in TOOLCHAIN_COMMANDS
+        if (executable := shutil.which(command, path=path)) is not None
+    }
+    ordered: list[str] = []
+    for value in path.split(os.pathsep):
+        directory = Path(value)
+        if not value or not directory.is_absolute():
+            continue
+        normalized = os.path.normpath(str(directory))
+        if normalized in selected and normalized not in ordered:
+            ordered.append(normalized)
+    return tuple(ordered)
+
+
+def offline_environment(
+    *,
+    home: Path,
+    temporary: Path,
+    toolchain_directories: tuple[str, ...] = (),
+) -> dict[str, str]:
     """Build a closed child environment without inheriting host configuration."""
     path = os.pathsep.join(
         dict.fromkeys(
             [
+                *toolchain_directories,
                 str(Path(sys.executable).parent),
                 "/usr/local/bin",
                 "/opt/homebrew/bin",
@@ -80,13 +104,20 @@ def main(arguments: list[str] | None = None) -> int:
         print("offline gate command could not be started", file=sys.stderr)
         return 1
     command[0] = str(Path(executable).absolute())
+    toolchain_directories = _selected_toolchain_directories(
+        os.environ.get("PATH", "")
+    )
     with tempfile.TemporaryDirectory(prefix="kaji-offline-") as root_text:
         root = Path(root_text)
         home = root / "home"
         temporary = root / "tmp"
         home.mkdir()
         temporary.mkdir()
-        environment = offline_environment(home=home, temporary=temporary)
+        environment = offline_environment(
+            home=home,
+            temporary=temporary,
+            toolchain_directories=toolchain_directories,
+        )
         try:
             result = run_checked(
                 command,

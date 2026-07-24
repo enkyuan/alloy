@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the `@kaji/sdk` TypeScript SDK are documented here.
+All notable changes to the `kaji-sdk` TypeScript SDK are documented here.
 Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
@@ -87,7 +87,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   implementation; both now call a single `withRetry()` in `providers/base.ts`.
   `RetryOptions` moved from `providers/openai.ts` to `providers/base.ts` for
   the same reason (`AnthropicProvider` was already importing it cross-file),
-  while the `@kaji/sdk/openai` subpath continues to re-export the type.
+  while the `kaji-sdk/openai` subpath continues to re-export the type.
 
 ### Documentation
 

@@ -90,7 +90,7 @@ FAILURE_CODES = frozenset(
     }
 )
 
-PACKAGE_NAME = "@kaji/sdk"
+PACKAGE_NAME = "kaji-sdk"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 SIGNER_REPOSITORY = "enkyuan/alloy"
 SIGNER_FILE_PATH = ".github/workflows/kaji.handoff.trusted.yml"
@@ -553,9 +553,14 @@ def _validate_relations(
         or pack["reproducibility"] != artifact["reproducibility"]
     ):
         _reject("RECEIPT_INVALID")
-    expected_registry = (
-        "version-unused" if expected_mode == "release" else "not-claimed"
-    )
+    expected_registry = pack["registry"]["status"]
+    if (
+        expected_mode == "release"
+        and expected_registry not in {"version-unused", "package-absent"}
+    ) or (
+        expected_mode == "internal-evaluation" and expected_registry != "not-claimed"
+    ):
+        _reject("RECEIPT_INVALID")
     if pack["registry"] != {"status": expected_registry}:
         _reject("RECEIPT_INVALID")
 

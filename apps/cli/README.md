@@ -14,7 +14,7 @@ bun install
 bun run --cwd apps/cli dev -- --help
 ```
 
-If this package is published later, invoke it explicitly when `@kaji/sdk` is
+If this package is published later, invoke it explicitly when `kaji-sdk` is
 installed too, because both packages expose a binary named `kaji`.
 
 ## First run
@@ -68,6 +68,6 @@ bun --cwd apps/cli run test
 bun --cwd apps/cli run smoke
 ```
 
-Keep generated scaffolds aligned with the public `kaji` and `@kaji/sdk`
+Keep generated scaffolds aligned with the public `kaji` and `kaji-sdk`
 quickstarts. Add regression coverage whenever a command, provider choice,
 generated dependency, or output field changes.

@@ -3,7 +3,7 @@ title: GitHub integration
 description: Wire the packaged TypeScript GitHub catalog with a repository allowlist, lazy credentials, read-only tool exposure, and explicit lifecycle ownership.
 ---
 
-`@kaji/sdk/integrations/github` is an experimental TypeScript package subpath
+`kaji-sdk/integrations/github` is an experimental TypeScript package subpath
 for bounded GitHub evidence and issue mutations. It uses a fixed
 `https://api.github.com` origin, rejects redirects, validates repository names
 against an application-owned allowlist before reading credentials, and adds its
@@ -11,15 +11,16 @@ own stable request identity headers.
 
 ## Read-only investigation agent
 
-Install `@kaji/sdk`, `zod`, your provider SDK, and `@dotenvx/dotenvx`, then put
+Install `kaji-sdk`, `zod`, your provider SDK, and `@dotenvx/dotenvx`, then put
 `OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` in an encrypted or ignored
 environment file. Replace `owner/repo` with every exact repository the agent may
 read.
 
 <!-- docs-test:github-read-only:start -->
+
 ```ts
-import { AgentBuilder, OpenAIProvider, deadlineAfter } from "@kaji/sdk";
-import { createGithubIntegration } from "@kaji/sdk/integrations/github";
+import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji-sdk";
+import { createGithubIntegration } from "kaji-sdk/integrations/github";
 
 const principalId = "github-investigator";
 const github = createGithubIntegration({
@@ -62,6 +63,7 @@ try {
   github.close();
 }
 ```
+
 <!-- docs-test:github-read-only:end -->
 
 `tokenFor` is lazy and receives the complete `ToolExecutionContext`. Return the

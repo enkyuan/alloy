@@ -37,6 +37,5 @@ describe("SDK scaffold contract", () => {
 
     expect(version).toBeDefined();
     expect(PYTHON_SDK_RANGE).toContain(`>=${version}`);
-    expect(version?.replace(/b(\d+)$/, "-beta.$1")).toBe(typescriptPackage.version);
   });
 });

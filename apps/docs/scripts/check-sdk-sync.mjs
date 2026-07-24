@@ -163,7 +163,7 @@ for (const [path, source] of displayedSources) {
   }
 
   for (const match of source.matchAll(
-    /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']@kaji\/sdk["']/g,
+    /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']kaji-sdk["']/g,
   )) {
     for (const rawName of match[1].split(",")) {
       const name = rawName

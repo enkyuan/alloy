@@ -437,7 +437,7 @@
       "additionalProperties": false,
       "required": ["name", "version", "exports", "publicSymbols"],
       "properties": {
-        "name": { "const": "@kaji/sdk" },
+        "name": { "const": "kaji-sdk" },
         "version": { "$ref": "#/$defs/semver" },
         "exports": { "$ref": "#/$defs/exactExports" },
         "publicSymbols": {
@@ -715,7 +715,7 @@
           "additionalProperties": false,
           "required": ["name", "version"],
           "properties": {
-            "name": { "const": "@kaji/sdk" },
+            "name": { "const": "kaji-sdk" },
             "version": { "$ref": "#/$defs/semver" }
           }
         },
@@ -739,6 +739,12 @@
               "additionalProperties": false,
               "required": ["status"],
               "properties": { "status": { "const": "version-unused" } }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status"],
+              "properties": { "status": { "const": "package-absent" } }
             },
             {
               "type": "object",
@@ -1055,7 +1061,7 @@
       ],
       "properties": {
         "mode": { "const": "release" },
-        "registry": { "const": "version-unused" },
+        "registry": { "enum": ["version-unused", "package-absent"] },
         "signerWorkflow": { "$ref": "#/$defs/signerWorkflowIdentity" },
         "toolchain": {
           "type": "object",

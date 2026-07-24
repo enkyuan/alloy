@@ -114,7 +114,7 @@ def test_list_integrations_json_emits_valid_object() -> None:
         "experimental_opt_in_required": False,
         "next_commands": {
             "python": "python -m kaji.cli add echo",
-            "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
+            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo",
         },
     }
 
@@ -128,7 +128,7 @@ def test_list_integrations_human_uses_the_closed_cross_runtime_projection() -> N
     assert lines[1] == "  python: python -m kaji.cli add echo"
     assert (
         lines[2]
-        == "  typescript: bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo"
+        == "  typescript: bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo"
     )
 
 
@@ -292,7 +292,7 @@ def test_oauth_guidance_is_exact_and_only_after_successful_copy(
         "scopes: scope.a, scope.b",
         "docs: https://example.test/oauth",
         "python -m kaji.cli connect gmail --principal <stable-host-principal-id>",
-        "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>",
+        "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>",
     ):
         assert expected in rendered
     assert "oauth-keyring" not in rendered

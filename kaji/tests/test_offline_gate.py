@@ -137,7 +137,9 @@ def test_offline_gate_preserves_virtualenv_launcher_identity(
     module = _load_offline_gate(monkeypatch)
     launcher = "/tmp/kaji-venv/bin/python"
     captured: list[str] = []
-    monkeypatch.setattr(module.shutil, "which", lambda _value: launcher)
+    monkeypatch.setattr(
+        module.shutil, "which", lambda _value, **_options: launcher
+    )
 
     def run_checked(command: list[str], **_options: object) -> object:
         captured.extend(command)
@@ -172,6 +174,54 @@ def test_offline_gate_sanitizes_a_real_child_environment(tmp_path: Path) -> None
     )
     assert result.returncode == 0
     assert result.stdout == b""
+    assert result.stderr == b""
+
+
+def test_offline_gate_preserves_selected_nested_toolchain(tmp_path: Path) -> None:
+    pinned_bin = tmp_path / "pinned-bin"
+    pinned_bin.mkdir()
+    pinned_bun = pinned_bin / "bun"
+    pinned_bun.write_text("#!/bin/sh\nprintf '1.3.11\\n'\n")
+    pinned_bun.chmod(0o755)
+    environment = dict(os.environ)
+    environment["PATH"] = os.pathsep.join(
+        [str(pinned_bin), environment.get("PATH", "")]
+    )
+    environment.update(
+        OPENAI_API_KEY="poison-openai",
+        NPM_TOKEN="poison-npm",
+        NODE_AUTH_TOKEN="poison-node",
+        HTTP_PROXY="http://poison.invalid",
+        HTTPS_PROXY="http://poison.invalid",
+        ALL_PROXY="http://poison.invalid",
+        http_proxy="http://poison.invalid",
+        https_proxy="http://poison.invalid",
+        all_proxy="http://poison.invalid",
+    )
+    probe = (
+        "import os, subprocess, sys\n"
+        "blocked = ('OPENAI_API_KEY', 'NPM_TOKEN', 'NODE_AUTH_TOKEN', "
+        "'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', "
+        "'https_proxy', 'all_proxy')\n"
+        "if any(name in os.environ for name in blocked):\n"
+        "    raise SystemExit(23)\n"
+        "result = subprocess.run(['bun', '--version'], check=False, "
+        "capture_output=True)\n"
+        "sys.stdout.buffer.write(result.stdout)\n"
+        "raise SystemExit(result.returncode)\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(OFFLINE_GATE), "--", sys.executable, "-c", probe],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == b"1.3.11\n"
     assert result.stderr == b""
 
 

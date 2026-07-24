@@ -111,8 +111,8 @@ import {
   deadlineAfter,
   normalizeProviderError,
   tool,
-} from "@kaji/sdk";
-import { MockProvider } from "@kaji/sdk/testing";
+} from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 import { z } from "zod";
 
 class EchoIntegration extends Integration {

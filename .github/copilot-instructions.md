@@ -12,7 +12,7 @@ from historical plans.
 | Ryo services       | `ryo/api`, `ryo/consumer`, `ryo/auth` | Go APIs and the TypeScript authentication service                |
 | Ryo studio         | `apps/web`                            | React/TanStack web application                                   |
 | Python SDK         | `kaji`                                | Infra-free `kaji` runtime and public Python package              |
-| TypeScript SDK     | `kaji/ts`                             | `@kaji/sdk`, kept in contract parity with Python                 |
+| TypeScript SDK     | `kaji/ts`                             | `kaji-sdk`, kept in contract parity with Python                 |
 | Kaji service       | `kaji/serve`                          | Experimental FastAPI REST and Soniox STT edge                    |
 | Developer surfaces | `apps/cli`, `apps/docs`               | Standalone CLI/scaffolds and the public documentation site       |
 | Shared packages    | `packages/ui`, `packages/shared`      | Reusable UI code and TypeScript configuration                    |

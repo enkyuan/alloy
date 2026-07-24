@@ -5,7 +5,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version as _version
 
 
-TYPESCRIPT_SDK_CLI = "bun --no-install -e 'import(\"@kaji/sdk/cli\")' --"
+TYPESCRIPT_SDK_CLI = "bun --no-install -e 'import(\"kaji-sdk/cli\")' --"
 
 
 def get_version() -> str:

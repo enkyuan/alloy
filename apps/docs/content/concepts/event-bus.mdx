@@ -31,7 +31,7 @@ boundary.
   </Tab>
   <Tab value="typescript">
     ```ts
-    import { AgentBuilder, InMemoryEventCommitter } from "@kaji/sdk";
+    import { AgentBuilder, InMemoryEventCommitter } from "kaji-sdk";
 
     const committer = new InMemoryEventCommitter();
     const runtime = new AgentBuilder().provider(provider).build({ committer });

@@ -23,7 +23,7 @@ import {
   type ModelResponseChunk,
   type ProviderMessage,
   type ToolIdempotencyLedger,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 import { MockProvider } from "@/providers/mock";
 import {
   authorizedListenerTeardown,

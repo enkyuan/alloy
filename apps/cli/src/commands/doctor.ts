@@ -111,15 +111,15 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
       severity: "hard",
     });
     checks.push({
-      name: "@kaji/sdk installed",
-      ok: hasDependency(all, "@kaji/sdk"),
-      hint: "Run `bun add @kaji/sdk@0.2.0-beta.2` or regenerate with `kaji init --lang ts`.",
+      name: "kaji-sdk installed",
+      ok: hasDependency(all, "kaji-sdk"),
+      hint: "Run `bun add kaji-sdk@0.2.0-beta.2` or regenerate with `kaji init --lang ts`.",
       severity: "hard",
     });
     checks.push({
       name: "zod installed",
       ok: hasDependency(all, "zod"),
-      hint: 'Run `bun add "zod@>=4.3 <5"`; Zod is a required @kaji/sdk peer.',
+      hint: 'Run `bun add "zod@>=4.3 <5"`; Zod is a required kaji-sdk peer.',
       severity: "hard",
     });
     const providerPackage = TYPESCRIPT_PROVIDER_PACKAGES[provider];

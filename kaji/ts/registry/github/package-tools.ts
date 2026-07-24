@@ -1,4 +1,4 @@
-import type { ToolHandler, ToolSpec } from "@kaji/sdk";
+import type { ToolHandler, ToolSpec } from "kaji-sdk";
 
 import packageAbi from "../../contracts/integrations/github-tool-abi-typescript-v1.json";
 import type { GitHubClient } from "./client";

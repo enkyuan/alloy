@@ -275,7 +275,7 @@ def assert_list_integrations_output(output: str) -> None:
         "experimental_opt_in_required": False,
         "next_commands": {
             "python": "python -m kaji.cli add echo",
-            "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
+            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo",
         },
     }:
         raise SystemExit(
@@ -289,7 +289,7 @@ def assert_list_integrations_output(output: str) -> None:
         or github.get("next_commands")
         != {
             "python": "python -m kaji.cli add github --allow-experimental",
-            "typescript": "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
+            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
         }
     ):
         raise SystemExit(

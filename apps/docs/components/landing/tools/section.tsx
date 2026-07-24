@@ -25,7 +25,7 @@ async def get_weather(
 
 runtime = kaji.AgentBuilder().provider(provider).tool(get_weather).build()`;
 
-  const tsSnippet = `import { AgentBuilder, functionTool } from "@kaji/sdk"
+  const tsSnippet = `import { AgentBuilder, functionTool } from "kaji-sdk"
 import { z } from "zod"
 
 const getWeather = functionTool(

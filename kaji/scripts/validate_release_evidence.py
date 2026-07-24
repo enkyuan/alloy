@@ -418,7 +418,7 @@ def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
     suffix = (
         "/site-packages/kaji/__init__.py"
         if runtime == "python"
-        else "/node_modules/@kaji/sdk"
+        else "/node_modules/kaji-sdk"
     )
     require(normalized.endswith(suffix), "resolved_package_invalid")
 

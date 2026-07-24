@@ -19,9 +19,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const shippedSchemaRoot = join(__dirname, "..", "registry");
 const principal = "tenant:user-123";
 const connectCommand =
-  "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>";
+  "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- connect gmail --principal <stable-host-principal-id>";
 const disconnectCommand =
-  "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- disconnect gmail --principal <stable-host-principal-id>";
+  "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- disconnect gmail --principal <stable-host-principal-id>";
 
 type CliOAuthClient = Pick<GoogleOAuthClient, "connect" | "disconnect">;
 
@@ -261,7 +261,7 @@ describe("kaji connect and disconnect", () => {
     const code = await runCli(["--help"], options());
 
     expect(code).toBe(0);
-    expect(stdout[0]).toBe("kaji (@kaji/sdk) 0.2.0-beta.2");
+    expect(stdout[0]).toBe("kaji (kaji-sdk) 0.2.0-beta.2");
     expect(output()).toContain("connect");
     expect(output()).toContain("disconnect");
     expect(envReads).toEqual([]);
@@ -508,7 +508,7 @@ describe("kaji connect and disconnect", () => {
         `Cause: The ${command} operation was cancelled before completion.`,
       );
       expect(output()).toContain(
-        `Fix: Rerun \`bun --no-install -e 'import("@kaji/sdk/cli")' -- ${command} gmail --principal <stable-host-principal-id>\`.`,
+        `Fix: Rerun \`bun --no-install -e 'import("kaji-sdk/cli")' -- ${command} gmail --principal <stable-host-principal-id>\`.`,
       );
       expect(output()).not.toContain(privateReason);
       expect(output()).not.toContain(principal);

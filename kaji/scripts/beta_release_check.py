@@ -344,12 +344,12 @@ def release_environment() -> dict[str, str]:
     home = environment.get("HOME", "")
     existing_path = environment.get("PATH", "")
     environment["PATH"] = os.pathsep.join(
-        [
+        ([existing_path] if existing_path else [])
+        + [
             f"{home}/.local/bin",
             f"{home}/.bun/bin",
             "/opt/homebrew/bin",
             "/usr/local/bin",
-            existing_path,
         ]
     )
     environment["UV_SYSTEM_CERTS"] = environment.get("UV_SYSTEM_CERTS") or "true"

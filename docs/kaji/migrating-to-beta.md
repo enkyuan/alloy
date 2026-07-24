@@ -35,7 +35,7 @@ async def inspect(context: kaji.ToolExecutionContext, value: str) -> dict:
 
 <!-- docs-test:typescript-migration-after:start -->
 ```ts
-import type { ToolExecutionContext, ToolExecutor } from "@kaji/sdk";
+import type { ToolExecutionContext, ToolExecutor } from "kaji-sdk";
 
 const execute: ToolExecutor = async (
   name: string,
@@ -168,8 +168,8 @@ import {
   UnclassifiedToolRiskError,
   functionTool,
   type ToolSpec,
-} from "@kaji/sdk";
-import { MockProvider } from "@kaji/sdk/testing";
+} from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 import { z } from "zod";
 
 const unsafe = {
@@ -208,8 +208,8 @@ try {
 
 <!-- docs-test:typescript-risk-context-after:start -->
 ```ts
-import { AgentBuilder, functionTool } from "@kaji/sdk";
-import { MockProvider } from "@kaji/sdk/testing";
+import { AgentBuilder, functionTool } from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 import { z } from "zod";
 
 const inspect = functionTool(
@@ -303,7 +303,7 @@ asyncio.run(cursor_read())
 
 <!-- docs-test:typescript-cursor-before:start -->
 ```ts
-import { EventType, InMemoryEventStore, KajiEvent } from "@kaji/sdk";
+import { EventType, InMemoryEventStore, KajiEvent } from "kaji-sdk";
 
 const store = new InMemoryEventStore();
 await store.append(
@@ -319,7 +319,7 @@ if (events.length !== 2) throw new Error("full read failed");
 
 <!-- docs-test:typescript-cursor-after:start -->
 ```ts
-import { EventType, InMemoryEventStore, KajiEvent } from "@kaji/sdk";
+import { EventType, InMemoryEventStore, KajiEvent } from "kaji-sdk";
 
 const store = new InMemoryEventStore();
 const first = await store.append(
@@ -371,7 +371,7 @@ class ApprovalHandler:
 
 <!-- docs-test:typescript-approval-after:start -->
 ```ts
-import type { TypedApprovalHandler } from "@kaji/sdk";
+import type { TypedApprovalHandler } from "kaji-sdk";
 
 const approvalHandler: TypedApprovalHandler = {
   async request() {
@@ -388,7 +388,7 @@ bridge that already persisted the exact decision through the canonical journal.
 
 ## Zod 4
 
-`@kaji/sdk` supports Zod `>=4.3 <5` as a peer dependency. Upgrade Zod before the
+`kaji-sdk` supports Zod `>=4.3 <5` as a peer dependency. Upgrade Zod before the
 SDK and remove any Zod 3 lock entry. Kaji uses Zod for schema/refinement
 validation but passes the original detached provider arguments to the handler;
 defaults, coercions, and transforms do not rewrite tool input.
@@ -401,7 +401,7 @@ export API used by Kaji.
 ```ts
 function requireZod4(version: string): void {
   const major = Number(version.split(".")[0]);
-  if (major !== 4) throw new Error("@kaji/sdk requires Zod 4");
+  if (major !== 4) throw new Error("kaji-sdk requires Zod 4");
 }
 
 try {
@@ -424,7 +424,7 @@ if (jsonSchema.type !== "object") throw new Error("Zod 4 schema export failed");
 <!-- docs-test:typescript-zod-after:end -->
 
 ```bash
-npm install @kaji/sdk@0.2.0-beta.2 'zod@>=4.3 <5'
+npm install kaji-sdk@0.2.0-beta.2 'zod@>=4.3 <5'
 ```
 
 ## Manifest and index schema

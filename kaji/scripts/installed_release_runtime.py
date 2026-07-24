@@ -283,8 +283,8 @@ def _install_typescript(
                 "import { realpathSync } from 'node:fs'; "
                 "import { dirname, join } from 'node:path'; "
                 "import { fileURLToPath } from 'node:url'; "
-                "await import('@kaji/sdk'); "
-                "const entry=fileURLToPath(import.meta.resolve('@kaji/sdk')); "
+                "await import('kaji-sdk'); "
+                "const entry=fileURLToPath(import.meta.resolve('kaji-sdk')); "
                 "console.log(JSON.stringify(realpathSync(join(dirname(entry), '..'))));"
             ),
         ],
@@ -326,7 +326,7 @@ def _render_typescript_consumer(
     packages = template.get("packages")
     root_package = packages.get("") if isinstance(packages, dict) else None
     sdk_package = (
-        packages.get("node_modules/@kaji/sdk") if isinstance(packages, dict) else None
+        packages.get("node_modules/kaji-sdk") if isinstance(packages, dict) else None
     )
     if (
         not isinstance(manifest, dict)
@@ -342,12 +342,12 @@ def _render_typescript_consumer(
     shutil.copyfile(tarball, copied_tarball)
     (consumer / "package.json").write_bytes(manifest_bytes)
     rendered = copy.deepcopy(template)
-    rendered_sdk = rendered["packages"]["node_modules/@kaji/sdk"]
+    rendered_sdk = rendered["packages"]["node_modules/kaji-sdk"]
     digest = hashlib.sha512(copied_tarball.read_bytes()).digest()
     rendered_sdk["integrity"] = "sha512-" + base64.b64encode(digest).decode("ascii")
 
     comparison = copy.deepcopy(rendered)
-    comparison["packages"]["node_modules/@kaji/sdk"]["integrity"] = sdk_package[
+    comparison["packages"]["node_modules/kaji-sdk"]["integrity"] = sdk_package[
         "integrity"
     ]
     if comparison != template:

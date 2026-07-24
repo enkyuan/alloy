@@ -29,10 +29,10 @@ import {
   type ToolIdempotencyClaim,
   type ToolIdempotencyLedger,
   type ToolSpec,
-} from "@kaji/sdk";
+} from "kaji-sdk";
 
 const RESOLVED_PACKAGE = realpathSync(
-  join(dirname(fileURLToPath(import.meta.resolve("@kaji/sdk"))), ".."),
+  join(dirname(fileURLToPath(import.meta.resolve("kaji-sdk"))), ".."),
 );
 
 interface Options {

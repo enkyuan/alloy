@@ -148,7 +148,7 @@ cd "$HOME/kaji-tthw-npm"
 npm init --yes
 npm install "$KAJI_TARBALL" zod@4.3.6 tsx typescript @types/node
 ./node_modules/.bin/kaji --no-color init generated --provider mock --yes
-npm pkg set "dependencies.@kaji/sdk=file:$KAJI_TARBALL" --prefix generated
+npm pkg set "dependencies.kaji-sdk=file:$KAJI_TARBALL" --prefix generated
 npm install --prefix generated
 npm run start --silent --prefix generated
 ./node_modules/.bin/kaji --no-color add echo --out echo
@@ -172,7 +172,7 @@ cd "$HOME/kaji-tthw-bun"
 bun init --yes
 bun add "$KAJI_TARBALL" zod@4.3.6 tsx typescript @types/node
 ./node_modules/.bin/kaji --no-color init generated --provider mock --yes
-node -e 'const fs=require("node:fs");const p="generated/package.json";const j=JSON.parse(fs.readFileSync(p));j.dependencies["@kaji/sdk"]="file:"+process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$KAJI_TARBALL"
+node -e 'const fs=require("node:fs");const p="generated/package.json";const j=JSON.parse(fs.readFileSync(p));j.dependencies["kaji-sdk"]="file:"+process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$KAJI_TARBALL"
 bun install --cwd generated
 bun run --cwd generated start
 ./node_modules/.bin/kaji --no-color add echo --out echo
@@ -183,8 +183,8 @@ Save the following as `echo-loop.ts`. Run it with
 
 <!-- tthw-echo:typescript:start -->
 ```ts
-import { AgentBuilder, EventType } from "@kaji/sdk";
-import { MockProvider } from "@kaji/sdk/testing";
+import { AgentBuilder, EventType } from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 import { EchoIntegration } from "./echo/index.ts";
 
 const runtime = new AgentBuilder()

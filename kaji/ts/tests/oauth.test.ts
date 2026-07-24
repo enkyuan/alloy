@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { inspect } from "node:util";
 
-import { ToolExecutionError, type ToolExecutionContext } from "@kaji/sdk";
+import { ToolExecutionError, type ToolExecutionContext } from "kaji-sdk";
 import {
   GoogleOAuthClient,
   type OAuthCredentialRecord,

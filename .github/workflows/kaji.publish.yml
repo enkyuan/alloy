@@ -1572,7 +1572,7 @@ jobs:
             *) echo "PyPI preflight failed with HTTP $PYPI_STATUS; aborting both publishers" >&2; exit 1 ;;
           esac
           set +e
-          NPM_OUTPUT="$(npm view @kaji/sdk@0.2.0-beta.2 version --json 2>&1)"
+          NPM_OUTPUT="$(npm view kaji-sdk@0.2.0-beta.2 version --json --registry=https://registry.npmjs.org/ 2>&1)"
           NPM_STATUS=$?
           set -e
           if [ "$NPM_STATUS" -eq 0 ]; then
@@ -1598,7 +1598,7 @@ jobs:
         with:
           node-version: "24"
           registry-url: https://registry.npmjs.org
-      - name: Validate npm publisher identity and package write scope without mutation
+      - name: Validate npm publisher identity and package ownership without mutation
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           EXPECTED_NPM_PUBLISHER: ${{ vars.KAJI_NPM_PUBLISHER }}
@@ -1614,37 +1614,29 @@ jobs:
             exit 1
           }
           set +e
-          npm access list packages "$IDENTITY" --json --registry=https://registry.npmjs.org/ \
-            >"$RUNNER_TEMP/npm-access.json"
-          ACCESS_STATUS=$?
+          NPM_NAME_OUTPUT="$(npm view kaji-sdk name --json --registry=https://registry.npmjs.org/ 2>&1)"
+          NPM_NAME_STATUS=$?
           set -e
-          if [ "$ACCESS_STATUS" -eq 0 ] && jq --exit-status \
-            '.["@kaji/sdk"] == "read-write" or .["@kaji/sdk"] == "write"' \
-            "$RUNNER_TEMP/npm-access.json" >/dev/null; then
-            echo "Verified npm publisher identity and existing @kaji/sdk write scope." \
+          if [ "$NPM_NAME_STATUS" -eq 0 ]; then
+            npm access list packages "$IDENTITY" --json --registry=https://registry.npmjs.org/ \
+              >"$RUNNER_TEMP/npm-access.json"
+            jq --exit-status \
+              '.["kaji-sdk"] == "read-write" or .["kaji-sdk"] == "write"' \
+              "$RUNNER_TEMP/npm-access.json" >/dev/null || {
+                echo "npm identity lacks write access to the existing kaji-sdk package" >&2
+                exit 1
+              }
+            echo "Verified npm publisher identity and existing kaji-sdk write access." \
+              >>"$GITHUB_STEP_SUMMARY"
+          elif printf '%s' "$NPM_NAME_OUTPUT" | grep -q E404; then
+            echo "Verified npm publisher identity for the first unscoped kaji-sdk publication." \
+              >>"$GITHUB_STEP_SUMMARY"
+            echo "npm provides no non-mutating proof that a token may create a new unscoped package;" \
+              "the protected publish remains the fail-closed authorization check." \
               >>"$GITHUB_STEP_SUMMARY"
           else
-            npm org ls kaji "$IDENTITY" --json --registry=https://registry.npmjs.org/ \
-              >"$RUNNER_TEMP/npm-org-role.json"
-            npm team ls @kaji:developers --json --registry=https://registry.npmjs.org/ \
-              >"$RUNNER_TEMP/npm-developers.json"
-            jq --exit-status --arg identity "$IDENTITY" \
-              '(if type == "string" then .
-                elif type == "object" then (.[$identity] // .role // "")
-                else "" end) as $role |
-               $role == "owner" or $role == "admin" or $role == "developer"' \
-              "$RUNNER_TEMP/npm-org-role.json" >/dev/null || {
-                echo "npm identity has no approved kaji organization role" >&2
-                exit 1
-              }
-            jq --exit-status --arg identity "$IDENTITY" \
-              'type == "array" and any(.[]; ltrimstr("@") == ($identity | ltrimstr("@")))' \
-              "$RUNNER_TEMP/npm-developers.json" >/dev/null || {
-                echo "npm identity is not a member of the kaji developers team" >&2
-                exit 1
-              }
-            echo "Verified npm publisher identity through the kaji developers team for first publication." \
-              >>"$GITHUB_STEP_SUMMARY"
+            echo "npm package ownership preflight was ambiguous" >&2
+            exit 1
           fi
   publish-python:
     name: publish Python package
@@ -1743,7 +1735,7 @@ jobs:
       - name: Publish exact npm beta with provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz --provenance --access public --tag beta
+        run: npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -1900,7 +1892,7 @@ jobs:
             404) PYPI_STATE=absent ;;
             *) PYPI_STATE=unknown ;;
           esac
-          NPM_OUTPUT="$(timeout 30s npm view @kaji/sdk@0.2.0-beta.2 version --json 2>&1)"
+          NPM_OUTPUT="$(timeout 30s npm view kaji-sdk@0.2.0-beta.2 version --json --registry=https://registry.npmjs.org/ 2>&1)"
           NPM_STATUS=$?
           if [ "$NPM_STATUS" -eq 0 ]; then
             NPM_STATE=present

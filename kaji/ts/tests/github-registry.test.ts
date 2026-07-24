@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { Integration, listToolSpecs, ToolRegistry } from "@kaji/sdk";
-import type { FixedOriginRequester } from "@kaji/sdk/integrations";
+import { Integration, listToolSpecs, ToolRegistry } from "kaji-sdk";
+import type { FixedOriginRequester } from "kaji-sdk/integrations";
 import { EventType } from "@/events/types";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore } from "@/events/store";

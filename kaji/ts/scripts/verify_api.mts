@@ -1,5 +1,5 @@
 /**
- * Install smoke test for @kaji/sdk.
+ * Install smoke test for kaji-sdk.
  *
  * Validates that the installed package exports resolve correctly and that
  * constructing a provider without a key fails with a clear error. Does NOT
@@ -9,10 +9,10 @@
  * release gate uses smoke_package.mts to create that project.
  */
 
-const sdk = await import("@kaji/sdk");
-const testing = await import("@kaji/sdk/testing");
-const openaiSubpath = await import("@kaji/sdk/openai");
-const anthropicSubpath = await import("@kaji/sdk/anthropic");
+const sdk = await import("kaji-sdk");
+const testing = await import("kaji-sdk/testing");
+const openaiSubpath = await import("kaji-sdk/openai");
+const anthropicSubpath = await import("kaji-sdk/anthropic");
 
 const {
   AgentBuilder,
@@ -96,14 +96,14 @@ if (MockProvider == null) {
 
 console.log("\nChecking provider subpath exports...");
 if (OpenAIProviderSubpath == null) {
-  reportFailure("@kaji/sdk/openai OpenAIProvider", "is null or undefined");
+  reportFailure("kaji-sdk/openai OpenAIProvider", "is null or undefined");
 } else {
-  reportPass("@kaji/sdk/openai OpenAIProvider");
+  reportPass("kaji-sdk/openai OpenAIProvider");
 }
 if (AnthropicProviderSubpath == null) {
-  reportFailure("@kaji/sdk/anthropic AnthropicProvider", "is null or undefined");
+  reportFailure("kaji-sdk/anthropic AnthropicProvider", "is null or undefined");
 } else {
-  reportPass("@kaji/sdk/anthropic AnthropicProvider");
+  reportPass("kaji-sdk/anthropic AnthropicProvider");
 }
 
 // ---------------------------------------------------------------------------

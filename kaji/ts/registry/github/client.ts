@@ -11,7 +11,7 @@ import {
   snapshotIntegrationResult,
   type BoundedResponse,
   type FixedOriginRequester,
-} from "@kaji/sdk/integrations";
+} from "kaji-sdk/integrations";
 
 type ToolExecutionContext = Parameters<FixedOriginRequester["request"]>[2];
 
@@ -28,7 +28,7 @@ const GENERAL_ACCEPT = "application/vnd.github+json";
 const SEARCH_ACCEPT = "application/vnd.github.text-match+json";
 const GITHUB_API_VERSION = "2026-03-10";
 const GITHUB_CATALOG_VERSION = "0.2.0";
-const GITHUB_USER_AGENT = `@kaji/sdk-github/${GITHUB_CATALOG_VERSION}`;
+const GITHUB_USER_AGENT = `kaji-sdk-github/${GITHUB_CATALOG_VERSION}`;
 
 type Route =
   | "search_code"

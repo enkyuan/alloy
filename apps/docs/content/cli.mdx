@@ -1,6 +1,6 @@
 ---
 title: CLI
-description: Choose the Python SDK CLI, the embedded @kaji/sdk CLI, or the standalone cross-language @kaji/cli.
+description: Choose the Python SDK CLI, the embedded kaji-sdk CLI, or the standalone cross-language @kaji/cli.
 ---
 
 Kaji has three binaries named `kaji`. They are separate packages with separate
@@ -9,20 +9,20 @@ command sets. Install the one that owns the workflow you need, and use its
 
 ## Command surfaces
 
-| Command             | Python `kaji-sdk` distribution | Embedded `@kaji/sdk` |         Standalone `@kaji/cli`          |
-| ------------------- | :----------------------------: | :------------------: | :-------------------------------------: |
-| `init`              |        Python scaffold         | TypeScript scaffold  |      Python or TypeScript scaffold      |
-| `add`               |              Yes               |         Yes          |                   No                    |
-| `connect`           |              Yes               |         Yes          |                   No                    |
-| `disconnect`        |              Yes               |         Yes          |                   No                    |
-| `list-integrations` |              Yes               |         Yes          |                   No                    |
-| `replay`            |               No               |         Yes          |                   No                    |
-| `gen`               |          Experimental          |          No          |              Experimental               |
-| `info`              |          Experimental          |          No          |              Experimental               |
-| `secret`            |          Experimental          |          No          |              Experimental               |
-| `doctor`            |          Experimental          |          No          |              Experimental               |
-| `upgrade`           |          Experimental          |          No          |              Experimental               |
-| `mcp`               |               No               |          No          | Status only; no server or config writer |
+| Command             | Python `kaji-sdk` distribution | Embedded `kaji-sdk` |         Standalone `@kaji/cli`          |
+| ------------------- | :----------------------------: | :-----------------: | :-------------------------------------: |
+| `init`              |        Python scaffold         | TypeScript scaffold |      Python or TypeScript scaffold      |
+| `add`               |              Yes               |         Yes         |                   No                    |
+| `connect`           |              Yes               |         Yes         |                   No                    |
+| `disconnect`        |              Yes               |         Yes         |                   No                    |
+| `list-integrations` |              Yes               |         Yes         |                   No                    |
+| `replay`            |               No               |         Yes         |                   No                    |
+| `gen`               |          Experimental          |         No          |              Experimental               |
+| `info`              |          Experimental          |         No          |              Experimental               |
+| `secret`            |          Experimental          |         No          |              Experimental               |
+| `doctor`            |          Experimental          |         No          |              Experimental               |
+| `upgrade`           |          Experimental          |         No          |              Experimental               |
+| `mcp`               |               No               |         No          | Status only; no server or config writer |
 
 ## Python SDK CLI
 
@@ -49,7 +49,7 @@ in the current catalog.
 
 ## Embedded TypeScript SDK CLI
 
-Installing `@kaji/sdk` exposes a small CLI for the packaged TypeScript registry
+Installing `kaji-sdk` exposes a small CLI for the packaged TypeScript registry
 and replay tooling. It is not the standalone scaffold/diagnostics package.
 
 ```bash

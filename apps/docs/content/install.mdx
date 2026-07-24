@@ -40,15 +40,15 @@ Optional extras:
 ## TypeScript
 
 ```bash
-bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5" openai
-bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5" @anthropic-ai/sdk
+bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" openai
+bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" @anthropic-ai/sdk
 ```
 
-`zod >=4.3 <5` is a required peer dependency of `@kaji/sdk`. `openai >=4 <8`
+`zod >=4.3 <5` is a required peer dependency of `kaji-sdk`. `openai >=4 <8`
 and `@anthropic-ai/sdk >=0.30 <2` are optional peers; install whichever you'll
 register as a provider. Zod 3 and Zod 5 are outside the supported beta range.
 
-The no-key scaffold installs only the exact `@kaji/sdk` version and supported
+The no-key scaffold installs only the exact `kaji-sdk` version and supported
 Zod range. OpenAI and Anthropic modes add only their selected provider peer.
 Runtime support is Node 22 and 24; declarations compile with TypeScript 5.7.3
 and current 6.x. npm and Bun are tested separately. pnpm and Yarn are not yet
@@ -60,7 +60,7 @@ Three packages expose a binary named `kaji`; their command sets are different.
 
 ```bash
 pip install 'kaji-sdk==0.2.0b1' # Python SDK CLI: init/add/connect/disconnect/list/...
-bun add @kaji/sdk@0.2.0-beta.2 "zod@>=4.3 <5" # Embedded TS CLI: init/add/connect/disconnect/list/replay
+bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" # Embedded TS CLI: init/add/connect/disconnect/list/replay
 ```
 
 The standalone cross-language `@kaji/cli` is not published yet and is outside

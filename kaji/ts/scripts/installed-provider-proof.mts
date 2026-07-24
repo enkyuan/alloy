@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
-/** Run one redacted provider tool-loop proof from an installed @kaji/sdk tarball. */
+/** Run one redacted provider tool-loop proof from an installed kaji-sdk tarball. */
 
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "@kaji/sdk";
-import { AnthropicProvider } from "@kaji/sdk/anthropic";
-import { OpenAIProvider } from "@kaji/sdk/openai";
+import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "kaji-sdk";
+import { AnthropicProvider } from "kaji-sdk/anthropic";
+import { OpenAIProvider } from "kaji-sdk/openai";
 
 const MARKER = "kaji-installed-provider-proof-marker";
 const PROVIDER_KEYS = {
@@ -48,7 +48,7 @@ class EchoProofIntegration {
 }
 
 function resolvedPackage(): string {
-  const entry = fileURLToPath(import.meta.resolve("@kaji/sdk"));
+  const entry = fileURLToPath(import.meta.resolve("kaji-sdk"));
   return realpathSync(join(dirname(entry), ".."));
 }
 

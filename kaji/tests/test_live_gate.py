@@ -90,7 +90,7 @@ def _fake_installed_runtime(
     root = tmp_path / "installed"
     typescript = root / "typescript"
     python_package = root / "python/lib/python3.14/site-packages/kaji/__init__.py"
-    typescript_package = typescript / "node_modules/@kaji/sdk"
+    typescript_package = typescript / "node_modules/kaji-sdk"
     typescript.mkdir(parents=True)
     python_package.parent.mkdir(parents=True)
     typescript_package.mkdir(parents=True)
@@ -459,9 +459,9 @@ def test_installed_provider_runners_use_only_public_package_imports() -> None:
     typescript_source = typescript.read_text(encoding="utf-8")
     assert "from kaji" in python_source
     assert "kaji/src" not in python_source
-    assert 'from "@kaji/sdk"' in typescript_source
-    assert 'from "@kaji/sdk/openai"' in typescript_source
-    assert 'from "@kaji/sdk/anthropic"' in typescript_source
+    assert 'from "kaji-sdk"' in typescript_source
+    assert 'from "kaji-sdk/openai"' in typescript_source
+    assert 'from "kaji-sdk/anthropic"' in typescript_source
     assert 'from "@/' not in typescript_source
     assert "/dist/" not in typescript_source
 

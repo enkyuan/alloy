@@ -21,6 +21,7 @@ const FRAMEWORK_KEYS = [
   "solid-js",
 ];
 const KAJI_PREFIX = "@kaji/";
+const KAJI_SDK_PACKAGE = "kaji-sdk";
 const PROVIDER_KEYS = ["openai", "@anthropic-ai/sdk", "@google/genai", "google-genai"];
 
 function pickDeps(pkg: Record<string, unknown> | null, keys: string[]) {
@@ -32,14 +33,14 @@ function pickDeps(pkg: Record<string, unknown> | null, keys: string[]) {
   return keys.flatMap((k) => (all[k] ? [{ name: k, version: all[k] }] : []));
 }
 
-function pickByPrefix(pkg: Record<string, unknown> | null, prefix: string) {
+function pickKajiDeps(pkg: Record<string, unknown> | null) {
   if (!pkg) return [];
   const all = {
     ...(pkg.dependencies as Record<string, string> | undefined),
     ...(pkg.devDependencies as Record<string, string> | undefined),
   };
   return Object.entries(all)
-    .filter(([k]) => k.startsWith(prefix))
+    .filter(([name]) => name === KAJI_SDK_PACKAGE || name.startsWith(KAJI_PREFIX))
     .map(([name, version]) => ({ name, version }));
 }
 
@@ -56,7 +57,7 @@ export const info = new Command("info")
       node: { version: process.version, env: process.env.NODE_ENV ?? "development" },
       packageManager: detectPackageManager(cwd),
       frameworks: pickDeps(pkg, FRAMEWORK_KEYS),
-      kaji: { packages: pickByPrefix(pkg, KAJI_PREFIX) },
+      kaji: { packages: pickKajiDeps(pkg) },
       providers: pickDeps(pkg, PROVIDER_KEYS),
     };
     const safe = redact(data) as typeof data;

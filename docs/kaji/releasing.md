@@ -52,15 +52,16 @@ Complete these once before creating the release tag:
 4. In PyPI account publishing settings, add a pending trusted publisher for
    project `kaji-sdk`, owner `enkyuan`, repository `alloy`, workflow `kaji.publish.yml`,
    and environment `kaji-beta-publish`.
-5. Confirm the npm publisher is a member of the `kaji` organization's
-   `developers` team (create the organization first if needed) and that the team
-   retains read/write access for new `@kaji` packages. Owners are added to
-   `developers` by default, but ownership alone is not the policy checked by this
-   workflow. Because `@kaji/sdk` does not exist yet, its first publication requires
-   a short-lived granular token with read/write access to the `@kaji` scope and
-   bypass 2FA enabled. Store it only as `NPM_TOKEN` in `kaji-beta-publish`; after
-   the first release, migrate the package to npm trusted publishing and revoke
-   this bootstrap token.
+5. Confirm `npm view kaji-sdk name --json --registry=https://registry.npmjs.org/`
+   returns `E404` immediately before tagging, then confirm
+   `npm whoami --registry=https://registry.npmjs.org/` returns the approved
+   `KAJI_NPM_PUBLISHER`. The first unscoped publication requires a short-lived
+   npm token authorized to create public packages, with 2FA bypass enabled when
+   the account policy requires it. Store it only as `NPM_TOKEN` in
+   `kaji-beta-publish`; after the first release, configure npm trusted publishing
+   for `kaji-sdk` and revoke the bootstrap token. npm exposes no non-mutating
+   check that proves a token may create a new unscoped package, so the protected
+   publisher remains the fail-closed authorization check.
 6. Configure `kaji-beta` with required reviewers and only
    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `KAJI_TTHW_EVIDENCE_JSON`.
    Configure `kaji-beta-publish` with separate required reviewers,
@@ -73,14 +74,15 @@ Complete these once before creating the release tag:
 
 ## Offline rehearsal
 
-From a clean checkout with Bun 1.3.11, Node 22 or 24, uv 0.11.25, and the locked
-Python interpreters available, run:
+From a clean, real Git checkout with its `.git` metadata present, using Bun
+1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters, run:
 
 ```bash
 uv run --project kaji python kaji/scripts/beta_release_check.py --release
-uv run --project kaji python kaji/scripts/verify_package_metadata.py
 ```
 
+Source archives are unsupported because the release gate must bind artifacts
+to the exact checked-out commit and verify the source tree before packaging.
 `--release` is deliberately offline with respect to provider APIs and package
 registries. It builds fresh Python wheel/sdist and npm tarball artifacts, tests
 installed ESM and CommonJS entrypoints, validates metadata, audits locked
@@ -114,9 +116,10 @@ later run is not acceptable evidence.
    benchmark, soak, SBOM, and provenance evidence. The first
    `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
    requires `NPM_TOKEN`, requires `KAJI_NPM_PUBLISHER` to match `npm whoami`,
-   and verifies that identity has existing package write scope for `@kaji/sdk`,
-   or both an approved `kaji` organization role and `developers`-team membership
-   for a first publication.
+   and verifies existing `kaji-sdk` write access when the package already
+   exists. For the first publication it instead requires an unambiguous `E404`
+   for the unscoped package name and records that npm cannot prove new-package
+   write authorization without performing the protected publication.
 5. After publisher preflight passes, the Python and npm publisher jobs become
    eligible together under `kaji-beta-publish`. Approve both pending jobs in
    one final approval batch. Do not approve one publisher and defer or reject
@@ -161,7 +164,7 @@ is failure. Therefore:
 
   ```bash
   curl --fail --silent --show-error https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
-  npm view @kaji/sdk@0.2.0-beta.2 version --json
+  npm view kaji-sdk@0.2.0-beta.2 version --json --registry=https://registry.npmjs.org/
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and both publisher
@@ -176,7 +179,7 @@ is failure. Therefore:
 - If npm `0.2.0-beta.2` exists, deprecate it with a forward pointer:
 
   ```bash
-  npm deprecate @kaji/sdk@0.2.0-beta.2 "Unsafe beta; use the next published beta"
+  npm deprecate kaji-sdk@0.2.0-beta.2 "Unsafe beta; use the next published beta"
   ```
 
 - Increment both package beta versions, update locks/changelogs, pass all gates

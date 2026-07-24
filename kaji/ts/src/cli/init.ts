@@ -131,16 +131,16 @@ function installedMetadata(): PackageMetadata {
     value.peerDependencies === undefined ||
     value.devDependencies === undefined
   ) {
-    throw new Error("installed @kaji/sdk package metadata is incomplete");
+    throw new Error("installed kaji-sdk package metadata is incomplete");
   }
   return value as PackageMetadata;
 }
 
 function agentSource(provider: Provider): string {
   const providerImports = {
-    mock: 'import { MockProvider } from "@kaji/sdk/testing";',
-    openai: 'import { OpenAIProvider } from "@kaji/sdk/openai";',
-    anthropic: 'import { AnthropicProvider } from "@kaji/sdk/anthropic";',
+    mock: 'import { MockProvider } from "kaji-sdk/testing";',
+    openai: 'import { OpenAIProvider } from "kaji-sdk/openai";',
+    anthropic: 'import { AnthropicProvider } from "kaji-sdk/anthropic";',
   } as const;
   const providerSetup = {
     mock: "const provider = new MockProvider();",
@@ -154,7 +154,7 @@ if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the anthropic sc
 const provider = new AnthropicProvider({ apiKey });`,
   } as const;
 
-  return `import { AgentBuilder } from "@kaji/sdk";
+  return `import { AgentBuilder } from "kaji-sdk";
 ${providerImports[provider]}
 
 ${providerSetup[provider]}
@@ -170,27 +170,27 @@ console.log(\`final_sequence=\${finalSequence}\`);
 function scaffoldFiles(provider: Provider): Record<string, string> {
   const metadata = installedMetadata();
   const zodRange = metadata.peerDependencies.zod;
-  if (zodRange === undefined) throw new Error("installed @kaji/sdk has no Zod peer range");
+  if (zodRange === undefined) throw new Error("installed kaji-sdk has no Zod peer range");
   const nodeTypesRange = metadata.devDependencies["@types/node"];
   if (nodeTypesRange === undefined) {
-    throw new Error("installed @kaji/sdk has no supported @types/node range");
+    throw new Error("installed kaji-sdk has no supported @types/node range");
   }
   const dotenvxVersion = metadata.devDependencies["@dotenvx/dotenvx"];
   if (dotenvxVersion === undefined) {
-    throw new Error("installed @kaji/sdk has no supported dotenvx version");
+    throw new Error("installed kaji-sdk has no supported dotenvx version");
   }
 
   const dependencies: Record<string, string> = {
-    "@kaji/sdk": metadata.version,
+    "kaji-sdk": metadata.version,
     zod: zodRange,
   };
   if (provider === "openai") {
     const range = metadata.peerDependencies.openai;
-    if (range === undefined) throw new Error("installed @kaji/sdk has no OpenAI peer range");
+    if (range === undefined) throw new Error("installed kaji-sdk has no OpenAI peer range");
     dependencies.openai = range;
   } else if (provider === "anthropic") {
     const range = metadata.peerDependencies["@anthropic-ai/sdk"];
-    if (range === undefined) throw new Error("installed @kaji/sdk has no Anthropic peer range");
+    if (range === undefined) throw new Error("installed kaji-sdk has no Anthropic peer range");
     dependencies["@anthropic-ai/sdk"] = range;
   }
 

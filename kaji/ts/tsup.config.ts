@@ -26,7 +26,7 @@ export default defineConfig([
   },
   {
     // Per-provider entry points for tree-shaking. Import only the provider you use:
-    //   import { OpenAIProvider } from "@kaji/sdk/openai"
+    //   import { OpenAIProvider } from "kaji-sdk/openai"
     entry: {
       openai: "src/providers/openai.ts",
       anthropic: "src/providers/anthropic.ts",
@@ -40,7 +40,7 @@ export default defineConfig([
     clean: false,
     treeshake: true,
     // Keep package self-imports external so subpaths share the root runtime constructors.
-    external: [...EXTERNAL_PROVIDERS, "@kaji/sdk"],
+    external: [...EXTERNAL_PROVIDERS, "kaji-sdk"],
   },
   {
     // `kaji` CLI. ESM only; tsup strips shebangs unless restored via banner.

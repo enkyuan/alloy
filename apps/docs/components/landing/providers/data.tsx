@@ -37,26 +37,26 @@ export const moreProviders = [
 ];
 
 export const providerSnippets: Record<string, string> = {
-  OpenAI: `import { AgentBuilder, openai } from "@kaji/sdk"
+  OpenAI: `import { AgentBuilder, openai } from "kaji-sdk"
 
 const runtime = new AgentBuilder()
   .provider(openai("gpt-5.4-mini"))
   .build()`,
-  Anthropic: `import { anthropic } from "@kaji/sdk"
+  Anthropic: `import { anthropic } from "kaji-sdk"
 
 const provider = anthropic("claude-sonnet-4-6")`,
-  OpenRouter: `import { openrouter } from "@kaji/sdk"
+  OpenRouter: `import { openrouter } from "kaji-sdk"
 
 const provider = openrouter("anthropic/claude-sonnet-4-6")`,
-  Kimi: `import { kimi } from "@kaji/sdk"
+  Kimi: `import { kimi } from "kaji-sdk"
 
 const provider = kimi()`,
-  Gemini: `import { gemini } from "@kaji/sdk"
+  Gemini: `import { gemini } from "kaji-sdk"
 
 const provider = gemini("gemini-2.5-flash")`,
 };
 
-export const serverCodeTs = `import { AgentBuilder, openai } from "@kaji/sdk"
+export const serverCodeTs = `import { AgentBuilder, openai } from "kaji-sdk"
 
 const runtime = new AgentBuilder()
   .provider(openai("gpt-5.4-mini"))

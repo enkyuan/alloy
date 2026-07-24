@@ -30,7 +30,7 @@ export function assertCliListOutput(output: string): void {
       experimental_opt_in_required: false,
       next_commands: {
         python: "python -m kaji.cli add echo",
-        typescript: "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add echo",
+        typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo",
       },
     })
   ) {
@@ -49,7 +49,7 @@ export function assertCliListOutput(output: string): void {
       JSON.stringify({
         python: "python -m kaji.cli add github --allow-experimental",
         typescript:
-          "bun --no-install -e 'import(\"@kaji/sdk/cli\")' -- add github --allow-experimental",
+          "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
       })
   ) {
     throw new Error("installed list-integrations emitted a non-canonical GitHub row");

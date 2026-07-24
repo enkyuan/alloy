@@ -5,7 +5,7 @@
  * `new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY!, model: "gpt-5.4-mini" })`.
  * Reads the conventional environment variable when no apiKey is given.
  *
- *   import { openai, anthropic, generateText } from "@kaji/sdk";
+ *   import { openai, anthropic, generateText } from "kaji-sdk";
  *   const { text } = await generateText({
  *     provider: openai("gpt-5.4-mini"),
  *     messages: [{ role: "user", content: "Hello" }],
