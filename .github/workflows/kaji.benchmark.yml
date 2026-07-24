@@ -56,6 +56,7 @@ jobs:
           python-version: "3.14"
       - name: Build and verify one release artifact set
         env:
+          KAJI_BENCHMARK_BASELINE_BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate' && '1' || '' }}
           KAJI_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
         run: uv run --project kaji python kaji/scripts/beta_release_check.py --release
       - name: Upload exact release artifacts
@@ -159,7 +160,7 @@ jobs:
         run: >-
           uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py
           --minutes 30 --protected --artifacts-dir .artifacts/kaji-release
-      - name: Upload soak and heap samples
+      - name: Upload soak evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

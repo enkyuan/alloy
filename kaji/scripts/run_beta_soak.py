@@ -19,7 +19,7 @@ from benchmark_platform import (
     BenchmarkPlatformError,
     retain_reported_github_image_data,
 )
-from beta_benchmark_gate import release_commit
+from beta_benchmark_gate import COMMIT_PATTERN, HASH_PATTERN, release_commit
 from installed_release_runtime import installed_release_runtime
 from process_runner import (
     LOCAL_COMMAND_BUDGET,
@@ -44,6 +44,29 @@ PROTECTED_GATE_PARENT_ENV = (
     "ImageOS",
     "ImageVersion",
 )
+FAILURE_CODES = frozenset(
+    {
+        "not_started",
+        "invalid_invocation",
+        "validating",
+        "invalid_duration",
+        "missing_artifacts",
+        "invalid_release_commit",
+        "missing_python_runtime",
+        "python_soak_failed",
+        "typescript_soak_failed",
+        "soak_child_failed",
+        "soak_gate_failed",
+        "interrupted",
+        "installed_runtime_failed",
+        "soak_command_failed",
+        "runner_image_evidence_failed",
+    }
+)
+EXPECTED_ARTIFACTS = {
+    "python": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+    "typescript": "kaji-sdk-0.2.0-beta.2.tgz",
+}
 
 
 def python_command() -> list[str] | None:
@@ -92,31 +115,79 @@ def _write_failure_receipt(
     failure_code: str,
     commit: str | None,
     identity: Mapping[str, Any] | None = None,
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> None:
-    identity = {} if identity is None else identity
-    identity = (
+    source_identity = {} if identity is None else identity
+    safe_commit = source_identity.get("commit", commit)
+    safe_commit = (
+        safe_commit
+        if isinstance(safe_commit, str)
+        and COMMIT_PATTERN.fullmatch(safe_commit) is not None
+        else None
+    )
+    manifest = source_identity.get("releaseManifestSha256")
+    manifest = (
+        manifest
+        if isinstance(manifest, str) and HASH_PATTERN.fullmatch(manifest) is not None
+        else None
+    )
+    source_artifacts = source_identity.get("artifacts")
+    safe_artifacts: dict[str, dict[str, str]] = {}
+    if isinstance(source_artifacts, Mapping):
+        for runtime, expected_file in EXPECTED_ARTIFACTS.items():
+            artifact = source_artifacts.get(runtime)
+            if not isinstance(artifact, Mapping):
+                continue
+            digest = artifact.get("sha256")
+            if (
+                artifact.get("file") == expected_file
+                and isinstance(digest, str)
+                and HASH_PATTERN.fullmatch(digest) is not None
+            ):
+                safe_artifacts[runtime] = {
+                    "file": expected_file,
+                    "sha256": digest,
+                }
+    source_lock = source_identity.get("typescriptConsumerLock")
+    safe_lock = {"templateSha256": None, "renderedSha256": None}
+    if isinstance(source_lock, Mapping):
+        for name in safe_lock:
+            digest = source_lock.get(name)
+            if isinstance(digest, str) and HASH_PATTERN.fullmatch(digest) is not None:
+                safe_lock[name] = digest
+    safe_identity = (
         {
-            "commit": identity.get("commit", commit),
-            "releaseManifestSha256": identity.get("releaseManifestSha256"),
-            "artifacts": identity.get("artifacts", {}),
-            "resolvedPackages": identity.get("resolvedPackages", {}),
-            "typescriptConsumerLock": identity.get(
-                "typescriptConsumerLock",
-                {"templateSha256": None, "renderedSha256": None},
-            ),
+            "commit": safe_commit,
+            "releaseManifestSha256": manifest,
+            "artifacts": safe_artifacts,
+            "resolvedPackages": {},
+            "typescriptConsumerLock": safe_lock,
         }
         if protected
         else {}
     )
+    safe_failure_code = failure_code if failure_code in FAILURE_CODES else "soak_failed"
+    safe_diagnostics: dict[str, Any] = {}
+    if diagnostics is not None:
+        phase = diagnostics.get("phase")
+        runtime = diagnostics.get("runtime")
+        exit_status = diagnostics.get("exitStatus")
+        if phase in {"child", "gate"}:
+            safe_diagnostics["phase"] = phase
+        if runtime in {"python", "typescript", None}:
+            safe_diagnostics["runtime"] = runtime
+        if type(exit_status) is int:
+            safe_diagnostics["exitStatus"] = exit_status
     _write_json_atomic(
         output,
         {
             "schemaVersion": 1,
             "protected": protected,
-            **identity,
-            "failureCode": failure_code,
-            "failures": [failure_code],
+            **safe_identity,
+            "failureCode": safe_failure_code,
+            "failures": [safe_failure_code],
             "passed": False,
+            **({"diagnostics": safe_diagnostics} if safe_diagnostics else {}),
         },
     )
 
@@ -144,6 +215,14 @@ def _write_json_atomic(path: Path, value: Mapping[str, Any]) -> None:
         raise
 
 
+def _reset_artifacts(artifacts: Path) -> None:
+    if artifacts.is_symlink() or artifacts.is_file():
+        artifacts.unlink()
+    elif artifacts.exists():
+        shutil.rmtree(artifacts)
+    artifacts.mkdir(parents=True, exist_ok=True)
+
+
 def _retain_failure(
     output: Path,
     *,
@@ -151,6 +230,7 @@ def _retain_failure(
     failure_code: str,
     commit: str | None,
     identity: Mapping[str, Any] | None = None,
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> bool:
     try:
         _write_failure_receipt(
@@ -159,6 +239,7 @@ def _retain_failure(
             failure_code=failure_code,
             commit=commit,
             identity=identity,
+            diagnostics=diagnostics,
         )
     except OSError:
         try:
@@ -170,11 +251,54 @@ def _retain_failure(
     return True
 
 
+def _child_failure(
+    error: CommandExitError,
+) -> tuple[str, dict[str, Any]]:
+    runtime = {0: "python", 1: "typescript"}.get(error.command_index)
+    failure_code = f"{runtime}_soak_failed" if runtime else "soak_child_failed"
+    return (
+        failure_code,
+        {
+            "phase": "child",
+            "runtime": runtime,
+            "exitStatus": error.returncode,
+        },
+    )
+
+
+def _has_detailed_gate_failure(output: Path) -> bool:
+    try:
+        report = json.loads(output.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if (
+        not isinstance(report, dict)
+        or report.get("schemaVersion") != 1
+        or report.get("passed") is not False
+        or isinstance(report.get("requestedMinutes"), bool)
+        or not isinstance(report.get("requestedMinutes"), (int, float))
+        or not isinstance(report.get("budgets"), dict)
+        or not isinstance(report.get("results"), dict)
+    ):
+        return False
+    failures = report.get("failures")
+    return (
+        isinstance(failures, list)
+        and bool(failures)
+        and all(isinstance(failure, str) and failure for failure in failures)
+    )
+
+
 def main() -> int:
     artifacts = ROOT / ".artifacts" / "kaji-soak"
     output = artifacts / "results.json"
     protected = "--protected" in sys.argv[1:]
     expected_commit = os.environ.get("KAJI_RELEASE_COMMIT")
+    try:
+        _reset_artifacts(artifacts)
+    except OSError:
+        print("FAIL: soak artifact directory could not be prepared", file=sys.stderr)
+        return 1
     if not _retain_failure(
         output,
         protected=protected,
@@ -224,14 +348,14 @@ def main() -> int:
     if protected:
         try:
             expected_commit = release_commit(protected=True)
-        except (CommandError, RuntimeError) as error:
+        except (CommandError, RuntimeError):
             _retain_failure(
                 output,
                 protected=True,
                 failure_code="invalid_release_commit",
                 commit=expected_commit,
             )
-            print(f"FAIL: {error}", file=sys.stderr)
+            print("FAIL: release commit validation failed", file=sys.stderr)
             return 2
     python = python_command()
     if python is None:
@@ -244,8 +368,6 @@ def main() -> int:
         print("uv or kaji/.venv is required", file=sys.stderr)
         return 2
 
-    python_result = artifacts / "python.json"
-    typescript_result = artifacts / "typescript.json"
     soak_budget = CommandBudget(
         timeout_seconds=minutes * 60 + 120,
         max_output_bytes=4 * 1024 * 1024,
@@ -262,11 +384,16 @@ def main() -> int:
             and expected_commit is not None
             else nullcontext(None)
         )
-        with context as installed:
+        with (
+            context as installed,
+            tempfile.TemporaryDirectory(prefix="kaji-soak-child-") as child_output,
+        ):
+            python_result = Path(child_output) / "python.json"
+            typescript_result = Path(child_output) / "typescript.json"
+            child_artifacts = Path(child_output) / "artifacts"
             runtime_identity_path = artifacts / "installed-runtime.json"
             if installed is not None:
                 installed_identity = installed.identity()
-                _write_json_atomic(runtime_identity_path, installed_identity)
             child_python = (
                 [str(installed.python_executable)] if installed is not None else python
             )
@@ -290,48 +417,69 @@ def main() -> int:
                 if installed is not None
                 else ROOT / "kaji" / "ts" / "benchmarks" / "runtime-soak.ts"
             )
-            python_completed, typescript_completed = run_parallel_checked(
-                (
-                    CommandSpec(
-                        [
-                            *child_python,
-                            str(SDK / "benchmarks" / "python" / "runtime_soak.py"),
-                            "--minutes",
-                            args.minutes,
-                            "--seed",
-                            "13",
-                            "--artifacts-dir",
-                            str(artifacts),
-                            "--json",
-                        ],
-                        cwd=child_root,
-                        budget=soak_budget,
-                        capture=True,
-                        env=child_environment,
-                    ),
-                    CommandSpec(
-                        [
-                            "bun",
-                            str(typescript_driver),
-                            "--minutes",
-                            args.minutes,
-                            "--seed",
-                            "13",
-                            "--artifact-dir",
-                            str(artifacts),
-                            "--json",
-                        ],
-                        cwd=typescript_workdir,
-                        budget=soak_budget,
-                        capture=True,
-                        env=child_environment,
-                    ),
+            try:
+                python_completed, typescript_completed = run_parallel_checked(
+                    (
+                        CommandSpec(
+                            [
+                                *child_python,
+                                str(SDK / "benchmarks" / "python" / "runtime_soak.py"),
+                                "--minutes",
+                                args.minutes,
+                                "--seed",
+                                "13",
+                                "--artifacts-dir",
+                                str(child_artifacts),
+                                "--json",
+                            ],
+                            cwd=child_root,
+                            budget=soak_budget,
+                            capture=True,
+                            env=child_environment,
+                        ),
+                        CommandSpec(
+                            [
+                                "bun",
+                                str(typescript_driver),
+                                "--minutes",
+                                args.minutes,
+                                "--seed",
+                                "13",
+                                "--artifact-dir",
+                                str(child_artifacts),
+                                "--json",
+                            ],
+                            cwd=typescript_workdir,
+                            budget=soak_budget,
+                            capture=True,
+                            env=child_environment,
+                        ),
+                    )
                 )
-            )
+            except CommandExitError as error:
+                failure_code, diagnostics = _child_failure(error)
+                _retain_failure(
+                    output,
+                    protected=protected,
+                    failure_code=failure_code,
+                    commit=expected_commit,
+                    identity=installed_identity,
+                    diagnostics=diagnostics,
+                )
+                runtime = diagnostics["runtime"] or "unknown"
+                print(
+                    f"FAIL: {runtime} soak exited with status {error.returncode}",
+                    file=sys.stderr,
+                )
+                return 1
             python_result.write_bytes(python_completed.stdout)
             typescript_result.write_bytes(typescript_completed.stdout)
 
-            run_checked(
+            _reset_artifacts(artifacts)
+            if installed_identity is not None:
+                _write_json_atomic(runtime_identity_path, installed_identity)
+            output.unlink(missing_ok=True)
+            gate_completed = run_checked(
                 [
                     *child_python,
                     str(GATE),
@@ -358,7 +506,28 @@ def main() -> int:
                 cwd=child_root,
                 budget=LOCAL_COMMAND_BUDGET,
                 env=gate_environment,
+                check=False,
             )
+            gate_status = getattr(gate_completed, "returncode", 0)
+            if gate_status != 0:
+                if _has_detailed_gate_failure(output):
+                    report = json.loads(output.read_text())
+                    for failure in report["failures"]:
+                        print(f"FAIL: {failure}", file=sys.stderr)
+                else:
+                    _retain_failure(
+                        output,
+                        protected=protected,
+                        failure_code="soak_gate_failed",
+                        commit=expected_commit,
+                        identity=installed_identity,
+                        diagnostics={
+                            "phase": "gate",
+                            "runtime": None,
+                            "exitStatus": gate_status,
+                        },
+                    )
+                return 1
     except KeyboardInterrupt:
         _retain_failure(
             output,
@@ -386,16 +555,7 @@ def main() -> int:
             identity=installed_identity,
         )
         return 128 + error.signum
-    except CommandExitError:
-        _retain_failure(
-            output,
-            protected=protected,
-            failure_code="soak_gate_failed",
-            commit=expected_commit,
-            identity=installed_identity,
-        )
-        return 1
-    except CommandError as error:
+    except CommandError:
         _retain_failure(
             output,
             protected=protected,
@@ -403,9 +563,9 @@ def main() -> int:
             commit=expected_commit,
             identity=installed_identity,
         )
-        print(f"FAIL: soak child process failed: {error}", file=sys.stderr)
+        print("FAIL: soak child process failed", file=sys.stderr)
         return 1
-    except (OSError, RuntimeError) as error:
+    except (OSError, RuntimeError):
         _retain_failure(
             output,
             protected=protected,
@@ -413,13 +573,13 @@ def main() -> int:
             commit=expected_commit,
             identity=installed_identity,
         )
-        print(f"FAIL: installed soak setup failed: {error}", file=sys.stderr)
+        print("FAIL: installed soak setup failed", file=sys.stderr)
         return 1
 
     if protected:
         try:
             retain_reported_github_image_data(output)
-        except BenchmarkPlatformError as error:
+        except BenchmarkPlatformError:
             _retain_failure(
                 output,
                 protected=True,
@@ -427,7 +587,7 @@ def main() -> int:
                 commit=expected_commit,
                 identity=installed_identity,
             )
-            print(f"FAIL: {error}", file=sys.stderr)
+            print("FAIL: runner image evidence failed", file=sys.stderr)
             return 1
 
     print("PASS: Python and TypeScript soak budgets")

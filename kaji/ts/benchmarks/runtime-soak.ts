@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   AgentRuntime,
+  CancellationError,
   CancellationToken,
   EventType,
   InMemoryEventCommitter,
@@ -29,6 +30,7 @@ import {
   type ToolIdempotencyClaim,
   type ToolIdempotencyLedger,
   type ToolSpec,
+  type TurnResult,
 } from "kaji-sdk";
 
 const RESOLVED_PACKAGE = realpathSync(
@@ -125,6 +127,7 @@ class ObservedLedger implements ToolIdempotencyLedger {
   private readonly backing: InMemoryToolIdempotencyLedger;
   private readonly states = new Map<string, LedgerState>();
   peakSize = 0;
+  releasedEntries = 0;
 
   constructor(readonly capacity: number) {
     this.backing = new InMemoryToolIdempotencyLedger({ capacity });
@@ -185,6 +188,21 @@ class ObservedLedger implements ToolIdempotencyLedger {
       }
     }
     if (observed !== released) throw new Error("ledger diagnostics diverged from release count");
+    return released;
+  }
+
+  async releaseSettled(sessionId: string): Promise<number> {
+    const released = await this.backing.releaseSettled(sessionId);
+    let observed = 0;
+    for (const [key, state] of this.states) {
+      const [entrySessionId] = JSON.parse(key) as [string, string];
+      if (entrySessionId === sessionId && state !== "running") {
+        this.states.delete(key);
+        observed++;
+      }
+    }
+    if (observed !== released) throw new Error("ledger diagnostics diverged from release count");
+    this.releasedEntries += released;
     return released;
   }
 }
@@ -382,6 +400,45 @@ function forceGc(): boolean {
   return false;
 }
 
+export function countObservedCancellation(outcome: PromiseSettledResult<unknown>): number {
+  if (outcome.status !== "rejected" || !(outcome.reason instanceof CancellationError)) {
+    throw new Error("unexpected cancellation outcome");
+  }
+  return 1;
+}
+
+export function countObservedTimeout(
+  outcome: PromiseSettledResult<unknown>,
+  expectedToolName: string,
+): number {
+  if (
+    outcome.status !== "fulfilled" ||
+    typeof outcome.value !== "object" ||
+    outcome.value === null ||
+    !("events" in outcome.value) ||
+    !Array.isArray(outcome.value.events)
+  ) {
+    throw new Error("unexpected timeout outcome");
+  }
+  const terminalEvents = outcome.value.events.filter(
+    (event): event is Record<string, unknown> =>
+      typeof event === "object" &&
+      event !== null &&
+      event.tool_name === expectedToolName &&
+      (event.type === EventType.TOOL_CALL_COMPLETED || event.type === EventType.TOOL_CALL_FAILED),
+  );
+  const terminal = terminalEvents[0];
+  if (
+    terminalEvents.length !== 1 ||
+    terminal?.type !== EventType.TOOL_CALL_FAILED ||
+    terminal.error_code !== "TOOL_TIMEOUT" ||
+    terminal.outcome !== "unknown"
+  ) {
+    throw new Error("unexpected timeout outcome");
+  }
+  return 1;
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rng = new Mulberry32(options.seed);
@@ -445,7 +502,6 @@ async function main(): Promise<void> {
   let completed = 0;
   let failed = 0;
   let cancelled = 0;
-  let releasedLedgerEntries = 0;
   let batch = 0;
   let sharedGeneration = 0;
   let sharedSession = `shared-${sharedGeneration}`;
@@ -463,38 +519,44 @@ async function main(): Promise<void> {
   };
 
   const closeSession = async (sessionId: string): Promise<void> => {
-    if ((await store.lastSequence(sessionId)) === 0) return;
-    await runtime.appendEvent(
-      KajiEvent.parse({
-        id: ids.next("event"),
-        timestamp: clock.nowWallSeconds(),
-        type: EventType.SESSION_CLOSED,
-        session_id: sessionId,
-        reason: "soak rotation",
-      }),
-    );
-    releasedLedgerEntries += await ledger.releaseCompleted(sessionId);
-    scenarios.sessionClosures++;
+    if ((await store.lastSequence(sessionId)) !== 0) {
+      await runtime.appendEvent(
+        KajiEvent.parse({
+          id: ids.next("event"),
+          timestamp: clock.nowWallSeconds(),
+          type: EventType.SESSION_CLOSED,
+          session_id: sessionId,
+          reason: "soak rotation",
+        }),
+      );
+      scenarios.sessionClosures++;
+    }
+    await runtime.purgeSession(sessionId);
   };
 
-  const closedTurn = async (prompt: string, sessionId: string): Promise<void> => {
+  const closedTurn = async (
+    prompt: string,
+    sessionId: string,
+    waitForToolSettlement = false,
+  ): Promise<TurnResult> => {
     try {
-      await runtime.turn(prompt, { sessionId });
+      return await runtime.turn(prompt, { sessionId });
     } finally {
+      if (waitForToolSettlement) await runtime.drainTools(100);
       await closeSession(sessionId);
     }
   };
 
   const started = nowNs();
   const requestedMs = options.minutes * 60_000;
-  let nextSampleMinute = 1;
+  let lastSampleBucket = 0;
   const heapSamples: HeapSample[] = [];
-  const sample = (minute: number): void => {
+  const sample = (observedElapsedMs: number): void => {
     gcAvailable = forceGc() || gcAvailable;
     const memory = process.memoryUsage();
     heapSamples.push({
-      minute,
-      elapsedMs: elapsedMs(started),
+      minute: observedElapsedMs / 60_000,
+      elapsedMs: observedElapsedMs,
       heapUsedMiB: toMiB(memory.heapUsed),
       heapTotalMiB: toMiB(memory.heapTotal),
       rssMiB: toMiB(memory.rss),
@@ -528,6 +590,8 @@ async function main(): Promise<void> {
       runtime.turn("cancelled", { sessionId: cancelledSession, cancellationToken: cancellation }),
     ];
     const cancellationJobIndex = jobs.length - 1;
+    let cooperativeTimeoutJobIndex: number | undefined;
+    let nonCooperativeTimeoutJobIndex: number | undefined;
     scenarios.sameSessionTurns += 2;
     scenarios.crossSessionTurns += 3;
     scenarios.toolCallsRequested += toolCount;
@@ -536,16 +600,16 @@ async function main(): Promise<void> {
 
     if (batch % 200 === 0) {
       const sessionId = `cross-${batch}-cooperative-timeout`;
+      cooperativeTimeoutJobIndex = jobs.length;
       jobs.push(closedTurn(`timeout-cooperative:${batch}`, sessionId));
       scenarios.crossSessionTurns++;
-      scenarios.cooperativeTimeouts++;
       scenarios.toolCallsRequested++;
     }
     if (batch % 1_000 === 0) {
       const sessionId = `cross-${batch}-noncooperative-timeout`;
-      jobs.push(closedTurn(`timeout-noncooperative:${batch}`, sessionId));
+      nonCooperativeTimeoutJobIndex = jobs.length;
+      jobs.push(closedTurn(`timeout-noncooperative:${batch}`, sessionId, true));
       scenarios.crossSessionTurns++;
-      scenarios.nonCooperativeTimeouts++;
       scenarios.toolCallsRequested++;
     }
 
@@ -553,7 +617,20 @@ async function main(): Promise<void> {
     const outcomes = await Promise.allSettled(jobs);
     completed += outcomes.filter(({ status }) => status === "fulfilled").length;
     failed += outcomes.filter(({ status }) => status === "rejected").length;
-    if (outcomes[cancellationJobIndex]!.status === "rejected") cancelled++;
+    cancelled += countObservedCancellation(outcomes[cancellationJobIndex]!);
+    if (cooperativeTimeoutJobIndex !== undefined) {
+      scenarios.cooperativeTimeouts += countObservedTimeout(
+        outcomes[cooperativeTimeoutJobIndex]!,
+        "cooperative-timeout",
+      );
+    }
+    if (nonCooperativeTimeoutJobIndex !== undefined) {
+      scenarios.nonCooperativeTimeouts += countObservedTimeout(
+        outcomes[nonCooperativeTimeoutJobIndex]!,
+        "noncooperative-timeout",
+      );
+    }
+    await closeSession(cancelledSession);
     batch++;
 
     if (batch % 100 === 0) {
@@ -562,8 +639,11 @@ async function main(): Promise<void> {
       sharedSession = `shared-${++sharedGeneration}`;
       slowSubscriber = committer.subscribe(sharedSession);
     }
-    while (elapsedMs(started) >= nextSampleMinute * 60_000) {
-      sample(nextSampleMinute++);
+    const observedElapsedMs = elapsedMs(started);
+    const observedSampleBucket = Math.floor(observedElapsedMs / 60_000);
+    if (observedSampleBucket > lastSampleBucket) {
+      sample(observedElapsedMs);
+      lastSampleBucket = observedSampleBucket;
     }
   }
 
@@ -571,7 +651,8 @@ async function main(): Promise<void> {
   await closeSession(sharedSession);
   const stuckToolCallIds = await runtime.drainTools(100);
   const elapsed = elapsedMs(started);
-  if (heapSamples.length === 0) sample(elapsed / 60_000);
+  const finalSampleBucket = Math.floor(elapsed / 60_000);
+  if (heapSamples.length === 0 || finalSampleBucket > lastSampleBucket) sample(elapsed);
 
   const elapsedSeconds = elapsed / 1_000;
   const result = {
@@ -613,7 +694,7 @@ async function main(): Promise<void> {
       coordinatorWaiters: coordinator.waitingCount,
       stuckToolCallIds,
       stuckToolCalls: stuckToolCallIds.length,
-      releasedLedgerEntries,
+      releasedLedgerEntries: ledger.releasedEntries,
       gcAvailable,
       scenarios,
     },
@@ -638,4 +719,4 @@ async function main(): Promise<void> {
   process.stdout.write(json);
 }
 
-await main();
+if (import.meta.main) await main();

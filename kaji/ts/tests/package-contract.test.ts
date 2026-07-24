@@ -366,6 +366,27 @@ describe("npm contract artifact", () => {
 
       expect(sample.case).toBe("replay10k");
       expect(sample.completed).toBe(10_000);
+
+      const warmed = JSON.parse(
+        runText(
+          "bun",
+          [
+            "benchmarks/runtime-benchmark.ts",
+            "--case",
+            "toolArgDeltas10k",
+            "--samples",
+            "1",
+            "--warmups",
+            "1",
+            "--seed",
+            "13",
+            "--json",
+          ],
+          { cwd: checkout },
+        ),
+      ) as { sampleResults: Array<{ warmupRuns?: number }> };
+
+      expect(warmed.sampleResults[0]?.warmupRuns).toBe(1);
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }

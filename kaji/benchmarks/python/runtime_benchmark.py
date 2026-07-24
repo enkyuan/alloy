@@ -804,14 +804,29 @@ async def _run_sample(
 
 
 def _child_sample(
-    case: str, seed: int, context_variant: str | None = None
+    case: str,
+    seed: int,
+    context_variant: str | None = None,
+    warmups: int = 0,
 ) -> dict[str, Any]:
-    random.seed(seed)
-    return asyncio.run(_run_sample(case, seed, context_variant))
+    async def run() -> dict[str, Any]:
+        for index in range(warmups):
+            warmup_seed = seed + index
+            random.seed(warmup_seed)
+            await _run_sample(case, warmup_seed, context_variant)
+        measured_seed = seed + warmups
+        random.seed(measured_seed)
+        measured = await _run_sample(case, measured_seed, context_variant)
+        return {**measured, "warmupRuns": warmups}
+
+    return asyncio.run(run())
 
 
 def _spawn_raw_sample(
-    case: str, seed: int, context_variant: str | None = None
+    case: str,
+    seed: int,
+    context_variant: str | None = None,
+    warmups: int = 0,
 ) -> dict[str, Any]:
     variant_args = (
         [] if context_variant is None else ["--_context-variant", context_variant]
@@ -825,6 +840,8 @@ def _spawn_raw_sample(
             "--seed",
             str(seed),
             "--_sample",
+            "--_warmups",
+            str(warmups),
             "--json",
             *variant_args,
         ],
@@ -841,11 +858,11 @@ def _spawn_raw_sample(
         raise RuntimeError("benchmark child emitted non-JSON stdout") from error
 
 
-def _spawn_sample(case: str, seed: int) -> dict[str, Any]:
+def _spawn_sample(case: str, seed: int, warmups: int) -> dict[str, Any]:
     if case != "context10kIterations5":
-        return _spawn_raw_sample(case, seed)
-    replay = _spawn_raw_sample(case, seed, "replay")
-    indexed = _spawn_raw_sample(case, seed, "indexed")
+        return _spawn_raw_sample(case, seed, warmups=warmups)
+    replay = _spawn_raw_sample(case, seed, "replay", warmups)
+    indexed = _spawn_raw_sample(case, seed, "indexed", warmups)
     indexed["incrementalRssBytes"] = max(
         0, int(indexed.pop("peakBytes")) - int(replay["peakBytes"])
     )
@@ -853,9 +870,7 @@ def _spawn_sample(case: str, seed: int) -> dict[str, Any]:
 
 
 def _run_parent(case: str, samples: int, warmups: int, seed: int) -> dict[str, Any]:
-    for index in range(warmups):
-        _spawn_sample(case, seed + index)
-    measured = [_spawn_sample(case, seed + warmups + index) for index in range(samples)]
+    measured = [_spawn_sample(case, seed + index, warmups) for index in range(samples)]
     durations = [float(sample["durationMs"]) for sample in measured]
     package_file = kaji.__file__
     if package_file is None:
@@ -886,13 +901,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--_sample", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--_warmups", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument(
         "--_context-variant",
         choices=("replay", "indexed"),
         help=argparse.SUPPRESS,
     )
     args = parser.parse_args()
-    if args.samples < 1 or args.warmups < 0:
+    if args.samples < 1 or args.warmups < 0 or args._warmups < 0:
         parser.error("--samples must be positive and --warmups non-negative")
     return args
 
@@ -901,7 +917,12 @@ def main() -> int:
     args = _parse_args()
     try:
         result = (
-            _child_sample(args.case, args.seed, args._context_variant)
+            _child_sample(
+                args.case,
+                args.seed,
+                args._context_variant,
+                args._warmups,
+            )
             if args._sample
             else _run_parent(args.case, args.samples, args.warmups, args.seed)
         )

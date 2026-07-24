@@ -162,7 +162,8 @@ class _Approve:
     def __init__(self) -> None:
         self.requests = 0
 
-    async def request(self, _call: Any, _context: Any) -> ApprovalDecision:
+    async def request(self, call: Any, context: Any) -> ApprovalDecision:
+        del call, context
         self.requests += 1
         return ApprovalDecision(True, "approved")
 
@@ -293,6 +294,15 @@ def _append_memory_sample(samples: list[dict[str, float]], minute: float) -> Non
     samples.append(_sample_memory(minute))
 
 
+def _ledger_counts(
+    ledger: InMemoryToolIdempotencyLedger,
+) -> dict[str, int]:
+    counts = {"running": 0, "completed": 0, "unknown": 0}
+    for entry in ledger._entries.values():
+        counts[entry.state] += 1
+    return counts
+
+
 async def _run(minutes: float, seed: int) -> dict[str, Any]:
     randomizer = random.Random(seed)
     provider = _SoakProvider()
@@ -349,8 +359,14 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
         metrics_sink=diagnostics,
     )
 
+    async def close_and_purge(session_id: str) -> None:
+        if await store.last_sequence(session_id):
+            await runtime.append_event(SessionClosed(session_id=session_id))
+        await runtime.purge_session(session_id)
+
     attempted = completed = failed = 0
     terminal_outcomes = {"completed": 0, "failed": 0, "cancelled": 0}
+    ledger_peak_size = 0
     timeout_unknown = 0
     cooperative_timeout_unknown = 0
     batch = 0
@@ -391,20 +407,23 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
                 else:
                     completed += 1
                     terminal_outcomes["completed"] += 1
+            ledger_peak_size = max(ledger_peak_size, ledger.size)
 
             if batch % 20 == 0:
                 token = CancellationToken()
                 token.cancel()
+                cancelled_session = f"cancel-{batch}"
                 attempted += 1
                 try:
                     await runtime.turn(
                         f"cancel-{batch}",
-                        session_id=f"cancel-{batch}",
+                        session_id=cancelled_session,
                         cancellation_token=token,
                     )
                 except asyncio.CancelledError:
                     failed += 1
                     terminal_outcomes["cancelled"] += 1
+                await close_and_purge(cancelled_session)
 
             if batch % 250 == 0:
                 timeout_unknown += await _exercise_noncooperative_timeouts(batch)
@@ -443,7 +462,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
                 await resumed.aclose()
                 subscriber_resumes += 1
                 subscriber_overflows += 1
-                await runtime.append_event(SessionClosed(session_id=subscriber_session))
+                await close_and_purge(subscriber_session)
                 subscriber_generation += 1
                 subscriber_session = f"slow-subscriber-{subscriber_generation}"
                 subscriber = await journal.open_subscription(subscriber_session)
@@ -451,7 +470,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
                 subscriber_count = 1
 
             for session_id in set(session_ids):
-                await runtime.append_event(SessionClosed(session_id=session_id))
+                await close_and_purge(session_id)
 
             now = time.monotonic()
             if now >= next_sample:
@@ -465,8 +484,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
 
     await subscriber.aclose()
     subscriber_count = 0
-    if await store.last_sequence(subscriber_session):
-        await runtime.append_event(SessionClosed(session_id=subscriber_session))
+    await close_and_purge(subscriber_session)
     stuck = await controller.drain_tools(0)
     internal = {
         "coordinatorEntries": coordinator.entry_count,
@@ -474,7 +492,9 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
         "projectionCacheSize": runtime.projection_cache_size,
         "projectionCacheLimit": store.max_sessions,
         "ledgerSize": ledger.size,
+        "ledgerPeakSize": ledger_peak_size,
         "ledgerLimit": 10_000,
+        "ledgerCounts": _ledger_counts(ledger),
         "stuckToolCalls": len(stuck),
         "subscriberCount": subscriber_count,
         "maxSubscriberQueueDepth": diagnostics.max_subscriber_depth,
@@ -493,6 +513,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
         "runtime": "python",
         "resolvedPackage": str(Path(package_file).resolve()),
         "seed": seed,
+        "offline": True,
         "requestedMinutes": minutes,
         "elapsedSeconds": elapsed_seconds,
         "attemptedTurns": attempted,

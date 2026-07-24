@@ -94,8 +94,9 @@ class CommandStartError(CommandError):
 
 
 class CommandExitError(CommandError):
-    def __init__(self, returncode: int) -> None:
+    def __init__(self, returncode: int, *, command_index: int | None = None) -> None:
         self.returncode = returncode
+        self.command_index = command_index
         super().__init__(f"release command exited with status {returncode}")
 
 
@@ -434,7 +435,10 @@ def _run_specs(specs: Sequence[CommandSpec]) -> tuple[CompletedCommand, ...]:
                     continue
                 result = item.result()
                 if item.spec.check and result.returncode != 0:
-                    raise CommandExitError(result.returncode)
+                    raise CommandExitError(
+                        result.returncode,
+                        command_index=index,
+                    )
                 results[index] = result
                 pending.remove(index)
                 owned.remove(item)

@@ -176,9 +176,10 @@ def test_parallel_failure_terminates_and_reaps_sibling(tmp_path: Path) -> None:
         budget=budget,
     )
 
-    with pytest.raises(runner.CommandExitError):
+    with pytest.raises(runner.CommandExitError) as captured:
         runner.run_parallel_checked((failing, hanging))
 
+    assert captured.value.command_index == 0
     assert sibling_pid.is_file()
     _wait_until_gone(int(sibling_pid.read_text()))
 

@@ -27,6 +27,7 @@ RULE_DIR = REPO_ROOT / "tools" / "ast-grep" / "rules"
 RULE_TEST_DIR = REPO_ROOT / "tools" / "ast-grep" / "rule-tests"
 SGCONFIG = REPO_ROOT / "sgconfig.yml"
 AST_GREP_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ast-grep.test.yml"
+BASELINE_BOOTSTRAP_ENV = "KAJI_BENCHMARK_BASELINE_BOOTSTRAP"
 
 
 def _load_beta_gate():
@@ -678,6 +679,7 @@ def test_protected_soak_validates_commit_before_starting_children(
     tmp_path: Path,
 ) -> None:
     module = _load_root_script("run_beta_soak.py")
+    secret = "sk-commit-mismatch"
     monkeypatch.setattr(
         module,
         "parse_args",
@@ -688,7 +690,7 @@ def test_protected_soak_validates_commit_before_starting_children(
     monkeypatch.setattr(
         module,
         "release_commit",
-        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("commit mismatch")),
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError(secret)),
     )
     monkeypatch.setattr(
         module,
@@ -697,7 +699,9 @@ def test_protected_soak_validates_commit_before_starting_children(
     )
 
     assert module.main() == 2
-    assert "FAIL: commit mismatch" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert stderr == "FAIL: release commit validation failed\n"
+    assert secret not in stderr
 
 
 @pytest.mark.parametrize("failure", ["invalid_minutes", "invalid_args", "missing_uv"])
@@ -1616,6 +1620,81 @@ def test_beta_benchmark_gate_rejects_wrong_seed(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("schemaVersion", True),
+        ("schemaVersion", 1.0),
+        ("samples", True),
+        ("samples", 1.0),
+        ("warmups", True),
+        ("warmups", 1.0),
+        ("seed", True),
+        ("seed", 13.0),
+    ],
+)
+def test_beta_benchmark_gate_requires_exact_integer_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    payload = {
+        "schemaVersion": 1,
+        "runtime": "python",
+        "case": "replay10k",
+        "samples": 1,
+        "warmups": 1,
+        "seed": 13,
+        "sampleResults": [
+            {
+                "durationMs": 1.0,
+                "peakMiB": 32.0,
+                "warmupRuns": 1,
+            }
+        ],
+        "medianMs": 1.0,
+        "maxPeakMiB": 32.0,
+    }
+    payload[field] = value
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=json.dumps(payload).encode()
+    )
+    monkeypatch.setattr(module, "run_checked", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(RuntimeError, match=f"{field} must be an integer"):
+        module._run_case("python", "replay10k", 1, 1)
+
+
+@pytest.mark.parametrize("warmup_runs", [None, 1, True, 2.0])
+def test_beta_benchmark_gate_requires_exact_per_sample_warmup_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    warmup_runs: object,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    sample: dict[str, object] = {"durationMs": 1.0, "peakMiB": 32.0}
+    if warmup_runs is not None:
+        sample["warmupRuns"] = warmup_runs
+    payload = {
+        "schemaVersion": 1,
+        "runtime": "python",
+        "case": "replay10k",
+        "samples": 1,
+        "warmups": 2,
+        "seed": 13,
+        "sampleResults": [sample],
+        "medianMs": 1.0,
+        "maxPeakMiB": 32.0,
+    }
+    completed = subprocess.CompletedProcess(
+        args=[], returncode=0, stdout=json.dumps(payload).encode()
+    )
+    monkeypatch.setattr(module, "run_checked", lambda *_args, **_kwargs: completed)
+
+    with pytest.raises(RuntimeError, match="warmupRuns"):
+        module._run_case("python", "replay10k", 1, 2)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
         ("medianMs", float("nan")),
         ("maxPeakMiB", float("nan")),
         ("medianMs", -1.0),
@@ -1634,9 +1713,9 @@ def test_beta_benchmark_gate_rejects_invalid_runtime_aggregate(
         "warmups": 2,
         "seed": 13,
         "sampleResults": [
-            {"durationMs": 1.0, "peakMiB": 30.0},
-            {"durationMs": 2.0, "peakMiB": 32.0},
-            {"durationMs": 3.0, "peakMiB": 31.0},
+            {"durationMs": 1.0, "peakMiB": 30.0, "warmupRuns": 2},
+            {"durationMs": 2.0, "peakMiB": 32.0, "warmupRuns": 2},
+            {"durationMs": 3.0, "peakMiB": 31.0, "warmupRuns": 2},
         ],
         "medianMs": 2.0,
         "maxPeakMiB": 32.0,
@@ -1667,9 +1746,9 @@ def test_beta_benchmark_gate_rejects_mismatched_runtime_aggregate(
         "warmups": 2,
         "seed": 13,
         "sampleResults": [
-            {"durationMs": 1.0, "peakMiB": 30.0},
-            {"durationMs": 2.0, "peakMiB": 32.0},
-            {"durationMs": 3.0, "peakMiB": 31.0},
+            {"durationMs": 1.0, "peakMiB": 30.0, "warmupRuns": 2},
+            {"durationMs": 2.0, "peakMiB": 32.0, "warmupRuns": 2},
+            {"durationMs": 3.0, "peakMiB": 31.0, "warmupRuns": 2},
         ],
         "medianMs": 2.0,
         "maxPeakMiB": 32.0,
@@ -2521,6 +2600,58 @@ def test_python_benchmark_keeps_non_context_sample_failure_generic(
     assert secret not in captured.out + captured.err
 
 
+def test_python_benchmark_runs_warmups_inside_each_measured_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_sdk_benchmark("runtime_benchmark.py")
+    calls: list[tuple[str, int, str | None]] = []
+
+    async def run_sample(
+        case: str, seed: int, context_variant: str | None = None
+    ) -> dict[str, float]:
+        calls.append((case, seed, context_variant))
+        return {"durationMs": float(seed), "peakMiB": 1.0}
+
+    monkeypatch.setattr(module, "_run_sample", run_sample)
+
+    result = module._child_sample("toolArgDeltas10k", 13, warmups=2)
+
+    assert calls == [
+        ("toolArgDeltas10k", 13, None),
+        ("toolArgDeltas10k", 14, None),
+        ("toolArgDeltas10k", 15, None),
+    ]
+    assert result == {"durationMs": 15.0, "peakMiB": 1.0, "warmupRuns": 2}
+
+
+def test_python_benchmark_parent_assigns_warmups_to_measured_children(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_sdk_benchmark("runtime_benchmark.py")
+    calls: list[tuple[str, int, int]] = []
+
+    def spawn_sample(case: str, seed: int, warmups: int) -> dict[str, float | int]:
+        calls.append((case, seed, warmups))
+        return {
+            "durationMs": float(seed),
+            "peakMiB": 1.0,
+            "warmupRuns": warmups,
+        }
+
+    monkeypatch.setattr(module, "_spawn_sample", spawn_sample)
+
+    result = module._run_parent("toolArgDeltas10k", samples=2, warmups=2, seed=13)
+
+    assert calls == [
+        ("toolArgDeltas10k", 13, 2),
+        ("toolArgDeltas10k", 14, 2),
+    ]
+    assert result["sampleResults"] == [
+        {"durationMs": 13.0, "peakMiB": 1.0, "warmupRuns": 2},
+        {"durationMs": 14.0, "peakMiB": 1.0, "warmupRuns": 2},
+    ]
+
+
 def test_benchmark_gate_reports_only_strict_python_context_failure_marker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2631,25 +2762,35 @@ def _complete_soak_receipt(
     prior_rss_mib: float = 100.0,
     late_rss_mib: float = 100.0,
 ) -> dict[str, Any]:
-    samples = [
-        {
+    samples: list[dict[str, float]] = []
+    for minute in range(21, 31):
+        sample = {
             "minute": float(minute),
             "heapMiB": 100.0,
             "heapUsedMiB": 100.0,
             "rssMiB": prior_rss_mib if minute <= 25 else late_rss_mib,
         }
-        for minute in range(21, 31)
-    ]
+        if runtime == "typescript":
+            sample.update(
+                {
+                    "elapsedMs": minute * 60_000.0,
+                    "heapTotalMiB": 110.0,
+                    "maxRssMiB": 110.0,
+                }
+            )
+        samples.append(sample)
     return {
         "schemaVersion": 2,
         "runtime": runtime,
         "resolvedPackage": f"/installed/{runtime}",
+        "seed": 13,
+        "offline": True,
         "requestedMinutes": 30.0,
         "elapsedSeconds": 1_800.0,
         "attemptedTurns": 10_000,
         "completedTurns": 9_998,
         "failedTurns": 2,
-        "terminalOutcomes": {"completed": 9_998, "failed": 1, "cancelled": 1},
+        "terminalOutcomes": {"completed": 9_998, "failed": 0, "cancelled": 2},
         "noncooperativeTimeouts": 1,
         "cooperativeTimeouts": 1,
         "memorySamples": samples,
@@ -2668,7 +2809,7 @@ def _complete_soak_receipt(
             "ledgerSize": 0,
             "ledgerLimit": 10_000,
             "ledgerPeakSize": 0,
-            "ledgerCounts": {"running": 0},
+            "ledgerCounts": {"running": 0, "completed": 0, "unknown": 0},
             "maxContextMessages": 1,
             "maxContextCharacters": 100,
             "scenarios": {
@@ -3045,11 +3186,14 @@ def test_performance_source_hash_rejects_mutated_inputs(
     assert module._source_hash(tmp_path) != original
 
 
-def test_beta_benchmark_baseline_rejects_stale_source_hash() -> None:
+def test_beta_benchmark_baseline_rejects_stale_source_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     baseline = _complete_benchmark_baseline(module)
     current = module._baseline_fingerprint(baseline)
     current["sourceHash"] = "c" * 64
+    monkeypatch.setenv(BASELINE_BOOTSTRAP_ENV, "1")
 
     with pytest.raises(RuntimeError, match="source hash"):
         module._validate_baseline(baseline, current)
@@ -3064,6 +3208,37 @@ def test_beta_benchmark_baseline_rejects_legacy_runner_shape() -> None:
         module._baseline_fingerprint(baseline)
 
 
+def _assert_tracked_baseline_source_is_current(
+    module: Any, baseline: dict[str, Any]
+) -> None:
+    if os.environ.get(BASELINE_BOOTSTRAP_ENV) != "1":
+        assert baseline["sourceHash"] == module._source_hash()
+
+
+@pytest.mark.parametrize(
+    ("marker", "bypasses"),
+    [(None, False), ("", False), ("0", False), ("true", False), ("1", True)],
+)
+def test_tracked_baseline_bootstrap_marker_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+    marker: str | None,
+    bypasses: bool,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = {"sourceHash": "a" * 64}
+    monkeypatch.setattr(module, "_source_hash", lambda: "b" * 64)
+    if marker is None:
+        monkeypatch.delenv(BASELINE_BOOTSTRAP_ENV, raising=False)
+    else:
+        monkeypatch.setenv(BASELINE_BOOTSTRAP_ENV, marker)
+
+    if bypasses:
+        _assert_tracked_baseline_source_is_current(module, baseline)
+    else:
+        with pytest.raises(AssertionError):
+            _assert_tracked_baseline_source_is_current(module, baseline)
+
+
 def test_tracked_calibrated_baseline_retains_provenance_and_validates() -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     baseline = json.loads(module.BASELINE_PATH.read_text())
@@ -3071,7 +3246,7 @@ def test_tracked_calibrated_baseline_retains_provenance_and_validates() -> None:
     assert baseline["status"] == "calibrated"
     assert baseline["commit"] == baseline["calibrationCommit"]
     assert module.COMMIT_PATTERN.fullmatch(baseline["calibrationCommit"])
-    assert baseline["sourceHash"] == module._source_hash()
+    _assert_tracked_baseline_source_is_current(module, baseline)
     assert baseline["dependencyLockHash"] == module._lock_hash()
     assert module.HASH_PATTERN.fullmatch(baseline["releaseManifestSha256"])
     assert set(baseline["artifacts"]) == {"python", "typescript"}
@@ -3350,6 +3525,59 @@ def test_beta_benchmark_full_regression_checks_duration_and_rss() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("measured", "should_fail"),
+    [(12.0, False), (12.000001, True)],
+)
+def test_beta_benchmark_duration_regression_uses_exact_twenty_percent_boundary(
+    measured: float,
+    should_fail: bool,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    results = _complete_benchmark_results(module)
+    result = results["typescript"]["toolArgDeltas10k"]
+    result["sampleResults"] = [
+        {"durationMs": measured, "peakMiB": 95.0} for _ in range(5)
+    ]
+    result["medianMs"] = measured
+
+    failures = module._regression_failures(results, baseline, 20.0)
+    timing_failures = [
+        failure
+        for failure in failures
+        if "typescript toolArgDeltas10k median" in failure
+    ]
+
+    assert bool(timing_failures) is should_fail
+
+
+@pytest.mark.parametrize(
+    ("measured", "should_fail"),
+    [(120.0, False), (120.000001, True)],
+)
+def test_beta_benchmark_rss_regression_uses_exact_twenty_percent_boundary(
+    measured: float,
+    should_fail: bool,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    results = _complete_benchmark_results(module)
+    result = results["typescript"]["toolArgDeltas10k"]
+    for sample in result["sampleResults"]:
+        sample["peakMiB"] = measured
+    result["maxPeakMiB"] = measured
+
+    failures = module._regression_failures(results, baseline, 20.0)
+    rss_failures = [
+        failure
+        for failure in failures
+        if "typescript toolArgDeltas10k peak RSS" in failure
+    ]
+
+    assert bool(rss_failures) is should_fail
+
+
 def test_beta_benchmark_candidate_records_five_rss_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3447,6 +3675,26 @@ def test_ast_grep_is_mandatory_in_ci() -> None:
         REPO_ROOT / ".github" / "workflows" / "kaji.benchmark.yml"
     ).read_text()
     assert benchmark_workflow.count("install-args: --frozen-lockfile") == 3
+
+
+def test_benchmark_calibration_bootstrap_marker_is_build_step_scoped() -> None:
+    benchmark = (REPO_ROOT / ".github" / "workflows" / "kaji.benchmark.yml").read_text()
+    rehearsal = (REPO_ROOT / ".github" / "workflows" / "kaji.rehearsal.yml").read_text()
+    publish = (REPO_ROOT / ".github" / "workflows" / "kaji.publish.yml").read_text()
+    release_job = benchmark.split("  release-artifacts:", 1)[1].split(
+        "  benchmark:", 1
+    )[0]
+    build_step = release_job.split(
+        "      - name: Build and verify one release artifact set", 1
+    )[1].split("      - name:", 1)[0]
+
+    assert benchmark.count(BASELINE_BOOTSTRAP_ENV) == 1
+    assert BASELINE_BOOTSTRAP_ENV not in rehearsal + publish
+    assert (
+        f"{BASELINE_BOOTSTRAP_ENV}: "
+        "${{ github.event_name == 'workflow_dispatch' && "
+        "inputs.job == 'calibrate' && '1' || '' }}"
+    ) in build_step
 
 
 def test_release_docs_reference_beta_release_check() -> None:

@@ -57,6 +57,7 @@ interface Options {
   readonly caseName: CaseName | undefined;
   readonly samples: number;
   readonly warmups: number;
+  readonly workerWarmups: number;
   readonly seed: number;
   readonly worker: boolean;
   readonly rssProbe: RssProbeMode | undefined;
@@ -66,6 +67,7 @@ interface WorkerSample {
   readonly case: CaseName;
   readonly durationMs: number;
   readonly peakMiB: number;
+  readonly warmupRuns: number;
   readonly completed: number;
   readonly maxActive?: number;
   readonly eventsApplied?: number;
@@ -365,6 +367,7 @@ function parseArgs(argv: readonly string[]): Options {
   let rssProbe: RssProbeMode | undefined;
   let samples = 5;
   let warmups = 2;
+  let workerWarmups = 0;
   let seed = 13_013;
   for (let index = 0; index < argv.length; index++) {
     const flag = argv[index];
@@ -389,6 +392,9 @@ function parseArgs(argv: readonly string[]): Options {
       case "--warmups":
         warmups = integer(value, flag, true);
         break;
+      case "--worker-warmups":
+        workerWarmups = integer(value, flag, true);
+        break;
       case "--seed":
         seed = integer(value, flag, true);
         break;
@@ -405,6 +411,7 @@ function parseArgs(argv: readonly string[]): Options {
     caseName: selected,
     samples,
     warmups,
+    workerWarmups,
     seed,
     worker: workerCase !== undefined,
     rssProbe,
@@ -1009,30 +1016,52 @@ async function toolArgDeltas10k(): Promise<Omit<WorkerSample, "case" | "peakMiB"
   };
 }
 
-async function runWorker(caseName: CaseName, seed: number): Promise<WorkerSample> {
-  const workload =
-    caseName === "replay10k"
-      ? await replay10k(seed)
-      : caseName === "crossSession100"
-        ? await crossSession100(seed)
-        : caseName === "sameSession25"
-          ? await sameSession25(seed)
-          : caseName === "toolBatch100"
-            ? await toolBatch100()
-            : caseName === "context10kIterations5"
-              ? await context10kIterations5(seed)
-              : caseName === "crossSessionCommit100"
-                ? await crossSessionCommit100(seed)
-                : caseName === "streamDeltas10k"
-                  ? await streamDeltas10k(seed)
-                  : await toolArgDeltas10k();
-  return { case: caseName, ...workload, peakMiB: peakMiB() };
+async function runWorkload(
+  caseName: CaseName,
+  seed: number,
+): Promise<Omit<WorkerSample, "case" | "peakMiB" | "warmupRuns">> {
+  return caseName === "replay10k"
+    ? await replay10k(seed)
+    : caseName === "crossSession100"
+      ? await crossSession100(seed)
+      : caseName === "sameSession25"
+        ? await sameSession25(seed)
+        : caseName === "toolBatch100"
+          ? await toolBatch100()
+          : caseName === "context10kIterations5"
+            ? await context10kIterations5(seed)
+            : caseName === "crossSessionCommit100"
+              ? await crossSessionCommit100(seed)
+              : caseName === "streamDeltas10k"
+                ? await streamDeltas10k(seed)
+                : await toolArgDeltas10k();
 }
 
-async function childSample(caseName: CaseName, seed: number): Promise<WorkerSample> {
+async function runWorker(caseName: CaseName, seed: number, warmups: number): Promise<WorkerSample> {
+  for (let index = 0; index < warmups; index++) {
+    await runWorkload(caseName, seed + index);
+  }
+  const workload = await runWorkload(caseName, seed + warmups);
+  return { case: caseName, ...workload, peakMiB: peakMiB(), warmupRuns: warmups };
+}
+
+async function childSample(
+  caseName: CaseName,
+  seed: number,
+  warmups: number,
+): Promise<WorkerSample> {
   const script = fileURLToPath(import.meta.url);
   const child = Bun.spawn({
-    cmd: [process.execPath, script, "--worker-case", caseName, "--seed", String(seed)],
+    cmd: [
+      process.execPath,
+      script,
+      "--worker-case",
+      caseName,
+      "--seed",
+      String(seed),
+      "--worker-warmups",
+      String(warmups),
+    ],
     stdout: "pipe",
     stderr: "pipe",
     env: process.env,
@@ -1062,16 +1091,15 @@ async function main(): Promise<void> {
   }
   if (options.caseName === undefined) throw new Error("--case is required");
   if (options.worker) {
-    process.stdout.write(`${JSON.stringify(await runWorker(options.caseName, options.seed))}\n`);
+    process.stdout.write(
+      `${JSON.stringify(await runWorker(options.caseName, options.seed, options.workerWarmups))}\n`,
+    );
     return;
   }
 
-  for (let index = 0; index < options.warmups; index++) {
-    await childSample(options.caseName, options.seed + index);
-  }
   const rawSamples: WorkerSample[] = [];
   for (let index = 0; index < options.samples; index++) {
-    rawSamples.push(await childSample(options.caseName, options.seed + options.warmups + index));
+    rawSamples.push(await childSample(options.caseName, options.seed + index, options.warmups));
   }
   const durations = rawSamples.map(({ durationMs }) => durationMs);
   const active = rawSamples.flatMap(({ maxActive }) =>

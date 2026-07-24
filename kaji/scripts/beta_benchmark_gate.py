@@ -300,6 +300,9 @@ def _run_case(
     missing = sorted(required - result.keys())
     if missing:
         raise RuntimeError(f"{runtime} {case} is missing fields: {', '.join(missing)}")
+    for field in ("schemaVersion", "samples", "warmups", "seed"):
+        if type(result[field]) is not int:
+            raise RuntimeError(f"{runtime} {case} {field} must be an integer")
     if result["schemaVersion"] != 1 or result["runtime"] != runtime:
         raise RuntimeError(f"{runtime} {case} has the wrong schema identity")
     if result["seed"] != BENCHMARK_SEED:
@@ -334,6 +337,15 @@ def _run_case(
             raise RuntimeError(f"{runtime} {case} sample {index} is not an object")
         if not {"durationMs", "peakMiB"} <= sample.keys():
             raise RuntimeError(f"{runtime} {case} sample is missing duration or RSS")
+        warmup_runs = sample.get("warmupRuns")
+        if (
+            isinstance(warmup_runs, bool)
+            or not isinstance(warmup_runs, int)
+            or warmup_runs != warmups
+        ):
+            raise RuntimeError(
+                f"{runtime} {case} sample {index} warmupRuns does not match"
+            )
     _validate_result_aggregates(runtime, case, result)
     return result
 
