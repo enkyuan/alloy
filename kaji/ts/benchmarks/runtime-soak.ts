@@ -636,14 +636,14 @@ async function main(): Promise<void> {
     if (batch % 100 === 0) {
       await slowSubscriber.return?.();
       await closeSession(sharedSession);
+      const observedElapsedMs = elapsedMs(started);
+      const observedSampleBucket = Math.floor(observedElapsedMs / 60_000);
+      if (observedSampleBucket > lastSampleBucket) {
+        sample(observedElapsedMs);
+        lastSampleBucket = observedSampleBucket;
+      }
       sharedSession = `shared-${++sharedGeneration}`;
       slowSubscriber = committer.subscribe(sharedSession);
-    }
-    const observedElapsedMs = elapsedMs(started);
-    const observedSampleBucket = Math.floor(observedElapsedMs / 60_000);
-    if (observedSampleBucket > lastSampleBucket) {
-      sample(observedElapsedMs);
-      lastSampleBucket = observedSampleBucket;
     }
   }
 

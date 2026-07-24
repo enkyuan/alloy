@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
@@ -66,6 +67,14 @@ it("counts timeout scenarios only from their exact failed tool event", () => {
       "cooperative-timeout",
     ),
   ).toThrow("unexpected timeout outcome");
+});
+
+it("samples heap only after the live shared session is closed", async () => {
+  const source = await readFile(soak, "utf8");
+
+  expect(source).toMatch(
+    /if \(batch % 100 === 0\) \{\s+await slowSubscriber\.return\?\.\(\);\s+await closeSession\(sharedSession\);\s+const observedElapsedMs = elapsedMs\(started\);\s+const observedSampleBucket = Math\.floor\(observedElapsedMs \/ 60_000\);\s+if \(observedSampleBucket > lastSampleBucket\) \{\s+sample\(observedElapsedMs\);\s+lastSampleBucket = observedSampleBucket;\s+}\s+sharedSession = `shared-\$\{\+\+sharedGeneration}`;\s+slowSubscriber = committer\.subscribe\(sharedSession\);\s+}/,
+  );
 });
 
 it("reclaims closed sessions during sustained churn", async () => {

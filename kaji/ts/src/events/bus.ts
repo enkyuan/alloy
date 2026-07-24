@@ -102,8 +102,7 @@ export class RingBufferSubscription<
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.size = 0;
-    this.head = 0;
+    this.resetBuffer();
     if (this.pending !== undefined) {
       this.pending.resolve({ value: undefined, done: true });
       this.pending = undefined;
@@ -115,14 +114,21 @@ export class RingBufferSubscription<
     if (this.closed) return;
     this.terminalError = error;
     this.closed = true;
-    this.size = 0;
-    this.head = 0;
+    this.resetBuffer();
     if (this.pending !== undefined) {
       this.pending.reject(error);
       this.pending = undefined;
       this.errorDelivered = true;
     }
     this.onReturn();
+  }
+
+  private resetBuffer(): void {
+    for (let offset = 0; offset < this.size; offset++) {
+      this.buffer[(this.head + offset) % this.buffer.length] = undefined;
+    }
+    this.size = 0;
+    this.head = 0;
   }
 
   [Symbol.asyncIterator](): AsyncIterableIterator<TEvent> {

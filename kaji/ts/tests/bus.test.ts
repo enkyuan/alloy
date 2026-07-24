@@ -11,6 +11,10 @@ function userMessage(sessionId: string, content: string) {
   });
 }
 
+function bufferedEvents(subscription: AsyncIterableIterator<unknown>): readonly unknown[] {
+  return (subscription as unknown as { readonly buffer: readonly unknown[] }).buffer;
+}
+
 describe("EventBus", () => {
   it("delivers published events to a subscriber of the same session", async () => {
     const bus = new EventBus();
@@ -99,5 +103,37 @@ describe("EventBus", () => {
     const pending = sub.next();
     bus.close();
     expect((await pending).done).toBe(true);
+  });
+
+  it("releases buffered event references when a subscriber closes", async () => {
+    const bus = new EventBus(4);
+    const sub = bus.subscribe("s1");
+    await bus.publish(userMessage("s1", "one"));
+    await bus.publish(userMessage("s1", "two"));
+    await bus.publish(userMessage("s1", "three"));
+    await sub.next();
+    await sub.next();
+    await bus.publish(userMessage("s1", "four"));
+    await bus.publish(userMessage("s1", "five"));
+
+    expect(bufferedEvents(sub).filter(Boolean)).toHaveLength(3);
+    await sub.return?.();
+
+    expect(bufferedEvents(sub).filter(Boolean)).toHaveLength(0);
+  });
+
+  it("releases buffered event references when a subscriber overflows", async () => {
+    const bus = new EventBus(3);
+    const sub = bus.subscribe("s1");
+    await bus.publish(userMessage("s1", "one"));
+    await bus.publish(userMessage("s1", "two"));
+    await sub.next();
+    await bus.publish(userMessage("s1", "three"));
+    await bus.publish(userMessage("s1", "four"));
+    await bus.publish(userMessage("s1", "overflow"));
+
+    await expect(sub.next()).rejects.toMatchObject({ code: "EVENT_BUFFER_OVERFLOW" });
+    expect(bufferedEvents(sub).filter(Boolean)).toHaveLength(0);
+    await expect(sub.next()).resolves.toEqual({ value: undefined, done: true });
   });
 });
