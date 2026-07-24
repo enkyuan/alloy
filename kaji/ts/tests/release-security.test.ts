@@ -1205,6 +1205,52 @@ function runTrustedHandoffGuard(
   });
 }
 
+async function runCandidateArtifactBinding(runAttempt: string | undefined) {
+  const step = readWorkflow("kaji.performance.yml").workflow.jobs?.[
+    "candidate-artifact"
+  ]?.steps?.find((candidate) => candidate.name === "Bind immutable candidate artifact metadata");
+  if (typeof step?.with?.script !== "string") {
+    throw new Error("candidate artifact binding script is missing");
+  }
+
+  const commit = "a".repeat(40);
+  const artifactId = 123;
+  const artifactDigest = "b".repeat(64);
+  const getArtifact = vi.fn().mockResolvedValue({
+    data: {
+      id: artifactId,
+      name: "kaji-beta-artifacts",
+      expired: false,
+      digest: `sha256:${artifactDigest}`,
+      workflow_run: { id: 30117911132, head_sha: commit },
+    },
+  });
+  const env: Record<string, string> = {
+    CANDIDATE_ARTIFACT_ID: String(artifactId),
+    CANDIDATE_ARTIFACT_DIGEST: artifactDigest,
+    KAJI_RELEASE_COMMIT: commit,
+    RUN_PAIRED: "true",
+    RUN_SOAK: "true",
+  };
+  if (runAttempt !== undefined) env.RUN_ATTEMPT = runAttempt;
+
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+    ...arguments_: string[]
+  ) => (...values: unknown[]) => Promise<void>;
+  const run = new AsyncFunction(
+    "github",
+    "context",
+    "process",
+    `"use strict";\n${step.with.script}`,
+  );
+  await run(
+    { rest: { actions: { getArtifact } } },
+    { repo: { owner: "enkyuan", repo: "alloy" }, runId: 30117911132 },
+    { env },
+  );
+  return getArtifact;
+}
+
 describe("Kaji workflow contracts", () => {
   it("uses functional display names for every Kaji workflow and job", () => {
     for (const workflowFile of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
@@ -1310,6 +1356,28 @@ describe("Kaji workflow contracts", () => {
       }
     }
   });
+
+  it("binds candidate artifacts on a fresh workflow attempt without action-context fields", async () => {
+    const step = readWorkflow("kaji.performance.yml").workflow.jobs?.[
+      "candidate-artifact"
+    ]?.steps?.find((candidate) => candidate.name === "Bind immutable candidate artifact metadata");
+
+    expect(step?.env?.RUN_ATTEMPT).toBe("${{ github.run_attempt }}");
+    expect(step?.env).not.toHaveProperty("GITHUB_RUN_ATTEMPT");
+    expect(step?.with?.script).toContain("process.env.RUN_ATTEMPT");
+    expect(step?.with?.script).not.toContain("context.runAttempt");
+    const getArtifact = await runCandidateArtifactBinding("1");
+    expect(getArtifact).toHaveBeenCalledOnce();
+  });
+
+  it.each(["2", "invalid", undefined])(
+    "rejects candidate artifact binding for non-fresh attempt %s",
+    async (runAttempt) => {
+      await expect(runCandidateArtifactBinding(runAttempt)).rejects.toThrow(
+        "protected performance evidence cannot be rerun; dispatch a new workflow run",
+      );
+    },
+  );
 
   it("bounds every Kaji job and keeps effective permissions narrow", () => {
     for (const name of workflowFiles) {

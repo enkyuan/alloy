@@ -44,6 +44,7 @@ jobs:
           CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate-artifact-id }}
           CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate-artifact-digest }}
           KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_PAIRED: ${{ inputs.run-paired }}
           RUN_SOAK: ${{ inputs.run-soak }}
         with:
@@ -51,7 +52,8 @@ jobs:
             if (process.env.RUN_PAIRED !== "true" && process.env.RUN_SOAK !== "true") {
               throw new Error("at least one protected performance gate must run");
             }
-            if (context.runAttempt !== 1) {
+            const runAttempt = Number(process.env.RUN_ATTEMPT);
+            if (!Number.isSafeInteger(runAttempt) || runAttempt !== 1) {
               throw new Error(
                 "protected performance evidence cannot be rerun; dispatch a new workflow run",
               );

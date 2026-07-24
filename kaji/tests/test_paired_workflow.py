@@ -29,10 +29,14 @@ def test_reusable_performance_workflow_runs_three_independent_replicas() -> None
         "artifact.workflow_run?.head_sha !== process.env.KAJI_RELEASE_COMMIT",
         '"X-GitHub-Api-Version": "2026-03-10"',
         'process.env.RUN_PAIRED !== "true" && process.env.RUN_SOAK !== "true"',
-        "context.runAttempt !== 1",
+        "RUN_ATTEMPT: ${{ github.run_attempt }}",
+        "const runAttempt = Number(process.env.RUN_ATTEMPT)",
+        "!Number.isSafeInteger(runAttempt) || runAttempt !== 1",
         "dispatch a new workflow run",
     ):
         assert binding in preflight
+    assert "GITHUB_RUN_ATTEMPT:" not in preflight
+    assert "context.runAttempt" not in preflight
     assert "actions: read" in preflight
 
     paired = workflow.split("  paired-replica:", 1)[1].split("  paired-aggregate:", 1)[
