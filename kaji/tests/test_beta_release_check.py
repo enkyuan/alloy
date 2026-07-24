@@ -3064,17 +3064,22 @@ def test_beta_benchmark_baseline_rejects_legacy_runner_shape() -> None:
         module._baseline_fingerprint(baseline)
 
 
-def test_uncalibrated_baseline_placeholder_stays_provenance_free_and_fails_closed() -> (
-    None
-):
+def test_tracked_calibrated_baseline_retains_provenance_and_validates() -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     baseline = json.loads(module.BASELINE_PATH.read_text())
 
-    assert baseline["status"] == "uncalibrated"
-    assert baseline["calibrationCommit"] is None
-    assert "sourceHash" not in baseline
-    with pytest.raises(RuntimeError, match="uncalibrated"):
-        module._validate_baseline(baseline, {})
+    assert baseline["status"] == "calibrated"
+    assert baseline["commit"] == baseline["calibrationCommit"]
+    assert module.COMMIT_PATTERN.fullmatch(baseline["calibrationCommit"])
+    assert baseline["sourceHash"] == module._source_hash()
+    assert baseline["dependencyLockHash"] == module._lock_hash()
+    assert module.HASH_PATTERN.fullmatch(baseline["releaseManifestSha256"])
+    assert set(baseline["artifacts"]) == {"python", "typescript"}
+    assert all(
+        module.HASH_PATTERN.fullmatch(artifact["sha256"])
+        for artifact in baseline["artifacts"].values()
+    )
+    module._validate_baseline(baseline, module._baseline_fingerprint(baseline))
 
 
 @pytest.mark.parametrize("commit", [None, "A" * 40, "a" * 39])

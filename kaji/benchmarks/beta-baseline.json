@@ -1,28 +1,323 @@
 {
-  "schemaVersion": 1,
-  "status": "uncalibrated",
-  "runner": {
-    "imageDigest": null,
-    "os": null,
-    "arch": null,
-    "cpuModel": null,
-    "cpuCount": null,
-    "ramMiB": null
+  "artifacts": {
+    "python": {
+      "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+      "sha256": "92d1712031d8027eba640714e13301b4673458199ca20a1f9cdd58662bd1c7d7"
+    },
+    "typescript": {
+      "file": "kaji-sdk-0.2.0-beta.2.tgz",
+      "sha256": "266c9931456bef6f1abe9bbc96c6407d8ec98240ffdb164bad1f7785ca44d369"
+    }
   },
-  "versions": {
-    "python": null,
-    "node": null,
-    "bun": null
+  "calibratedAt": "2026-07-24T07:16:23.619906+00:00",
+  "calibrationCommit": "0ba432dcfd31dd59b4b8d90752c296219eba5d43",
+  "commit": "0ba432dcfd31dd59b4b8d90752c296219eba5d43",
+  "dependencyLockHash": "1bed0911da7da85aa527a059eec2d6c560d80f3cff699ec98468eb560168dabc",
+  "maxPeakMiB": {
+    "python": {
+      "context10kIterations5": 94.90625,
+      "crossSession100": 54.265625,
+      "crossSessionCommit100": 50.1875,
+      "replay10k": 67.640625,
+      "sameSession25": 51.109375,
+      "streamDeltas10k": 50.046875,
+      "toolArgDeltas10k": 50.828125,
+      "toolBatch100": 49.671875
+    },
+    "typescript": {
+      "context10kIterations5": 236.78125,
+      "crossSession100": 179.03125,
+      "crossSessionCommit100": 151.734375,
+      "replay10k": 188.859375,
+      "sameSession25": 138.578125,
+      "streamDeltas10k": 143.828125,
+      "toolArgDeltas10k": 135.265625,
+      "toolBatch100": 114.03125
+    }
   },
-  "dependencyLockHash": null,
-  "calibrationCommit": null,
-  "calibratedAt": null,
   "medians": {
-    "python": {},
-    "typescript": {}
+    "python": {
+      "context10kIterations5": 6953.998459,
+      "crossSession100": 808.776625,
+      "crossSessionCommit100": 105.947708,
+      "replay10k": 3946.709209,
+      "sameSession25": 185.531958,
+      "streamDeltas10k": 1032.882,
+      "toolArgDeltas10k": 40.239625,
+      "toolBatch100": 32.077458
+    },
+    "typescript": {
+      "context10kIterations5": 725.828375,
+      "crossSession100": 200.27375,
+      "crossSessionCommit100": 24.356667,
+      "replay10k": 361.342875,
+      "sameSession25": 71.913792,
+      "streamDeltas10k": 53.863167,
+      "toolArgDeltas10k": 16.604292,
+      "toolBatch100": 6.159375
+    }
+  },
+  "rawPeakMiB": {
+    "python": {
+      "context10kIterations5": [
+        94.90625,
+        94.171875,
+        94.84375,
+        94.15625,
+        94.421875
+      ],
+      "crossSession100": [
+        53.265625,
+        54.265625,
+        53.75,
+        53.265625,
+        53.59375
+      ],
+      "crossSessionCommit100": [
+        49.703125,
+        50.109375,
+        50.1875,
+        49.546875,
+        50.125
+      ],
+      "replay10k": [
+        67.421875,
+        67.109375,
+        67.0,
+        67.640625,
+        67.03125
+      ],
+      "sameSession25": [
+        50.515625,
+        49.859375,
+        49.609375,
+        51.109375,
+        50.140625
+      ],
+      "streamDeltas10k": [
+        49.90625,
+        49.953125,
+        49.671875,
+        49.84375,
+        50.046875
+      ],
+      "toolArgDeltas10k": [
+        50.015625,
+        50.828125,
+        50.5625,
+        50.28125,
+        49.59375
+      ],
+      "toolBatch100": [
+        49.046875,
+        49.1875,
+        49.671875,
+        49.53125,
+        49.5
+      ]
+    },
+    "typescript": {
+      "context10kIterations5": [
+        236.78125,
+        226.578125,
+        228.46875,
+        232.328125,
+        235.703125
+      ],
+      "crossSession100": [
+        173.328125,
+        175.984375,
+        176.359375,
+        177.28125,
+        179.03125
+      ],
+      "crossSessionCommit100": [
+        148.265625,
+        146.734375,
+        148.8125,
+        151.734375,
+        151.234375
+      ],
+      "replay10k": [
+        186.34375,
+        186.359375,
+        187.484375,
+        188.859375,
+        188.765625
+      ],
+      "sameSession25": [
+        137.109375,
+        138.40625,
+        138.578125,
+        135.59375,
+        136.640625
+      ],
+      "streamDeltas10k": [
+        142.625,
+        142.890625,
+        143.828125,
+        141.46875,
+        140.109375
+      ],
+      "toolArgDeltas10k": [
+        133.34375,
+        135.265625,
+        134.25,
+        134.09375,
+        133.515625
+      ],
+      "toolBatch100": [
+        111.71875,
+        112.984375,
+        113.625,
+        113.53125,
+        114.03125
+      ]
+    }
   },
   "rawSamples": {
-    "python": {},
-    "typescript": {}
+    "python": {
+      "context10kIterations5": [
+        7036.78525,
+        6840.690292,
+        6953.998459,
+        6917.04125,
+        6994.800833
+      ],
+      "crossSession100": [
+        808.283625,
+        853.829709,
+        808.776625,
+        807.464167,
+        832.66775
+      ],
+      "crossSessionCommit100": [
+        105.947708,
+        104.718625,
+        105.586083,
+        106.221458,
+        106.548
+      ],
+      "replay10k": [
+        4028.94575,
+        3905.95625,
+        4050.866167,
+        3946.709209,
+        3392.204584
+      ],
+      "sameSession25": [
+        185.531958,
+        185.366708,
+        189.573875,
+        185.681208,
+        181.844833
+      ],
+      "streamDeltas10k": [
+        990.527083,
+        1037.869167,
+        1032.882,
+        973.356833,
+        1092.424666
+      ],
+      "toolArgDeltas10k": [
+        40.239625,
+        40.336541,
+        40.03125,
+        40.180917,
+        40.37575
+      ],
+      "toolBatch100": [
+        30.826292,
+        31.746375,
+        36.000791,
+        32.077458,
+        32.271791
+      ]
+    },
+    "typescript": {
+      "context10kIterations5": [
+        731.369541,
+        700.827291,
+        709.431042,
+        774.8755,
+        725.828375
+      ],
+      "crossSession100": [
+        202.284708,
+        198.600958,
+        200.27375,
+        200.354417,
+        199.332375
+      ],
+      "crossSessionCommit100": [
+        37.842041,
+        30.557834,
+        21.711042,
+        24.356667,
+        23.535333
+      ],
+      "replay10k": [
+        361.342875,
+        356.247875,
+        358.830208,
+        361.803208,
+        420.298833
+      ],
+      "sameSession25": [
+        71.728625,
+        73.112875,
+        71.913792,
+        71.451083,
+        72.712875
+      ],
+      "streamDeltas10k": [
+        53.863167,
+        54.817916,
+        53.058167,
+        55.113542,
+        50.808583
+      ],
+      "toolArgDeltas10k": [
+        16.511375,
+        16.647834,
+        16.604292,
+        16.487584,
+        17.5695
+      ],
+      "toolBatch100": [
+        6.208292,
+        6.150125,
+        6.159375,
+        6.063708,
+        6.476292
+      ]
+    }
+  },
+  "releaseManifestSha256": "cc4df8eaf32ac471dd753bb53294aa39c13f90e85b5c36ab7416fbb0d6a161c6",
+  "resolvedPackages": {
+    "python": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-juz5tvbt/python/lib/python3.11/site-packages/kaji/__init__.py",
+    "typescript": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-juz5tvbt/typescript/node_modules/kaji-sdk"
+  },
+  "runner": {
+    "arch": "arm64",
+    "environment": "github-hosted",
+    "imageDataSha256": "88125c1ac2847adbc6d9ed11e2a7e204b3a05fe799408150a24e77f11f3dc307",
+    "imageLabel": "macos-15-arm64",
+    "imageOS": "macos15",
+    "imageVersion": "20260715.0234.1",
+    "os": "Darwin",
+    "platformVersion": "15.7.7"
+  },
+  "schemaVersion": 1,
+  "sourceHash": "d4767f2163d075ff05fa25d5909e44049de93aac566ef03456c2d1caa348a7a2",
+  "status": "calibrated",
+  "typescriptConsumerLock": {
+    "renderedSha256": "7870e0f1672f9bf045b16e21768ac3280bf961c08c6ba99a995637aef6f360f5",
+    "templateSha256": "2e0edb100defdd6164eaa97367cd0dc6055463956fe67c86081c1e2178b0d4bd"
+  },
+  "versions": {
+    "bun": "1.3.11",
+    "node": "v22.14.0",
+    "python": "3.11.9"
   }
 }
