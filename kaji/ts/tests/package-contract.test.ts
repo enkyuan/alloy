@@ -22,6 +22,7 @@ import { describe, expect, it } from "vitest";
 
 import { assertCliListOutput } from "../scripts/cli_assertions";
 import {
+  elapsedMilliseconds,
   finalizeSmokeRun,
   ordinaryFailureReceipt,
   safeGitHubProofFailureCode,
@@ -283,6 +284,32 @@ function exportTargets(value: unknown): string[] {
 }
 
 describe("npm contract artifact", () => {
+  it("ceiling-normalizes monotonic nanoseconds to integer milliseconds", () => {
+    for (const [elapsedNs, expectedMs] of [
+      [0n, 0],
+      [1n, 1],
+      [999_999n, 1],
+      [1_000_000n, 1],
+      [1_000_001n, 2],
+    ] as const) {
+      const elapsedMs = elapsedMilliseconds(10n, 10n + elapsedNs);
+
+      expect(elapsedMs).toBe(expectedMs);
+      expect(Number.isInteger(elapsedMs)).toBe(true);
+    }
+    expect(() => elapsedMilliseconds(11n, 10n)).toThrowError("monotonic clock moved backwards");
+    const maxSafeMilliseconds = BigInt(Number.MAX_SAFE_INTEGER);
+    expect(elapsedMilliseconds(0n, maxSafeMilliseconds * 1_000_000n)).toBe(Number.MAX_SAFE_INTEGER);
+    expect(() => elapsedMilliseconds(0n, (maxSafeMilliseconds + 1n) * 1_000_000n)).toThrowError(
+      "elapsed milliseconds exceed Number.MAX_SAFE_INTEGER",
+    );
+    const receiptTiming = {
+      coldSetupToOutputMs: elapsedMilliseconds(10n, 11n),
+      warmRunMs: elapsedMilliseconds(10n, 1_000_011n),
+    };
+    expect(Object.values(receiptTiming).every(Number.isInteger)).toBe(true);
+  });
+
   it("pins the installed-release consumer dependency closure", () => {
     const fixture = resolve(repositoryRoot, "kaji/scripts/installed-typescript-runtime");
     const manifest = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8"));
@@ -534,6 +561,10 @@ describe("npm contract artifact", () => {
       'types: ["node"]',
       "coldSetupToOutputMs",
       "warmRunMs",
+      "const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint())",
+      "const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint())",
+      "return { coldSetupToOutputMs, warmRunMs, githubProof };",
+      "JSON.stringify({ npm: npmTiming, bun: bunTiming })",
       "assertRootDeclarationsVendorNeutral",
       'generated.devDependencies["@types/node"]',
       'installed.devDependencies["@types/node"]',

@@ -49,6 +49,13 @@ GITHUB_PROOF_ENVIRONMENT = frozenset(
 )
 
 
+def elapsed_milliseconds(started_ns: int, ended_ns: int) -> int:
+    elapsed_ns = ended_ns - started_ns
+    if elapsed_ns < 0:
+        raise ValueError("monotonic clock moved backwards")
+    return (elapsed_ns + 999_999) // 1_000_000
+
+
 def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
     """Run one release command from the SDK root and fail on any error."""
     try:
@@ -414,7 +421,7 @@ def smoke_archives(
         github_package_proofs: dict[str, dict[str, object]] = {}
 
         for package in (wheel, sdist):
-            cold_started = time.perf_counter()
+            cold_started_ns = time.perf_counter_ns()
             safe_name = re.sub(r"[^a-zA-Z0-9]", "-", package.name)
             venv = workdir / f"venv-{safe_name}"
             run([sys.executable, "-m", "venv", str(venv)])
@@ -601,16 +608,16 @@ def smoke_archives(
                 cwd=scaffold,
                 environment=environment,
             )
-            cold_ms = round((time.perf_counter() - cold_started) * 1000, 3)
+            cold_ms = elapsed_milliseconds(cold_started_ns, time.perf_counter_ns())
             cold_result = assert_scaffold_output(cold_output)
 
-            warm_started = time.perf_counter()
+            warm_started_ns = time.perf_counter_ns()
             warm_output = run_capture(
                 [str(python), "agent.py"],
                 cwd=scaffold,
                 environment=environment,
             )
-            warm_ms = round((time.perf_counter() - warm_started) * 1000, 3)
+            warm_ms = elapsed_milliseconds(warm_started_ns, time.perf_counter_ns())
             warm_result = assert_scaffold_output(warm_output)
             assert_matching_scaffold_outputs(cold_result, warm_result)
             print(

@@ -19,7 +19,6 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
-import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
 import { assertCliListOutput } from "./cli_assertions";
@@ -163,6 +162,16 @@ export class SmokeCommandError extends Error {
   ) {
     super("package smoke command failed");
   }
+}
+
+export function elapsedMilliseconds(startedNs: bigint, endedNs: bigint): number {
+  const elapsedNs = endedNs - startedNs;
+  if (elapsedNs < 0n) throw new RangeError("monotonic clock moved backwards");
+  const elapsedMs = (elapsedNs + 999_999n) / 1_000_000n;
+  if (elapsedMs > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError("elapsed milliseconds exceed Number.MAX_SAFE_INTEGER");
+  }
+  return Number(elapsedMs);
 }
 
 interface GitHubPackageProof {
@@ -2437,7 +2446,7 @@ async function runScaffold(
   warmRunMs: number;
   githubProof: GitHubPackageProof;
 }> {
-  const started = performance.now();
+  const startedNs = process.hrtime.bigint();
   const root = join(workdir, `${manager}-scaffold`);
   const bootstrap = join(root, "bootstrap");
   const generated = join(root, "generated");
@@ -2698,8 +2707,8 @@ async function runScaffold(
       : runCommand(phase, "bun", ["run", "start"], generated, environment);
   const coldOutput = await run(`${manager}:cold-run`);
   const coldResult = assertScaffoldOutput(coldOutput);
-  const coldSetupToOutputMs = Math.round((performance.now() - started) * 1000) / 1000;
-  const warmStarted = performance.now();
+  const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint());
+  const warmStartedNs = process.hrtime.bigint();
   const warmOutput = await run(`${manager}:warm-run`);
   const warmResult = assertScaffoldOutput(warmOutput);
   if (
@@ -2708,7 +2717,7 @@ async function runScaffold(
   ) {
     throw new Error("cold and warm generated scaffold outputs differed");
   }
-  const warmRunMs = Math.round((performance.now() - warmStarted) * 1000) / 1000;
+  const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint());
   return { coldSetupToOutputMs, warmRunMs, githubProof };
 }
 

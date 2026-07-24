@@ -47,7 +47,9 @@ def _load_script(name: str) -> ModuleType:
 
 
 def test_release_smoke_preserves_build_verify_install_order(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     module = _load_script("release_smoke.py")
     sdk_root = tmp_path / "sdk"
@@ -153,6 +155,45 @@ def test_release_smoke_preserves_build_verify_install_order(
         )
         == 2
     )
+    timings = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if '"coldSetupToOutputMs"' in line
+    ]
+    assert len(timings) == 2
+    assert all(
+        type(timing[field]) is int
+        for timing in timings
+        for field in ("coldSetupToOutputMs", "warmRunMs")
+    )
+
+
+@pytest.mark.parametrize(
+    ("elapsed_ns", "expected_ms"),
+    [
+        (0, 0),
+        (1, 1),
+        (999_999, 1),
+        (1_000_000, 1),
+        (1_000_001, 2),
+    ],
+)
+def test_elapsed_milliseconds_ceil_normalizes_nanoseconds(
+    elapsed_ns: int, expected_ms: int
+) -> None:
+    module = _load_script("release_smoke.py")
+
+    elapsed_ms = module.elapsed_milliseconds(10, 10 + elapsed_ns)
+
+    assert elapsed_ms == expected_ms
+    assert type(elapsed_ms) is int
+
+
+def test_elapsed_milliseconds_rejects_negative_monotonic_delta() -> None:
+    module = _load_script("release_smoke.py")
+
+    with pytest.raises(ValueError, match="monotonic clock moved backwards"):
+        module.elapsed_milliseconds(11, 10)
 
 
 def test_run_capture_can_assert_an_expected_stderr_diagnostic(
