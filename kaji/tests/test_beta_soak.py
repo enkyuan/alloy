@@ -469,6 +469,156 @@ def test_soak_gate_report_does_not_preserve_untrusted_child_values(
     assert secret not in output.read_text()
 
 
+@pytest.mark.parametrize("resolved_package", [None, ""])
+def test_passed_soak_gate_requires_resolved_package(
+    tmp_path: Path, resolved_package: str | None
+) -> None:
+    module = _load(SCRIPTS / "run_beta_soak.py")
+    output = tmp_path / "results.json"
+    python_result = {"schemaVersion": 2, "runtime": "python"}
+    if resolved_package is not None:
+        python_result["resolvedPackage"] = resolved_package
+    output.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "requestedMinutes": 0.01,
+                "budgets": {},
+                "results": {
+                    "python": python_result,
+                    "typescript": {
+                        "schemaVersion": 2,
+                        "runtime": "typescript",
+                        "resolvedPackage": "/installed/typescript",
+                    },
+                },
+                "failures": [],
+                "passed": True,
+            }
+        )
+    )
+
+    assert module._passed_gate_results(output) is None
+
+
+def test_successful_soak_retains_only_sanitized_runtime_sidecars(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load(SCRIPTS / "run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: SimpleNamespace(minutes="0.01", protected=False, artifacts_dir=None),
+    )
+    monkeypatch.setattr(module, "python_command", lambda: [sys.executable])
+    secret = "sk-child-secret"
+    completed = SimpleNamespace(
+        stdout=json.dumps({"secret": secret}).encode(),
+        returncode=0,
+    )
+    monkeypatch.setattr(
+        module,
+        "run_parallel_checked",
+        lambda _specs: (completed, completed),
+    )
+    results = {
+        "python": {
+            "schemaVersion": 2,
+            "runtime": "python",
+            "resolvedPackage": "/installed/python",
+            "attemptedTurns": 10,
+        },
+        "typescript": {
+            "schemaVersion": 2,
+            "runtime": "typescript",
+            "resolvedPackage": "/installed/typescript",
+            "attemptedTurns": 11,
+        },
+    }
+
+    def successful_gate(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        for name in ("--python", "--typescript"):
+            child = Path(command[command.index(name) + 1])
+            assert secret in child.read_text()
+        output = Path(command[command.index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "requestedMinutes": 0.01,
+                    "budgets": {},
+                    "results": results,
+                    "failures": [],
+                    "passed": True,
+                }
+            )
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module, "run_checked", successful_gate)
+
+    assert module.main() == 0
+    artifacts = tmp_path / ".artifacts" / "kaji-soak"
+    assert {path.name for path in artifacts.iterdir()} == {
+        "python.json",
+        "results.json",
+        "typescript.json",
+    }
+    assert json.loads((artifacts / "python.json").read_text()) == results["python"]
+    assert (
+        json.loads((artifacts / "typescript.json").read_text())
+        == (results["typescript"])
+    )
+    assert secret not in "".join(
+        path.read_text() for path in artifacts.iterdir() if path.is_file()
+    )
+
+
+def test_soak_zero_status_invalid_gate_report_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load(SCRIPTS / "run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: SimpleNamespace(minutes="0.01", protected=False, artifacts_dir=None),
+    )
+    monkeypatch.setattr(module, "python_command", lambda: [sys.executable])
+    completed = SimpleNamespace(stdout=b"{}", returncode=0)
+    monkeypatch.setattr(
+        module,
+        "run_parallel_checked",
+        lambda _specs: (completed, completed),
+    )
+
+    def invalid_gate(command: list[str], **_kwargs: object) -> SimpleNamespace:
+        output = Path(command[command.index("--output") + 1])
+        output.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "requestedMinutes": 0.01,
+                    "budgets": {},
+                    "results": {"python": {}},
+                    "failures": [],
+                    "passed": True,
+                }
+            )
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(module, "run_checked", invalid_gate)
+
+    assert module.main() == 1
+    artifacts = tmp_path / ".artifacts" / "kaji-soak"
+    assert {path.name for path in artifacts.iterdir()} == {"results.json"}
+    assert json.loads((artifacts / "results.json").read_text())["failureCode"] == (
+        "soak_gate_failed"
+    )
+
+
 def test_soak_child_cannot_prewrite_retained_gate_report(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

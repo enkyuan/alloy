@@ -1000,7 +1000,25 @@ def test_protected_soak_retains_hosted_image_data(
     def successful_gate(command: list[str], **kwargs: object) -> SimpleNamespace:
         gate_commands.append(command)
         gate_environments.append(kwargs["env"])
-        Path(command[command.index("--output") + 1]).write_text("{}")
+        Path(command[command.index("--output") + 1]).write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "requestedMinutes": 30,
+                    "budgets": {},
+                    "results": {
+                        runtime: {
+                            "schemaVersion": 2,
+                            "runtime": runtime,
+                            "resolvedPackage": f"/installed/{runtime}",
+                        }
+                        for runtime in ("python", "typescript")
+                    },
+                    "failures": [],
+                    "passed": True,
+                }
+            )
+        )
         return completed
 
     monkeypatch.setattr(module, "run_checked", successful_gate)
@@ -3352,6 +3370,10 @@ def test_soak_report_reuses_complete_performance_provenance(
     assert report["protected"] is True
     assert report["releaseManifestSha256"] == "c" * 64
     assert report["resolvedPackages"] == identity["resolvedPackages"]
+    assert {
+        runtime: result["resolvedPackage"]
+        for runtime, result in report["results"].items()
+    } == identity["resolvedPackages"]
     assert report["typescriptConsumerLock"] == identity["typescriptConsumerLock"]
     assert provenance_calls == [
         {"protected": True, "image_data_path": runner_image_data}

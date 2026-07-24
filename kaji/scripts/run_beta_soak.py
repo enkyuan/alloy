@@ -289,6 +289,40 @@ def _has_detailed_gate_failure(output: Path) -> bool:
     )
 
 
+def _passed_gate_results(output: Path) -> dict[str, dict[str, Any]] | None:
+    try:
+        report = json.loads(output.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(report, dict)
+        or report.get("schemaVersion") != 1
+        or report.get("passed") is not True
+        or report.get("failures") != []
+        or isinstance(report.get("requestedMinutes"), bool)
+        or not isinstance(report.get("requestedMinutes"), (int, float))
+        or not isinstance(report.get("budgets"), dict)
+    ):
+        return None
+    results = report.get("results")
+    if not isinstance(results, dict) or set(results) != {"python", "typescript"}:
+        return None
+    for runtime in ("python", "typescript"):
+        result = results[runtime]
+        resolved_package = (
+            result.get("resolvedPackage") if isinstance(result, dict) else None
+        )
+        if (
+            not isinstance(result, dict)
+            or result.get("schemaVersion") != 2
+            or result.get("runtime") != runtime
+            or not isinstance(resolved_package, str)
+            or not resolved_package
+        ):
+            return None
+    return results
+
+
 def main() -> int:
     artifacts = ROOT / ".artifacts" / "kaji-soak"
     output = artifacts / "results.json"
@@ -528,6 +562,28 @@ def main() -> int:
                         },
                     )
                 return 1
+            results = _passed_gate_results(output)
+            if results is None:
+                _retain_failure(
+                    output,
+                    protected=protected,
+                    failure_code="soak_gate_failed",
+                    commit=expected_commit,
+                    identity=installed_identity,
+                    diagnostics={
+                        "phase": "gate",
+                        "runtime": None,
+                        "exitStatus": gate_status,
+                    },
+                )
+                print("FAIL: soak gate produced an invalid report", file=sys.stderr)
+                return 1
+            try:
+                for runtime in ("python", "typescript"):
+                    _write_json_atomic(artifacts / f"{runtime}.json", results[runtime])
+            except OSError:
+                _reset_artifacts(artifacts)
+                raise
     except KeyboardInterrupt:
         _retain_failure(
             output,

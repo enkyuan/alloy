@@ -189,10 +189,6 @@ def _sanitize_result(value: dict[str, Any], runtime: str) -> dict[str, Any]:
     }
 
 
-def _report_result(value: dict[str, Any]) -> dict[str, Any]:
-    return {name: field for name, field in value.items() if name != "resolvedPackage"}
-
-
 def _memory_summary(
     value: dict[str, Any], runtime: str
 ) -> tuple[dict[str, float] | None, list[str]]:
@@ -587,7 +583,7 @@ def main() -> int:
                 failures.append(
                     f"{runtime} soak resolved a different installed package"
                 )
-            results[runtime] = _report_result(value)
+            results[runtime] = value
     identity.pop("identityCommit", None)
     report = {
         "schemaVersion": 1,
