@@ -761,6 +761,15 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
 ) -> None:
     module = _load_root_script("run_beta_soak.py")
     monkeypatch.setattr(module, "ROOT", tmp_path)
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_OS": "macOS",
+        "RUNNER_ARCH": "ARM64",
+        "ImageOS": "macos15",
+        "ImageVersion": "20260715.0234.1",
+    }.items():
+        monkeypatch.setenv(name, value)
     release = tmp_path / "release"
     release.mkdir()
     monkeypatch.setattr(
@@ -872,6 +881,174 @@ def test_installed_benchmark_modes_require_artifacts_before_command_setup(
 
     assert module.main() == 2
     assert "--artifacts-dir is required" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("mode", "protected"),
+    [("full", True), ("calibrate", False)],
+)
+def test_protected_benchmark_modes_retain_hosted_image_data(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mode: str,
+    protected: bool,
+) -> None:
+    module = _load_root_script("run_beta_benchmarks.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            mode=mode,
+            protected=protected,
+            artifacts_dir=tmp_path / "release",
+        ),
+    )
+    monkeypatch.setattr(module, "commands", lambda: (["python"], ["pytest"]))
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", "a" * 40)
+    retained: list[Path] = []
+
+    def successful_gate(command: list[str], **_kwargs: object) -> int:
+        output = Path(command[command.index("--output") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text("{}")
+        if "--candidate-baseline" in command:
+            Path(command[command.index("--candidate-baseline") + 1]).write_text("{}")
+        return 0
+
+    monkeypatch.setattr(module, "run", successful_gate)
+    monkeypatch.setattr(
+        module,
+        "retain_reported_github_image_data",
+        lambda report: retained.append(report),
+    )
+
+    assert module.main() == 0
+    assert retained == [
+        tmp_path
+        / ".artifacts"
+        / "kaji-benchmarks"
+        / ("results.json" if mode == "full" else "calibration-results.json")
+    ]
+
+
+def test_protected_soak_retains_hosted_image_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
+    commit = "a" * 40
+    runner_environment = {
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_OS": "macOS",
+        "RUNNER_ARCH": "ARM64",
+        "ImageOS": "macos15",
+        "ImageVersion": "20260715.0234.1",
+    }
+    monkeypatch.setenv("KAJI_RELEASE_COMMIT", commit)
+    for name, value in runner_environment.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("KAJI_RUNNER_IMAGE_DATA_PATH", "/attacker/imagedata.json")
+    monkeypatch.setenv("KAJI_SECRET_CANARY", "sk-parent-secret")
+    parent_image_data = tmp_path / "runner-home" / "imagedata.json"
+    parent_image_data.parent.mkdir()
+    parent_image_data.write_text("parent image data")
+    monkeypatch.setattr(module, "IMAGE_DATA_PATH", parent_image_data)
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            minutes="30", protected=True, artifacts_dir=tmp_path / "release"
+        ),
+    )
+    monkeypatch.setattr(module, "release_commit", lambda **_kwargs: commit)
+    monkeypatch.setattr(module, "python_command", lambda: [sys.executable])
+    runtime_root = tmp_path / "runtime"
+    isolated_home = runtime_root / "home"
+    typescript = runtime_root / "typescript"
+    typescript.mkdir(parents=True)
+    typescript_soak = typescript / "runtime-soak.ts"
+    typescript_soak.write_text("")
+    runtime = SimpleNamespace(
+        python_executable=Path(sys.executable),
+        root=runtime_root,
+        environment={"HOME": str(isolated_home)},
+        typescript_workdir=typescript,
+        typescript_soak=typescript_soak,
+        identity=lambda: {},
+    )
+
+    @contextmanager
+    def isolated_runtime(*_args: object, **_kwargs: object):
+        yield runtime
+
+    monkeypatch.setattr(module, "installed_release_runtime", isolated_runtime)
+    completed = SimpleNamespace(stdout=b"{}")
+    monkeypatch.setattr(
+        module,
+        "run_parallel_checked",
+        lambda _specs: (completed, completed),
+    )
+    gate_commands: list[list[str]] = []
+    gate_environments: list[object] = []
+
+    def successful_gate(command: list[str], **kwargs: object) -> SimpleNamespace:
+        gate_commands.append(command)
+        gate_environments.append(kwargs["env"])
+        Path(command[command.index("--output") + 1]).write_text("{}")
+        return completed
+
+    monkeypatch.setattr(module, "run_checked", successful_gate)
+    retained: list[Path] = []
+    monkeypatch.setattr(
+        module,
+        "retain_reported_github_image_data",
+        lambda report: retained.append(report),
+    )
+
+    assert module.main() == 0
+    assert retained == [tmp_path / ".artifacts" / "kaji-soak" / "results.json"]
+    assert gate_commands[0][gate_commands[0].index("--runner-image-data") + 1] == str(
+        parent_image_data
+    )
+    assert gate_environments == [
+        {
+            "HOME": str(isolated_home),
+            "KAJI_RELEASE_COMMIT": commit,
+            **runner_environment,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "GITHUB_ACTIONS",
+        "RUNNER_ENVIRONMENT",
+        "RUNNER_OS",
+        "RUNNER_ARCH",
+        "ImageOS",
+        "ImageVersion",
+    ],
+)
+def test_protected_soak_gate_environment_requires_parent_runner_identity(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    module = _load_root_script("run_beta_soak.py")
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_OS": "macOS",
+        "RUNNER_ARCH": "ARM64",
+        "ImageOS": "macos15",
+        "ImageVersion": "20260715.0234.1",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv(missing)
+
+    with pytest.raises(RuntimeError, match=missing):
+        module._protected_gate_environment({"HOME": "/isolated"}, "a" * 40)
 
 
 def test_protected_soak_requires_artifacts_before_child_setup(
@@ -1577,128 +1754,374 @@ def test_beta_benchmark_timing_runs_only_in_full_mode() -> None:
     assert module._include_timing("full") is True
 
 
-def _protected_runner_environment(
-    monkeypatch: pytest.MonkeyPatch, manifest: Path
-) -> dict[str, str]:
-    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    environment = {
-        "KAJI_BENCHMARK_PINNED_RUNNER": "1",
-        "KAJI_BENCHMARK_RUNNER_MANIFEST": str(manifest),
-        "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256": digest,
-    }
-    for name, value in environment.items():
+def _github_image_data(
+    *,
+    os_version: str = "15.7.7",
+    os_build: str = "24G720",
+    image_label: str = "macos-15-arm64",
+    image_version: str = "20260715.0234.1",
+    included_software: str | None = None,
+    image_release: str | None = None,
+) -> list[dict[str, str]]:
+    release_version = ".".join(image_version.split(".")[:2])
+    included_software = included_software or (
+        "https://github.com/actions/runner-images/blob/"
+        f"{image_label}/{release_version}/images/macos/{image_label}-Readme.md"
+    )
+    image_release = image_release or (
+        "https://github.com/actions/runner-images/releases/tag/"
+        f"{image_label}%2F{release_version}"
+    )
+    return [
+        {
+            "group": "Operating System",
+            "detail": f"macOS\n{os_version}\n{os_build}",
+        },
+        {
+            "group": "Runner Image",
+            "detail": (
+                f"Image: {image_label}\n"
+                f"Version: {image_version}\n"
+                f"Included Software: {included_software}\n"
+                f"Image Release: {image_release}"
+            ),
+        },
+    ]
+
+
+def _hosted_runner_environment(
+    module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    image_data: object | None = None,
+    encoded: bytes | None = None,
+) -> Path:
+    home = tmp_path / "runner-home"
+    home.mkdir()
+    path = home / "imagedata.json"
+    path.write_bytes(
+        encoded
+        if encoded is not None
+        else json.dumps(
+            _github_image_data() if image_data is None else image_data
+        ).encode()
+    )
+    monkeypatch.setattr(module, "IMAGE_DATA_PATH", path)
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_OS": "macOS",
+        "RUNNER_ARCH": "ARM64",
+        "ImageOS": "macos15",
+        "ImageVersion": "20260715.0234.1",
+    }.items():
         monkeypatch.setenv(name, value)
-    return environment
+    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(
+        module.platform, "mac_ver", lambda: ("15.7.7", ("", "", ""), "")
+    )
+    return path
 
 
-def test_protected_benchmark_runner_measures_closed_macos_fingerprint(
+def test_protected_benchmark_runner_measures_closed_github_hosted_fingerprint(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _load_root_script("benchmark_platform.py")
-    manifest = tmp_path / "bootstrap-manifest.json"
-    manifest.write_text('{"runner":"reviewed"}\n')
-    environment = _protected_runner_environment(monkeypatch, manifest)
-    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
-    monkeypatch.setattr(module.platform, "mac_ver", lambda: ("15.5", ("", "", ""), ""))
+    image_data = _hosted_runner_environment(module, monkeypatch, tmp_path)
 
-    runner = module.require_protected_macos_arm64(protected=True, calibrating=False)
+    runner = module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
 
     assert runner == {
+        "environment": "github-hosted",
         "os": "Darwin",
         "arch": "arm64",
-        "platformVersion": "15.5",
-        "bootstrapManifestSha256": environment["KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256"],
+        "platformVersion": "15.7.7",
+        "imageOS": "macos15",
+        "imageLabel": "macos-15-arm64",
+        "imageVersion": "20260715.0234.1",
+        "imageDataSha256": hashlib.sha256(image_data.read_bytes()).hexdigest(),
     }
     assert module.validate_retained_runner(runner) == runner
 
 
+@pytest.mark.parametrize("image_version", ["20250226.766", "20260715.0234.1"])
+def test_protected_benchmark_runner_accepts_official_image_version_shapes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, image_version: str
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    document = _github_image_data(image_version=image_version)
+    _hosted_runner_environment(module, monkeypatch, tmp_path, image_data=document)
+    monkeypatch.delenv("ImageOS")
+    monkeypatch.delenv("ImageVersion")
+
+    runner = module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+
+    assert runner["imageOS"] == "macos15"
+    assert runner["imageVersion"] == image_version
+
+
+def test_protected_benchmark_runner_uses_explicit_parent_image_data_with_isolated_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    parent_image_data = _hosted_runner_environment(module, monkeypatch, tmp_path)
+    isolated_home = tmp_path / "isolated-home"
+    isolated_home.mkdir()
+    monkeypatch.setenv("HOME", str(isolated_home))
+    monkeypatch.setattr(module, "IMAGE_DATA_PATH", isolated_home / "imagedata.json")
+
+    runner = module.require_github_hosted_macos_arm64(
+        protected=True,
+        calibrating=False,
+        image_data_path=parent_image_data,
+    )
+
+    assert (
+        runner["imageDataSha256"]
+        == hashlib.sha256(parent_image_data.read_bytes()).hexdigest()
+    )
+    assert not (isolated_home / "imagedata.json").exists()
+
+
+@pytest.mark.parametrize("case", ["missing", "forged", "relative"])
+def test_protected_benchmark_runner_rejects_invalid_explicit_image_data_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    _hosted_runner_environment(module, monkeypatch, tmp_path)
+    image_data_path = tmp_path / "missing-imagedata.json"
+    if case == "forged":
+        image_data_path.write_text(
+            json.dumps(_github_image_data(image_version="20260708.0157.1"))
+        )
+    elif case == "relative":
+        image_data_path = Path("relative-imagedata.json")
+
+    with pytest.raises(RuntimeError, match="image data"):
+        module.require_github_hosted_macos_arm64(
+            protected=True,
+            calibrating=False,
+            image_data_path=image_data_path,
+        )
+
+
 @pytest.mark.parametrize(
-    ("system", "machine", "version", "pinned", "expected"),
+    ("name", "value", "expected"),
     [
-        ("Linux", "arm64", "15.5", "1", "arm64 macOS"),
-        ("Darwin", "x86_64", "15.5", "1", "arm64 macOS"),
-        ("Darwin", "arm64", "", "1", "numeric macOS version"),
-        ("Darwin", "arm64", "15", "1", "numeric macOS version"),
-        ("Darwin", "arm64", "15.5-beta", "1", "numeric macOS version"),
-        ("Darwin", "arm64", "15.5", "0", "pinned runner"),
+        ("GITHUB_ACTIONS", "false", "GitHub Actions"),
+        ("RUNNER_ENVIRONMENT", "self-hosted", "GitHub-hosted runner"),
+        ("RUNNER_OS", "Linux", "runner OS"),
+        ("RUNNER_ARCH", "X64", "runner architecture"),
+        ("ImageOS", "macos14", "ImageOS"),
+        ("ImageVersion", "20260708.0157.1", "ImageVersion"),
     ],
 )
-def test_protected_benchmark_runner_rejects_wrong_host_or_unpinned(
+def test_protected_benchmark_runner_rejects_wrong_runner_classification(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    name: str,
+    value: str,
+    expected: str,
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    _hosted_runner_environment(module, monkeypatch, tmp_path)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(RuntimeError, match=expected):
+        module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+
+
+@pytest.mark.parametrize(
+    ("system", "machine", "version", "expected"),
+    [
+        ("Linux", "arm64", "15.7.7", "arm64 macOS"),
+        ("Darwin", "x86_64", "15.7.7", "arm64 macOS"),
+        ("Darwin", "arm64", "", "macOS 15 version"),
+        ("Darwin", "arm64", "15", "macOS 15 version"),
+        ("Darwin", "arm64", "15.7.7-beta", "macOS 15 version"),
+        ("Darwin", "arm64", "16.0", "macOS 15 version"),
+    ],
+)
+def test_protected_benchmark_runner_rejects_wrong_actual_host(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     system: str,
     machine: str,
     version: str,
-    pinned: str,
     expected: str,
 ) -> None:
     module = _load_root_script("benchmark_platform.py")
-    manifest = tmp_path / "bootstrap-manifest.json"
-    manifest.write_text("{}\n")
-    _protected_runner_environment(monkeypatch, manifest)
-    monkeypatch.setenv("KAJI_BENCHMARK_PINNED_RUNNER", pinned)
+    _hosted_runner_environment(module, monkeypatch, tmp_path)
     monkeypatch.setattr(module.platform, "system", lambda: system)
     monkeypatch.setattr(module.platform, "machine", lambda: machine)
     monkeypatch.setattr(module.platform, "mac_ver", lambda: (version, ("", "", ""), ""))
 
     with pytest.raises(RuntimeError, match=expected):
-        module.require_protected_macos_arm64(protected=True, calibrating=False)
+        module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
 
 
 @pytest.mark.parametrize(
     "case",
     [
-        "missing-path",
         "missing-file",
         "directory",
         "symlink",
         "oversize",
-        "missing-hash",
-        "uppercase-hash",
-        "hash-mismatch",
+        "raced",
     ],
 )
-def test_protected_benchmark_runner_rejects_unsafe_manifest(
+def test_protected_benchmark_runner_rejects_unsafe_image_data(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
 ) -> None:
     module = _load_root_script("benchmark_platform.py")
-    manifest = tmp_path / "bootstrap-manifest.json"
-    manifest.write_text("{}\n")
-    _protected_runner_environment(monkeypatch, manifest)
-    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
-    monkeypatch.setattr(module.platform, "mac_ver", lambda: ("15.5", ("", "", ""), ""))
-    if case == "missing-path":
-        monkeypatch.delenv("KAJI_BENCHMARK_RUNNER_MANIFEST")
-    elif case == "missing-file":
-        monkeypatch.setenv(
-            "KAJI_BENCHMARK_RUNNER_MANIFEST", str(tmp_path / "missing.json")
-        )
+    image_data = _hosted_runner_environment(module, monkeypatch, tmp_path)
+    if case == "missing-file":
+        monkeypatch.setattr(module, "IMAGE_DATA_PATH", tmp_path / "missing.json")
     elif case == "directory":
-        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST", str(tmp_path))
+        monkeypatch.setattr(module, "IMAGE_DATA_PATH", tmp_path)
     elif case == "symlink":
-        link = tmp_path / "manifest-link"
-        link.symlink_to(manifest)
-        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST", str(link))
+        link = tmp_path / "imagedata-link.json"
+        link.symlink_to(image_data)
+        monkeypatch.setattr(module, "IMAGE_DATA_PATH", link)
     elif case == "oversize":
-        manifest.write_bytes(b"x" * (64 * 1024 + 1))
-        monkeypatch.setenv(
-            "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256",
-            hashlib.sha256(manifest.read_bytes()).hexdigest(),
-        )
-    elif case == "missing-hash":
-        monkeypatch.delenv("KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256")
-    elif case == "uppercase-hash":
-        monkeypatch.setenv(
-            "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256",
-            hashlib.sha256(manifest.read_bytes()).hexdigest().upper(),
-        )
-    elif case == "hash-mismatch":
-        monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256", "0" * 64)
+        image_data.write_bytes(b"x" * (8 * 1024 + 1))
+    elif case == "raced":
+        real_fstat = module.os.fstat
+        calls = 0
 
-    with pytest.raises(RuntimeError, match="bootstrap manifest"):
-        module.require_protected_macos_arm64(protected=True, calibrating=False)
+        def raced_fstat(descriptor: int) -> Any:
+            nonlocal calls
+            calls += 1
+            measured = real_fstat(descriptor)
+            if calls == 2:
+                return SimpleNamespace(
+                    st_dev=measured.st_dev,
+                    st_ino=measured.st_ino,
+                    st_mode=measured.st_mode,
+                    st_size=measured.st_size,
+                    st_mtime_ns=measured.st_mtime_ns + 1,
+                )
+            return measured
+
+        monkeypatch.setattr(module.os, "fstat", raced_fstat)
+
+    with pytest.raises(RuntimeError, match="image data"):
+        module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "malformed-json",
+        "duplicate-key",
+        "extra-row",
+        "extra-key",
+        "wrong-group",
+        "wrong-os-version",
+        "wrong-image-label",
+        "malformed-image-version",
+        "wrong-included-software",
+        "wrong-image-release",
+    ],
+)
+def test_protected_benchmark_runner_rejects_invalid_image_data_schema(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    document = _github_image_data()
+    encoded: bytes | None = None
+    if case == "malformed-json":
+        encoded = b"{"
+    elif case == "duplicate-key":
+        encoded = (
+            b'[{"group":"Operating System","group":"Runner Image",'
+            b'"detail":"macOS\\n15.7.7\\n24G720"},'
+            + json.dumps(document[1]).encode()
+            + b"]"
+        )
+    elif case == "extra-row":
+        document.append({"group": "extra", "detail": "extra"})
+    elif case == "extra-key":
+        document[0]["extra"] = "not closed"
+    elif case == "wrong-group":
+        document.reverse()
+    elif case == "wrong-os-version":
+        document[0]["detail"] = "macOS\n15.7.6\n24G720"
+    elif case == "wrong-image-label":
+        document = _github_image_data(image_label="macos-15")
+    elif case == "malformed-image-version":
+        document = _github_image_data(image_version="latest")
+    elif case == "wrong-included-software":
+        document = _github_image_data(
+            included_software="https://example.invalid/software"
+        )
+    elif case == "wrong-image-release":
+        document = _github_image_data(image_release="https://example.invalid/release")
+    _hosted_runner_environment(
+        module,
+        monkeypatch,
+        tmp_path,
+        image_data=document,
+        encoded=encoded,
+    )
+
+    with pytest.raises(RuntimeError, match="image data"):
+        module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+
+
+def test_validated_image_data_can_be_retained_with_its_exact_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    source = _hosted_runner_environment(module, monkeypatch, tmp_path)
+    runner = module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+    destination = tmp_path / "artifacts" / "imagedata.json"
+    destination.parent.mkdir()
+
+    retained = module.retain_github_image_data(
+        destination, image_data_sha256=runner["imageDataSha256"]
+    )
+
+    assert retained == runner["imageDataSha256"]
+    assert destination.read_bytes() == source.read_bytes()
+    assert hashlib.sha256(destination.read_bytes()).hexdigest() == retained
+
+
+@pytest.mark.parametrize(
+    "case", ["hash-mismatch", "existing", "symlink", "parent-link"]
+)
+def test_image_data_retention_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    source = _hosted_runner_environment(module, monkeypatch, tmp_path)
+    runner = module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+    artifact_dir = tmp_path / "artifacts"
+    artifact_dir.mkdir()
+    destination = artifact_dir / "imagedata.json"
+    expected = runner["imageDataSha256"]
+    if case == "hash-mismatch":
+        source.write_bytes(source.read_bytes() + b"\n")
+    elif case == "existing":
+        destination.write_text("owned")
+    elif case == "symlink":
+        target = tmp_path / "target"
+        target.write_text("owned")
+        destination.symlink_to(target)
+    elif case == "parent-link":
+        real_parent = tmp_path / "real-artifacts"
+        real_parent.mkdir()
+        linked_parent = tmp_path / "linked-artifacts"
+        linked_parent.symlink_to(real_parent, target_is_directory=True)
+        destination = linked_parent / "imagedata.json"
+
+    with pytest.raises(RuntimeError, match="retain|hash"):
+        module.retain_github_image_data(destination, image_data_sha256=expected)
+
+    if case != "hash-mismatch":
+        assert not destination.is_file() or destination.read_text() == "owned"
 
 
 @pytest.mark.parametrize(
@@ -1707,21 +2130,29 @@ def test_protected_benchmark_runner_rejects_unsafe_manifest(
         {
             "os": "Darwin",
             "arch": "arm64",
-            "platformVersion": "15.5",
+            "platformVersion": "15.7.7",
             "imageDigest": "sha256:" + "a" * 64,
         },
         {
+            "environment": "github-hosted",
             "os": "Darwin",
             "arch": "arm64",
-            "platformVersion": "15.5",
+            "platformVersion": "15.7.7",
+            "imageOS": "macos15",
+            "imageLabel": "macos-15-arm64",
+            "imageVersion": "20260715.0234.1",
             "bootstrapManifestSha256": "a" * 64,
             "extra": True,
         },
         {
-            "os": "Linux",
+            "environment": "self-hosted",
+            "os": "Darwin",
             "arch": "arm64",
-            "platformVersion": "15.5",
-            "bootstrapManifestSha256": "a" * 64,
+            "platformVersion": "15.7.7",
+            "imageOS": "macos15",
+            "imageLabel": "macos-15-arm64",
+            "imageVersion": "20260715.0234.1",
+            "imageDataSha256": "a" * 64,
         },
     ],
 )
@@ -1730,6 +2161,27 @@ def test_retained_benchmark_runner_shape_is_closed(runner: dict[str, object]) ->
 
     with pytest.raises(RuntimeError, match="runner fingerprint"):
         module.validate_retained_runner(runner)
+
+
+def test_reported_github_image_data_is_retained_with_fingerprint_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("benchmark_platform.py")
+    source = _hosted_runner_environment(module, monkeypatch, tmp_path)
+    runner = module.require_github_hosted_macos_arm64(protected=True, calibrating=False)
+    assert runner is not None
+    report = tmp_path / "evidence" / "results.json"
+    report.parent.mkdir()
+    report.write_text(json.dumps({"fingerprint": {"runner": runner}}))
+
+    destination = module.retain_reported_github_image_data(report)
+
+    assert destination == report.parent / "imagedata.json"
+    assert destination.read_bytes() == source.read_bytes()
+    assert (
+        hashlib.sha256(destination.read_bytes()).hexdigest()
+        == runner["imageDataSha256"]
+    )
 
 
 def test_beta_benchmark_candidate_requires_all_eight_cases() -> None:
@@ -1760,10 +2212,14 @@ def _complete_benchmark_results(module: object) -> dict[str, dict[str, Any]]:
 
 def _closed_benchmark_runner() -> dict[str, str]:
     return {
+        "environment": "github-hosted",
         "os": "Darwin",
         "arch": "arm64",
-        "platformVersion": "15.5",
-        "bootstrapManifestSha256": "a" * 64,
+        "platformVersion": "15.7.7",
+        "imageOS": "macos15",
+        "imageLabel": "macos-15-arm64",
+        "imageVersion": "20260715.0234.1",
+        "imageDataSha256": "a" * 64,
     }
 
 
@@ -1825,7 +2281,6 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
         ),
     )
     monkeypatch.setenv("KAJI_BENCHMARK_CALIBRATION", "1")
-    monkeypatch.setenv("KAJI_BENCHMARK_PINNED_RUNNER", "1")
 
     assert module.main() == 1
     report = json.loads(output.read_text())
@@ -1938,7 +2393,9 @@ def test_benchmark_child_must_report_matching_installed_package(
         module,
         "run_checked",
         lambda *_args, **_kwargs: SimpleNamespace(
-            stdout=json.dumps(result).encode("utf-8")
+            returncode=0,
+            stdout=json.dumps(result).encode("utf-8"),
+            stderr=b"",
         ),
     )
     installed = SimpleNamespace(
@@ -1962,11 +2419,209 @@ def test_benchmark_child_failure_identifies_runtime_and_case(
 
     monkeypatch.setattr(module, "run_checked", fail)
 
-    with pytest.raises(
-        RuntimeError,
-        match="python replay10k failed: redacted child failure",
-    ):
+    with pytest.raises(RuntimeError) as error:
         module._run_case("python", "replay10k", 1, 1)
+
+    assert str(error.value) == "python replay10k failed"
+    assert "redacted child failure" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("failure_index", "variant", "status"),
+    [(0, "replay", 1), (1, "indexed", -9)],
+)
+def test_python_context_benchmark_emits_only_structured_inner_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure_index: int,
+    variant: str,
+    status: int,
+) -> None:
+    module = _load_sdk_benchmark("runtime_benchmark.py")
+    secret = "sk-hosted-child-secret"
+    calls = 0
+
+    def run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        nonlocal calls
+        index = calls
+        calls += 1
+        if index == failure_index:
+            return subprocess.CompletedProcess(
+                args=[],
+                returncode=status,
+                stdout=secret,
+                stderr=secret,
+            )
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps({"peakBytes": 1}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(module.subprocess, "run", run)
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: SimpleNamespace(
+            case="context10kIterations5",
+            samples=1,
+            warmups=0,
+            seed=13,
+            json=True,
+            _sample=False,
+            _context_variant=None,
+        ),
+    )
+
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        f"KAJI_BENCHMARK_SAMPLE_FAILURE variant={variant} status={status}\n"
+    )
+    assert secret not in captured.out + captured.err
+
+
+def test_python_benchmark_keeps_non_context_sample_failure_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_sdk_benchmark("runtime_benchmark.py")
+    secret = "sk-hosted-child-secret"
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=7,
+            stdout=secret,
+            stderr=secret,
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: SimpleNamespace(
+            case="replay10k",
+            samples=1,
+            warmups=0,
+            seed=13,
+            json=True,
+            _sample=False,
+            _context_variant=None,
+        ),
+    )
+
+    assert module.main() == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+    assert secret not in captured.out + captured.err
+
+
+def test_benchmark_gate_reports_only_strict_python_context_failure_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    secret = b"sk-hosted-child-secret"
+    calls: list[dict[str, object]] = []
+
+    def run(*_args: object, **kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        return SimpleNamespace(
+            returncode=1,
+            stdout=(
+                secret + b"\nKAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=7\n"
+            ),
+            stderr=(
+                secret
+                + b"\nKAJI_BENCHMARK_SAMPLE_FAILURE variant=indexed status=-9\n"
+                + secret
+            ),
+        )
+
+    monkeypatch.setattr(module, "run_checked", run)
+
+    with pytest.raises(RuntimeError) as error:
+        module._run_case("python", "context10kIterations5", 1, 1)
+
+    assert str(error.value) == (
+        "python context10kIterations5 failed: variant=indexed status=-9"
+    )
+    assert secret.decode() not in str(error.value)
+    assert calls == [
+        {
+            "cwd": module.ROOT,
+            "budget": module.BENCHMARK_COMMAND_BUDGET,
+            "capture": True,
+            "env": None,
+            "check": False,
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("runtime", "case", "stderr"),
+    [
+        (
+            "python",
+            "context10kIterations5",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=unknown status=-9",
+        ),
+        (
+            "python",
+            "context10kIterations5",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=-9\n"
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=indexed status=-9",
+        ),
+        (
+            "python",
+            "context10kIterations5",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=0",
+        ),
+        (
+            "python",
+            "context10kIterations5",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=-2147483649",
+        ),
+        (
+            "python",
+            "replay10k",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=-9",
+        ),
+        (
+            "typescript",
+            "context10kIterations5",
+            b"KAJI_BENCHMARK_SAMPLE_FAILURE variant=replay status=-9",
+        ),
+    ],
+)
+def test_benchmark_gate_keeps_unknown_child_failures_generic(
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: str,
+    case: str,
+    stderr: bytes,
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    secret = b"sk-hosted-child-secret"
+    monkeypatch.setattr(
+        module,
+        "run_checked",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=1,
+            stdout=(
+                secret + b"\nKAJI_BENCHMARK_SAMPLE_FAILURE variant=indexed status=-9"
+            ),
+            stderr=stderr + b"\n" + secret,
+        ),
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        module._run_case(runtime, case, 1, 1)
+
+    assert str(error.value) == f"{runtime} {case} failed"
+    assert secret.decode() not in str(error.value)
 
 
 def _complete_soak_receipt(
@@ -2265,6 +2920,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
             output=output,
             protected=True,
             runtime_identity=identity_path,
+            runner_image_data=tmp_path / "parent-imagedata.json",
         ),
     )
     monkeypatch.setattr(
@@ -2438,6 +3094,7 @@ def test_soak_report_reuses_complete_performance_provenance(
 ) -> None:
     module = _load_root_script("beta_soak_gate.py")
     output = tmp_path / "soak.json"
+    runner_image_data = tmp_path / "parent-imagedata.json"
     provenance = {
         "commit": "a" * 40,
         "fingerprint": {
@@ -2485,9 +3142,15 @@ def test_soak_report_reuses_complete_performance_provenance(
             output=output,
             protected=True,
             runtime_identity=identity_path,
+            runner_image_data=runner_image_data,
         ),
     )
-    monkeypatch.setattr(module, "performance_provenance", lambda **_kwargs: provenance)
+    provenance_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        module,
+        "performance_provenance",
+        lambda **kwargs: provenance_calls.append(kwargs) or provenance,
+    )
     monkeypatch.setattr(
         module,
         "_load",
@@ -2509,6 +3172,36 @@ def test_soak_report_reuses_complete_performance_provenance(
     assert report["releaseManifestSha256"] == "c" * 64
     assert report["resolvedPackages"] == identity["resolvedPackages"]
     assert report["typescriptConsumerLock"] == identity["typescriptConsumerLock"]
+    assert provenance_calls == [
+        {"protected": True, "image_data_path": runner_image_data}
+    ]
+
+
+def test_protected_soak_gate_requires_explicit_runner_image_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = _load_root_script("beta_soak_gate.py")
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            minutes=30.0,
+            python=tmp_path / "python.json",
+            typescript=tmp_path / "typescript.json",
+            output=tmp_path / "soak.json",
+            protected=True,
+            runtime_identity=tmp_path / "identity.json",
+            runner_image_data=None,
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "performance_provenance",
+        lambda **_kwargs: pytest.fail("provenance ran without explicit image data"),
+    )
+
+    with pytest.raises(RuntimeError, match="--runner-image-data"):
+        module.main()
 
 
 def test_beta_benchmark_full_mode_reports_malformed_nested_baseline(
@@ -2818,7 +3511,7 @@ def test_beta_benchmark_calibration_requests_protected_runner_measurement(
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     output = tmp_path / "calibration.json"
-    calls: list[dict[str, bool]] = []
+    calls: list[dict[str, object]] = []
     monkeypatch.setenv("KAJI_BENCHMARK_CALIBRATION", "1")
     monkeypatch.setattr(
         module,
@@ -2836,4 +3529,4 @@ def test_beta_benchmark_calibration_requests_protected_runner_measurement(
     )
 
     assert module.main() == 1
-    assert calls == [{"protected": False, "calibrating": True}]
+    assert calls == [{"protected": False, "calibrating": True, "image_data_path": None}]

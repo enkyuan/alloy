@@ -47,6 +47,10 @@ BASELINE_PATH = ROOT / "kaji" / "benchmarks" / "beta-baseline.json"
 BENCHMARK_SEED = 13
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
+SAMPLE_FAILURE_MARKER = re.compile(
+    rb"KAJI_BENCHMARK_SAMPLE_FAILURE "
+    rb"variant=(replay|indexed) status=(-?(?:0|[1-9][0-9]{0,9}))"
+)
 SOURCE_TREE_ROOTS = (
     Path("kaji/src/kaji"),
     Path("kaji/ts/src"),
@@ -140,12 +144,16 @@ def _commit() -> str:
 
 
 def fingerprint(
-    *, protected: bool = False, calibrating: bool = False
+    *,
+    protected: bool = False,
+    calibrating: bool = False,
+    image_data_path: Path | None = None,
 ) -> dict[str, Any]:
     return {
         "runner": runner_fingerprint(
             protected=protected,
             calibrating=calibrating,
+            image_data_path=image_data_path,
         ),
         "versions": {
             "python": platform.python_version(),
@@ -172,13 +180,17 @@ def release_commit(*, protected: bool) -> str:
 
 
 def performance_provenance(
-    *, protected: bool, calibrating: bool = False
+    *,
+    protected: bool,
+    calibrating: bool = False,
+    image_data_path: Path | None = None,
 ) -> dict[str, Any]:
     return {
         "commit": release_commit(protected=protected),
         "fingerprint": fingerprint(
             protected=protected,
             calibrating=calibrating,
+            image_data_path=image_data_path,
         ),
         "protected": protected,
     }
@@ -221,6 +233,20 @@ def _runtime_command(
     ]
 
 
+def _context_sample_failure(stderr: bytes) -> tuple[str, int] | None:
+    matches = [
+        match
+        for line in stderr.splitlines()
+        if (match := SAMPLE_FAILURE_MARKER.fullmatch(line)) is not None
+    ]
+    if len(matches) != 1:
+        return None
+    status = int(matches[0].group(2))
+    if status == 0 or not -(2**31) <= status < 2**31:
+        return None
+    return matches[0].group(1).decode("ascii"), status
+
+
 def _run_case(
     runtime: str,
     case: str,
@@ -241,9 +267,19 @@ def _run_case(
             budget=BENCHMARK_COMMAND_BUDGET,
             capture=True,
             env=installed.environment if installed is not None else None,
+            check=False,
         )
     except CommandError as error:
-        raise RuntimeError(f"{runtime} {case} failed: {error}") from error
+        raise RuntimeError(f"{runtime} {case} failed") from error
+    if completed.returncode != 0:
+        if runtime == "python" and case == "context10kIterations5":
+            diagnostic = _context_sample_failure(completed.stderr)
+            if diagnostic is not None:
+                variant, status = diagnostic
+                raise RuntimeError(
+                    f"{runtime} {case} failed: variant={variant} status={status}"
+                )
+        raise RuntimeError(f"{runtime} {case} failed")
     try:
         result = json.loads(completed.stdout.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -560,8 +596,8 @@ def _validate_baseline(baseline: dict[str, Any], current: dict[str, Any]) -> Non
 
     Calibration commit and artifact fields are retained provenance for the
     measured artifact set A. A later candidate B may use that baseline only
-    when its benchmark source, dependency locks, toolchain, and pinned runner
-    fingerprint match. Full and soak receipts bind B's own artifact hashes.
+    when its benchmark source, dependency locks, toolchain, and observed hosted
+    image fingerprint match. Full and soak receipts bind B's own artifact hashes.
     """
     if not isinstance(baseline, dict):
         raise RuntimeError("baseline must be an object")

@@ -66,11 +66,11 @@ Complete these once before creating the release tag:
    `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `KAJI_TTHW_EVIDENCE_JSON`.
    Configure `kaji-beta-publish` with separate required reviewers,
    `NPM_TOKEN`, and `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
-7. Set repository variables `KAJI_RELEASE_SIGNER_EMAIL`,
-   `KAJI_BENCHMARK_RUNNER_MANIFEST`, and
-   `KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256`. Register the pinned arm64 macOS
-   performance runner with labels `self-hosted`, `macOS`, `ARM64`, and
-   `kaji-benchmark`.
+7. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
+   run on GitHub-hosted `macos-15` ARM64 and fail closed unless GitHub's runner
+   classification, the actual host, and the image's `imagedata.json` agree.
+   The exact image metadata and its SHA-256 are retained with each performance
+   artifact; do not substitute a self-hosted runner.
 
 ## Offline rehearsal
 
@@ -239,8 +239,10 @@ protocol 30 days after publication.
 The reviewed baseline retains the calibration commit and hashes for artifact
 set A as provenance. Its applicability to candidate B is determined only by
 the explicit benchmark source hash, dependency-lock hash, runtime/toolchain
-versions, and pinned-runner fingerprint. The committed baseline does not need
-to name B's release manifest.
+versions, and observed GitHub-hosted image fingerprint. The committed baseline
+does not need to name B's release manifest. Because GitHub updates hosted images
+regularly, any image version or `imagedata.json` hash change requires a new
+calibration.
 
 This does not relax candidate evidence. Protected full benchmark and soak
 receipts must install and identify candidate B's artifacts and must bind to

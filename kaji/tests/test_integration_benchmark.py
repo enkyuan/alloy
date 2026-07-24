@@ -185,22 +185,45 @@ def test_json_decoder_rejects_duplicates_and_non_finite_numbers() -> None:
         integration_benchmark.decode_json('{"sample":NaN}')
 
 
-def test_calibration_requires_all_protected_runner_guards(
+def test_calibration_requires_flag_and_github_hosted_runner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    for name in (
-        "KAJI_BENCHMARK_CALIBRATION",
-        "KAJI_BENCHMARK_PINNED_RUNNER",
-        "KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST",
-    ):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("KAJI_BENCHMARK_CALIBRATION", raising=False)
     with pytest.raises(integration_benchmark.BenchmarkError, match="CALIBRATION"):
         integration_benchmark.require_protected_calibration()
 
+    expected = {
+        "environment": "github-hosted",
+        "os": "Darwin",
+        "arch": "arm64",
+        "platformVersion": "15.7.7",
+        "imageOS": "macos15",
+        "imageLabel": "macos-15-arm64",
+        "imageVersion": "20260715.0234.1",
+        "imageDataSha256": "a" * 64,
+    }
     monkeypatch.setenv("KAJI_BENCHMARK_CALIBRATION", "1")
-    monkeypatch.setenv("KAJI_BENCHMARK_PINNED_RUNNER", "1")
-    monkeypatch.setenv("KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST", f"sha256:{'a' * 64}")
-    integration_benchmark.require_protected_calibration()
+    monkeypatch.setattr(
+        integration_benchmark,
+        "require_github_hosted_macos_arm64",
+        lambda **kwargs: expected,
+    )
+
+    assert integration_benchmark.require_protected_calibration() == expected
+
+
+def test_integration_source_digest_includes_platform_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    budget_bytes = b'{"schemaVersion":1}'
+    provenance = tmp_path / "benchmark_platform.py"
+    provenance.write_text("first\n")
+    monkeypatch.setattr(integration_benchmark, "BENCHMARK_PLATFORM", provenance)
+    first = integration_benchmark.source_digest(budget_bytes)
+
+    provenance.write_text("second\n")
+
+    assert integration_benchmark.source_digest(budget_bytes) != first
 
 
 def test_quick_orchestrator_runs_both_runtimes_and_binds_raw_artifact(

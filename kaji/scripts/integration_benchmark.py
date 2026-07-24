@@ -19,6 +19,11 @@ import tempfile
 import time
 from typing import Any, NoReturn, cast
 
+from benchmark_platform import (
+    BenchmarkPlatformError,
+    require_github_hosted_macos_arm64,
+    runner_fingerprint,
+)
 from process_runner import (
     BENCHMARK_COMMAND_BUDGET,
     METADATA_BUDGET,
@@ -31,6 +36,7 @@ KAJI_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = KAJI_ROOT.parent
 DEFAULT_BUDGETS = KAJI_ROOT / "benchmarks" / "integration-budgets.json"
 TYPESCRIPT_RUNNER = KAJI_ROOT / "ts" / "scripts" / "integration-benchmark.ts"
+BENCHMARK_PLATFORM = Path(__file__).with_name("benchmark_platform.py")
 RUNTIMES = ("python", "typescript")
 CASE_NAMES = (
     "fixedOriginPreflight",
@@ -40,7 +46,6 @@ CASE_NAMES = (
     "oauthRefreshSingleFlight",
 )
 MODE_NAMES = ("quick", "full", "calibrate")
-_CALIBRATION_DIGEST_PREFIX = "sha256:"
 _EXPECTED_P99_MS = {
     "fixedOriginPreflight": 5.0,
     "fixedOriginCapRejection": 5.0,
@@ -574,7 +579,11 @@ def _tool_version(command: str, fallback: str) -> str:
 
 def source_digest(budget_bytes: bytes) -> str:
     digest = hashlib.sha256()
-    for path in (Path(__file__).resolve(), TYPESCRIPT_RUNNER.resolve()):
+    for path in (
+        Path(__file__).resolve(),
+        TYPESCRIPT_RUNNER.resolve(),
+        BENCHMARK_PLATFORM.resolve(),
+    ):
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())
@@ -583,33 +592,31 @@ def source_digest(budget_bytes: bytes) -> str:
     return digest.hexdigest()
 
 
-def machine_fingerprint(budget_bytes: bytes) -> dict[str, str]:
+def machine_fingerprint(
+    budget_bytes: bytes, *, runner: dict[str, str]
+) -> dict[str, Any]:
     return {
         "system": platform.system().lower(),
         "machine": platform.machine().lower(),
         "python": platform.python_version(),
         "node": _tool_version("node", "/usr/local/bin/node"),
         "bun": _tool_version("bun", "/opt/homebrew/bin/bun"),
-        "runnerImageDigest": os.environ.get(
-            "KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST", "local-unpinned"
-        ),
+        "runner": runner,
         "budgetSha256": sha256_bytes(budget_bytes),
         "sourceSha256": source_digest(budget_bytes),
     }
 
 
-def require_protected_calibration() -> None:
+def require_protected_calibration() -> dict[str, str]:
     if os.environ.get("KAJI_BENCHMARK_CALIBRATION") != "1":
         _fail("calibration requires KAJI_BENCHMARK_CALIBRATION=1")
-    if os.environ.get("KAJI_BENCHMARK_PINNED_RUNNER") != "1":
-        _fail("calibration requires KAJI_BENCHMARK_PINNED_RUNNER=1")
-    digest = os.environ.get("KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST", "")
-    if (
-        not digest.startswith(_CALIBRATION_DIGEST_PREFIX)
-        or len(digest) != len(_CALIBRATION_DIGEST_PREFIX) + 64
-        or any(character not in "0123456789abcdef" for character in digest[7:])
-    ):
-        _fail("calibration requires a reviewed sha256 runner image digest")
+    try:
+        runner = require_github_hosted_macos_arm64(protected=False, calibrating=True)
+    except BenchmarkPlatformError as error:
+        _fail(str(error))
+    if runner is None:
+        _fail("calibration requires GitHub-hosted runner provenance")
+    return runner
 
 
 def _python_context(principal: str = "benchmark-principal") -> Any:
@@ -1101,8 +1108,9 @@ def run_orchestrator(
     if mode not in MODE_NAMES:
         _fail("unknown integration benchmark mode")
     mode_config = cast(dict[str, Any], budgets["modes"][mode])
+    runner = runner_fingerprint(protected=False, calibrating=False)
     if mode_config["requiresProtectedRunner"]:
-        require_protected_calibration()
+        runner = require_protected_calibration()
     if (raw_output is None) != (summary_output is None):
         _fail("raw and summary outputs must be supplied together")
     if mode != "quick" and (raw_output is None or summary_output is None):
@@ -1159,7 +1167,7 @@ def run_orchestrator(
         "budgetSha256": budget_sha,
         "corpusSha256": corpus_digest(budgets),
         "rawSamplesSha256": raw_sha,
-        "fingerprint": machine_fingerprint(budget_bytes),
+        "fingerprint": machine_fingerprint(budget_bytes, runner=runner),
         "deviations": budgets["deviations"],
         "results": summarize_results(raw_results, budgets, mode),
     }

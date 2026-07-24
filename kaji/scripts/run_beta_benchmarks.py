@@ -12,6 +12,10 @@ import shutil
 import sys
 import tempfile
 
+from benchmark_platform import (
+    BenchmarkPlatformError,
+    retain_reported_github_image_data,
+)
 from process_runner import (
     BENCHMARK_ORCHESTRATOR_BUDGET,
     LOCAL_COMMAND_BUDGET,
@@ -172,6 +176,7 @@ def main() -> int:
     artifacts = ROOT / ".artifacts" / "kaji-benchmarks"
     artifacts.mkdir(parents=True, exist_ok=True)
     if args.mode == "full":
+        output = artifacts / "results.json"
         status = run(
             [
                 *python,
@@ -179,16 +184,24 @@ def main() -> int:
                 "--mode",
                 "full",
                 "--output",
-                str(artifacts / "results.json"),
+                str(output),
                 *installed_args,
                 *(["--protected"] if args.protected else []),
             ],
             budget=BENCHMARK_ORCHESTRATOR_BUDGET,
         )
+        if status == 0 and args.protected:
+            try:
+                retain_reported_github_image_data(output)
+            except BenchmarkPlatformError as error:
+                print(f"FAIL: {error}", file=sys.stderr)
+                return 1
         if status == 0:
             print("PASS: full benchmark budgets and calibrated regression baseline")
         return status
 
+    output = artifacts / "calibration-results.json"
+    candidate = artifacts / "beta-baseline.candidate.json"
     status = run(
         [
             *python,
@@ -196,14 +209,21 @@ def main() -> int:
             "--mode",
             "calibrate",
             "--output",
-            str(artifacts / "calibration-results.json"),
+            str(output),
             "--candidate-baseline",
-            str(artifacts / "beta-baseline.candidate.json"),
+            str(candidate),
             *installed_args,
             *(["--protected"] if args.protected else []),
         ],
         budget=BENCHMARK_ORCHESTRATOR_BUDGET,
     )
+    if status == 0:
+        try:
+            retain_reported_github_image_data(output)
+        except BenchmarkPlatformError as error:
+            candidate.unlink(missing_ok=True)
+            print(f"FAIL: {error}", file=sys.stderr)
+            return 1
     if status == 0:
         print("PASS: candidate baseline written for review")
     return status

@@ -285,14 +285,12 @@ def test_protected_performance_jobs_use_only_macos_arm64_runner() -> None:
     benchmark = _read(".github/workflows/kaji.benchmark.yml")
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
-    selector = "runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]"
+    selector = "runs-on: macos-15"
 
     assert benchmark.count(selector) == 3
     assert rehearsal.count(selector) == 1
     assert publish.count(selector) == 1
-    assert "runs-on: [self-hosted, linux, x64, kaji-benchmark]" not in (
-        benchmark + rehearsal + publish
-    )
+    assert "self-hosted" not in (benchmark + rehearsal + publish)
     assert (
         "  release-artifacts:\n    name: release artifacts\n    runs-on: ubuntu-latest"
         in (benchmark)
@@ -631,14 +629,9 @@ def test_performance_evidence_is_bound_before_retention(
     performance = workflow.split("  performance:", 1)[1].split("  python-compat:", 1)[0]
 
     assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in performance
-    assert (
-        "KAJI_BENCHMARK_RUNNER_MANIFEST: "
-        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}" in performance
-    )
-    assert (
-        "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: "
-        "${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}" in performance
-    )
+    assert "KAJI_BENCHMARK_PINNED_RUNNER" not in performance
+    assert "KAJI_BENCHMARK_RUNNER_MANIFEST" not in performance
+    assert "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256" not in performance
     assert "KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST" not in performance
     assert (
         "KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
@@ -661,9 +654,16 @@ def test_performance_evidence_is_bound_before_retention(
         ".protected == true",
         '.fingerprint.runner.os == "Darwin"',
         '.fingerprint.runner.arch == "arm64"',
+        '.fingerprint.runner.environment == "github-hosted"',
+        '.fingerprint.runner.imageOS == "macos15"',
+        '.fingerprint.runner.imageLabel == "macos-15-arm64"',
         ".fingerprint.runner.platformVersion",
-        ".fingerprint.runner.bootstrapManifestSha256",
-        '(.fingerprint.runner | keys) == ["arch", "bootstrapManifestSha256", "os", "platformVersion"]',
+        ".fingerprint.runner.imageVersion",
+        ".fingerprint.runner.imageDataSha256",
+        "shasum -a 256",
+        "/imagedata.json",
+        "cmp ",
+        '(.fingerprint.runner | keys) == ["arch", "environment", "imageDataSha256", "imageLabel", "imageOS", "imageVersion", "os", "platformVersion"]',
         ".fingerprint.dependencyLockHash",
         ".fingerprint.sourceHash",
         ".fingerprint.versions.python",
@@ -685,6 +685,18 @@ def test_performance_evidence_is_bound_before_retention(
         in validation
     )
     assert 'cp "$soak" "$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"' in validation
+    assert (
+        'cp "$(dirname "$benchmark")/imagedata.json" '
+        '"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-imagedata.json"' in validation
+    )
+    image_version_match = re.search(
+        r'imageVersion \| type == "string" and test\("([^"]+)"\)',
+        validation,
+    )
+    assert image_version_match is not None
+    image_version_pattern = re.compile(json.loads(f'"{image_version_match.group(1)}"'))
+    assert image_version_pattern.fullmatch("20250226.766")
+    assert image_version_pattern.fullmatch("20260715.0234.1")
     finalization = performance.split(
         "      - name: Retain exact-run raw performance evidence", 1
     )[1].split("      - name: Upload exact-run performance evidence", 1)[0]
@@ -712,6 +724,9 @@ def test_performance_evidence_is_bound_before_retention(
     )
     assert ".artifacts/kaji-evidence/performance-status.json" in workflow
     if workflow_name.endswith("kaji.publish.yml"):
+        assert (
+            workflow.count(".artifacts/kaji-evidence/performance-imagedata.json") >= 3
+        )
         for retained in (
             ".artifacts/kaji-evidence/raw/benchmarks/results.json",
             ".artifacts/kaji-evidence/raw/soak/python.json",
@@ -2604,10 +2619,23 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "performance-status": evidence_dir / "performance-status.json",
         "benchmark-results": evidence_dir / "benchmark-results.json",
         "soak-results": evidence_dir / "soak-results.json",
+        "performance-image-data": evidence_dir / "performance-imagedata.json",
         "provider-evidence": evidence_dir / "provider-evidence.json",
         "tthw-status": evidence_dir / "tthw/status.json",
         "tthw-evidence": evidence_dir / "tthw/tthw-evidence.json",
     }
+    performance_image_data = (
+        b'[{"detail":"macOS\\n15.7.7\\n24G720","group":"Operating System"},'
+        b'{"detail":"Image: macos-15-arm64\\nVersion: 20260715.0234.1\\n'
+        b"Included Software: https://github.com/actions/runner-images/blob/"
+        b"macos-15-arm64/20260715.0234/images/macos/"
+        b"macos-15-arm64-Readme.md\\nImage Release: https://github.com/actions/"
+        b'runner-images/releases/tag/macos-15-arm64%2F20260715.0234",'
+        b'"group":"Runner Image"}]\n'
+    )
+    paths["performance-image-data"].parent.mkdir(parents=True, exist_ok=True)
+    paths["performance-image-data"].write_bytes(performance_image_data)
+    performance_image_data_hash = hashlib.sha256(performance_image_data).hexdigest()
 
     for version in ("3.11", "3.14"):
         _write_release_evidence_json(
@@ -2670,10 +2698,14 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
 
     fingerprint = {
         "runner": {
+            "environment": "github-hosted",
             "os": "Darwin",
             "arch": "arm64",
-            "platformVersion": "15.5",
-            "bootstrapManifestSha256": "c" * 64,
+            "platformVersion": "15.7.7",
+            "imageOS": "macos15",
+            "imageLabel": "macos-15-arm64",
+            "imageVersion": "20260715.0234.1",
+            "imageDataSha256": performance_image_data_hash,
         },
         "dependencyLockHash": "d" * 64,
         "sourceHash": "e" * 64,
@@ -2917,6 +2949,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         str(paths["benchmark-results"]),
         "--soak-results",
         str(paths["soak-results"]),
+        "--performance-image-data",
+        str(paths["performance-image-data"]),
         "--provider-evidence",
         str(paths["provider-evidence"]),
         "--tthw-status",
@@ -3044,6 +3078,36 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
     assert repeated.stdout == completed.stdout
 
 
+def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fixture = _release_evidence_fixture(tmp_path)
+    module = _load_root_script("benchmark_platform.py")
+    for name, value in {
+        "GITHUB_ACTIONS": "true",
+        "RUNNER_ENVIRONMENT": "github-hosted",
+        "RUNNER_OS": "macOS",
+        "RUNNER_ARCH": "ARM64",
+        "ImageOS": "macos15",
+        "ImageVersion": "20260715.0234.1",
+    }.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(module.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(module.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(
+        module.platform, "mac_ver", lambda: ("15.7.7", ("", "", ""), "")
+    )
+
+    runner = module.require_github_hosted_macos_arm64(
+        protected=True,
+        calibrating=False,
+        image_data_path=fixture.paths["performance-image-data"],
+    )
+
+    benchmark = json.loads(fixture.paths["benchmark-results"].read_text())
+    assert runner == benchmark["fingerprint"]["runner"]
+
+
 @pytest.mark.parametrize(
     ("hostile_case", "expected_code"),
     (
@@ -3064,8 +3128,16 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
         ("legacy_performance_runner", "performance_runner_invalid"),
         ("extra_performance_runner", "performance_runner_invalid"),
         ("linux_performance_runner", "performance_runner_invalid"),
+        ("self_hosted_performance_runner", "performance_runner_invalid"),
+        ("wrong_performance_image", "performance_runner_invalid"),
+        ("wrong_performance_version", "performance_runner_invalid"),
         ("baseline_fingerprint_mismatch", "performance_fingerprint_mismatch"),
         ("cross_report_fingerprint_mismatch", "performance_fingerprint_mismatch"),
+        ("missing_performance_image_data", "evidence_missing"),
+        (
+            "tampered_performance_image_data",
+            "performance_image_data_hash_mismatch",
+        ),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
         ("invalid_tthw_raw", "tthw_evidence_invalid"),
@@ -3079,6 +3151,10 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
     fixture = _release_evidence_fixture(tmp_path)
     if hostile_case == "missing_receipt":
         fixture.paths["compat-python-3.11"].unlink()
+    elif hostile_case == "missing_performance_image_data":
+        fixture.paths["performance-image-data"].unlink()
+    elif hostile_case == "tampered_performance_image_data":
+        fixture.paths["performance-image-data"].write_bytes(b"tampered\n")
     else:
         target = {
             "not_run_receipt": "compat-python-3.11",
@@ -3097,6 +3173,9 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "legacy_performance_runner": "benchmark-results",
             "extra_performance_runner": "benchmark-results",
             "linux_performance_runner": "benchmark-results",
+            "self_hosted_performance_runner": "benchmark-results",
+            "wrong_performance_image": "benchmark-results",
+            "wrong_performance_version": "benchmark-results",
             "baseline_fingerprint_mismatch": "benchmark-results",
             "cross_report_fingerprint_mismatch": "soak-results",
             "missing_provider_cell": "provider-evidence",
@@ -3152,12 +3231,16 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["fingerprint"]["runner"]["extra"] = True
         elif hostile_case == "linux_performance_runner":
             document["fingerprint"]["runner"]["os"] = "Linux"
+        elif hostile_case == "self_hosted_performance_runner":
+            document["fingerprint"]["runner"]["environment"] = "self-hosted"
+        elif hostile_case == "wrong_performance_image":
+            document["fingerprint"]["runner"]["imageLabel"] = "macos-14-arm64"
+        elif hostile_case == "wrong_performance_version":
+            document["fingerprint"]["runner"]["imageVersion"] = "weekly"
         elif hostile_case == "baseline_fingerprint_mismatch":
-            document["baselineFingerprint"]["runner"]["bootstrapManifestSha256"] = (
-                "0" * 64
-            )
+            document["baselineFingerprint"]["runner"]["imageDataSha256"] = "0" * 64
         elif hostile_case == "cross_report_fingerprint_mismatch":
-            document["fingerprint"]["runner"]["bootstrapManifestSha256"] = "0" * 64
+            document["fingerprint"]["runner"]["imageDataSha256"] = "0" * 64
         elif hostile_case == "missing_provider_cell":
             document["proofs"].pop()
         elif hostile_case == "mixed_tthw_status":

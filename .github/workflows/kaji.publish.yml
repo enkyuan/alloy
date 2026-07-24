@@ -171,14 +171,11 @@ jobs:
   performance:
     name: performance evidence
     needs: [verify-tag, offline-gates]
-    runs-on: [self-hosted, macOS, ARM64, kaji-benchmark]
+    runs-on: macos-15
     # 35-minute benchmark + 42-minute soak + 18-minute setup/validation/upload,
     # plus a five-minute job-level shutdown margin.
     timeout-minutes: 100
     env:
-      KAJI_BENCHMARK_PINNED_RUNNER: "1"
-      KAJI_BENCHMARK_RUNNER_MANIFEST: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST }}
-      KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256: ${{ vars.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256 }}
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
     steps:
       - name: Initialize exact-commit performance status before setup
@@ -256,11 +253,15 @@ jobs:
                .schemaVersion == 1 and .passed == true and
                .protected == true and .commit == $commit and
                .fingerprint == $fingerprint and
-               ((.fingerprint.runner | keys) == ["arch", "bootstrapManifestSha256", "os", "platformVersion"]) and
+               ((.fingerprint.runner | keys) == ["arch", "environment", "imageDataSha256", "imageLabel", "imageOS", "imageVersion", "os", "platformVersion"]) and
+               .fingerprint.runner.environment == "github-hosted" and
                .fingerprint.runner.os == "Darwin" and
                .fingerprint.runner.arch == "arm64" and
-               (.fingerprint.runner.platformVersion | type == "string" and test("^[0-9]+(\\.[0-9]+){1,2}$")) and
-               (.fingerprint.runner.bootstrapManifestSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+               (.fingerprint.runner.platformVersion | type == "string" and test("^15\\.[0-9]+(\\.[0-9]+)?$")) and
+               .fingerprint.runner.imageOS == "macos15" and
+               .fingerprint.runner.imageLabel == "macos-15-arm64" and
+               (.fingerprint.runner.imageVersion | type == "string" and test("^[0-9]{8}\\.[0-9]+(\\.[0-9]+)?$")) and
+               (.fingerprint.runner.imageDataSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
                (.fingerprint.dependencyLockHash | type == "string" and test("^[0-9a-f]{64}$")) and
                (.fingerprint.sourceHash | type == "string" and test("^[0-9a-f]{64}$")) and
                .fingerprint.versions.python == "3.11.9" and
@@ -276,8 +277,21 @@ jobs:
                all(.resolvedPackages[]; type == "string" and startswith("/"))' \
               "$1" >/dev/null
           }
+          validate_image_data() {
+            report="$1"
+            image_data="$(dirname "$report")/imagedata.json"
+            expected="$(jq -er '.fingerprint.runner.imageDataSha256' "$report")"
+            actual="$(shasum -a 256 "$image_data")"
+            actual="${actual%% *}"
+            test "$actual" = "$expected"
+          }
           validate_report "$benchmark"
           validate_report "$soak"
+          validate_image_data "$benchmark"
+          validate_image_data "$soak"
+          cmp "$(dirname "$benchmark")/imagedata.json" \
+            "$(dirname "$soak")/imagedata.json"
+          cp "$(dirname "$benchmark")/imagedata.json" "$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-imagedata.json"
           jq -e --argjson fingerprint "$expected_fingerprint" \
             '.baselineFingerprint == $fingerprint' "$benchmark" >/dev/null
           jq -e -s \
@@ -1479,6 +1493,7 @@ jobs:
           --performance-status .artifacts/kaji-evidence/performance-status.json
           --benchmark-results .artifacts/kaji-evidence/benchmark-results.json
           --soak-results .artifacts/kaji-evidence/soak-results.json
+          --performance-image-data .artifacts/kaji-evidence/performance-imagedata.json
           --provider-evidence .artifacts/kaji-evidence/provider-evidence.json
           --tthw-status .artifacts/kaji-evidence/tthw/status.json
           --tthw-evidence .artifacts/kaji-evidence/tthw/tthw-evidence.json
@@ -1510,6 +1525,7 @@ jobs:
             .artifacts/kaji-evidence/benchmark-results.json
             .artifacts/kaji-evidence/soak-results.json
             .artifacts/kaji-evidence/performance-status.json
+            .artifacts/kaji-evidence/performance-imagedata.json
             .artifacts/kaji-evidence/raw/benchmarks/results.json
             .artifacts/kaji-evidence/raw/soak/python.json
             .artifacts/kaji-evidence/raw/soak/typescript.json
@@ -2120,6 +2136,7 @@ jobs:
           .artifacts/kaji-evidence/benchmark-results.json
           .artifacts/kaji-evidence/soak-results.json
           .artifacts/kaji-evidence/performance-status.json
+          .artifacts/kaji-evidence/performance-imagedata.json
           .artifacts/kaji-evidence/compat-python-3.11.json
           .artifacts/kaji-evidence/compat-python-3.14.json
           .artifacts/kaji-evidence/compat-node-22.json

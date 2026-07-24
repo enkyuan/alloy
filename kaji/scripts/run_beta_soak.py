@@ -14,6 +14,11 @@ import sys
 import tempfile
 from typing import Any, Mapping
 
+from benchmark_platform import (
+    IMAGE_DATA_PATH,
+    BenchmarkPlatformError,
+    retain_reported_github_image_data,
+)
 from beta_benchmark_gate import release_commit
 from installed_release_runtime import installed_release_runtime
 from process_runner import (
@@ -31,6 +36,14 @@ from process_runner import (
 ROOT = Path(__file__).resolve().parents[2]
 SDK = ROOT / "kaji"
 GATE = Path(__file__).with_name("beta_soak_gate.py")
+PROTECTED_GATE_PARENT_ENV = (
+    "GITHUB_ACTIONS",
+    "RUNNER_ENVIRONMENT",
+    "RUNNER_OS",
+    "RUNNER_ARCH",
+    "ImageOS",
+    "ImageVersion",
+)
 
 
 def python_command() -> list[str] | None:
@@ -47,6 +60,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--protected", action="store_true")
     parser.add_argument("--artifacts-dir", type=Path)
     return parser.parse_args()
+
+
+def _protected_gate_environment(
+    environment: Mapping[str, str], commit: str
+) -> dict[str, str]:
+    gate_environment = dict(environment)
+    gate_environment["KAJI_RELEASE_COMMIT"] = commit
+    for name in PROTECTED_GATE_PARENT_ENV:
+        value = os.environ.get(name)
+        if not value:
+            raise RuntimeError(f"protected soak requires {name}")
+        gate_environment[name] = value
+    return gate_environment
 
 
 def soak_minutes(value: str) -> float:
@@ -245,6 +271,16 @@ def main() -> int:
                 [str(installed.python_executable)] if installed is not None else python
             )
             child_environment = installed.environment if installed is not None else None
+            gate_environment = child_environment
+            if args.protected:
+                if child_environment is None or expected_commit is None:
+                    raise RuntimeError(
+                        "protected soak requires an isolated validated runtime"
+                    )
+                gate_environment = _protected_gate_environment(
+                    child_environment,
+                    expected_commit,
+                )
             child_root = installed.root if installed is not None else ROOT
             typescript_workdir = (
                 installed.typescript_workdir if installed is not None else ROOT
@@ -312,11 +348,16 @@ def main() -> int:
                         if installed is not None
                         else []
                     ),
+                    *(
+                        ["--runner-image-data", str(IMAGE_DATA_PATH)]
+                        if args.protected
+                        else []
+                    ),
                     *(["--protected"] if args.protected else []),
                 ],
                 cwd=child_root,
                 budget=LOCAL_COMMAND_BUDGET,
-                env=child_environment,
+                env=gate_environment,
             )
     except KeyboardInterrupt:
         _retain_failure(
@@ -374,6 +415,20 @@ def main() -> int:
         )
         print(f"FAIL: installed soak setup failed: {error}", file=sys.stderr)
         return 1
+
+    if protected:
+        try:
+            retain_reported_github_image_data(output)
+        except BenchmarkPlatformError as error:
+            _retain_failure(
+                output,
+                protected=True,
+                failure_code="runner_image_evidence_failed",
+                commit=expected_commit,
+                identity=installed_identity,
+            )
+            print(f"FAIL: {error}", file=sys.stderr)
+            return 1
 
     print("PASS: Python and TypeScript soak budgets")
     return 0

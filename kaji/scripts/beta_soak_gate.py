@@ -308,6 +308,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--protected", action="store_true")
     parser.add_argument("--runtime-identity", type=Path)
+    parser.add_argument("--runner-image-data", type=Path)
     return parser.parse_args()
 
 
@@ -390,11 +391,18 @@ def _load_identity(path: Path | None) -> tuple[dict[str, Any], list[str]]:
 
 def main() -> int:
     args = _parse_args()
-    provenance = performance_provenance(protected=getattr(args, "protected", False))
+    protected = getattr(args, "protected", False)
+    runner_image_data = getattr(args, "runner_image_data", None)
+    if protected and runner_image_data is None:
+        raise RuntimeError("protected soak requires --runner-image-data")
+    provenance = performance_provenance(
+        protected=protected,
+        image_data_path=runner_image_data,
+    )
     failures: list[str] = []
     results: dict[str, Any] = {}
     identity: dict[str, Any] = {}
-    if getattr(args, "protected", False):
+    if protected:
         identity, identity_failures = _load_identity(
             getattr(args, "runtime_identity", None)
         )
@@ -409,10 +417,7 @@ def main() -> int:
             if not load_failures:
                 failures.extend(_failures(value, runtime, args.minutes))
                 expected_package = identity.get("resolvedPackages", {}).get(runtime)
-                if (
-                    getattr(args, "protected", False)
-                    and value.get("resolvedPackage") != expected_package
-                ):
+                if protected and value.get("resolvedPackage") != expected_package:
                     failures.append(
                         f"{runtime} soak resolved a different installed package"
                     )

@@ -12,7 +12,11 @@ import re
 import tempfile
 from typing import Any, Callable, NoReturn
 
-from benchmark_platform import BenchmarkPlatformError, validate_retained_runner
+from benchmark_platform import (
+    MAX_IMAGE_DATA_BYTES,
+    BenchmarkPlatformError,
+    validate_retained_runner,
+)
 from validate_tthw_evidence import (
     EvidenceError as TthwEvidenceError,
     validate_bindings as validate_tthw_bindings,
@@ -81,6 +85,20 @@ def load_document(path: Path) -> tuple[dict[str, Any], str]:
         reject("evidence_invalid_json")
     require(isinstance(document, dict), "evidence_not_object")
     return document, hashlib.sha256(encoded).hexdigest()
+
+
+def load_performance_image_data(path: Path) -> str:
+    if not path.is_file() or path.is_symlink():
+        reject("evidence_missing")
+    try:
+        encoded = path.read_bytes()
+    except OSError:
+        reject("performance_image_data_invalid")
+    require(
+        0 < len(encoded) <= MAX_IMAGE_DATA_BYTES,
+        "performance_image_data_invalid",
+    )
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def full_artifact_hashes(release: VerifiedReleaseArtifacts) -> dict[str, str]:
@@ -542,6 +560,23 @@ def validate_performance_status(
     )
 
 
+def validate_performance_image_data(
+    digest: str,
+    benchmark: dict[str, Any],
+    soak: dict[str, Any],
+) -> None:
+    benchmark_fingerprint = validate_performance_fingerprint(
+        benchmark.get("fingerprint")
+    )
+    soak_fingerprint = validate_performance_fingerprint(soak.get("fingerprint"))
+    require(
+        digest
+        == benchmark_fingerprint.get("runner", {}).get("imageDataSha256")
+        == soak_fingerprint.get("runner", {}).get("imageDataSha256"),
+        "performance_image_data_hash_mismatch",
+    )
+
+
 def validate_provider(
     document: dict[str, Any],
     *,
@@ -737,6 +772,16 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             documents[label] = document
             receipt_hashes[label] = digest
 
+    performance_image_data_digest: str | None = None
+    try:
+        performance_image_data_digest = load_performance_image_data(
+            args.performance_image_data
+        )
+    except EvidenceValidationError as error:
+        failures.append({"evidence": "performance-image-data", "code": error.code})
+    else:
+        receipt_hashes["performance-image-data"] = performance_image_data_digest
+
     release: VerifiedReleaseArtifacts | None = None
     if not any(failure["evidence"] == "invocation" for failure in failures):
         try:
@@ -795,6 +840,22 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
             ),
         )
         if "benchmark-results" in documents and "soak-results" in documents:
+            if performance_image_data_digest is not None:
+                try:
+                    validate_performance_image_data(
+                        performance_image_data_digest,
+                        documents["benchmark-results"],
+                        documents["soak-results"],
+                    )
+                except EvidenceValidationError as error:
+                    failures.append(
+                        {
+                            "evidence": "performance-image-data",
+                            "code": error.code,
+                        }
+                    )
+                else:
+                    validated.append("performance-image-data")
             check(
                 "performance-status",
                 lambda: validate_performance_status(
@@ -882,6 +943,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--performance-status", type=Path, required=True)
     parser.add_argument("--benchmark-results", type=Path, required=True)
     parser.add_argument("--soak-results", type=Path, required=True)
+    parser.add_argument("--performance-image-data", type=Path, required=True)
     parser.add_argument("--provider-evidence", type=Path, required=True)
     parser.add_argument("--tthw-status", type=Path, required=True)
     parser.add_argument("--tthw-evidence", type=Path, required=True)

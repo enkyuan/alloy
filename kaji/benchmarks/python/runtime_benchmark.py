@@ -64,6 +64,14 @@ CASES = (
     "streamDeltas10k",
     "toolArgDeltas10k",
 )
+_SAMPLE_FAILURE_MARKER = "KAJI_BENCHMARK_SAMPLE_FAILURE"
+
+
+class _SampleProcessFailure(RuntimeError):
+    def __init__(self, context_variant: str | None, status: int) -> None:
+        self.context_variant = context_variant
+        self.status = status
+        super().__init__("benchmark sample process failed")
 
 
 class _Ids:
@@ -820,11 +828,13 @@ def _spawn_raw_sample(
             "--json",
             *variant_args,
         ],
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         env={**os.environ, "PYTHONHASHSEED": str(seed)},
     )
+    if completed.returncode != 0:
+        raise _SampleProcessFailure(context_variant, completed.returncode)
     try:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as error:
@@ -889,11 +899,20 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    result = (
-        _child_sample(args.case, args.seed, args._context_variant)
-        if args._sample
-        else _run_parent(args.case, args.samples, args.warmups, args.seed)
-    )
+    try:
+        result = (
+            _child_sample(args.case, args.seed, args._context_variant)
+            if args._sample
+            else _run_parent(args.case, args.samples, args.warmups, args.seed)
+        )
+    except _SampleProcessFailure as error:
+        if error.context_variant in {"replay", "indexed"}:
+            print(
+                f"{_SAMPLE_FAILURE_MARKER} variant={error.context_variant} "
+                f"status={error.status}",
+                file=sys.stderr,
+            )
+        return 1
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0
 

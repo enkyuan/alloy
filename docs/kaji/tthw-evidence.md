@@ -266,8 +266,10 @@ A reviewed calibration run records its own commit and artifact identity, called
 artifact set A, for auditability. The committed baseline remains applicable to
 a later candidate B only when all four explicit applicability dimensions are
 identical: benchmark source hash, dependency-lock hash, runtime/toolchain
-versions, and pinned-runner fingerprint. The baseline's calibration commit and
-manifest are provenance, not a requirement that A and B share package bytes.
+versions, and the observed GitHub-hosted macOS image fingerprint. The
+baseline's calibration commit and manifest are provenance, not a requirement
+that A and B share package bytes. A weekly hosted-image version or image-data
+hash change requires recalibration.
 
 The protected full benchmark and 30-minute soak are different evidence. They
 must install, hash, and report candidate B's own wheel and npm tarball and must

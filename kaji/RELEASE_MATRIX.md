@@ -121,8 +121,8 @@ TypeScript optional provider imports, and cancellation error shape.
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
-| Full benchmark | `run_beta_benchmarks.py --full` on the pinned runner | Yes | Pending protected run |
-| Thirty-minute soak | `run_beta_soak.py --minutes 30` on the pinned runner | Yes | Pending protected run |
+| Full benchmark | `run_beta_benchmarks.py --full` on GitHub-hosted `macos-15` ARM64 with retained image provenance | Yes | Pending protected run |
+| Thirty-minute soak | `run_beta_soak.py --minutes 30` on the same measured hosted image | Yes | Pending protected run |
 | Keyed OpenAI + Anthropic proof | `live_provider_proof.py` in `kaji-beta` | Yes; both providers in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
 | Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh arm64 macOS users across Python/npm/Bun, each bound to the installed candidate artifact | Unmeasured |
