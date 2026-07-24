@@ -915,6 +915,8 @@ def main() -> int:
                 {"commit": provenance["commit"], **artifact_identity},
             ),
         )
+    for failure in failures:
+        print(f"FAIL: {failure}", file=sys.stderr)
     return 0 if not failures else 1
 
 

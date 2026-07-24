@@ -1789,7 +1789,10 @@ def _complete_benchmark_baseline(module: object) -> dict[str, Any]:
 
 @pytest.mark.parametrize("mode", ["quick"])
 def test_beta_benchmark_non_full_modes_do_not_read_baseline(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     output = tmp_path / f"{mode}.json"
@@ -1821,6 +1824,7 @@ def test_beta_benchmark_non_full_modes_do_not_read_baseline(
     assert report["commit"] == "a" * 40
     assert report["fingerprint"] == current
     assert report["protected"] is False
+    assert "FAIL: benchmark sentinel" in capsys.readouterr().err
 
 
 def test_beta_benchmark_full_mode_reports_malformed_baseline_json(
