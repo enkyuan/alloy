@@ -1,0 +1,651 @@
+name: performance / kaji
+
+on:
+  workflow_call:
+    inputs:
+      candidate-commit:
+        description: Exact commit embedded in the candidate packages
+        required: true
+        type: string
+      candidate-artifact-id:
+        description: Immutable current-run artifact ID built by the caller
+        required: true
+        type: string
+      candidate-artifact-digest:
+        description: SHA-256 digest emitted when the caller uploaded the artifact
+        required: true
+        type: string
+      run-paired:
+        description: Run the three-replica paired benchmark
+        required: false
+        default: true
+        type: boolean
+      run-soak:
+        description: Run the protected 30-minute soak
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-artifact:
+    name: candidate artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Bind immutable candidate artifact metadata
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate-artifact-id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate-artifact-digest }}
+          KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+          RUN_PAIRED: ${{ inputs.run-paired }}
+          RUN_SOAK: ${{ inputs.run-soak }}
+        with:
+          script: |
+            if (process.env.RUN_PAIRED !== "true" && process.env.RUN_SOAK !== "true") {
+              throw new Error("at least one protected performance gate must run");
+            }
+            if (context.runAttempt !== 1) {
+              throw new Error(
+                "protected performance evidence cannot be rerun; dispatch a new workflow run",
+              );
+            }
+            const artifactId = Number(process.env.CANDIDATE_ARTIFACT_ID);
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
+              throw new Error("candidate artifact ID is invalid");
+            }
+            if (!/^[0-9a-f]{64}$/.test(process.env.CANDIDATE_ARTIFACT_DIGEST ?? "")) {
+              throw new Error("candidate artifact digest is invalid");
+            }
+            const response = await github.rest.actions.getArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: artifactId,
+              headers: {"X-GitHub-Api-Version": "2026-03-10"},
+            });
+            const artifact = response.data;
+            const expectedDigest = `sha256:${process.env.CANDIDATE_ARTIFACT_DIGEST}`;
+            if (
+              artifact.id !== Number(process.env.CANDIDATE_ARTIFACT_ID) ||
+              artifact.name !== "kaji-beta-artifacts" ||
+              artifact.expired ||
+              artifact.digest !== expectedDigest ||
+              artifact.workflow_run?.id !== context.runId ||
+              artifact.workflow_run?.head_sha !== process.env.KAJI_RELEASE_COMMIT
+            ) {
+              throw new Error("candidate artifact metadata differs from the caller");
+            }
+
+  paired-replica:
+    name: paired benchmark ${{ matrix.replica }}
+    needs: candidate-artifact
+    if: ${{ inputs.run-paired }}
+    runs-on: macos-15
+    # Paired A/B runs execute twice the legacy single-subject measurements.
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        replica: [1, 2, 3]
+    env:
+      KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+      KAJI_PAIRED_DIR: .artifacts/kaji-paired/replica-${{ matrix.replica }}
+    steps:
+      - name: Reject protected rerun attempt
+        if: ${{ github.run_attempt != 1 }}
+        shell: bash
+        run: |
+          echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
+          exit 1
+      - name: Initialize paired replica status
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_PAIRED_DIR"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --argjson replica "${{ matrix.replica }}" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 1, commit: $commit, replica: $replica,
+              conclusion: "not_run", failureCode: "paired_replica_not_completed",
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}-status.json"
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
+      - id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.14.0"
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji
+          python-version: "3.11.9"
+      - id: setup_bun
+        uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: .
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+      - name: Download immutable candidate artifact
+        id: candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.candidate-artifact-id }}
+          path: .artifacts/kaji-candidate
+      - name: Download immutable reference artifact
+        id: reference
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-beta-artifacts
+          path: .artifacts/kaji-reference
+          repository: ${{ github.repository }}
+          run-id: 30081423771
+          github-token: ${{ github.token }}
+      - name: Verify exact reference and candidate artifacts
+        id: verify
+        run: |
+          python3 kaji/scripts/verify_release_artifacts.py \
+            --artifacts-dir .artifacts/kaji-reference \
+            --expected-commit 5ed864c0098a4e8c5d0c065c787947aba9603860
+          python3 kaji/scripts/verify_release_artifacts.py \
+            --artifacts-dir .artifacts/kaji-candidate \
+            --expected-commit "$KAJI_RELEASE_COMMIT"
+      - name: Measure protected paired replica
+        id: measure
+        run: >-
+          uv run --project kaji --no-sync python kaji/scripts/paired_benchmark.py
+          --reference-artifacts-dir .artifacts/kaji-reference
+          --candidate-artifacts-dir .artifacts/kaji-candidate
+          --candidate-commit "$KAJI_RELEASE_COMMIT"
+          --replica "${{ matrix.replica }}"
+          --runner-image-data "$HOME/imagedata.json"
+          --protected
+          --output "$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}.json"
+      - name: Retain paired runner image data
+        id: runner_image
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        run: |
+          test -f "$HOME/imagedata.json"
+          cp "$HOME/imagedata.json" "$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}-imagedata.json"
+      - name: Normalize paired replica status
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        env:
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          NODE_OUTCOME: ${{ steps.setup_node.outcome }}
+          PYTHON_OUTCOME: ${{ steps.setup_python.outcome }}
+          BUN_OUTCOME: ${{ steps.setup_bun.outcome }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+          REFERENCE_OUTCOME: ${{ steps.reference.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          MEASURE_OUTCOME: ${{ steps.measure.outcome }}
+          RUNNER_IMAGE_OUTCOME: ${{ steps.runner_image.outcome }}
+        run: |
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$NODE_OUTCOME" != success ] || [ "$PYTHON_OUTCOME" != success ] || [ "$BUN_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$CANDIDATE_OUTCOME" != success ]; then
+            failure_code=candidate_download_not_completed
+          elif [ "$REFERENCE_OUTCOME" != success ]; then
+            failure_code=reference_download_not_completed
+          elif [ "$VERIFY_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$RUNNER_IMAGE_OUTCOME" != success ]; then
+            failure_code=runner_image_data_not_retained
+          elif [ "$MEASURE_OUTCOME" != success ]; then
+            failure_code=paired_measurement_not_completed
+          else
+            failure_code=
+          fi
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --argjson replica "${{ matrix.replica }}" \
+            --arg conclusion "$([ -z "$failure_code" ] && printf passed || printf failed)" \
+            --arg failureCode "$failure_code" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg job "$GITHUB_JOB" \
+            --arg runnerName "$RUNNER_NAME" \
+            --arg workflowRef "$GITHUB_WORKFLOW_REF" \
+            --arg workflowSha "$GITHUB_WORKFLOW_SHA" \
+            '{schemaVersion: 1, commit: $commit, replica: $replica,
+              conclusion: $conclusion,
+              failureCode: ($failureCode | if length == 0 then null else . end),
+              invocation: {job: $job, runnerName: $runnerName,
+                workflowRef: $workflowRef, workflowSha: $workflowSha},
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}-status.json"
+      - name: Upload raw paired replica receipt
+        if: ${{ always() && github.run_attempt == 1 }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-paired-replica-${{ matrix.replica }}
+          path: .artifacts/kaji-paired/replica-${{ matrix.replica }}
+          if-no-files-found: error
+          retention-days: 30
+
+  paired-aggregate:
+    name: paired benchmark aggregate
+    needs: paired-replica
+    if: ${{ always() && inputs.run-paired }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+      KAJI_AGGREGATE_DIR: .artifacts/kaji-paired/aggregate
+    steps:
+      - name: Reject protected rerun attempt
+        if: ${{ github.run_attempt != 1 }}
+        shell: bash
+        run: |
+          echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
+          exit 1
+      - name: Initialize paired aggregate status
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_AGGREGATE_DIR"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "paired_aggregate_not_completed",
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_AGGREGATE_DIR/aggregate-status.json"
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji
+          python-version: "3.11.9"
+      - name: Download all raw paired replica receipts
+        id: download
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kaji-paired-replica-*
+          path: .artifacts/kaji-paired/replicas
+          merge-multiple: true
+      - name: Retain the exact raw receipts under the aggregate
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_AGGREGATE_DIR/raw/benchmarks"
+          if [ -d .artifacts/kaji-paired/replicas ]; then
+            cp -R .artifacts/kaji-paired/replicas/. "$KAJI_AGGREGATE_DIR/raw/benchmarks/"
+          fi
+      - name: Aggregate exactly three paired benchmark receipts
+        id: aggregate
+        run: >-
+          uv run --project kaji --no-sync python kaji/scripts/aggregate_benchmarks.py
+          --replica-report .artifacts/kaji-paired/replicas/replica-1.json
+          --replica-report .artifacts/kaji-paired/replicas/replica-2.json
+          --replica-report .artifacts/kaji-paired/replicas/replica-3.json
+          --output "$KAJI_AGGREGATE_DIR/paired-benchmark-results.json"
+      - name: Normalize paired aggregate status
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        env:
+          REPLICA_JOB_OUTCOME: ${{ needs.paired-replica.result }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          PYTHON_OUTCOME: ${{ steps.setup_python.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          AGGREGATE_OUTCOME: ${{ steps.aggregate.outcome }}
+        run: |
+          if [ "$REPLICA_JOB_OUTCOME" != success ]; then
+            failure_code=paired_replica_not_passed
+          elif [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$PYTHON_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=replica_download_not_completed
+          elif [ "$AGGREGATE_OUTCOME" != success ]; then
+            failure_code=paired_aggregate_not_passed
+          else
+            failure_code=
+          fi
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg conclusion "$([ -z "$failure_code" ] && printf passed || printf failed)" \
+            --arg failureCode "$failure_code" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              failureCode: ($failureCode | if length == 0 then null else . end),
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_AGGREGATE_DIR/aggregate-status.json"
+      - name: Upload paired aggregate receipt
+        if: ${{ always() && github.run_attempt == 1 }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-paired-aggregate
+          path: .artifacts/kaji-paired/aggregate
+          if-no-files-found: error
+          retention-days: 30
+
+  soak:
+    name: 30-minute soak
+    needs: candidate-artifact
+    if: ${{ inputs.run-soak }}
+    runs-on: macos-15
+    timeout-minutes: 50
+    env:
+      KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+      KAJI_SOAK_EVIDENCE_DIR: .artifacts/kaji-soak-evidence
+    steps:
+      - name: Reject protected rerun attempt
+        if: ${{ github.run_attempt != 1 }}
+        shell: bash
+        run: |
+          echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
+          exit 1
+      - name: Initialize soak status
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_SOAK_EVIDENCE_DIR"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
+              failureCode: "soak_not_completed",
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_SOAK_EVIDENCE_DIR/soak-status.json"
+      - id: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.candidate-commit }}
+      - id: setup_node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.14.0"
+      - id: setup_python
+        uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji
+          python-version: "3.11.9"
+      - id: setup_bun
+        uses: ./.github/actions/setup-bun-cache
+        with:
+          working-directory: .
+          bun-version: "1.3.11"
+          install-args: --frozen-lockfile
+      - name: Download immutable candidate artifact
+        id: candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ inputs.candidate-artifact-id }}
+          path: .artifacts/kaji-candidate
+      - name: Verify exact candidate artifacts before soaking
+        id: verify
+        run: >-
+          python3 kaji/scripts/verify_release_artifacts.py
+          --artifacts-dir .artifacts/kaji-candidate
+          --expected-commit "$KAJI_RELEASE_COMMIT"
+      - name: Run protected 30-minute soak
+        id: soak
+        run: >-
+          uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py
+          --minutes 30 --protected --artifacts-dir .artifacts/kaji-candidate
+      - name: Normalize and retain soak evidence
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        env:
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          NODE_OUTCOME: ${{ steps.setup_node.outcome }}
+          PYTHON_OUTCOME: ${{ steps.setup_python.outcome }}
+          BUN_OUTCOME: ${{ steps.setup_bun.outcome }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          SOAK_OUTCOME: ${{ steps.soak.outcome }}
+        run: |
+          mkdir -p "$KAJI_SOAK_EVIDENCE_DIR/raw/soak"
+          if [ -d .artifacts/kaji-soak ]; then
+            cp -R .artifacts/kaji-soak/. "$KAJI_SOAK_EVIDENCE_DIR/raw/soak/"
+          fi
+          if [ -f .artifacts/kaji-soak/results.json ]; then
+            cp .artifacts/kaji-soak/results.json "$KAJI_SOAK_EVIDENCE_DIR/soak-results.json"
+          fi
+          if [ -f .artifacts/kaji-soak/imagedata.json ]; then
+            cp .artifacts/kaji-soak/imagedata.json "$KAJI_SOAK_EVIDENCE_DIR/performance-imagedata.json"
+          fi
+          if [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$NODE_OUTCOME" != success ] || [ "$PYTHON_OUTCOME" != success ] || [ "$BUN_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$CANDIDATE_OUTCOME" != success ]; then
+            failure_code=candidate_download_not_completed
+          elif [ "$VERIFY_OUTCOME" != success ]; then
+            failure_code=artifact_verification_not_completed
+          elif [ "$SOAK_OUTCOME" != success ]; then
+            failure_code=soak_not_passed
+          else
+            failure_code=
+          fi
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg conclusion "$([ -z "$failure_code" ] && printf passed || printf failed)" \
+            --arg failureCode "$failure_code" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
+              failureCode: ($failureCode | if length == 0 then null else . end),
+              workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_SOAK_EVIDENCE_DIR/soak-status.json"
+      - name: Upload exact soak receipt
+        if: ${{ always() && github.run_attempt == 1 }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-soak-receipt
+          path: .artifacts/kaji-soak-evidence
+          if-no-files-found: error
+          retention-days: 30
+
+  performance-evidence:
+    name: performance evidence
+    needs: [paired-replica, paired-aggregate, soak]
+    if: ${{ always() && inputs.run-paired && inputs.run-soak }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      KAJI_RELEASE_COMMIT: ${{ inputs.candidate-commit }}
+      KAJI_PERFORMANCE_EVIDENCE_DIR: .artifacts/kaji-performance-evidence
+    steps:
+      - name: Reject protected rerun attempt
+        if: ${{ github.run_attempt != 1 }}
+        shell: bash
+        run: |
+          echo "protected performance evidence cannot be rerun; dispatch a new workflow run" >&2
+          exit 1
+      - name: Initialize exact-commit performance status
+        shell: bash
+        run: |
+          mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR"
+          jq --null-input \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+              commit: $commit, conclusion: "not_run",
+              failureCode: "performance_not_completed",
+              benchmarkOutcome: "not_run", soakOutcome: "not_run",
+              validationOutcome: "not_run", releaseManifestSha256: null,
+              artifacts: {}, benchmarkReceiptSha256: null,
+              soakReceiptSha256: null, workflowRun: $workflowRun,
+              workflowRunAttempt: $workflowRunAttempt}' \
+            >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+      - name: Download paired aggregate receipt
+        id: paired
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-paired-aggregate
+          path: .artifacts/kaji-performance-input/paired
+        continue-on-error: true
+      - name: Download soak receipt
+        id: soak
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-soak-receipt
+          path: .artifacts/kaji-performance-input/soak
+        continue-on-error: true
+      - name: Bind paired aggregate and soak to one candidate
+        id: validate
+        shell: bash
+        env:
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate-artifact-id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate-artifact-digest }}
+        run: |
+          set -euo pipefail
+          paired=.artifacts/kaji-performance-input/paired/paired-benchmark-results.json
+          soak=.artifacts/kaji-performance-input/soak/soak-results.json
+          test -f "$paired"
+          test -f "$soak"
+          [[ "$CANDIDATE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$CANDIDATE_ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          jq -e \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            --argjson runId "$GITHUB_RUN_ID" \
+            --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
+            '.schemaVersion == 1 and
+             .kind == "kaji-beta-paired-benchmark-aggregate" and
+             .passed == true and .failures == [] and
+             .candidate.commit == $commit and
+             (.reportReceiptSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
+             ((.replicas | keys) == ["1", "2", "3"]) and
+             all(.replicas[];
+               .runnerEvidence.invocation.runId == $runId and
+               .runnerEvidence.invocation.runAttempt == $runAttempt and
+               .runnerEvidence.invocation.workflowSha == $commit) and
+             ([.replicas[].runnerEvidence.invocation.job] | unique | length) == 1 and
+             ([.replicas[].runnerEvidence.invocation.workflowRef] | unique | length) == 1' \
+            "$paired" >/dev/null
+          jq -e \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
+            '.schemaVersion == 1 and .passed == true and .failures == [] and
+             .protected == true and .commit == $commit and
+             .requestedMinutes == 30 and
+             (.releaseManifestSha256 | type == "string" and test("^[0-9a-f]{64}$"))' \
+            "$soak" >/dev/null
+          jq -e -s \
+            '.[0].candidate.releaseManifestSha256 == .[1].releaseManifestSha256 and
+             .[0].candidate.artifacts.pythonWheel == .[1].artifacts.python and
+             .[0].candidate.artifacts.typescript == .[1].artifacts.typescript' \
+            "$paired" "$soak" >/dev/null
+          test -f .artifacts/kaji-performance-input/soak/performance-imagedata.json
+          expected_image="$(jq -er '.fingerprint.runner.imageDataSha256' "$soak")"
+          actual_image="$(sha256sum .artifacts/kaji-performance-input/soak/performance-imagedata.json)"
+          actual_image="${actual_image%% *}"
+          test "$actual_image" = "$expected_image"
+          cp "$paired" "$KAJI_PERFORMANCE_EVIDENCE_DIR/paired-benchmark-results.json"
+          cp "$soak" "$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"
+          cp .artifacts/kaji-performance-input/soak/performance-imagedata.json \
+            "$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-imagedata.json"
+          cp -R .artifacts/kaji-performance-input/paired/raw "$KAJI_PERFORMANCE_EVIDENCE_DIR/"
+          mkdir -p "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw"
+          cp -R .artifacts/kaji-performance-input/soak/raw/soak \
+            "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/"
+      - name: Normalize exact-commit performance status
+        if: ${{ always() && github.run_attempt == 1 }}
+        shell: bash
+        env:
+          PAIRED_DOWNLOAD_OUTCOME: ${{ steps.paired.outcome }}
+          SOAK_DOWNLOAD_OUTCOME: ${{ steps.soak.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
+          PAIRED_REPLICA_JOB_OUTCOME: ${{ needs.paired-replica.result }}
+          PAIRED_AGGREGATE_JOB_OUTCOME: ${{ needs.paired-aggregate.result }}
+          SOAK_JOB_OUTCOME: ${{ needs.soak.result }}
+          CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate-artifact-id }}
+          CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate-artifact-digest }}
+        run: |
+          if [ "$PAIRED_DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=paired_receipt_download_not_completed
+          elif [ "$SOAK_DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=soak_receipt_download_not_completed
+          elif [ "$PAIRED_REPLICA_JOB_OUTCOME" != success ]; then
+            failure_code=paired_replica_not_passed
+          elif [ "$PAIRED_AGGREGATE_JOB_OUTCOME" != success ]; then
+            failure_code=paired_benchmark_not_passed
+          elif [ "$SOAK_JOB_OUTCOME" != success ]; then
+            failure_code=soak_not_passed
+          elif [ "$VALIDATION_OUTCOME" != success ]; then
+            failure_code=performance_validation_failed
+          else
+            failure_code=
+          fi
+          benchmark_outcome="$PAIRED_AGGREGATE_JOB_OUTCOME"
+          if [ "$PAIRED_REPLICA_JOB_OUTCOME" != success ]; then
+            benchmark_outcome="$PAIRED_REPLICA_JOB_OUTCOME"
+          fi
+          if [ -z "$failure_code" ]; then
+            paired="$KAJI_PERFORMANCE_EVIDENCE_DIR/paired-benchmark-results.json"
+            soak="$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"
+            benchmark_receipt="$(jq -er '.reportReceiptSha256' "$paired")"
+            soak_receipt="$(sha256sum "$soak")"
+            soak_receipt="${soak_receipt%% *}"
+            jq --null-input \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg artifactId "$CANDIDATE_ARTIFACT_ID" \
+              --arg artifactDigest "$CANDIDATE_ARTIFACT_DIGEST" \
+              --arg benchmarkReceiptSha256 "$benchmark_receipt" \
+              --arg soakReceiptSha256 "$soak_receipt" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+              --slurpfile paired "$paired" \
+              '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+                commit: $commit, conclusion: "passed", failureCode: null,
+                benchmarkOutcome: "success", soakOutcome: "success",
+                validationOutcome: "success",
+                releaseArtifactId: $artifactId,
+                releaseArtifactDigest: $artifactDigest,
+                releaseManifestSha256: $paired[0].candidate.releaseManifestSha256,
+                artifacts: $paired[0].candidate.artifacts,
+                benchmarkReceiptSha256: $benchmarkReceiptSha256,
+                soakReceiptSha256: $soakReceiptSha256,
+                workflowRun: $workflowRun,
+                workflowRunAttempt: $workflowRunAttempt}' \
+              >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+          else
+            jq --null-input \
+              --arg commit "$KAJI_RELEASE_COMMIT" \
+              --arg failureCode "$failure_code" \
+              --arg benchmarkOutcome "$benchmark_outcome" \
+              --arg soakOutcome "$SOAK_JOB_OUTCOME" \
+              --arg validationOutcome "${VALIDATION_OUTCOME:-skipped}" \
+              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
+              '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+                commit: $commit, conclusion: "failed",
+                failureCode: $failureCode, benchmarkOutcome: $benchmarkOutcome,
+                soakOutcome: $soakOutcome,
+                validationOutcome: $validationOutcome,
+                releaseManifestSha256: null, artifacts: {},
+                benchmarkReceiptSha256: null, soakReceiptSha256: null,
+                workflowRun: $workflowRun,
+                workflowRunAttempt: $workflowRunAttempt}' \
+              >"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-status.json"
+          fi
+      - name: Upload exact-run performance evidence
+        if: ${{ always() && github.run_attempt == 1 }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-performance-evidence
+          path: .artifacts/kaji-performance-evidence
+          if-no-files-found: error
+          retention-days: 30

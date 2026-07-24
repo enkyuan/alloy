@@ -11,12 +11,11 @@ on:
       job:
         description: Protected performance job to run
         required: true
-        default: benchmark
+        default: all
         type: choice
         options:
           - benchmark
           - soak
-          - calibrate
           - all
 
 concurrency:
@@ -56,7 +55,6 @@ jobs:
           python-version: "3.14"
       - name: Build and verify one release artifact set
         env:
-          KAJI_BENCHMARK_BASELINE_BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate' && '1' || '' }}
           KAJI_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
         run: uv run --project kaji python kaji/scripts/beta_release_check.py --release
       - name: Upload exact release artifacts
@@ -67,152 +65,16 @@ jobs:
           path: .artifacts/kaji-release
           if-no-files-found: error
 
-  benchmark:
-    name: performance benchmark
+  performance:
+    name: performance evidence
     needs: release-artifacts
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      inputs.job == 'benchmark' ||
-      inputs.job == 'all'
-    runs-on: macos-15
-    # 35-minute benchmark + 10-minute setup/upload allowance.
-    timeout-minutes: 45
-    env:
-      KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ needs.release-artifacts.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22.14.0"
-      - uses: ./.github/actions/setup-python-uv
-        with:
-          working-directory: kaji
-          python-version: "3.11.9"
-      - uses: ./.github/actions/setup-bun-cache
-        with:
-          working-directory: .
-          bun-version: "1.3.11"
-          install-args: --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-beta-artifacts
-          path: .artifacts/kaji-release
-      - name: Verify exact candidate artifacts before benchmarking
-        run: >-
-          python3 kaji/scripts/verify_release_artifacts.py
-          --artifacts-dir .artifacts/kaji-release
-          --expected-commit "$KAJI_RELEASE_COMMIT"
-      - name: Compare five-sample medians
-        run: >-
-          uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py
-          --full --protected --artifacts-dir .artifacts/kaji-release
-      - name: Upload raw benchmark samples
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: kaji-beta-benchmarks-${{ github.run_id }}
-          path: .artifacts/kaji-benchmarks/
-          if-no-files-found: warn
-          retention-days: 30
-
-  soak:
-    name: 30-minute soak
-    needs: release-artifacts
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      inputs.job == 'soak' ||
-      inputs.job == 'all'
-    runs-on: macos-15
-    # 42-minute soak + 8-minute setup/upload allowance.
-    timeout-minutes: 50
-    env:
-      KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ needs.release-artifacts.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22.14.0"
-      - uses: ./.github/actions/setup-python-uv
-        with:
-          working-directory: kaji
-          python-version: "3.11.9"
-      - uses: ./.github/actions/setup-bun-cache
-        with:
-          working-directory: .
-          bun-version: "1.3.11"
-          install-args: --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-beta-artifacts
-          path: .artifacts/kaji-release
-      - name: Verify exact candidate artifacts before soaking
-        run: >-
-          python3 kaji/scripts/verify_release_artifacts.py
-          --artifacts-dir .artifacts/kaji-release
-          --expected-commit "$KAJI_RELEASE_COMMIT"
-      - name: Run protected 30-minute soak
-        run: >-
-          uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py
-          --minutes 30 --protected --artifacts-dir .artifacts/kaji-release
-      - name: Upload soak evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: kaji-beta-soak-${{ github.run_id }}
-          path: .artifacts/kaji-soak/
-          if-no-files-found: warn
-          retention-days: 30
-
-  calibrate:
-    name: baseline calibration
-    needs: release-artifacts
-    if: github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate'
-    runs-on: macos-15
-    # 35-minute calibration + 10-minute setup/upload allowance.
-    timeout-minutes: 45
-    env:
-      KAJI_BENCHMARK_CALIBRATION: "1"
-      KAJI_RELEASE_COMMIT: ${{ needs.release-artifacts.outputs.commit }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ needs.release-artifacts.outputs.commit }}
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "22.14.0"
-      - uses: ./.github/actions/setup-python-uv
-        with:
-          working-directory: kaji
-          python-version: "3.11.9"
-      - uses: ./.github/actions/setup-bun-cache
-        with:
-          working-directory: .
-          bun-version: "1.3.11"
-          install-args: --frozen-lockfile
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-beta-artifacts
-          path: .artifacts/kaji-release
-      - name: Verify exact candidate artifacts before calibration
-        run: >-
-          python3 kaji/scripts/verify_release_artifacts.py
-          --artifacts-dir .artifacts/kaji-release
-          --expected-commit "$KAJI_RELEASE_COMMIT"
-      - name: Produce candidate baseline only
-        run: >-
-          uv run --project kaji --no-sync python kaji/scripts/run_beta_benchmarks.py
-          --calibrate --protected --artifacts-dir .artifacts/kaji-release
-      - name: Upload candidate baseline and raw samples
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: kaji-beta-baseline-candidate-${{ github.run_id }}
-          path: .artifacts/kaji-benchmarks/
-          if-no-files-found: error
-          retention-days: 30
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/kaji.performance.yml
+    with:
+      candidate-commit: ${{ needs.release-artifacts.outputs.commit }}
+      candidate-artifact-id: ${{ needs.release-artifacts.outputs.artifact-id }}
+      candidate-artifact-digest: ${{ needs.release-artifacts.outputs.artifact-digest }}
+      run-paired: ${{ github.event_name != 'workflow_dispatch' || inputs.job != 'soak' }}
+      run-soak: ${{ github.event_name != 'workflow_dispatch' || inputs.job != 'benchmark' }}

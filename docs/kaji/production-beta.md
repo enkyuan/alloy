@@ -3,9 +3,10 @@
 Kaji is in pre-beta release implementation. The stable core described here is
 implemented and covered by local deterministic gates, but promotion is blocked
 until the same release commit passes required keyed OpenAI and Anthropic tool
-loops in both SDKs, floor/latest runtime, full benchmark, 30-minute soak,
-signed-tag, provenance, and publication checks. Do not describe either package
-as production beta-ready before those artifacts are attached to the release.
+loops in both SDKs, floor/latest runtime, the three-replica paired A/B
+benchmark, a separate 30-minute soak, signed-tag, provenance, and publication
+checks. Do not describe either package as production beta-ready before those
+artifacts are attached to the release.
 
 The shared machine contract is
 [`kaji/contracts/beta-core-v1.json`](../../kaji/contracts/beta-core-v1.json).
@@ -349,7 +350,9 @@ Promotion additionally requires evidence from the exact release commit for:
 - Node 22 and 24;
 - required keyed OpenAI and Anthropic tool loops in both Python and TypeScript;
   a missing credential blocks release rather than producing a readiness skip;
-- dedicated-runner full benchmarks and the 30-minute soak;
+- the immutable-reference paired A/B benchmark on three numbered same-attempt
+  `macos-15` matrix replicas, including retained raw runner/image receipts;
+- the separate protected 30-minute soak of the exact candidate;
 - an immutable signed tag with the configured signer identity;
 - exact-artifact SBOM/provenance and registry publication verification.
 

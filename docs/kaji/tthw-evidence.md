@@ -260,19 +260,19 @@ The output is written atomically with owner-only permissions after
 or a trailing explanation, into the protected `KAJI_TTHW_EVIDENCE_JSON`
 secret. Never commit participant receipts or the composed document.
 
-## Calibration A and release candidate B
+## Performance evidence is separate
 
-A reviewed calibration run records its own commit and artifact identity, called
-artifact set A, for auditability. The committed baseline remains applicable to
-a later candidate B only when all four explicit applicability dimensions are
-identical: benchmark source hash, dependency-lock hash, runtime/toolchain
-versions, and the observed GitHub-hosted macOS image fingerprint. The
-baseline's calibration commit and manifest are provenance, not a requirement
-that A and B share package bytes. A weekly hosted-image version or image-data
-hash change requires recalibration.
+TTHW receipts bind only the exact release candidate and do not replace
+performance evidence. The protected paired benchmark installs the immutable
+artifact set in `kaji/benchmarks/beta-reference.json` beside that candidate on
+three numbered `macos-15` matrix replicas in one workflow run attempt. Each
+case records five adjacent matched A/B pairs after two warmups. Any per-pair
+RSS ratio above `1.20` is a hard failure; timing passes only when all three
+replica medians are at or below `1.20`, while a mixed result is inconclusive
+and blocks release. All raw replica and runner/image receipts are retained;
+diagnostic `RUNNER_NAME` values may repeat.
 
-The protected full benchmark and 30-minute soak are different evidence. They
-must install, hash, and report candidate B's own wheel and npm tarball and must
-bind their receipts to B's commit and release-manifest hash. A fingerprint
-mismatch invalidates the baseline and requires recalibration; a fingerprint
-match never permits full or soak receipts to refer to A's artifacts.
+The separate protected 30-minute soak installs, hashes, and reports the exact
+candidate with its own runner/image receipt. Neither the immutable reference
+artifact nor any performance receipt may be used as a TTHW participant
+artifact.

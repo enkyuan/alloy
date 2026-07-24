@@ -4,11 +4,11 @@
 
 Kaji is in pre-beta release implementation. Promotion is blocked pending
 same-commit protected release evidence: floor/latest runtime matrices, the
-required keyed OpenAI and Anthropic proofs, full benchmarks, a 30-minute soak,
-a real signed tag, provenance, and publication verification. Both declared
-stable provider adapters must complete a real model-requested tool loop in
-Python and TypeScript on that exact release commit. It does not mean every
-Python-only modality or infrastructure adapter is beta-ready.
+required keyed OpenAI and Anthropic proofs, the paired A/B benchmark, a
+30-minute soak, a real signed tag, provenance, and publication verification.
+Both declared stable provider adapters must complete a real model-requested
+tool loop in Python and TypeScript on that exact release commit. It does not
+mean every Python-only modality or infrastructure adapter is beta-ready.
 
 The exact runtime defaults and operating boundaries are documented in
 [`docs/kaji/production-beta.md`](../docs/kaji/production-beta.md). This matrix
@@ -121,8 +121,8 @@ TypeScript optional provider imports, and cancellation error shape.
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
-| Full benchmark | `run_beta_benchmarks.py --full` on GitHub-hosted `macos-15` ARM64 with retained image provenance | Yes | Pending protected run |
-| Thirty-minute soak | `run_beta_soak.py --minutes 30` on the same measured hosted image | Yes | Pending protected run |
+| Paired A/B benchmark | `kaji.performance.yml`: immutable reference artifacts and the exact candidate on three numbered GitHub-hosted `macos-15` matrix replicas in one run attempt; five adjacent matched pairs after two warmups per case, with retained raw runner/image receipts; diagnostic runner names may repeat | Yes; timing must pass unanimously at ≤1.20 across all three replicas, mixed timing is inconclusive, and any per-pair RSS ratio >1.20 is a hard failure | Pending protected run |
+| Thirty-minute soak | `run_beta_soak.py --minutes 30 --protected` on the exact candidate, with retained `macos-15` image provenance | Yes; independent of the paired benchmark | Pending protected run |
 | Keyed OpenAI + Anthropic proof | `live_provider_proof.py` in `kaji-beta` | Yes; both providers in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
 | Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh arm64 macOS users across Python/npm/Bun, each bound to the installed candidate artifact | Unmeasured |

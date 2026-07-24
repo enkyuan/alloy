@@ -69,8 +69,14 @@ Complete these once before creating the release tag:
 7. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
    run on GitHub-hosted `macos-15` ARM64 and fail closed unless GitHub's runner
    classification, the actual host, and the image's `imagedata.json` agree.
-   The exact image metadata and its SHA-256 are retained with each performance
-   artifact; do not substitute a self-hosted runner.
+   The paired benchmark runs the immutable reference recorded in
+   `kaji/benchmarks/beta-reference.json` beside the exact candidate on three
+   numbered `macos-15` matrix replicas in one workflow run attempt. Each case
+   uses five adjacent matched A/B pairs after two warmups. The exact
+   runner/image receipts are retained; `RUNNER_NAME` is diagnostic and may
+   repeat, but every replica must independently prove GitHub-hosted arm64
+   macOS. Do not substitute a self-hosted runner. The 30-minute candidate soak
+   is a separate required job and receipt.
 
 ## Offline rehearsal
 
@@ -106,14 +112,15 @@ later run is not acceptable evidence.
    git push origin refs/tags/kaji-v0.2.0-beta.2
    ```
 
-3. Approve `kaji-beta` only after offline, compatibility, and benchmark/soak
-   jobs pass. `KAJI_TTHW_EVIDENCE_JSON` must contain the redacted five-user
+3. Approve `kaji-beta` only after offline and compatibility jobs, all three
+   paired benchmark replicas and their aggregate, and the separate 30-minute
+   soak pass. `KAJI_TTHW_EVIDENCE_JSON` must contain the redacted five-user
    document for the exact current-run manifest and wheel, sdist, and npm
    artifacts. `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are both required; each
    must complete a normalized tool loop in Python and TypeScript. Missing-key
    hygiene is not release evidence.
 4. Review the exact manifest, checksums, offline summary, provider status,
-   benchmark, soak, SBOM, and provenance evidence. The first
+   paired benchmark, soak, SBOM, and provenance evidence. The first
    `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
    requires `NPM_TOKEN`, requires `KAJI_NPM_PUBLISHER` to match `npm whoami`,
    and verifies existing `kaji-sdk` write access when the package already
@@ -234,17 +241,30 @@ ordered step milliseconds, deterministic lifecycle assertions, redacted
 confusion/remediation, owner, review date, and follow-up date. Repeat the
 protocol 30 days after publication.
 
-## Calibration provenance versus candidate evidence
+## Immutable reference and paired candidate evidence
 
-The reviewed baseline retains the calibration commit and hashes for artifact
-set A as provenance. Its applicability to candidate B is determined only by
-the explicit benchmark source hash, dependency-lock hash, runtime/toolchain
-versions, and observed GitHub-hosted image fingerprint. The committed baseline
-does not need to name B's release manifest. Because GitHub updates hosted images
-regularly, any image version or `imagedata.json` hash change requires a new
-calibration.
+`kaji/benchmarks/beta-reference.json` is the reviewed reference record. It
+binds the exact reference commit, release-manifest hash, dependency-lock hash,
+wheel, sdist, npm tarball, and retained GitHub artifact identity and digest.
+Every protected replica downloads those immutable bytes, verifies every hash,
+and installs the reference and exact release candidate independently. Never
+rebuild or substitute the reference artifact. A reference expiry, missing
+artifact, hash mismatch, absolute reference-budget failure, or dependency-lock
+drift invalidates the evidence and requires an intentional reviewed reference
+replacement.
 
-This does not relax candidate evidence. Protected full benchmark and soak
-receipts must install and identify candidate B's artifacts and must bind to
-B's commit, release-manifest hash, and artifact hashes. Any applicability
-fingerprint change requires a new calibration.
+The protected paired benchmark uses three numbered GitHub-hosted `macos-15`
+matrix replicas in one workflow run attempt. For every Python and TypeScript
+case, each replica records five adjacent matched reference/candidate pairs
+after two warmups, with deterministic counterbalancing. A
+candidate/reference peak-RSS ratio above `1.20` in any pair is a hard failure.
+For timing, each replica's median paired ratio is compared with `1.20`: all
+three at or below the threshold pass, all three above it are a regression, and
+a mixed result is inconclusive and blocks release. Absolute candidate budgets
+remain hard gates. `RUNNER_NAME` is retained only as diagnostic metadata and
+is not required to be unique.
+
+Retain the aggregate plus all three raw replica reports, runner identities, and
+`imagedata.json` receipts. The 30-minute soak is separate evidence: it installs,
+hashes, and reports only the exact candidate and retains its own runner/image
+receipt. Neither performance receipt may stand in for the other.

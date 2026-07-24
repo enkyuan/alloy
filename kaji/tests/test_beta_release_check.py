@@ -3304,22 +3304,21 @@ def test_tracked_baseline_bootstrap_marker_is_exact(
             _assert_tracked_baseline_source_is_current(module, baseline)
 
 
-def test_tracked_calibrated_baseline_retains_provenance_and_validates() -> None:
+def test_tracked_legacy_baseline_retains_historical_provenance() -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     baseline = json.loads(module.BASELINE_PATH.read_text())
 
     assert baseline["status"] == "calibrated"
     assert baseline["commit"] == baseline["calibrationCommit"]
     assert module.COMMIT_PATTERN.fullmatch(baseline["calibrationCommit"])
-    _assert_tracked_baseline_source_is_current(module, baseline)
-    assert baseline["dependencyLockHash"] == module._lock_hash()
+    assert module.HASH_PATTERN.fullmatch(baseline["sourceHash"])
+    assert module.HASH_PATTERN.fullmatch(baseline["dependencyLockHash"])
     assert module.HASH_PATTERN.fullmatch(baseline["releaseManifestSha256"])
     assert set(baseline["artifacts"]) == {"python", "typescript"}
     assert all(
         module.HASH_PATTERN.fullmatch(artifact["sha256"])
         for artifact in baseline["artifacts"].values()
     )
-    module._validate_baseline(baseline, module._baseline_fingerprint(baseline))
 
 
 @pytest.mark.parametrize("commit", [None, "A" * 40, "a" * 39])
@@ -3740,30 +3739,28 @@ def test_ast_grep_is_mandatory_in_ci() -> None:
         "bun run ast-grep:scan"
     )
 
-    benchmark_workflow = (
-        REPO_ROOT / ".github" / "workflows" / "kaji.benchmark.yml"
+    performance_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "kaji.performance.yml"
     ).read_text()
-    assert benchmark_workflow.count("install-args: --frozen-lockfile") == 3
+    assert performance_workflow.count("install-args: --frozen-lockfile") == 2
 
 
-def test_benchmark_calibration_bootstrap_marker_is_build_step_scoped() -> None:
+def test_authoritative_performance_workflows_exclude_legacy_bootstrap() -> None:
     benchmark = (REPO_ROOT / ".github" / "workflows" / "kaji.benchmark.yml").read_text()
+    performance = (
+        REPO_ROOT / ".github" / "workflows" / "kaji.performance.yml"
+    ).read_text()
     rehearsal = (REPO_ROOT / ".github" / "workflows" / "kaji.rehearsal.yml").read_text()
     publish = (REPO_ROOT / ".github" / "workflows" / "kaji.publish.yml").read_text()
-    release_job = benchmark.split("  release-artifacts:", 1)[1].split(
-        "  benchmark:", 1
-    )[0]
-    build_step = release_job.split(
-        "      - name: Build and verify one release artifact set", 1
-    )[1].split("      - name:", 1)[0]
 
-    assert benchmark.count(BASELINE_BOOTSTRAP_ENV) == 1
-    assert BASELINE_BOOTSTRAP_ENV not in rehearsal + publish
-    assert (
-        f"{BASELINE_BOOTSTRAP_ENV}: "
-        "${{ github.event_name == 'workflow_dispatch' && "
-        "inputs.job == 'calibrate' && '1' || '' }}"
-    ) in build_step
+    assert BASELINE_BOOTSTRAP_ENV not in benchmark + performance + rehearsal + publish
+    assert "beta-baseline.json" not in benchmark + performance + rehearsal + publish
+    assert "run_beta_benchmarks.py --full" not in (
+        benchmark + performance + rehearsal + publish
+    )
+    assert "uses: ./.github/workflows/kaji.performance.yml" in benchmark
+    assert "uses: ./.github/workflows/kaji.performance.yml" in rehearsal
+    assert "uses: ./.github/workflows/kaji.performance.yml" in publish
 
 
 def test_release_docs_reference_beta_release_check() -> None:

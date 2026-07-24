@@ -45,8 +45,8 @@ your image size reflects only what you use.
 The core runtime exists in both packages. This is a pre-beta release
 implementation, not a production-beta claim. Promotion remains blocked until
 the same release commit supplies the protected floor/latest runtime, required
-keyed OpenAI, full benchmark, 30-minute soak, signed-tag, provenance, and
-publication evidence.
+keyed OpenAI and Anthropic proofs, three-replica paired A/B benchmark, separate
+30-minute soak, signed-tag, provenance, and publication evidence.
 
 The operating contract and exact defaults are in
 [`docs/kaji/production-beta.md`](kaji/production-beta.md). Concurrency,

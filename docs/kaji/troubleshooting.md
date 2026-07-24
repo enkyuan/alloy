@@ -102,7 +102,11 @@ for routing and retry policy, not a full diagnostic payload.
 ## A local release check passed, but release is still blocked
 
 `beta_release_check.py --release` is an offline rehearsal. It does not prove
-the protected keyed-provider run, floor/latest runtime matrix, full benchmark,
-30-minute soak, real signed tag, provenance, or publication. Evidence must
-come from the exact release commit. See [production-beta.md](production-beta.md)
-and [releasing.md](releasing.md).
+the protected keyed-provider run, floor/latest runtime matrix, three-replica
+paired A/B benchmark, separate 30-minute soak, real signed tag, provenance, or
+publication. The benchmark must use the checked-in immutable reference,
+measure five adjacent pairs after two warmups on each of three numbered
+same-attempt `macos-15` matrix replicas, and retain raw runner/image receipts.
+Diagnostic runner names may repeat. Evidence must come from the exact release
+commit. See
+[production-beta.md](production-beta.md) and [releasing.md](releasing.md).

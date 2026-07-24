@@ -214,6 +214,20 @@ def _load_root_script(name: str) -> ModuleType:
     return module
 
 
+def _load_test_support(name: str) -> ModuleType:
+    module_name = f"_release_support_{Path(name).stem}"
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+    path = Path(__file__).with_name(name)
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _assert_external_actions_are_sha_pinned(workflow: str) -> None:
     references = re.findall(r"^\s*(?:-\s*)?uses: ([^\s#]+)", workflow, re.MULTILINE)
     external = [reference for reference in references if not reference.startswith("./")]
@@ -248,49 +262,43 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
 def test_release_workflows_bound_every_job() -> None:
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
+    performance = _read(".github/workflows/kaji.performance.yml")
 
-    assert rehearsal.count("timeout-minutes:") == 7
-    assert publish.count("timeout-minutes:") == 15
-    assert "timeout-minutes: 100" in publish
+    assert rehearsal.count("timeout-minutes:") == 6
+    assert publish.count("timeout-minutes:") == 14
+    assert performance.count("timeout-minutes:") == 5
+    assert "timeout-minutes: 90" in performance
     assert "timeout-minutes: 45" in publish
 
 
 def test_performance_workflow_timeouts_cover_child_and_cleanup_budgets() -> None:
-    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
-    publish = _read(".github/workflows/kaji.publish.yml")
-    benchmark = _read(".github/workflows/kaji.benchmark.yml")
-    performance_jobs = [
-        rehearsal.split("  performance:", 1)[1].split("  python-compat:", 1)[0],
-        publish.split("  performance:", 1)[1].split("  python-compat:", 1)[0],
-    ]
-    benchmark_job = benchmark.split("  benchmark:", 1)[1].split("  soak:", 1)[0]
-    soak_job = benchmark.split("  soak:", 1)[1].split("  calibrate:", 1)[0]
-    calibrate_job = benchmark.split("  calibrate:", 1)[1]
+    performance = _read(".github/workflows/kaji.performance.yml")
+    paired = performance.split("  paired-replica:", 1)[1].split(
+        "  paired-aggregate:", 1
+    )[0]
+    aggregate = performance.split("  paired-aggregate:", 1)[1].split("  soak:", 1)[0]
+    soak = performance.split("  soak:", 1)[1].split("  performance-evidence:", 1)[0]
+    evidence = performance.split("  performance-evidence:", 1)[1]
 
-    for performance_job in performance_jobs:
-        assert (
-            "35-minute benchmark + 42-minute soak + 18-minute setup" in performance_job
-        )
-        assert "five-minute job-level shutdown margin" in performance_job
-        assert "timeout-minutes: 100" in performance_job
-    assert "35-minute benchmark + 10-minute setup/upload" in benchmark_job
-    assert "timeout-minutes: 45" in benchmark_job
-    assert "42-minute soak + 8-minute setup/upload" in soak_job
-    assert "timeout-minutes: 50" in soak_job
-    assert "35-minute calibration + 10-minute setup/upload" in calibrate_job
-    assert "timeout-minutes: 45" in calibrate_job
+    assert "twice the legacy single-subject measurements" in paired
+    assert "timeout-minutes: 90" in paired
+    assert "timeout-minutes: 15" in aggregate
+    assert "timeout-minutes: 50" in soak
+    assert "timeout-minutes: 15" in evidence
 
 
 def test_protected_performance_jobs_use_only_macos_arm64_runner() -> None:
     benchmark = _read(".github/workflows/kaji.benchmark.yml")
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
+    performance = _read(".github/workflows/kaji.performance.yml")
     selector = "runs-on: macos-15"
 
-    assert benchmark.count(selector) == 3
-    assert rehearsal.count(selector) == 1
-    assert publish.count(selector) == 1
-    assert "self-hosted" not in (benchmark + rehearsal + publish)
+    assert performance.count(selector) == 2
+    assert benchmark.count(selector) == 0
+    assert rehearsal.count(selector) == 0
+    assert publish.count(selector) == 0
+    assert "self-hosted" not in (benchmark + rehearsal + publish + performance)
     assert (
         "  release-artifacts:\n    name: release artifacts\n    runs-on: ubuntu-latest"
         in (benchmark)
@@ -427,7 +435,6 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
         "sbom",
-        "run_beta_benchmarks.py --full",
         "live_provider_proof.py",
         "group: kaji-beta-publish-${{ github.ref_name }}",
         "KAJI_RELEASE_SIGNER_EMAIL",
@@ -628,107 +635,30 @@ def test_performance_evidence_is_bound_before_retention(
     workflow = _read(workflow_name)
     performance = workflow.split("  performance:", 1)[1].split("  python-compat:", 1)[0]
 
-    assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in performance
-    assert "KAJI_BENCHMARK_PINNED_RUNNER" not in performance
-    assert "KAJI_BENCHMARK_RUNNER_MANIFEST" not in performance
-    assert "KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256" not in performance
-    assert "KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST" not in performance
+    upstream = "offline-release" if "rehearsal" in workflow_name else "offline-gates"
+    assert "uses: ./.github/workflows/kaji.performance.yml" in performance
+    assert f"candidate-commit: {expected_commit}" in performance
     assert (
-        "KAJI_PERFORMANCE_EVIDENCE_DIR: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
+        f"candidate-artifact-id: ${{{{ needs.{upstream}.outputs.artifact-id }}}}"
         in performance
     )
-    assert "run_beta_benchmarks.py --full --protected" in performance
-    assert "run_beta_soak.py --minutes 30 --protected" in performance
-    assert performance.index(
-        "Initialize exact-commit performance status before setup"
-    ) < performance.index("actions/checkout@")
-    assert performance.index(
-        "Retain initial not-run performance status before setup"
-    ) < performance.index("actions/checkout@")
-    assert "name: kaji-performance-evidence-initial" in performance
-    validation = performance.split(
-        "      - name: Validate and normalize exact-commit performance evidence", 1
-    )[1].split("      - name: Retain exact-run raw performance evidence", 1)[0]
-    for expected in (
-        ".commit == $commit",
-        ".protected == true",
-        '.fingerprint.runner.os == "Darwin"',
-        '.fingerprint.runner.arch == "arm64"',
-        '.fingerprint.runner.environment == "github-hosted"',
-        '.fingerprint.runner.imageOS == "macos15"',
-        '.fingerprint.runner.imageLabel == "macos-15-arm64"',
-        ".fingerprint.runner.platformVersion",
-        ".fingerprint.runner.imageVersion",
-        ".fingerprint.runner.imageDataSha256",
-        "shasum -a 256",
-        "/imagedata.json",
-        "cmp ",
-        '(.fingerprint.runner | keys) == ["arch", "environment", "imageDataSha256", "imageLabel", "imageOS", "imageVersion", "os", "platformVersion"]',
-        ".fingerprint.dependencyLockHash",
-        ".fingerprint.sourceHash",
-        ".fingerprint.versions.python",
-        ".fingerprint.versions.node",
-        ".fingerprint.versions.bun",
-        'versions.python == "3.11.9"',
-        'versions.node == "v22.14.0"',
-        'versions.bun == "1.3.11"',
-        ".[0].fingerprint == .[1].fingerprint",
-        ".[0].commit == .[1].commit",
-        ".baselineFingerprint == $fingerprint",
-    ):
-        assert expected in validation
-    assert performance.index(
-        "Validate and normalize exact-commit performance evidence"
-    ) < performance.index("Upload exact-run performance evidence")
     assert (
-        'cp "$benchmark" "$KAJI_PERFORMANCE_EVIDENCE_DIR/benchmark-results.json"'
-        in validation
+        f"candidate-artifact-digest: "
+        f"${{{{ needs.{upstream}.outputs.artifact-digest }}}}" in performance
     )
-    assert 'cp "$soak" "$KAJI_PERFORMANCE_EVIDENCE_DIR/soak-results.json"' in validation
-    assert (
-        'cp "$(dirname "$benchmark")/imagedata.json" '
-        '"$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-imagedata.json"' in validation
-    )
-    image_version_match = re.search(
-        r'imageVersion \| type == "string" and test\("([^"]+)"\)',
-        validation,
-    )
-    assert image_version_match is not None
-    image_version_pattern = re.compile(json.loads(f'"{image_version_match.group(1)}"'))
-    assert image_version_pattern.fullmatch("20250226.766")
-    assert image_version_pattern.fullmatch("20260715.0234.1")
-    finalization = performance.split(
-        "      - name: Retain exact-run raw performance evidence", 1
-    )[1].split("      - name: Upload exact-run performance evidence", 1)[0]
-    assert "        if: ${{ always() }}" in finalization
-    assert "steps.benchmark.outcome" in finalization
-    assert "steps.soak.outcome" in finalization
-    assert "steps.performance-validation.outcome" in finalization
-    assert '"$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/benchmarks"' in finalization
-    assert '"$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak"' in finalization
-    assert "test -d .artifacts/kaji-benchmarks" in finalization
-    assert "test -d .artifacts/kaji-soak" in finalization
-    assert 'conclusion: "passed"' in finalization
-    assert finalization.index(
-        'cp -R .artifacts/kaji-soak/. "$KAJI_PERFORMANCE_EVIDENCE_DIR/raw/soak/"'
-    ) < finalization.index('conclusion: "passed"')
-    assert "failureCode: null" in finalization
-    assert 'conclusion: "failed"' in finalization
-    upload = performance.split(
-        "      - name: Upload exact-run performance evidence", 1
-    )[1]
-    assert "        if: ${{ always() }}" in upload
-    assert (
-        "path: ${{ runner.temp }}/kaji-performance-evidence-${{ github.run_id }}-${{ github.run_attempt }}"
-        in upload
-    )
+    assert "actions: read" in performance
+    assert "run_beta_benchmarks.py" not in performance
+    assert "baselineFingerprint" not in performance
     assert ".artifacts/kaji-evidence/performance-status.json" in workflow
+    assert ".artifacts/kaji-evidence/paired-benchmark-results.json" in workflow
     if workflow_name.endswith("kaji.publish.yml"):
         assert (
             workflow.count(".artifacts/kaji-evidence/performance-imagedata.json") >= 3
         )
         for retained in (
-            ".artifacts/kaji-evidence/raw/benchmarks/results.json",
+            ".artifacts/kaji-evidence/raw/benchmarks/replica-1.json",
+            ".artifacts/kaji-evidence/raw/benchmarks/replica-2.json",
+            ".artifacts/kaji-evidence/raw/benchmarks/replica-3.json",
             ".artifacts/kaji-evidence/raw/soak/python.json",
             ".artifacts/kaji-evidence/raw/soak/typescript.json",
             ".artifacts/kaji-evidence/raw/soak/results.json",
@@ -2597,9 +2527,9 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     }
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    benchmark_packages = {
-        "python": "/opt/kaji-installed-release-benchmark/python/lib/python3.11/site-packages/kaji/__init__.py",
-        "typescript": "/opt/kaji-installed-release-benchmark/typescript/node_modules/kaji-sdk",
+    provider_packages = {
+        "python": "/opt/kaji-installed-release-provider/python/lib/python3.11/site-packages/kaji/__init__.py",
+        "typescript": "/opt/kaji-installed-release-provider/typescript/node_modules/kaji-sdk",
     }
     soak_packages = {
         "python": "/opt/kaji-installed-release-soak/python/lib/python3.11/site-packages/kaji/__init__.py",
@@ -2617,7 +2547,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "compat-node-22": evidence_dir / "compat-node-22.json",
         "compat-node-24": evidence_dir / "compat-node-24.json",
         "performance-status": evidence_dir / "performance-status.json",
-        "benchmark-results": evidence_dir / "benchmark-results.json",
+        "benchmark-results": evidence_dir / "paired-benchmark-results.json",
         "soak-results": evidence_dir / "soak-results.json",
         "performance-image-data": evidence_dir / "performance-imagedata.json",
         "provider-evidence": evidence_dir / "provider-evidence.json",
@@ -2636,6 +2566,12 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     paths["performance-image-data"].parent.mkdir(parents=True, exist_ok=True)
     paths["performance-image-data"].write_bytes(performance_image_data)
     performance_image_data_hash = hashlib.sha256(performance_image_data).hexdigest()
+    paired_image_dir = evidence_dir / "raw" / "benchmarks"
+    paired_image_dir.mkdir(parents=True)
+    for replica in (1, 2, 3):
+        (paired_image_dir / f"replica-{replica}-imagedata.json").write_bytes(
+            performance_image_data
+        )
 
     for version in ("3.11", "3.14"):
         _write_release_evidence_json(
@@ -2710,23 +2646,97 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "dependencyLockHash": "d" * 64,
         "sourceHash": "e" * 64,
     }
+    pair = _load_root_script("paired_benchmark.py")
+    reference_record = pair._load_reference()
+    paired_artifacts = {
+        "pythonWheel": runtime_artifacts["python"],
+        "pythonSdist": {
+            "file": "kaji_sdk-0.2.0b1.tar.gz",
+            "sha256": artifact_hashes["kaji_sdk-0.2.0b1.tar.gz"],
+        },
+        "typescript": runtime_artifacts["typescript"],
+    }
+    candidate = {
+        "commit": commit,
+        "releaseManifestSha256": manifest_hash,
+        "artifacts": paired_artifacts,
+    }
+    runner_evidence = {
+        "runner": fingerprint["runner"],
+        "versions": {
+            "python": "3.11.9",
+            "node": "v22.14.0",
+            "bun": "1.3.11",
+        },
+        "dependencyLockHash": reference_record["dependencyLockHash"],
+    }
+    paired_support = _load_test_support("test_paired_benchmark.py")
+    replica_receipts: dict[str, dict[str, object]] = {}
+    for replica in (1, 2, 3):
+        raw_replica = paired_support._complete_report(pair, replica=replica)
+        raw_replica["candidate"] = candidate
+        raw_replica["candidateReceiptSha256"] = pair._json_sha256(candidate)
+        raw_replica["runnerEvidence"] = {
+            **runner_evidence,
+            "invocation": {
+                "runId": 123,
+                "runAttempt": workflow_run_attempt,
+                "job": "paired-replica",
+                "runnerName": "GitHub Actions",
+                "workflowRef": (
+                    "kaji-dev/alloy/.github/workflows/"
+                    "kaji.performance.yml@refs/heads/main"
+                ),
+                "workflowSha": commit,
+            },
+        }
+        raw_replica["reportReceiptSha256"] = pair._json_sha256(
+            {
+                key: value
+                for key, value in raw_replica.items()
+                if key != "reportReceiptSha256"
+            }
+        )
+        pair._validate_replica_report(raw_replica)
+        _write_release_evidence_json(
+            paired_image_dir / f"replica-{replica}.json",
+            raw_replica,
+        )
+        replica_receipts[str(replica)] = {
+            "reportReceiptSha256": raw_replica["reportReceiptSha256"],
+            "runnerEvidence": raw_replica["runnerEvidence"],
+        }
     benchmark = {
         "schemaVersion": 1,
-        "mode": "full",
-        "protected": True,
-        "commit": commit,
-        "fingerprint": fingerprint,
-        "baselineFingerprint": fingerprint,
-        "releaseManifestSha256": manifest_hash,
-        "artifacts": runtime_artifacts,
-        "resolvedPackages": benchmark_packages,
-        "results": {
-            runtime: {"echo": {"resolvedPackage": package}}
-            for runtime, package in benchmark_packages.items()
+        "kind": "kaji-beta-paired-benchmark-aggregate",
+        "generatedAt": "2026-07-24T00:00:00+00:00",
+        "protocolHash": pair._protocol_hash(),
+        "threshold": 1.2,
+        "referenceRecordSha256": pair._file_sha256(pair.REFERENCE_PATH),
+        "reference": pair._reference_identity(reference_record),
+        "candidate": candidate,
+        "referenceReceiptSha256": pair._json_sha256(
+            pair._reference_identity(reference_record)
+        ),
+        "candidateReceiptSha256": pair._json_sha256(candidate),
+        "replicas": replica_receipts,
+        "cases": {
+            runtime: {
+                case: {
+                    "durationRatios": [1.0, 1.0, 1.0],
+                    "rssRatios": [1.0, 1.0, 1.0],
+                    "durationVerdict": "pass",
+                    "rssVerdict": "pass",
+                    "verdict": "pass",
+                }
+                for case in pair.CASES
+            }
+            for runtime in pair.RUNTIMES
         },
         "failures": [],
         "passed": True,
     }
+    benchmark["reportReceiptSha256"] = pair._json_sha256(benchmark)
     soak = {
         "schemaVersion": 1,
         "protected": True,
@@ -2743,25 +2753,26 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "failures": [],
         "passed": True,
     }
-    _write_release_evidence_json(paths["benchmark-results"], benchmark)
     _write_release_evidence_json(paths["soak-results"], soak)
+    _write_release_evidence_json(paths["benchmark-results"], benchmark)
+    soak_receipt = hashlib.sha256(paths["soak-results"].read_bytes()).hexdigest()
     _write_release_evidence_json(
         paths["performance-status"],
         {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "kind": "kaji-beta-performance-status",
             "commit": commit,
             "conclusion": "passed",
             "failureCode": None,
             "benchmarkOutcome": "success",
             "soakOutcome": "success",
             "validationOutcome": "success",
-            "fingerprint": fingerprint,
+            "releaseArtifactId": release_artifact_id,
+            "releaseArtifactDigest": release_artifact_digest,
             "releaseManifestSha256": manifest_hash,
-            "artifacts": runtime_artifacts,
-            "resolvedPackages": {
-                "benchmark": benchmark_packages,
-                "soak": soak_packages,
-            },
+            "artifacts": paired_artifacts,
+            "benchmarkReceiptSha256": benchmark["reportReceiptSha256"],
+            "soakReceiptSha256": soak_receipt,
             **run_identity,
         },
     )
@@ -2785,7 +2796,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "artifactFile": artifact["file"],
                 "artifactSha256": artifact["sha256"],
                 "releaseManifestSha256": manifest_hash,
-                "resolvedPackage": benchmark_packages[sdk],
+                "resolvedPackage": provider_packages[sdk],
                 "requestedToolCalls": 1,
                 "completedToolCalls": 1,
                 "requestedToolCallIds": [call_id],
@@ -3065,6 +3076,14 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
     assert summary["releaseManifestSha256"] == fixture.manifest_hash
     assert summary["artifactSha256"] == fixture.artifact_hashes
     assert summary["validatedEvidence"] == sorted(fixture.paths)
+    for replica in (1, 2, 3):
+        raw_replica = (
+            fixture.paths["benchmark-results"].parent
+            / f"raw/benchmarks/replica-{replica}.json"
+        )
+        assert summary["receiptSha256"][f"paired-replica-{replica}"] == (
+            hashlib.sha256(raw_replica.read_bytes()).hexdigest()
+        )
     first = fixture.output.read_bytes()
     repeated = subprocess.run(
         fixture.command,
@@ -3104,8 +3123,8 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         image_data_path=fixture.paths["performance-image-data"],
     )
 
-    benchmark = json.loads(fixture.paths["benchmark-results"].read_text())
-    assert runner == benchmark["fingerprint"]["runner"]
+    soak = json.loads(fixture.paths["soak-results"].read_text())
+    assert runner == soak["fingerprint"]["runner"]
 
 
 @pytest.mark.parametrize(
@@ -3131,13 +3150,20 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         ("self_hosted_performance_runner", "performance_runner_invalid"),
         ("wrong_performance_image", "performance_runner_invalid"),
         ("wrong_performance_version", "performance_runner_invalid"),
-        ("baseline_fingerprint_mismatch", "performance_fingerprint_mismatch"),
-        ("cross_report_fingerprint_mismatch", "performance_fingerprint_mismatch"),
+        ("paired_protocol_mismatch", "paired_benchmark_protocol_mismatch"),
+        ("paired_candidate_mismatch", "artifact_hash_mismatch"),
+        ("paired_receipt_mismatch", "paired_benchmark_receipt_mismatch"),
+        ("forged_paired_ratio", "performance_results_invalid"),
+        ("stale_paired_run", "paired_benchmark_invocation_mismatch"),
         ("missing_performance_image_data", "evidence_missing"),
         (
             "tampered_performance_image_data",
             "performance_image_data_hash_mismatch",
         ),
+        ("missing_paired_image_data", "evidence_missing"),
+        ("tampered_paired_image_data", "paired_image_data_hash_mismatch"),
+        ("missing_raw_paired_replica", "evidence_missing"),
+        ("tampered_raw_paired_replica", "paired_raw_replica_mismatch"),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
         ("invalid_tthw_raw", "tthw_evidence_invalid"),
@@ -3155,6 +3181,35 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
         fixture.paths["performance-image-data"].unlink()
     elif hostile_case == "tampered_performance_image_data":
         fixture.paths["performance-image-data"].write_bytes(b"tampered\n")
+    elif hostile_case == "missing_paired_image_data":
+        (
+            fixture.paths["benchmark-results"].parent
+            / "raw/benchmarks/replica-2-imagedata.json"
+        ).unlink()
+    elif hostile_case == "tampered_paired_image_data":
+        (
+            fixture.paths["benchmark-results"].parent
+            / "raw/benchmarks/replica-2-imagedata.json"
+        ).write_bytes(b"tampered\n")
+    elif hostile_case == "missing_raw_paired_replica":
+        (
+            fixture.paths["benchmark-results"].parent / "raw/benchmarks/replica-2.json"
+        ).unlink()
+    elif hostile_case == "tampered_raw_paired_replica":
+        raw_replica_path = (
+            fixture.paths["benchmark-results"].parent / "raw/benchmarks/replica-2.json"
+        )
+        raw_replica = json.loads(raw_replica_path.read_text())
+        raw_replica["runnerEvidence"]["invocation"]["runnerName"] = "Tampered Runner"
+        pair = _load_root_script("paired_benchmark.py")
+        raw_replica["reportReceiptSha256"] = pair._json_sha256(
+            {
+                key: value
+                for key, value in raw_replica.items()
+                if key != "reportReceiptSha256"
+            }
+        )
+        _write_release_evidence_json(raw_replica_path, raw_replica)
     else:
         target = {
             "not_run_receipt": "compat-python-3.11",
@@ -3169,15 +3224,18 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "invalid_ts_lifecycle": "compat-node-22",
             "invalid_ts_counts": "compat-node-22",
             "invalid_ts_proof_version_divergence": "compat-node-22",
-            "source_path": "benchmark-results",
-            "legacy_performance_runner": "benchmark-results",
-            "extra_performance_runner": "benchmark-results",
-            "linux_performance_runner": "benchmark-results",
-            "self_hosted_performance_runner": "benchmark-results",
-            "wrong_performance_image": "benchmark-results",
-            "wrong_performance_version": "benchmark-results",
-            "baseline_fingerprint_mismatch": "benchmark-results",
-            "cross_report_fingerprint_mismatch": "soak-results",
+            "source_path": "soak-results",
+            "legacy_performance_runner": "soak-results",
+            "extra_performance_runner": "soak-results",
+            "linux_performance_runner": "soak-results",
+            "self_hosted_performance_runner": "soak-results",
+            "wrong_performance_image": "soak-results",
+            "wrong_performance_version": "soak-results",
+            "paired_protocol_mismatch": "benchmark-results",
+            "paired_candidate_mismatch": "benchmark-results",
+            "paired_receipt_mismatch": "benchmark-results",
+            "forged_paired_ratio": "benchmark-results",
+            "stale_paired_run": "benchmark-results",
             "missing_provider_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
             "invalid_tthw_raw": "tthw-evidence",
@@ -3237,17 +3295,57 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["fingerprint"]["runner"]["imageLabel"] = "macos-14-arm64"
         elif hostile_case == "wrong_performance_version":
             document["fingerprint"]["runner"]["imageVersion"] = "weekly"
-        elif hostile_case == "baseline_fingerprint_mismatch":
-            document["baselineFingerprint"]["runner"]["imageDataSha256"] = "0" * 64
-        elif hostile_case == "cross_report_fingerprint_mismatch":
-            document["fingerprint"]["runner"]["imageDataSha256"] = "0" * 64
+        elif hostile_case == "paired_protocol_mismatch":
+            document["protocolHash"] = "0" * 64
+        elif hostile_case == "paired_candidate_mismatch":
+            document["candidate"]["artifacts"]["typescript"]["sha256"] = "0" * 64
+        elif hostile_case == "paired_receipt_mismatch":
+            document["reportReceiptSha256"] = "0" * 64
+        elif hostile_case == "forged_paired_ratio":
+            document["cases"]["python"]["replay10k"]["durationRatios"][0] = 1.1
+        elif hostile_case == "stale_paired_run":
+            document["replicas"]["3"]["runnerEvidence"]["invocation"]["runId"] = 122
         elif hostile_case == "missing_provider_cell":
             document["proofs"].pop()
         elif hostile_case == "mixed_tthw_status":
             document["artifactSha256"]["kaji-sdk-0.2.0-beta.2.tgz"] = "0" * 64
         else:
             document["artifacts"][0]["sha256"] = "0" * 64
+        if target == "benchmark-results" and hostile_case != "paired_receipt_mismatch":
+            pair = _load_root_script("paired_benchmark.py")
+            if hostile_case == "stale_paired_run":
+                raw_replica_path = (
+                    fixture.paths["benchmark-results"].parent
+                    / "raw/benchmarks/replica-3.json"
+                )
+                raw_replica = json.loads(raw_replica_path.read_text())
+                raw_replica["runnerEvidence"] = document["replicas"]["3"][
+                    "runnerEvidence"
+                ]
+                raw_replica["reportReceiptSha256"] = pair._json_sha256(
+                    {
+                        key: value
+                        for key, value in raw_replica.items()
+                        if key != "reportReceiptSha256"
+                    }
+                )
+                _write_release_evidence_json(raw_replica_path, raw_replica)
+                document["replicas"]["3"]["reportReceiptSha256"] = raw_replica[
+                    "reportReceiptSha256"
+                ]
+            document["reportReceiptSha256"] = pair._json_sha256(
+                {
+                    key: value
+                    for key, value in document.items()
+                    if key != "reportReceiptSha256"
+                }
+            )
         _write_release_evidence_json(path, document)
+        if hostile_case == "forged_paired_ratio":
+            status_path = fixture.paths["performance-status"]
+            status = json.loads(status_path.read_text())
+            status["benchmarkReceiptSha256"] = document["reportReceiptSha256"]
+            _write_release_evidence_json(status_path, status)
 
     first = subprocess.run(
         fixture.command,

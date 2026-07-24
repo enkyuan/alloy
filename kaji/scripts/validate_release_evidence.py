@@ -6,16 +6,33 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
 import tempfile
 from typing import Any, Callable, NoReturn
 
+from aggregate_benchmarks import _aggregate_case
 from benchmark_platform import (
     MAX_IMAGE_DATA_BYTES,
     BenchmarkPlatformError,
     validate_retained_runner,
+)
+from paired_benchmark import (
+    CASES,
+    REFERENCE_PATH,
+    RUNTIMES,
+    THRESHOLD,
+    _file_sha256,
+    _json_sha256,
+    _load_reference,
+    _protocol_hash,
+    _reference_identity,
+    _validate_identity,
+    _validate_replica_report,
+    _validate_runner_evidence,
+    _validate_utc_timestamp,
 )
 from validate_tthw_evidence import (
     EvidenceError as TthwEvidenceError,
@@ -463,10 +480,208 @@ def validate_performance_fingerprint(value: Any) -> dict[str, Any]:
     return value
 
 
-def validate_performance_report(
+def paired_artifacts(release: VerifiedReleaseArtifacts) -> dict[str, Any]:
+    return {
+        "pythonWheel": {
+            "file": PYTHON_WHEEL,
+            "sha256": release.artifact_sha256[PYTHON_WHEEL],
+        },
+        "pythonSdist": {
+            "file": PYTHON_SDIST,
+            "sha256": release.artifact_sha256[PYTHON_SDIST],
+        },
+        "typescript": {
+            "file": TYPESCRIPT_TARBALL,
+            "sha256": release.artifact_sha256[TYPESCRIPT_TARBALL],
+        },
+    }
+
+
+def validate_paired_benchmark(
     document: dict[str, Any],
     *,
-    kind: str,
+    raw_replicas: dict[str, dict[str, Any]],
+    runner_image_digests: dict[str, str],
+    release: VerifiedReleaseArtifacts,
+    args: argparse.Namespace,
+) -> None:
+    expected_keys = {
+        "schemaVersion",
+        "kind",
+        "generatedAt",
+        "protocolHash",
+        "threshold",
+        "referenceRecordSha256",
+        "reference",
+        "candidate",
+        "referenceReceiptSha256",
+        "candidateReceiptSha256",
+        "replicas",
+        "cases",
+        "failures",
+        "passed",
+        "reportReceiptSha256",
+    }
+    require(set(document) == expected_keys, "paired_benchmark_schema_invalid")
+    require(
+        document.get("schemaVersion") == 1
+        and document.get("kind") == "kaji-beta-paired-benchmark-aggregate",
+        "paired_benchmark_schema_invalid",
+    )
+    try:
+        _validate_utc_timestamp(document.get("generatedAt"), "aggregate generatedAt")
+        reference_record = _load_reference()
+        reference = _validate_identity(document.get("reference"), "reference")
+        candidate = _validate_identity(document.get("candidate"), "candidate")
+    except RuntimeError:
+        reject("paired_benchmark_identity_invalid")
+    require(
+        document.get("protocolHash") == _protocol_hash()
+        and document.get("threshold") == THRESHOLD
+        and document.get("referenceRecordSha256") == _file_sha256(REFERENCE_PATH),
+        "paired_benchmark_protocol_mismatch",
+    )
+    require(
+        reference == _reference_identity(reference_record),
+        "paired_benchmark_reference_mismatch",
+    )
+    expected_candidate = {
+        "commit": args.expected_commit,
+        "releaseManifestSha256": release.manifest_sha256,
+        "artifacts": paired_artifacts(release),
+    }
+    require(candidate == expected_candidate, "artifact_hash_mismatch")
+    require(
+        document.get("referenceReceiptSha256") == _json_sha256(reference)
+        and document.get("candidateReceiptSha256") == _json_sha256(candidate),
+        "paired_benchmark_identity_receipt_mismatch",
+    )
+    unsigned = {
+        key: value for key, value in document.items() if key != "reportReceiptSha256"
+    }
+    require(
+        document.get("reportReceiptSha256") == _json_sha256(unsigned),
+        "paired_benchmark_receipt_mismatch",
+    )
+    require(
+        document.get("passed") is True and document.get("failures") == [],
+        "performance_not_passed",
+    )
+
+    replicas = document.get("replicas")
+    require(
+        isinstance(replicas, dict) and set(replicas) == {"1", "2", "3"},
+        "paired_benchmark_replicas_invalid",
+    )
+    require(
+        set(raw_replicas) == {"1", "2", "3"},
+        "paired_raw_replica_missing",
+    )
+    invocation_values: list[dict[str, Any]] = []
+    validated_raw_replicas: dict[str, dict[str, Any]] = {}
+    for replica in ("1", "2", "3"):
+        receipt = replicas[replica]
+        require(
+            isinstance(receipt, dict)
+            and set(receipt) == {"reportReceiptSha256", "runnerEvidence"},
+            "paired_benchmark_replicas_invalid",
+        )
+        require(
+            isinstance(receipt["reportReceiptSha256"], str)
+            and ARTIFACT_DIGEST.fullmatch(receipt["reportReceiptSha256"]) is not None,
+            "paired_benchmark_replicas_invalid",
+        )
+        try:
+            raw_replica = _validate_replica_report(raw_replicas[replica])
+        except RuntimeError:
+            reject("paired_raw_replica_invalid")
+        try:
+            runner_evidence = _validate_runner_evidence(receipt["runnerEvidence"])
+        except RuntimeError:
+            reject("paired_benchmark_runner_invalid")
+        require(
+            raw_replica["replica"] == int(replica)
+            and raw_replica["reportReceiptSha256"] == receipt["reportReceiptSha256"]
+            and raw_replica["runnerEvidence"] == receipt["runnerEvidence"],
+            "paired_raw_replica_mismatch",
+        )
+        require(
+            runner_image_digests.get(replica)
+            == runner_evidence["runner"].get("imageDataSha256"),
+            "paired_image_data_hash_mismatch",
+        )
+        validated_raw_replicas[replica] = raw_replica
+        invocation_values.append(runner_evidence["invocation"])
+    expected_run_id = int(args.workflow_run.rsplit("/", 1)[1])
+    require(
+        all(
+            invocation["runId"] == expected_run_id
+            and invocation["runAttempt"] == args.workflow_run_attempt
+            and invocation["workflowSha"] == args.expected_commit
+            for invocation in invocation_values
+        ),
+        "paired_benchmark_invocation_mismatch",
+    )
+    require(
+        len({invocation["job"] for invocation in invocation_values}) == 1
+        and len({invocation["workflowRef"] for invocation in invocation_values}) == 1,
+        "paired_benchmark_replicas_invalid",
+    )
+
+    ordered_replicas = [validated_raw_replicas[replica] for replica in ("1", "2", "3")]
+    cases = document.get("cases")
+    require(
+        isinstance(cases, dict) and set(cases) == set(RUNTIMES),
+        "performance_results_invalid",
+    )
+    for runtime in RUNTIMES:
+        runtime_cases = cases[runtime]
+        require(
+            isinstance(runtime_cases, dict) and set(runtime_cases) == set(CASES),
+            "performance_results_invalid",
+        )
+        for case in CASES:
+            evidence = runtime_cases[case]
+            expected = _aggregate_case(ordered_replicas, runtime, case)
+            require(
+                isinstance(evidence, dict)
+                and set(evidence)
+                == {
+                    "durationRatios",
+                    "rssRatios",
+                    "durationVerdict",
+                    "rssVerdict",
+                    "verdict",
+                },
+                "performance_results_invalid",
+            )
+            require(evidence == expected, "performance_results_invalid")
+            for field in ("durationRatios", "rssRatios"):
+                ratios = evidence[field]
+                require(
+                    isinstance(ratios, list)
+                    and len(ratios) == 3
+                    and all(
+                        not isinstance(ratio, bool)
+                        and isinstance(ratio, (int, float))
+                        and math.isfinite(float(ratio))
+                        and ratio >= 0
+                        and ratio <= THRESHOLD
+                        for ratio in ratios
+                    ),
+                    "performance_results_invalid",
+                )
+            require(
+                evidence["durationVerdict"] == "pass"
+                and evidence["rssVerdict"] == "pass"
+                and evidence["verdict"] == "pass",
+                "performance_not_passed",
+            )
+
+
+def validate_soak_report(
+    document: dict[str, Any],
+    *,
     release: VerifiedReleaseArtifacts,
     args: argparse.Namespace,
 ) -> dict[str, str]:
@@ -482,41 +697,19 @@ def validate_performance_report(
         document.get("artifacts") == runtime_artifacts(release),
         "artifact_hash_mismatch",
     )
-    fingerprint = validate_performance_fingerprint(document.get("fingerprint"))
+    validate_performance_fingerprint(document.get("fingerprint"))
     resolved = validate_resolved_packages(document.get("resolvedPackages"), args)
     results = document.get("results")
     if not isinstance(results, dict):
         reject("performance_results_invalid")
     require(set(results) == {"python", "typescript"}, "performance_results_invalid")
-
-    if kind == "benchmark":
-        require(document.get("mode") == "full", "performance_mode_invalid")
-        baseline_fingerprint = validate_performance_fingerprint(
-            document.get("baselineFingerprint")
-        )
+    require(document.get("requestedMinutes") == 30, "soak_duration_invalid")
+    for runtime, result in results.items():
         require(
-            baseline_fingerprint == fingerprint,
-            "performance_fingerprint_mismatch",
+            isinstance(result, dict)
+            and result.get("resolvedPackage") == resolved[runtime],
+            "resolved_package_mismatch",
         )
-        for runtime, cases in results.items():
-            require(
-                isinstance(cases, dict) and bool(cases),
-                "performance_results_invalid",
-            )
-            for result in cases.values():
-                require(
-                    isinstance(result, dict)
-                    and result.get("resolvedPackage") == resolved[runtime],
-                    "resolved_package_mismatch",
-                )
-    else:
-        require(document.get("requestedMinutes") == 30, "soak_duration_invalid")
-        for runtime, result in results.items():
-            require(
-                isinstance(result, dict)
-                and result.get("resolvedPackage") == resolved[runtime],
-                "resolved_package_mismatch",
-            )
     return resolved
 
 
@@ -524,14 +717,25 @@ def validate_performance_status(
     document: dict[str, Any],
     benchmark: dict[str, Any],
     soak: dict[str, Any],
+    soak_receipt_sha256: str,
     *,
     release: VerifiedReleaseArtifacts,
     args: argparse.Namespace,
 ) -> None:
-    validate_passed_receipt(document, args)
+    require(
+        document.get("schemaVersion") == 2
+        and document.get("kind") == "kaji-beta-performance-status",
+        "performance_status_invalid",
+    )
+    require(document.get("commit") == args.expected_commit, "commit_mismatch")
+    validate_run_identity(document, args)
+    require(
+        document.get("conclusion") == "passed" and document.get("failureCode") is None,
+        "receipt_not_passed",
+    )
     validate_manifest(document, release)
     require(
-        document.get("artifacts") == runtime_artifacts(release),
+        document.get("artifacts") == paired_artifacts(release),
         "artifact_hash_mismatch",
     )
     require(
@@ -540,39 +744,31 @@ def validate_performance_status(
         and document.get("validationOutcome") == "success",
         "performance_status_invalid",
     )
-    fingerprint = document.get("fingerprint")
-    validate_performance_fingerprint(fingerprint)
     require(
-        fingerprint == benchmark.get("fingerprint") == soak.get("fingerprint"),
-        "performance_fingerprint_mismatch",
+        document.get("releaseArtifactId") == args.release_artifact_id,
+        "release_artifact_id_mismatch",
     )
     require(
-        benchmark.get("artifacts") == soak.get("artifacts"),
-        "performance_artifact_identity_mismatch",
+        document.get("releaseArtifactDigest") == args.release_artifact_digest,
+        "release_artifact_digest_mismatch",
     )
-    expected_resolved = {
-        "benchmark": benchmark.get("resolvedPackages"),
-        "soak": soak.get("resolvedPackages"),
-    }
     require(
-        document.get("resolvedPackages") == expected_resolved,
-        "resolved_package_mismatch",
+        document.get("benchmarkReceiptSha256") == benchmark.get("reportReceiptSha256"),
+        "paired_benchmark_receipt_mismatch",
+    )
+    require(
+        document.get("soakReceiptSha256") == soak_receipt_sha256,
+        "soak_receipt_mismatch",
     )
 
 
 def validate_performance_image_data(
     digest: str,
-    benchmark: dict[str, Any],
     soak: dict[str, Any],
 ) -> None:
-    benchmark_fingerprint = validate_performance_fingerprint(
-        benchmark.get("fingerprint")
-    )
     soak_fingerprint = validate_performance_fingerprint(soak.get("fingerprint"))
     require(
-        digest
-        == benchmark_fingerprint.get("runner", {}).get("imageDataSha256")
-        == soak_fingerprint.get("runner", {}).get("imageDataSha256"),
+        digest == soak_fingerprint.get("runner", {}).get("imageDataSha256"),
         "performance_image_data_hash_mismatch",
     )
 
@@ -782,6 +978,39 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
     else:
         receipt_hashes["performance-image-data"] = performance_image_data_digest
 
+    paired_image_digests: dict[str, str] = {}
+    raw_replicas: dict[str, dict[str, Any]] = {}
+    for replica in ("1", "2", "3"):
+        replica_label = f"paired-replica-{replica}"
+        replica_path = (
+            args.benchmark_results.parent
+            / "raw"
+            / "benchmarks"
+            / f"replica-{replica}.json"
+        )
+        try:
+            document, digest = load_document(replica_path)
+        except EvidenceValidationError as error:
+            failures.append({"evidence": replica_label, "code": error.code})
+        else:
+            raw_replicas[replica] = document
+            receipt_hashes[replica_label] = digest
+
+        image_label = f"paired-image-data-{replica}"
+        image_path = (
+            args.benchmark_results.parent
+            / "raw"
+            / "benchmarks"
+            / f"replica-{replica}-imagedata.json"
+        )
+        try:
+            digest = load_performance_image_data(image_path)
+        except EvidenceValidationError as error:
+            failures.append({"evidence": image_label, "code": error.code})
+        else:
+            paired_image_digests[replica] = digest
+            receipt_hashes[image_label] = digest
+
     release: VerifiedReleaseArtifacts | None = None
     if not any(failure["evidence"] == "invocation" for failure in failures):
         try:
@@ -823,18 +1052,18 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
 
         check(
             "benchmark-results",
-            lambda: validate_performance_report(
+            lambda: validate_paired_benchmark(
                 documents["benchmark-results"],
-                kind="benchmark",
+                raw_replicas=raw_replicas,
+                runner_image_digests=paired_image_digests,
                 release=release,
                 args=args,
             ),
         )
         check(
             "soak-results",
-            lambda: validate_performance_report(
+            lambda: validate_soak_report(
                 documents["soak-results"],
-                kind="soak",
                 release=release,
                 args=args,
             ),
@@ -844,7 +1073,6 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
                 try:
                     validate_performance_image_data(
                         performance_image_data_digest,
-                        documents["benchmark-results"],
                         documents["soak-results"],
                     )
                 except EvidenceValidationError as error:
@@ -862,6 +1090,7 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
                     documents["performance-status"],
                     documents["benchmark-results"],
                     documents["soak-results"],
+                    receipt_hashes["soak-results"],
                     release=release,
                     args=args,
                 ),

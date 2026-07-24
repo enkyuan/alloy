@@ -417,6 +417,7 @@ const workflowFiles = [
   "ts.format.yml",
   "ast-grep.test.yml",
   "kaji.benchmark.yml",
+  "kaji.performance.yml",
   "kaji.gate.yml",
   "kaji.rehearsal.yml",
   "kaji.publish.yml",
@@ -424,6 +425,7 @@ const workflowFiles = [
 ] as const;
 const expectedKajiWorkflowNames = {
   "kaji.benchmark.yml": "benchmark / kaji",
+  "kaji.performance.yml": "performance / kaji",
   "kaji.gate.yml": "gate / kaji",
   "kaji.rehearsal.yml": "rehearsal / kaji",
   "kaji.publish.yml": "publish / kaji",
@@ -433,9 +435,14 @@ type KajiWorkflowFile = keyof typeof expectedKajiWorkflowNames;
 const expectedKajiJobNames = {
   "kaji.benchmark.yml": {
     "release-artifacts": "release artifacts",
-    benchmark: "performance benchmark",
+    performance: "performance evidence",
+  },
+  "kaji.performance.yml": {
+    "candidate-artifact": "candidate artifact",
+    "paired-replica": "paired benchmark ${{ matrix.replica }}",
+    "paired-aggregate": "paired benchmark aggregate",
     soak: "30-minute soak",
-    calibrate: "baseline calibration",
+    "performance-evidence": "performance evidence",
   },
   "kaji.gate.yml": {
     "kaji-beta-pr-gate": "beta release gate",
@@ -519,7 +526,18 @@ const readOnlyPermissions: PermissionMap = { contents: "read" };
 const expectedJobPermissionDeclarations: Partial<
   Record<(typeof workflowFiles)[number], Record<string, PermissionMap>>
 > = {
+  "kaji.benchmark.yml": {
+    performance: { actions: "read", contents: "read" },
+  },
+  "kaji.performance.yml": {
+    "candidate-artifact": { actions: "read", contents: "read" },
+    "paired-replica": { actions: "read", contents: "read" },
+  },
+  "kaji.rehearsal.yml": {
+    performance: { actions: "read", contents: "read" },
+  },
   "kaji.publish.yml": {
+    performance: { actions: "read", contents: "read" },
     "supply-chain": {
       contents: "read",
       "id-token": "write",
@@ -631,12 +649,19 @@ function isTrustedHandoffCall(reference: string): boolean {
 }
 
 function localActionDocument(root: string, reference: string): string {
-  const directory = resolve(root, reference);
-  const fromRoot = relative(root, directory);
+  const target = resolve(root, reference);
+  const fromRoot = relative(root, target);
   if (fromRoot === ".." || fromRoot.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)) {
     throw new Error(`local action escapes the repository: ${reference}`);
   }
-  const candidates = [resolve(directory, "action.yml"), resolve(directory, "action.yaml")].filter(
+  if (
+    reference.startsWith("./.github/workflows/") &&
+    /\.ya?ml$/u.test(reference) &&
+    existsSync(target)
+  ) {
+    return fromRoot.replaceAll("\\", "/");
+  }
+  const candidates = [resolve(target, "action.yml"), resolve(target, "action.yaml")].filter(
     existsSync,
   );
   if (candidates.length !== 1) {
@@ -1784,7 +1809,7 @@ describe("Kaji workflow contracts", () => {
       {
         name: "kaji.benchmark.yml" as const,
         producer: "release-artifacts",
-        consumers: ["benchmark", "soak", "calibrate"],
+        consumers: ["performance"],
       },
     ];
 
@@ -1811,6 +1836,13 @@ describe("Kaji workflow contracts", () => {
         const job = jobs[jobId];
         expect(job, `${name}:${jobId}`).toBeDefined();
         expect(dependencyClosure(workflow, jobId), `${name}:${jobId}`).toContain(producer);
+        if (job?.uses === "./.github/workflows/kaji.performance.yml") {
+          expect(job.with).toMatchObject({
+            "candidate-artifact-id": `\${{ needs.${producer}.outputs.artifact-id }}`,
+            "candidate-artifact-digest": `\${{ needs.${producer}.outputs.artifact-digest }}`,
+          });
+          continue;
+        }
         const steps = job?.steps ?? [];
         const downloads = steps.filter(
           (step) =>
@@ -1835,28 +1867,23 @@ describe("Kaji workflow contracts", () => {
   });
 
   it("runs protected benchmark and provider consumers only from installed candidate bytes", () => {
-    const benchmark = readWorkflow("kaji.benchmark.yml").workflow;
-    for (const [jobId, fragment] of [
-      ["benchmark", "run_beta_benchmarks.py --full"],
-      ["soak", "run_beta_soak.py --minutes 30"],
-      ["calibrate", "run_beta_benchmarks.py --calibrate"],
-    ] as const) {
-      const command = benchmark.jobs?.[jobId]?.steps?.find((step) =>
-        step.run?.includes(fragment),
-      )?.run;
-      expect(command, jobId).toContain("--protected");
-      expect(command, jobId).toContain("--artifacts-dir .artifacts/kaji-release");
-    }
+    const performance = readWorkflow("kaji.performance.yml").workflow;
+    const paired = performance.jobs?.["paired-replica"]?.steps?.find((step) =>
+      step.run?.includes("paired_benchmark.py"),
+    )?.run;
+    expect(paired).toContain("--protected");
+    expect(paired).toContain("--reference-artifacts-dir .artifacts/kaji-reference");
+    expect(paired).toContain("--candidate-artifacts-dir .artifacts/kaji-candidate");
+    expect(paired).toContain('--runner-image-data "$HOME/imagedata.json"');
+    const soak = performance.jobs?.soak?.steps?.find((step) =>
+      step.run?.includes("run_beta_soak.py"),
+    )?.run;
+    expect(soak).toContain("--minutes 30 --protected");
+    expect(soak).toContain("--artifacts-dir .artifacts/kaji-candidate");
 
     for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
-      const performance = readWorkflow(workflowName).workflow.jobs?.performance;
-      for (const fragment of ["run_beta_benchmarks.py --full", "run_beta_soak.py --minutes 30"]) {
-        const command = performance?.steps?.find((step) => step.run?.includes(fragment))?.run;
-        expect(command, `${workflowName}:${fragment}`).toContain("--protected");
-        expect(command, `${workflowName}:${fragment}`).toContain(
-          "--artifacts-dir .artifacts/kaji-release",
-        );
-      }
+      const performanceCall = readWorkflow(workflowName).workflow.jobs?.performance;
+      expect(performanceCall?.uses).toBe("./.github/workflows/kaji.performance.yml");
 
       const provider = readWorkflow(workflowName).workflow.jobs?.["keyed-proof"];
       const command = provider?.steps?.find((step) =>
@@ -2069,63 +2096,52 @@ describe("Kaji workflow contracts", () => {
     "binds %s performance evidence to the measured GitHub-hosted macOS image",
     (workflowName) => {
       const { workflow } = readWorkflow(workflowName);
-      const job = workflow.jobs?.performance;
-      expect(job?.["runs-on"]).toBe("macos-15");
-      const environment = effectiveEnvironment(workflow, job!);
-      expect(environment.KAJI_BENCHMARK_PINNED_RUNNER).toBeUndefined();
-      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST).toBeUndefined();
-      expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256).toBeUndefined();
-      expect(environment.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST).toBeUndefined();
-      const validation = job?.steps?.find((step) =>
-        step.run?.includes("expected_fingerprint"),
+      const call = workflow.jobs?.performance;
+      expect(call?.uses).toBe("./.github/workflows/kaji.performance.yml");
+      expect(call?.permissions).toEqual({ actions: "read", contents: "read" });
+
+      const shared = readWorkflow("kaji.performance.yml").workflow;
+      expect(shared.jobs?.["paired-replica"]?.["runs-on"]).toBe("macos-15");
+      expect(shared.jobs?.soak?.["runs-on"]).toBe("macos-15");
+      const paired = shared.jobs?.["paired-replica"];
+      expect(paired?.strategy).toMatchObject({
+        "fail-fast": false,
+        matrix: { replica: [1, 2, 3] },
+      });
+      const measurement = paired?.steps?.find((step) =>
+        step.run?.includes("paired_benchmark.py"),
       )?.run;
-      expect(validation).toContain("fingerprint(protected=True)");
-      expect(validation).toContain('.fingerprint.runner.os == "Darwin"');
-      expect(validation).toContain('.fingerprint.runner.arch == "arm64"');
-      expect(validation).toContain(".fingerprint.runner.platformVersion");
-      expect(validation).toContain('.fingerprint.runner.environment == "github-hosted"');
-      expect(validation).toContain('.fingerprint.runner.imageOS == "macos15"');
-      expect(validation).toContain('.fingerprint.runner.imageLabel == "macos-15-arm64"');
-      expect(validation).toContain(".fingerprint.runner.imageVersion");
-      expect(validation).toContain(".fingerprint.runner.imageDataSha256");
-      expect(validation).toContain("shasum -a 256");
-      expect(validation).toContain("/imagedata.json");
-      expect(validation).toContain("cmp ");
-      expect(validation).toContain(
-        'cp "$(dirname "$benchmark")/imagedata.json" "$KAJI_PERFORMANCE_EVIDENCE_DIR/performance-imagedata.json"',
-      );
-      const imageVersionMatch = validation?.match(
-        /imageVersion \| type == "string" and test\("([^"]+)"\)/,
-      );
-      expect(imageVersionMatch).toBeDefined();
-      const imageVersion = new RegExp(JSON.parse(`"${imageVersionMatch![1]}"`) as string);
-      expect(imageVersion.test("20250226.766")).toBe(true);
-      expect(imageVersion.test("20260715.0234.1")).toBe(true);
-      expect(validation).toContain(".baselineFingerprint == $fingerprint");
-      expect(validation).not.toContain("imageDigest");
-      expect(validation).not.toContain("bootstrapManifestSha256");
+      expect(measurement).toContain('--runner-image-data "$HOME/imagedata.json"');
+      const retainedImage = paired?.steps?.find((step) =>
+        step.run?.includes("replica-${{ matrix.replica }}-imagedata.json"),
+      )?.run;
+      expect(retainedImage).toContain('cp "$HOME/imagedata.json"');
+      const binder = shared.jobs?.["performance-evidence"]?.steps?.find((step) =>
+        step.run?.includes("candidate.releaseManifestSha256"),
+      )?.run;
+      expect(binder).toContain("sha256sum");
+      expect(binder).toContain("paired-benchmark-results.json");
+      expect(JSON.stringify(shared)).not.toContain("baselineFingerprint");
     },
   );
 
-  it("keeps calibration on the measured GitHub-hosted macOS image", () => {
-    const { workflow } = readWorkflow("kaji.benchmark.yml");
-    const jobs = workflow.jobs ?? {};
-    expect(jobs["release-artifacts"]?.["runs-on"]).toBe("ubuntu-latest");
-    for (const jobId of ["benchmark", "soak", "calibrate"] as const) {
-      const job = jobs[jobId]!;
+  it("keeps paired performance on measured GitHub-hosted macOS images", () => {
+    const benchmark = readWorkflow("kaji.benchmark.yml").workflow;
+    expect(benchmark.jobs?.["release-artifacts"]?.["runs-on"]).toBe("ubuntu-latest");
+    expect(benchmark.jobs?.performance?.uses).toBe("./.github/workflows/kaji.performance.yml");
+    expect(JSON.stringify(benchmark)).not.toContain("calibrate");
+
+    const shared = readWorkflow("kaji.performance.yml").workflow;
+    for (const jobId of ["paired-replica", "soak"] as const) {
+      const job = shared.jobs?.[jobId]!;
       expect(job["runs-on"], jobId).toBe("macos-15");
-      const environment = effectiveEnvironment(workflow, job);
+      const environment = effectiveEnvironment(shared, job);
       expect(environment.KAJI_BENCHMARK_PINNED_RUNNER, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_RUNNER_IMAGE_DIGEST, jobId).toBeUndefined();
-      expect(environment.KAJI_BENCHMARK_CALIBRATION, jobId).toBe(
-        jobId === "calibrate" ? "1" : undefined,
-      );
+      expect(environment.KAJI_BENCHMARK_CALIBRATION, jobId).toBeUndefined();
     }
-    expect(jobs.calibrate?.if).toBe(
-      "github.event_name == 'workflow_dispatch' && inputs.job == 'calibrate'",
-    );
 
     const runtimeGuard = readFileSync(
       resolve(repositoryRoot, "kaji/scripts/benchmark_platform.py"),
