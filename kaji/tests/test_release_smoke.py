@@ -399,13 +399,11 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
     destination = tmp_path / "echo-copy"
     (registry / "echo").mkdir(parents=True)
     destination.mkdir()
-    output: list[str] = []
-    for name in ("echo.py", "echo.ts"):
-        body = f"packaged {name}\n"
-        (registry / "echo" / name).write_text(body)
-        copied = destination / name
-        copied.write_text(body)
-        output.append(f"  wrote {copied.resolve()}")
+    body = "packaged echo.py\n"
+    (registry / "echo" / "echo.py").write_text(body)
+    copied = destination / "echo.py"
+    copied.write_text(body)
+    output = [f"  wrote {copied.resolve()}"]
     output.append("Installed integration: echo v0.1.0")
     module.assert_echo_cli_output("\n".join(output), destination, registry)
 
@@ -438,7 +436,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
     )
 
     (destination / "echo.py").write_text("checkout source must not be accepted")
-    with pytest.raises(SystemExit, match="packaged Echo assets"):
+    with pytest.raises(SystemExit, match="packaged Echo asset"):
         module.assert_echo_cli_output("\n".join(output), destination, registry)
     with pytest.raises(SystemExit, match="emitted invalid JSON"):
         module.assert_list_integrations_output("No integrations available.")
@@ -595,6 +593,39 @@ def test_archive_verifier_compares_all_packaged_contract_bytes() -> None:
         assert expected in script
 
 
+def test_archive_verifier_allows_only_declared_github_owner_fixture() -> None:
+    module = _load_script("verify_archives.py")
+    manifest_path = "kaji/integrations/registry/github/manifest.json"
+    owner_fixture = "kaji/integrations/registry/github/tests/test_github.py"
+    arbitrary_test = "kaji/integrations/registry/github/tests/test_extra.py"
+    manifest: dict[str, object] = {
+        "files": [
+            "github.py",
+            "tests/test_github.py",
+            "tests/test_extra.py",
+        ]
+    }
+
+    def declared_paths(document: dict[str, object]) -> set[str]:
+        payloads = {manifest_path: json.dumps(document).encode()}
+        return module.manifest_declared_owner_fixture_paths(
+            {manifest_path, owner_fixture, arbitrary_test},
+            payloads.__getitem__,
+        )
+
+    allowed = declared_paths(manifest)
+
+    assert allowed == {owner_fixture}
+    assert module.forbidden_artifacts(
+        {owner_fixture, arbitrary_test},
+        allowed_test_paths=allowed,
+    ) == [arbitrary_test]
+
+    manifest["files"] = ["github.py", "tests/test_extra.py"]
+    assert declared_paths(manifest) == set()
+    assert module.forbidden_artifacts({owner_fixture}) == [owner_fixture]
+
+
 def test_adversarial_archive_verifier_covers_generated_metadata_and_size_bombs() -> (
     None
 ):
@@ -606,9 +637,11 @@ def test_adversarial_archive_verifier_covers_generated_metadata_and_size_bombs()
         "mutate_entry_point",
         "mutate_recorded_payload",
         "mutate_oversized_metadata",
+        "mutate_wheel_package_test",
         "mutate_setup_cfg",
         "mutate_sdist_metadata",
         "mutate_sdist_project_url_mismatch",
+        "mutate_sdist_package_test",
         "archive verifier rejected all adversarial metadata cases",
     ):
         assert expected in script

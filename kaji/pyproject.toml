@@ -46,7 +46,6 @@ kaji = [
     "py.typed",
     "integrations/registry/**/*.json",
     "integrations/registry/**/*.py",
-    "integrations/registry/**/*.ts",
     "integrations/registry/**/LICENSE",
 ]
 "kaji.contracts" = ["*.json", "*.md", "cli/*.json", "release/*.json"]

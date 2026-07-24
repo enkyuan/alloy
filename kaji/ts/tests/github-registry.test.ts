@@ -408,7 +408,7 @@ describe("GitHub registry bundle", () => {
     expect(manifest.files).toEqual([
       "index.ts",
       "client.ts",
-      "github_vitest.ts",
+      "tests/github.test.ts",
       "owner-fixtures.json",
       "LICENSE",
     ]);

@@ -20,7 +20,9 @@ _CLOSED_OUTCOMES = frozenset(
 def scripted_outcome(name: str) -> str:
     if name not in _CLOSED_OUTCOMES:
         raise ValueError("unknown scripted GitHub outcome")
-    fixture = json.loads((Path(__file__).with_name("owner-fixtures.json")).read_text())
+    fixture = json.loads(
+        (Path(__file__).parents[1] / "owner-fixtures.json").read_text()
+    )
     rows = {row["name"]: row["expected"] for row in fixture["outcomes"]}
     return rows[name]
 

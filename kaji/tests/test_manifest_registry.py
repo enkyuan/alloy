@@ -104,7 +104,7 @@ def test_load_manifest_returns_parsed_manifest() -> None:
     assert manifest.name == "echo"
     assert manifest.namespace == "echo"
     assert manifest.auth.kind == "none"
-    assert {"echo.py", "echo.ts"} <= set(manifest.files)
+    assert manifest.files == ("echo.py",)
     assert manifest.peer_deps == {}
     assert manifest.stability == "beta"
     assert manifest.runtimes == ("python", "typescript")
@@ -306,7 +306,7 @@ def test_load_manifest_unknown_raises_integration_not_found() -> None:
 
 def test_install_integration_copies_files(tmp_path: Path) -> None:
     written = install_integration("echo", tmp_path)
-    assert {path.name for path in written} == {"echo.py", "echo.ts"}
+    assert {path.name for path in written} == {"echo.py"}
     target = tmp_path / "echo.py"
     assert "async def say" in target.read_text()
     assert "kaji.function_tool" in target.read_text()

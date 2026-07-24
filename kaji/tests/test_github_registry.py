@@ -132,7 +132,7 @@ async def test_production_integration_closes_its_owned_http_once(
     http.aclose.assert_awaited_once_with()
 
 
-def test_github_manifest_is_experimental_and_declares_the_owner_bundle() -> None:
+def test_github_manifest_is_experimental_and_declares_native_owner_bundles() -> None:
     python = json.loads(
         (ROOT / "kaji/src/kaji/integrations/registry/github/manifest.json").read_text()
     )
@@ -155,20 +155,48 @@ def test_github_manifest_is_experimental_and_declares_the_owner_bundle() -> None
     assert python["files"] == [
         "github.py",
         "client.py",
-        "github.ts",
-        "client.ts",
-        "github_pytest.py",
-        "github_vitest.ts",
+        "tests/test_github.py",
         "owner-fixtures.json",
         "LICENSE",
     ]
     assert typescript["files"] == [
         "index.ts",
         "client.ts",
-        "github_vitest.ts",
+        "tests/github.test.ts",
         "owner-fixtures.json",
         "LICENSE",
     ]
+
+
+def test_github_owner_fixture_has_one_closed_cross_runtime_shape() -> None:
+    python_path = (
+        ROOT / "kaji/src/kaji/integrations/registry/github/owner-fixtures.json"
+    )
+    typescript_path = ROOT / "kaji/ts/registry/github/owner-fixtures.json"
+
+    assert python_path.read_bytes() == typescript_path.read_bytes()
+    assert json.loads(python_path.read_text()) == {
+        "schemaVersion": "1.0.0",
+        "outcomes": [
+            {"name": "success", "expected": "success"},
+            {
+                "name": "missing_auth",
+                "expected": "INTEGRATION_AUTH_REQUIRED",
+            },
+            {
+                "name": "rate_limit",
+                "expected": "INTEGRATION_RATE_LIMITED",
+            },
+            {
+                "name": "approval_rejected",
+                "expected": "APPROVAL_REJECTED",
+            },
+            {
+                "name": "connection_lost_after_dispatch",
+                "expected": "unknown",
+            },
+        ],
+    }
 
 
 def test_copied_python_bundle_uses_its_owner_client(

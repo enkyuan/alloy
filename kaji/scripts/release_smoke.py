@@ -202,17 +202,12 @@ def assert_init_cli_output(output: str, scaffold: Path) -> None:
 
 
 def assert_echo_cli_output(output: str, destination: Path, registry: Path) -> None:
-    for name in ("echo.py", "echo.ts"):
-        copied = destination / name
-        packaged = registry / "echo" / name
-        if not copied.is_file() or copied.read_bytes() != packaged.read_bytes():
-            raise SystemExit(
-                "FAIL: installed add did not copy the packaged Echo assets"
-            )
-        if f"wrote {copied.resolve()}" not in output:
-            raise SystemExit(
-                "FAIL: installed add did not report every copied Echo asset"
-            )
+    copied = destination / "echo.py"
+    packaged = registry / "echo" / "echo.py"
+    if not copied.is_file() or copied.read_bytes() != packaged.read_bytes():
+        raise SystemExit("FAIL: installed add did not copy the packaged Echo asset")
+    if f"wrote {copied.resolve()}" not in output:
+        raise SystemExit("FAIL: installed add did not report the copied Echo asset")
     if "Installed integration: echo v0.1.0" not in output:
         raise SystemExit("FAIL: installed add did not report the Echo integration")
 

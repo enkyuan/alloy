@@ -14,7 +14,7 @@ const closedOutcomes = new Set([
 export function scriptedOutcome(name: string): string {
   if (!closedOutcomes.has(name)) throw new Error("unknown scripted GitHub outcome");
   const fixture = JSON.parse(
-    readFileSync(new URL("./owner-fixtures.json", import.meta.url), "utf8"),
+    readFileSync(new URL("../owner-fixtures.json", import.meta.url), "utf8"),
   ) as { outcomes: Array<{ name: string; expected: string }> };
   return fixture.outcomes.find((row) => row.name === name)!.expected;
 }

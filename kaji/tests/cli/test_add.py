@@ -20,7 +20,6 @@ def test_add_echo_copies_files(tmp_path: Path) -> None:
     rc = main(["add", "echo", "--out", str(tmp_path)])
     assert rc == 0
     assert (tmp_path / "echo.py").exists()
-    assert (tmp_path / "echo.ts").exists()
 
 
 def test_add_unknown_integration_returns_nonzero(tmp_path: Path) -> None:
@@ -196,7 +195,7 @@ def test_default_destination_is_provider_scoped(tmp_path: Path, monkeypatch) -> 
     assert not (tmp_path / "integrations/echo.py").exists()
 
 
-def test_github_requires_opt_in_then_copies_the_complete_owner_bundle(
+def test_github_requires_opt_in_then_copies_the_python_owner_bundle(
     tmp_path: Path,
 ) -> None:
     destination = tmp_path / "github"
@@ -220,13 +219,14 @@ def test_github_requires_opt_in_then_copies_the_complete_owner_bundle(
             )
             == 0
         )
-    assert {path.name for path in destination.iterdir()} == {
+    assert {
+        path.relative_to(destination).as_posix()
+        for path in destination.rglob("*")
+        if path.is_file()
+    } == {
         "github.py",
         "client.py",
-        "github.ts",
-        "client.ts",
-        "github_pytest.py",
-        "github_vitest.ts",
+        "tests/test_github.py",
         "owner-fixtures.json",
         "LICENSE",
         ".kaji-integration-provenance.json",
