@@ -2535,6 +2535,7 @@ def test_beta_benchmark_full_mode_reports_malformed_baseline_json(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT", raising=False)
     baseline = tmp_path / "baseline.json"
     baseline.write_text("{")
     output = tmp_path / "full.json"
@@ -3552,6 +3553,7 @@ def test_beta_benchmark_full_mode_reports_malformed_nested_baseline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT", raising=False)
     baseline_value = _complete_benchmark_baseline(module)
     current = module._baseline_fingerprint(baseline_value)
     baseline_value["rawSamples"]["python"]["replay10k"] = 1
@@ -3900,6 +3902,7 @@ def test_beta_benchmark_calibration_requires_explicit_operator_mode(
     tmp_path: Path,
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT", raising=False)
     output = tmp_path / "calibration.json"
     monkeypatch.delenv("KAJI_BENCHMARK_CALIBRATION", raising=False)
     monkeypatch.setattr(
@@ -3925,6 +3928,7 @@ def test_beta_benchmark_calibration_requests_protected_runner_measurement(
     tmp_path: Path,
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
+    monkeypatch.delenv("KAJI_RELEASE_COMMIT", raising=False)
     output = tmp_path / "calibration.json"
     calls: list[dict[str, object]] = []
     monkeypatch.setenv("KAJI_BENCHMARK_CALIBRATION", "1")
