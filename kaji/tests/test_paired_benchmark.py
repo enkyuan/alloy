@@ -345,7 +345,7 @@ def test_case_evidence_keeps_raw_pairs_and_exact_threshold_passes() -> None:
 
 def test_case_evidence_rejects_incomplete_tool_batch_repetitions() -> None:
     pair = _load_script("paired_benchmark.py")
-    pairs = [
+    pairs: list[dict[str, Any]] = [
         {
             "sample": index,
             "order": list(pair._subject_order(1, "toolBatch100", index)),
