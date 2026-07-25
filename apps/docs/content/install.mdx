@@ -11,9 +11,9 @@ not promotable beta releases until the protected release evidence passes. All
 ## Python
 
 ```bash
-pip install "kaji-sdk[openai]==0.2.0b1"           # one stable-core provider
-pip install "kaji-sdk[openai,anthropic]==0.2.0b1" # both stable-core providers
-pip install "kaji-sdk[providers]==0.2.0b1"        # also installs experimental Gemini
+pip install "kaji-sdk[openai]==0.2.0b1"    # beta-supported provider
+pip install "kaji-sdk[anthropic]==0.2.0b1" # experimental/WIP adapter
+pip install "kaji-sdk[providers]==0.2.0b1" # all optional provider clients
 ```
 
 The PyPI distribution is `kaji-sdk`; Python code still uses `import kaji`, and
@@ -41,15 +41,17 @@ Optional extras:
 
 ```bash
 bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" openai
-bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" @anthropic-ai/sdk
+bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" @anthropic-ai/sdk # experimental/WIP
 ```
 
 `zod >=4.3 <5` is a required peer dependency of `kaji-sdk`. `openai >=4 <8`
-and `@anthropic-ai/sdk >=0.30 <2` are optional peers; install whichever you'll
-register as a provider. Zod 3 and Zod 5 are outside the supported beta range.
+is the beta-supported optional peer. `@anthropic-ai/sdk >=0.30 <2` is an
+optional peer for the experimental/WIP Anthropic adapter. Zod 3 and Zod 5 are
+outside the supported beta range.
 
 The no-key scaffold installs only the exact `kaji-sdk` version and supported
-Zod range. OpenAI and Anthropic modes add only their selected provider peer.
+Zod range. OpenAI mode adds its beta-supported provider peer; Anthropic mode
+adds the experimental/WIP peer.
 Runtime support is Node 22 and 24; declarations compile with TypeScript 5.7.3
 and current 6.x. npm and Bun are tested separately. pnpm and Yarn are not yet
 claimed as supported package managers.

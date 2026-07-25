@@ -37,7 +37,7 @@ const featureCards = [
   {
     label: "Providers",
     headline: "Pluggable LLM providers.",
-    desc: "OpenAI and Anthropic share one stable streaming boundary.",
+    desc: "OpenAI is beta-supported; Anthropic remains experimental/WIP.",
     href: "/docs/concepts/providers",
   },
   {
@@ -83,7 +83,7 @@ type RuntimeTabId = (typeof runtimeTabs)[number]["id"];
 const runtimeTabDescriptions: Record<RuntimeTabId, string> = {
   loop: "An event-sourced ReAct loop. Replay session state, call the provider, run tool calls, repeat until done.",
   providers:
-    "Use OpenAI or Anthropic behind one stable interface; other factories remain experimental.",
+    "Use beta-supported OpenAI behind the stable interface; Anthropic and other factories remain experimental/WIP.",
   tools: "Register any function as a tool. One provider-neutral payload, translated per provider.",
 };
 

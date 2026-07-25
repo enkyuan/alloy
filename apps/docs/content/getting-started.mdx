@@ -95,19 +95,17 @@ tool wired in.
       </Tab>
     </Tabs>
 
-    Pick one provider and export its key. The base SDK uses a mock provider for
-    tests until you configure a real one; scaffolds generated with
+    Export the OpenAI key for the beta-supported provider. The base SDK uses a
+    mock provider for tests until you configure a real one; scaffolds generated with
     `--provider openai` set `KAJI_MODEL_PROVIDER=openai`.
 
     ```bash
-    export OPENAI_API_KEY=sk-...        # or
-    export ANTHROPIC_API_KEY=sk-ant-... # or
-    export OPENROUTER_API_KEY=...        # Kimi/OpenRouter
+    export OPENAI_API_KEY=sk-...
     ```
 
-    To choose another provider, set `KAJI_MODEL_PROVIDER=openai`,
-    `anthropic`, `gemini`, or `kimi`.
-    For other providers or optional extras, see [install](/docs/install).
+    Anthropic, Gemini, Kimi, and OpenRouter remain experimental/WIP. To evaluate
+    one intentionally, see its optional dependency and configuration in
+    [install](/docs/install).
 
   </Step>
 

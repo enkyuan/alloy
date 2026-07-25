@@ -11,14 +11,14 @@ export const providerDrivers = [
     tier: "beta core",
     icon: () => <OpenAILogo />,
   },
-  {
-    name: "Anthropic",
-    tier: "beta core",
-    icon: () => <AnthropicLogo />,
-  },
 ];
 
 export const moreProviders = [
+  {
+    name: "Anthropic",
+    tier: "experimental / WIP",
+    icon: () => <AnthropicLogo />,
+  },
   {
     name: "OpenRouter",
     tier: "experimental",

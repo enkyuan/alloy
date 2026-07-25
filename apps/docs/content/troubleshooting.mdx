@@ -22,24 +22,24 @@ bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5" openai
 
 ## ProviderConfigError: `<PROVIDER>_API_KEY` is required
 
-The provider client cannot find its key. Export it in your shell or put
-it in a `.env` file that your runtime loads.
+The provider client cannot find its key. For the beta-supported OpenAI path,
+export it in your shell or put it in a `.env` file that your runtime loads.
 
 ```bash
 export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENROUTER_API_KEY=...
 ```
 
-Run `kaji doctor` to verify at least one provider key is present.
+Run `kaji doctor` to verify the key is present. Anthropic, Gemini, Kimi, and
+OpenRouter keys are only needed when intentionally evaluating those
+experimental/WIP adapters.
 
 ## Peer dep version mismatch (TS)
 
-If installation warns about a peer-dependency conflict, check all three
-supported ranges: `zod >=4.3 <5`, `openai >=4 <8`, and
-`@anthropic-ai/sdk >=0.30 <2`. Zod is required; the two provider clients are
-optional. Upgrade or pin the conflicting workspace dependency to a supported
-range.
+If installation warns about a peer-dependency conflict, check the beta ranges:
+`zod >=4.3 <5` and `openai >=4 <8`. Zod is required; OpenAI is optional.
+The experimental/WIP Anthropic adapter separately declares
+`@anthropic-ai/sdk >=0.30 <2`. Upgrade or pin the conflicting workspace
+dependency to the corresponding range.
 
 ## `MISSING_TOOL_IDENTITY` or unclassified tool risk
 

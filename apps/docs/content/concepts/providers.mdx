@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: OpenAI and Anthropic are the beta-core model adapters in both SDKs; native Python and OpenAI-compatible TypeScript alternatives remain experimental.
+description: OpenAI is the beta-supported model adapter in both SDKs; Anthropic and other alternatives remain experimental/WIP.
 ---
 
 Pick a provider when you build the runtime. The runtime never imports
@@ -9,18 +9,20 @@ against a neutral message and tool-spec format.
 
 ## LLM providers
 
-| Provider    | Python SDK     | TypeScript SDK            | Tier         | Env var              |
-| ----------- | -------------- | ------------------------- | ------------ | -------------------- |
-| `openai`    | Native adapter | Native adapter            | Beta core    | `OPENAI_API_KEY`     |
-| `anthropic` | Native adapter | Native adapter            | Beta core    | `ANTHROPIC_API_KEY`  |
-| `kimi`      | Native adapter | OpenAI-compatible factory | Experimental | `OPENROUTER_API_KEY` |
-| `gemini`    | Native adapter | OpenAI-compatible factory | Experimental | `GEMINI_API_KEY`     |
-| `mock`      | Main package   | `kaji-sdk/testing`        | Testing only | -                    |
+| Provider    | Python SDK     | TypeScript SDK            | Tier             | Env var              |
+| ----------- | -------------- | ------------------------- | ---------------- | -------------------- |
+| `openai`    | Native adapter | Native adapter            | Beta core        | `OPENAI_API_KEY`     |
+| `anthropic` | Native adapter | Native adapter            | Experimental/WIP | `ANTHROPIC_API_KEY`  |
+| `kimi`      | Native adapter | OpenAI-compatible factory | Experimental     | `OPENROUTER_API_KEY` |
+| `gemini`    | Native adapter | OpenAI-compatible factory | Experimental     | `GEMINI_API_KEY`     |
+| `mock`      | Main package   | `kaji-sdk/testing`        | Testing only     | -                    |
 
-The base Python SDK defaults to `mock` for tests. Select a real Python
-provider via `KAJI_MODEL_PROVIDER`; TypeScript callers choose a provider
-factory in code. `OpenRouter`, Kimi, and Gemini factories in TypeScript reuse
-the OpenAI-compatible transport and do not expose native vendor features.
+OpenAI is the only external provider in the protected beta proof. The base
+Python SDK defaults to `mock` for tests. Select a real Python provider via
+`KAJI_MODEL_PROVIDER`; TypeScript callers choose a provider factory in code.
+Anthropic, OpenRouter, Kimi, and Gemini remain opt-in experimental/WIP
+adapters. `OpenRouter`, Kimi, and Gemini factories in TypeScript reuse the
+OpenAI-compatible transport and do not expose native vendor features.
 TypeScript Kimi requires an explicit `apiKey` or `OPENROUTER_API_KEY`;
 TypeScript Gemini falls back to `GOOGLE_API_KEY`.
 Adding a provider means implementing the `ModelProvider` protocol and

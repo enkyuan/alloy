@@ -80,6 +80,42 @@ def test_getting_started_proves_no_key_success_before_provider_setup() -> None:
     assert no_key < first_provider_setup
 
 
+def test_public_site_states_the_openai_only_beta_provider_boundary() -> None:
+    docs_root = REPO_ROOT / "apps" / "docs"
+    providers = (docs_root / "content" / "concepts" / "providers.mdx").read_text()
+    install = (docs_root / "content" / "install.mdx").read_text()
+    getting_started = (docs_root / "content" / "getting-started.mdx").read_text()
+    troubleshooting = (docs_root / "content" / "troubleshooting.mdx").read_text()
+    provider_cards = (
+        docs_root / "components" / "landing" / "providers" / "data.tsx"
+    ).read_text()
+    hero = (docs_root / "components" / "landing" / "hero" / "readme.tsx").read_text()
+    combined = "\n".join(
+        [
+            providers,
+            install,
+            getting_started,
+            troubleshooting,
+            provider_cards,
+            hero,
+        ]
+    )
+
+    assert (
+        "OpenAI is the only external provider in the protected beta proof." in providers
+    )
+    assert "| `anthropic` | Native adapter | Native adapter" in providers
+    assert "| Experimental/WIP |" in providers
+    assert "# experimental/WIP adapter" in install
+    assert "remain experimental/WIP" in getting_started
+    assert "experimental/WIP adapters" in troubleshooting
+    assert 'tier: "experimental / WIP"' in provider_cards
+    assert "Anthropic remains experimental/WIP" in hero
+    assert "OpenAI and Anthropic are the beta-core model adapters" not in combined
+    assert "both stable-core providers" not in combined
+    assert "OpenAI and Anthropic share one stable streaming boundary" not in combined
+
+
 def test_exact_installed_python_quickstart_runs() -> None:
     source = _snippet(PRODUCTION_BETA, "installed-quickstart:python", "python")
     assert "kaji.ToolExecutionContext" in source
