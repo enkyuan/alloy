@@ -45,10 +45,14 @@ Repeat that command for all five assignments, changing the selected path and
 output file. There is no operator-authored automated-timing input.
 The generator verifies the canonical manifest and all three artifacts, then
 atomically binds the selected wheel or npm tarball into an owner-only skeleton.
+Every human attestation and lifecycle assertion remains `false`; the skeleton
+is intentionally incomplete until the participant and operator verify each
+claim.
 
 Use exactly five distinct pseudonyms. Every participant must use arm64 macOS;
-the following assignment covers Python, npm, and Bun while binding each run to
-the artifact it installs:
+the split is exactly two Python, two npm, and one Bun. Any other distribution
+is rejected. The following assignment binds each run to the artifact it
+installs:
 
 | Receipt | OS / architecture | Path | Artifact |
 | --- | --- | --- | --- |
@@ -65,7 +69,12 @@ the literal output of `python --version`, `uv --version`,
 `node --version`, `npm --version`, `bun --version`, and the installed
 TypeScript compiler versions in `toolchain`. A command that is not used still
 gets its installed version. `cleanEnvironment` and `noSourceCheckout` may be
-set to `true` only after the operator verifies both conditions.
+set to `true` only after the operator verifies both conditions. Replace every
+participant, owner, toolchain, and date placeholder. `reviewDate` must be the
+actual review date. The composer records `collectedDate` and accepts only
+reviews from that date or the preceding seven days. The protected release
+validator separately requires `collectedDate` to be no more than seven days old
+and not in the future.
 
 Time these non-overlapping steps with a monotonic clock and record integer
 milliseconds:
@@ -140,6 +149,16 @@ async def main() -> None:
     assert result.text == "mock response"
     assert result.turn_id
     assert max(event.sequence or 0 for event in result.events) > 0
+    unexpected_terminal_types = {
+        EventType.AGENT_TURN_FAILED,
+        EventType.AGENT_TURN_EXHAUSTED,
+        EventType.TOOL_CALL_FAILED,
+        EventType.CANCELLATION_REQUESTED,
+        EventType.CANCELLATION_COMPLETED,
+    }
+    assert all(
+        event.type not in unexpected_terminal_types for event in result.events
+    )
     print("PASS: echo requested, started, completed, and observed")
 
 
@@ -238,6 +257,16 @@ if (result.text !== "The mock provider has completed the tool loop.") {
 if (result.turnId.length === 0 || Math.max(...result.events.map((event) => event.sequence)) <= 0) {
   throw new Error("missing turn or sequence identity");
 }
+const unexpectedTerminalTypes = new Set<string>([
+  EventType.AGENT_TURN_FAILED,
+  EventType.AGENT_TURN_EXHAUSTED,
+  EventType.TOOL_CALL_FAILED,
+  EventType.CANCELLATION_REQUESTED,
+  EventType.CANCELLATION_COMPLETED,
+]);
+if (result.events.some((event) => unexpectedTerminalTypes.has(event.type))) {
+  throw new Error("unexpected failed, exhausted, or cancelled terminal event");
+}
 console.log("PASS: echo requested, started, completed, and observed");
 ```
 <!-- tthw-echo:typescript:end -->
@@ -246,7 +275,9 @@ Set every assertion in the receipt to `true` only when these checks pass. The
 requested, started, and completed events must share one nonempty tool-call ID;
 the completion result must contain the input message; the final text must be
 the exact deterministic mock text; and no failed, exhausted, or cancelled
-terminal event may occur.
+terminal event may occur. Set `noUnexpectedTerminalEvents` only after the
+terminal-event check passes. Set `monotonicDurations` only after every step was
+timed with a monotonic clock.
 
 ## Automated timings and composition
 
@@ -334,9 +365,15 @@ uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
 ```
 
 The output is written atomically with owner-only permissions after
-`validate_tthw_evidence.py` passes. Copy the file bytes, without shell quoting
-or a trailing explanation, into the protected `KAJI_TTHW_EVIDENCE_JSON`
-secret. Never commit participant receipts or the composed document.
+`validate_tthw_evidence.py`'s deterministic document checks pass. Copy the file
+bytes, without shell quoting or a trailing explanation, into the protected
+`KAJI_TTHW_EVIDENCE_JSON` secret. At release time, that validator also rejects
+a `collectedDate` in the future or more than seven days old. The serialized
+document must be at most 49,152 bytes; the composer refuses to replace its
+output above that exact environment-secret limit. No-key median must be under
+5 minutes and every no-key run under 10; Echo median must be under 10 minutes
+and every Echo run under 20. Never commit participant receipts or the composed
+document.
 
 A rehearsal may exercise this same derivation against its own current run and
 attempt, but that document is rehearsal evidence only. Final publication proof

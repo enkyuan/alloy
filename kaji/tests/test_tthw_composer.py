@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from datetime import date, timedelta
 import hashlib
 import importlib.util
 import json
@@ -30,6 +31,7 @@ ARTIFACTS = {
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
+TODAY = date.today()
 
 
 def _marked_snippet(path: Path, name: str, language: str) -> str:
@@ -79,6 +81,23 @@ def test_exact_python_tthw_echo_snippet_runs_offline(tmp_path: Path) -> None:
     assert completed.stdout.strip() == (
         "PASS: echo requested, started, completed, and observed"
     )
+
+
+def test_tthw_echo_snippets_reject_unexpected_terminal_events() -> None:
+    guide = REPO_ROOT / "docs/kaji/tthw-evidence.md"
+    sources = (
+        _marked_snippet(guide, "tthw-echo:python", "python"),
+        _marked_snippet(guide, "tthw-echo:typescript", "ts"),
+    )
+
+    for event_type in (
+        "AGENT_TURN_FAILED",
+        "AGENT_TURN_EXHAUSTED",
+        "TOOL_CALL_FAILED",
+        "CANCELLATION_REQUESTED",
+        "CANCELLATION_COMPLETED",
+    ):
+        assert all(f"EventType.{event_type}" in source for source in sources)
 
 
 def _load_script(path: Path) -> ModuleType:
@@ -178,12 +197,14 @@ def _fixture(
                 "echoToolStarted": True,
                 "echoToolCompleted": True,
                 "echoResultObserved": True,
+                "noUnexpectedTerminalEvents": True,
+                "monotonicDurations": True,
             },
             "confusion": [],
             "redacted": True,
             "owner": "kaji-maintainer",
-            "reviewDate": "2026-07-14",
-            "followUpDate": "2026-08-13",
+            "reviewDate": TODAY.isoformat(),
+            "followUpDate": (TODAY + timedelta(days=30)).isoformat(),
         }
         receipt_path = tmp_path / f"participant-{index}.json"
         receipt_path.write_text(json.dumps(receipt))
@@ -293,8 +314,10 @@ def test_checked_in_tthw_input_templates_have_exact_composer_shapes() -> None:
     assert "noKeyTotalMs" not in participant
     assert "echoTotalMs" not in participant
     assert all(step["durationMs"] == -1 for step in participant["steps"])
-    assert participant["cleanEnvironment"] is True
-    assert participant["noSourceCheckout"] is True
+    assert participant["cleanEnvironment"] is False
+    assert participant["noSourceCheckout"] is False
+    assert participant["redacted"] is False
+    assert all(value is False for value in participant["assertions"].values())
     assert participant["os"] == "macos"
     assert participant["architecture"] == "arm64"
     assert participant["commit"] == "replace-with-generated-commit"
@@ -330,6 +353,7 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     )
 
     assert document == repeated
+    assert document["collectedDate"] == TODAY.isoformat()
     assert document["commit"] == "a" * 40
     assert document["releaseManifestSha256"] == _sha(manifest)
     assert [run["participantId"] for run in document["humanRuns"]] == [
@@ -340,6 +364,34 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     assert document["humanRuns"][0]["artifact"]["name"] == (
         "kaji_sdk-0.2.0b1-py3-none-any.whl"
     )
+
+
+def test_composer_rejects_wrong_participant_path_distribution(tmp_path: Path) -> None:
+    module = _load_script(COMPOSER)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
+    receipt = json.loads(receipts[0].read_text())
+    npm_artifact = artifacts / "kaji-sdk-0.2.0-beta.2.tgz"
+    receipt["path"] = "npm"
+    receipt["artifact"] = {
+        "name": npm_artifact.name,
+        "package": "typescript",
+        "version": "0.2.0-beta.2",
+        "sha256": _sha(npm_artifact),
+    }
+    receipts[0].write_text(json.dumps(receipt))
+
+    with pytest.raises(
+        module.validation.EvidenceError, match="2 Python, 2 npm, and 1 Bun"
+    ):
+        module.compose(
+            participant_receipts=receipts,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+        )
 
 
 def test_composer_accepts_current_rerun_compatibility_receipts(
@@ -487,6 +539,32 @@ def test_atomic_writer_replaces_with_owner_only_secret_file(tmp_path: Path) -> N
     assert list(tmp_path.glob(".tthw.json.*.tmp")) == []
 
 
+def test_atomic_writer_enforces_exact_environment_secret_byte_limit(
+    tmp_path: Path,
+) -> None:
+    module = _load_script(COMPOSER)
+    limit = module.GITHUB_ENVIRONMENT_SECRET_MAX_BYTES
+    assert limit == 49_152
+
+    overhead = len(
+        (json.dumps({"payload": ""}, indent=2, sort_keys=True) + "\n").encode()
+    )
+    exact_document = {"payload": "x" * (limit - overhead)}
+    exact_output = tmp_path / "exact.json"
+    module.write_atomic(exact_output, exact_document, max_bytes=limit)
+    assert exact_output.stat().st_size == limit
+
+    oversized_output = tmp_path / "oversized.json"
+    oversized_output.write_text("preserve-me")
+    with pytest.raises(module.validation.EvidenceError, match="49152-byte"):
+        module.write_atomic(
+            oversized_output,
+            {"payload": f"{exact_document['payload']}x"},
+            max_bytes=limit,
+        )
+    assert oversized_output.read_text() == "preserve-me"
+
+
 def test_composer_fails_before_replacing_output_on_invalid_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -504,6 +582,39 @@ def test_composer_fails_before_replacing_output_on_invalid_receipt(
         "parse_args",
         lambda: module.argparse.Namespace(
             participant=receipts,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+            output=output,
+        ),
+    )
+
+    assert module.main() == 1
+    assert output.read_text() == "preserve-me"
+
+
+def test_composer_rejects_oversized_secret_before_replacing_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script(COMPOSER)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
+    for receipt_path in receipts:
+        receipt = json.loads(receipt_path.read_text())
+        receipt["confusion"] = [
+            {"summary": "s" * 500, "remediation": "r" * 500} for _ in range(20)
+        ]
+        receipt_path.write_text(json.dumps(receipt))
+    output = tmp_path / "secret.json"
+    output.write_text("preserve-me")
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: module.argparse.Namespace(
+            participant=receipts,
+            generate_participant_template=None,
             python_compatibility_receipt=python_compat,
             node_compatibility_receipt=node_compat,
             expected_workflow_run=WORKFLOW_RUN,
@@ -545,6 +656,10 @@ def test_template_generation_binds_selected_candidate_artifact(
     assert participant["artifact"]["sha256"] == _sha(artifacts / artifact_name)
     assert participant["os"] == "macos"
     assert participant["architecture"] == "arm64"
+    assert participant["cleanEnvironment"] is False
+    assert participant["noSourceCheckout"] is False
+    assert participant["redacted"] is False
+    assert all(value is False for value in participant["assertions"].values())
 
 
 def test_template_generation_cli_writes_candidate_bound_skeleton(

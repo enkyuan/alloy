@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ PARTICIPANT_TEMPLATE = (
     ROOT / "kaji" / "contracts" / "release" / "tthw-participant.template.json"
 )
 PARTICIPANT_ARTIFACT_FIELDS = ("name", "package", "version", "sha256")
+GITHUB_ENVIRONMENT_SECRET_MAX_BYTES = 49_152
 
 
 def _participant_receipt(
@@ -155,6 +157,7 @@ def compose(
 
     document = {
         "schemaVersion": "1.0.0",
+        "collectedDate": date.today().isoformat(),
         "commit": commit,
         "releaseManifestSha256": manifest_hash,
         "artifacts": artifacts,
@@ -167,9 +170,16 @@ def compose(
     return document
 
 
-def write_atomic(path: Path, document: dict[str, Any]) -> None:
+def write_atomic(
+    path: Path, document: dict[str, Any], *, max_bytes: int | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     encoded = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    if max_bytes is not None and len(encoded.encode("utf-8")) > max_bytes:
+        validation.fail(
+            "/",
+            f"serialized evidence exceeds the {max_bytes}-byte environment-secret limit",
+        )
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent,
         prefix=f".{path.name}.",
@@ -252,7 +262,11 @@ def main() -> int:
                 release_manifest=args.release_manifest,
                 artifacts_dir=args.artifacts_dir,
             )
-        write_atomic(args.output, document)
+        write_atomic(
+            args.output,
+            document,
+            max_bytes=(None if path_name else GITHUB_ENVIRONMENT_SECRET_MAX_BYTES),
+        )
     except validation.EvidenceError as error:
         print(f"FAIL: {error}")
         return 1

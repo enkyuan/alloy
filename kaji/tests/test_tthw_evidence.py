@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections import Counter
 from copy import deepcopy
+from datetime import date, timedelta
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
 import statistics
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -22,6 +24,7 @@ ARTIFACTS = {
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
+TODAY = date.today()
 
 
 def _module() -> ModuleType:
@@ -133,6 +136,8 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
                     "echoToolStarted": True,
                     "echoToolCompleted": True,
                     "echoResultObserved": True,
+                    "noUnexpectedTerminalEvents": True,
+                    "monotonicDurations": True,
                 },
                 "confusion": [
                     {
@@ -142,12 +147,13 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
                 ],
                 "redacted": True,
                 "owner": "kaji-maintainer",
-                "reviewDate": "2026-07-12",
-                "followUpDate": "2026-08-11",
+                "reviewDate": TODAY.isoformat(),
+                "followUpDate": (TODAY + timedelta(days=30)).isoformat(),
             }
         )
     document = {
         "schemaVersion": "1.0.0",
+        "collectedDate": TODAY.isoformat(),
         "commit": commit,
         "releaseManifestSha256": manifest_hash,
         "artifacts": artifact_rows,
@@ -313,7 +319,7 @@ def test_validator_requires_five_distinct_pseudonyms(tmp_path: Path) -> None:
         module.validate_document(document)
 
 
-def test_validator_requires_arm64_macos_and_package_manager_coverage(
+def test_validator_requires_arm64_macos_and_exact_path_distribution(
     tmp_path: Path,
 ) -> None:
     module = _module()
@@ -333,7 +339,147 @@ def test_validator_requires_arm64_macos_and_package_manager_coverage(
     for run in document["humanRuns"]:
         if run["path"] == "bun":
             run["path"] = "npm"
-    with pytest.raises(module.EvidenceError, match="Python, npm, and Bun"):
+    with pytest.raises(module.EvidenceError, match="2 Python, 2 npm, and 1 Bun"):
+        module.validate_document(document)
+
+    document = deepcopy(valid)
+    python_runs = [run for run in document["humanRuns"] if run["path"] == "python"]
+    python_runs[0]["path"] = "npm"
+    assert Counter(run["path"] for run in document["humanRuns"]) == {
+        "python": 1,
+        "npm": 3,
+        "bun": 1,
+    }
+    schema = json.loads(SCHEMA.read_text())
+    assert list(Draft202012Validator(schema).iter_errors(document))
+    with pytest.raises(module.EvidenceError, match="2 Python, 2 npm, and 1 Bun"):
+        module.validate_document(document)
+
+
+@pytest.mark.parametrize(
+    ("location", "value"),
+    [
+        (("participantId",), "user-replace-me"),
+        (("owner",), "replace-with-owner"),
+        (("toolchain", "python"), "replace-with-version"),
+        (("toolchain", "python"), "not-used"),
+    ],
+)
+def test_validator_rejects_participant_placeholders(
+    tmp_path: Path, location: tuple[str, ...], value: str
+) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    target = document["humanRuns"][0]
+    for part in location[:-1]:
+        target = target[part]
+    target[location[-1]] = value
+
+    with pytest.raises(module.EvidenceError, match="placeholder"):
+        module.validate_document(document)
+
+
+@pytest.mark.parametrize(
+    ("review_date", "message"),
+    [
+        (date(2026, 7, 26), "must not follow collectedDate"),
+        (date(2026, 7, 17), "must be within 7 days of collectedDate"),
+    ],
+)
+def test_validator_requires_fresh_review_dates(
+    tmp_path: Path, review_date: date, message: str
+) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    document["collectedDate"] = date(2026, 7, 25).isoformat()
+    document["humanRuns"][0]["reviewDate"] = review_date.isoformat()
+    document["humanRuns"][0]["followUpDate"] = (
+        review_date + timedelta(days=30)
+    ).isoformat()
+
+    with pytest.raises(module.EvidenceError, match=message):
+        module.validate_document(document)
+
+
+def test_document_validation_is_stable_after_collection(tmp_path: Path) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    collected_date = date(2020, 1, 8)
+    document["collectedDate"] = collected_date.isoformat()
+    for run in document["humanRuns"]:
+        run["reviewDate"] = (collected_date - timedelta(days=7)).isoformat()
+        run["followUpDate"] = collected_date.isoformat()
+
+    assert module.validate_document(document) == document["summary"]
+
+
+@pytest.mark.parametrize(
+    ("collected_date", "message"),
+    [
+        (date(2026, 7, 26), "must not be in the future"),
+        (date(2026, 7, 17), "must be at most 7 days old"),
+    ],
+)
+def test_release_validation_requires_recent_collection_date(
+    tmp_path: Path, collected_date: date, message: str
+) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    document["collectedDate"] = collected_date.isoformat()
+
+    with pytest.raises(module.EvidenceError, match=message):
+        module.validate_release_freshness(document, today=date(2026, 7, 25))
+
+
+def test_release_cli_rejects_stale_collection_date(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _module()
+    document, manifest, artifacts = _fixture(tmp_path)
+    collected_date = date(2020, 1, 8)
+    document["collectedDate"] = collected_date.isoformat()
+    for run in document["humanRuns"]:
+        run["reviewDate"] = collected_date.isoformat()
+        run["followUpDate"] = collected_date.isoformat()
+    evidence = tmp_path / "tthw.json"
+    evidence.write_text(json.dumps(document))
+    python, node = _compatibility_receipts(document, artifacts)
+    python_path = tmp_path / "python.json"
+    node_path = tmp_path / "node.json"
+    python_path.write_text(json.dumps(python))
+    node_path.write_text(json.dumps(node))
+    monkeypatch.setattr(
+        module,
+        "parse_args",
+        lambda: SimpleNamespace(
+            evidence=evidence,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+            python_compatibility_receipt=python_path,
+            node_compatibility_receipt=node_path,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
+        ),
+    )
+
+    assert module.main() == 1
+    assert "/collectedDate: must be at most 7 days old" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    ["noUnexpectedTerminalEvents", "monotonicDurations"],
+)
+def test_validator_requires_integrity_attestations(
+    tmp_path: Path, assertion: str
+) -> None:
+    module = _module()
+    document, _manifest, _artifacts = _fixture(tmp_path)
+    document["humanRuns"][0]["assertions"][assertion] = False
+
+    with pytest.raises(module.EvidenceError, match=assertion):
         module.validate_document(document)
 
 

@@ -297,11 +297,12 @@ Both protected release workflows validate it with
 do not retain the document when validation fails. It must bind one 40-hex commit
 and release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
 versions, and SHA-256 values; automated Python/npm/Bun cold/warm timings; and
-exactly five distinct pseudonymous fresh-user runs on arm64 macOS across
-Python/npm/Bun. Each participant receipt repeats the exact commit, manifest
-hash, measured macOS version, and artifact it installed: Python uses the wheel,
-while npm and Bun use the npm tarball. Configuration alone does not claim that the cohort passed;
-until that real evidence exists, TTHW is **unmeasured**.
+exactly five distinct pseudonymous fresh-user runs on arm64 macOS split as two
+Python, two npm, and one Bun. Each participant receipt repeats the exact commit,
+manifest hash, measured macOS version, and artifact it installed: Python uses
+the wheel, while npm and Bun use the npm tarball.
+Configuration alone does not claim that the cohort passed; until that real
+evidence exists, TTHW is **unmeasured**.
 Prior release, rehearsal, and performance artifacts are invalid substitutes.
 
 Collect and compose it only through the
@@ -317,8 +318,14 @@ The validator recomputes median and maximum totals. No-key median must be under
 5 minutes and every run under 10; Echo median must be under 10 minutes and
 every run under 20. Retain clean/no-source attestations, toolchain versions,
 ordered step milliseconds, deterministic lifecycle assertions, redacted
-confusion/remediation, owner, review date, and follow-up date. Repeat the
-protocol 30 days after publication.
+confusion/remediation, owner, review date, and follow-up date. Human
+attestations start false; final receipts must prove clean/no-source execution,
+monotonic timing, and the absence of failed, exhausted, or cancelled terminal
+events. Placeholder values are rejected. Each review must fall on or within
+seven days before the composer-owned `collectedDate`; the protected release
+validator rejects a collection date in the future or more than seven days old.
+The composed secret must not exceed 49,152 bytes.
+Repeat the protocol 30 days after publication.
 
 ## Immutable reference and paired candidate evidence
 
