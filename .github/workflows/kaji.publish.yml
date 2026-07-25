@@ -1466,24 +1466,24 @@ jobs:
             echo "Yank/deprecate any partial publication and create a new beta version." >&2
             exit 1
           fi
-      - name: Require both exact beta versions to be absent
+      - name: Require PyPI beta absence and exact npm beta absence
         run: |
           PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)"
           case "$PYPI_STATUS" in
             404) ;;
-            200) echo "Python beta 0.2.0b1 already exists; aborting both publishers" >&2; exit 1 ;;
-            *) echo "PyPI preflight failed with HTTP $PYPI_STATUS; aborting both publishers" >&2; exit 1 ;;
+            200) echo "PyPI beta 0.2.0b1 must remain absent; aborting npm publication" >&2; exit 1 ;;
+            *) echo "PyPI absence check failed with HTTP $PYPI_STATUS; aborting npm publication" >&2; exit 1 ;;
           esac
           set +e
           NPM_OUTPUT="$(npm view kaji-sdk@0.2.0-beta.2 version --json --registry=https://registry.npmjs.org/ 2>&1)"
           NPM_STATUS=$?
           set -e
           if [ "$NPM_STATUS" -eq 0 ]; then
-            echo "npm beta 0.2.0-beta.2 already exists; aborting both publishers" >&2
+            echo "npm beta 0.2.0-beta.2 already exists; aborting publication" >&2
             exit 1
           fi
           if ! printf '%s' "$NPM_OUTPUT" | grep -q E404; then
-            echo "npm registry preflight was ambiguous; aborting both publishers" >&2
+            echo "npm registry preflight was ambiguous; aborting publication" >&2
             exit 1
           fi
 
@@ -1541,53 +1541,6 @@ jobs:
             echo "npm package ownership preflight was ambiguous" >&2
             exit 1
           fi
-  publish-python:
-    name: publish Python package
-    needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]
-    if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' && needs.publisher-preflight.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: kaji-beta-publish
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ needs.verify-tag.outputs.commit }}
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-beta-artifacts
-          path: .artifacts/kaji-release
-      - name: Revalidate downloaded filenames, sizes, hashes, and commit
-        env:
-          EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
-        run: >-
-          python kaji/scripts/verify_release_artifacts.py
-          --artifacts-dir .artifacts/kaji-release
-          --expected-commit "$EXPECTED_COMMIT"
-      - name: Reverify Python archive contents against the clean checkout
-        run: >-
-          python3 kaji/scripts/verify_archives.py
-          .artifacts/kaji-release
-      - name: Isolate Python distributions
-        run: |
-          mkdir -p .artifacts/python-dist
-          cp .artifacts/kaji-release/kaji_sdk-0.2.0b1-py3-none-any.whl .artifacts/python-dist/
-          cp .artifacts/kaji-release/kaji_sdk-0.2.0b1.tar.gz .artifacts/python-dist/
-      - name: Reverify signed tag immediately before PyPI publication
-        uses: ./.github/actions/verify-kaji-beta-tag
-        with:
-          token: ${{ github.token }}
-          tag: ${{ needs.verify-tag.outputs.tag-name }}
-          tag_object: ${{ needs.verify-tag.outputs.tag-object }}
-          commit: ${{ needs.verify-tag.outputs.commit }}
-          tagger_email: ${{ vars.KAJI_RELEASE_SIGNER_EMAIL }}
-      - name: Publish exact Python beta through trusted publishing
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
-        with:
-          packages-dir: .artifacts/python-dist
-
   publish-npm:
     name: publish npm package
     needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]
@@ -1642,7 +1595,7 @@ jobs:
 
   publication-status:
     name: verify publication
-    needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight, publish-python, publish-npm]
+    needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight, publish-npm]
     if: ${{ always() }}
     outputs:
       state: ${{ steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state }}
@@ -1659,20 +1612,18 @@ jobs:
         id: initial-status
         env:
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
-          PYPI_PUBLISH_RESULT: ${{ needs.publish-python.result }}
           NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
         run: |
           mkdir -p .artifacts/kaji-publication-status
           jq --null-input \
             --arg commit "$RELEASE_COMMIT" \
-            --arg pypiPublish "$PYPI_PUBLISH_RESULT" \
             --arg npmPublish "$NPM_PUBLISH_RESULT" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             '{schemaVersion: 1, commit: $commit, state: "unpublished",
               previousState: "unpublished", releaseReady: false,
               installRecommendation: false,
               registries: {pypi: "unknown", npm: "unknown"},
-              publishJobs: {pypi: $pypiPublish, npm: $npmPublish},
+              publishJobs: {pypi: "skipped", npm: $npmPublish},
               registryVerification: "not_run",
               incident: {code: "classification_pending", recovery: "fix_forward_next_beta"},
               workflowRun: $workflowRun}' \
@@ -1740,13 +1691,11 @@ jobs:
         with:
           working-directory: kaji
           python-version: "3.14"
-      - name: Install pinned registry-attestation verifiers
+      - name: Install pinned npm registry verifier
         id: verifiers
         if: ${{ always() && github.run_attempt == 1 }}
         continue-on-error: true
         run: |
-          uv tool install pypi-attestations==0.0.29
-          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
           npm install --global npm@11.16.0
       - id: artifacts
         if: ${{ always() && github.run_attempt == 1 }}
@@ -1765,15 +1714,16 @@ jobs:
           python3 kaji/scripts/verify_release_artifacts.py
           --artifacts-dir .artifacts/kaji-release
           --expected-commit "$EXPECTED_COMMIT"
-      - name: Poll bounded registry propagation and verify published bytes
+      - name: Poll bounded npm propagation and verify published bytes
         id: registry
-        if: ${{ always() && github.run_attempt == 1 && needs.publish-python.result == 'success' && needs.publish-npm.result == 'success' && steps.verifiers.outcome == 'success' && steps.artifact-check.outcome == 'success' }}
+        if: ${{ always() && github.run_attempt == 1 && needs.publish-npm.result == 'success' && steps.verifiers.outcome == 'success' && steps.artifact-check.outcome == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           timeout --signal=TERM --kill-after=10s 15m \
             python3 kaji/scripts/verify_published_packages.py \
+            --target npm \
             --artifacts-dir .artifacts/kaji-release \
             --output .artifacts/kaji-publication-status/registry-verification.json \
             --downloads-dir .artifacts/kaji-publication-status/downloaded \
@@ -1784,7 +1734,6 @@ jobs:
         if: ${{ always() && github.run_attempt == 1 }}
         env:
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
-          PYPI_PUBLISH_RESULT: ${{ needs.publish-python.result }}
           NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
         run: |
           set +e
@@ -1807,7 +1756,7 @@ jobs:
           if [ -f .artifacts/kaji-publication-status/registry-verification.json ]; then
             REGISTRY_VERIFICATION="$(jq --raw-output .status \
               .artifacts/kaji-publication-status/registry-verification.json 2>/dev/null)"
-            if [ "$REGISTRY_VERIFICATION" != byte_verified ]; then
+            if [ "$REGISTRY_VERIFICATION" != npm_byte_verified ]; then
               REGISTRY_VERIFICATION=failed
             fi
           else
@@ -1816,11 +1765,12 @@ jobs:
           CLASSIFY_STATUS=127
           if [ -f kaji/scripts/verify_published_packages.py ]; then
             python3 kaji/scripts/verify_published_packages.py state \
+              --target npm \
               --previous-state unpublished \
               --pypi "$PYPI_STATE" \
               --npm "$NPM_STATE" \
               --registry-verification "$REGISTRY_VERIFICATION" \
-              --pypi-publish-result "$PYPI_PUBLISH_RESULT" \
+              --pypi-publish-result skipped \
               --npm-publish-result "$NPM_PUBLISH_RESULT" \
               --commit "$RELEASE_COMMIT" \
               --workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
@@ -1839,7 +1789,6 @@ jobs:
               [ "$PYPI_STATE" = absent ] && \
               [ "$NPM_STATE" = absent ] && \
               [ "$REGISTRY_VERIFICATION" = not_run ] && \
-              [ "$PYPI_PUBLISH_RESULT" = skipped ] && \
               [ "$NPM_PUBLISH_RESULT" = skipped ]; then
               FALLBACK_INCIDENT=false
             else
@@ -1849,7 +1798,6 @@ jobs:
               --arg commit "$RELEASE_COMMIT" \
               --arg state "$FALLBACK_STATE" \
               --arg pypi "$PYPI_STATE" --arg npm "$NPM_STATE" \
-              --arg pypiPublish "$PYPI_PUBLISH_RESULT" \
               --arg npmPublish "$NPM_PUBLISH_RESULT" \
               --arg verification "$REGISTRY_VERIFICATION" \
               --argjson hasIncident "$FALLBACK_INCIDENT" \
@@ -1858,7 +1806,7 @@ jobs:
                 previousState: "unpublished", releaseReady: false,
                 installRecommendation: false,
                 registries: {pypi: $pypi, npm: $npm},
-                publishJobs: {pypi: $pypiPublish, npm: $npmPublish},
+                publishJobs: {pypi: "skipped", npm: $npmPublish},
                 registryVerification: $verification,
                 incident: (if $hasIncident
                   then {code: "status_classifier_unavailable", recovery: "fix_forward_next_beta"}
@@ -1872,7 +1820,7 @@ jobs:
               echo "- Commit: \`$RELEASE_COMMIT\`"
               echo "- State: **$FALLBACK_STATE**"
               echo "- PyPI/npm: \`$PYPI_STATE\` / \`$NPM_STATE\`"
-              echo "- Publish jobs: \`$PYPI_PUBLISH_RESULT\` / \`$NPM_PUBLISH_RESULT\`"
+              echo "- Publish jobs: \`skipped\` / \`$NPM_PUBLISH_RESULT\`"
               echo "- Retained evidence: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
               echo "- Installation recommendation: WITHHELD: do not publish installation recommendations."
               if [ "$FALLBACK_INCIDENT" = true ]; then
@@ -1885,7 +1833,7 @@ jobs:
           cat .artifacts/kaji-publication-status/publication-status.md >>"$GITHUB_STEP_SUMMARY" || true
           PUBLICATION_STATE="$(jq --raw-output .state .artifacts/kaji-publication-status/publication-status.json 2>/dev/null)"
           case "$PUBLICATION_STATE" in
-            unpublished|pypi_only|npm_only|both_published|byte_verified) ;;
+            unpublished|pypi_only|npm_only|both_published|npm_byte_verified) ;;
             *) PUBLICATION_STATE=unpublished ;;
           esac
           echo "publication-state=$PUBLICATION_STATE" >>"$GITHUB_OUTPUT"
@@ -1902,16 +1850,16 @@ jobs:
           name: kaji-publication-status
           path: .artifacts/kaji-publication-status
           if-no-files-found: error
-      - name: Require exact byte-verified publication state
-        if: ${{ always() && (steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state) != 'byte_verified' }}
+      - name: Require exact npm byte-verified publication state
+        if: ${{ always() && (steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state) != 'npm_byte_verified' }}
         run: |
-          echo "Publication is not byte_verified; installation recommendations remain withheld." >&2
+          echo "Publication is not npm_byte_verified; installation recommendations remain withheld." >&2
           exit 1
 
   publication-incident:
     name: publication incident
     needs: [verify-tag, publication-status]
-    if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.publication-status.outputs.state != 'byte_verified' && needs.publication-status.outputs.incident == 'true' }}
+    if: ${{ always() && github.run_attempt == 1 && needs.verify-tag.result == 'success' && needs.publication-status.outputs.state != 'npm_byte_verified' && needs.publication-status.outputs.incident == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1929,7 +1877,7 @@ jobs:
           STATUS_JSON=.artifacts/kaji-publication-status/publication-status.json
           STATUS_MD=.artifacts/kaji-publication-status/publication-status.md
           jq --exit-status \
-            '.state != "byte_verified" and .releaseReady == false and
+            '.state != "npm_byte_verified" and .releaseReady == false and
              .installRecommendation == false and (.incident.code | type == "string")' \
             "$STATUS_JSON" >/dev/null
           grep --fixed-strings "Installation recommendation: WITHHELD" "$STATUS_MD" >/dev/null
@@ -1964,7 +1912,7 @@ jobs:
   release-evidence:
     name: release evidence
     needs: [verify-tag, tthw-evidence, supply-chain, publication-status]
-    if: ${{ always() && needs.verify-tag.result == 'success' && needs.tthw-evidence.result == 'success' && needs.supply-chain.result == 'success' && needs.publication-status.result == 'success' && needs.publication-status.outputs.state == 'byte_verified' }}
+    if: ${{ always() && needs.verify-tag.result == 'success' && needs.tthw-evidence.result == 'success' && needs.supply-chain.result == 'success' && needs.publication-status.result == 'success' && needs.publication-status.outputs.state == 'npm_byte_verified' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -2009,8 +1957,6 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --tag "$EXPECTED_TAG"
           --title "Kaji $EXPECTED_TAG"
-          .artifacts/kaji-release/kaji_sdk-0.2.0b1-py3-none-any.whl
-          .artifacts/kaji-release/kaji_sdk-0.2.0b1.tar.gz
           .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz
           .artifacts/kaji-release/manifest.json
           .artifacts/kaji-release/SHA256SUMS
@@ -2035,14 +1981,6 @@ jobs:
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1-py3-none-any.whl
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1-py3-none-any.whl.provenance.json
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1-py3-none-any.whl.pypi-attestations.txt
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1-py3-none-any.whl.github-attestation.json
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1.tar.gz
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1.tar.gz.provenance.json
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1.tar.gz.pypi-attestations.txt
-          .artifacts/kaji-publication-status/downloaded/registry-kaji_sdk-0.2.0b1.tar.gz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.2.tgz
           .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.2.tgz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

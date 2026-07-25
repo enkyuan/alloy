@@ -36,24 +36,28 @@ while the Python SDK never imports service-only code.
 
 ## Install
 
-```bash
-pip install 'kaji-sdk[openai]==0.2.0b1'     # OpenAI (recommended)
-# or
-pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic (experimental/WIP)
-# or
-pip install 'kaji-sdk==0.2.0b1'             # core only, bring your own provider
-```
+The current beta publication target is npm only. The Python candidate is built,
+installed, and tested from exact wheel/sdist artifacts during the protected
+release, but `kaji-sdk==0.2.0b1` is not published to PyPI and must not be
+presented as a registry install yet.
 
-Other optional extras:
+For Python SDK development from this repository:
 
 ```bash
-pip install 'kaji-sdk[gemini]==0.2.0b1'      # Gemini provider
-pip install 'kaji-sdk[realtime]==0.2.0b1'    # Redis event bus (multi-process)
-pip install 'kaji-sdk[providers]==0.2.0b1'   # all provider SDKs
+uv sync --project kaji --extra openai
 ```
 
-The PyPI distribution is `kaji-sdk`; installed code is still imported as
-`kaji`, and the Python CLI command remains `kaji`.
+Optional source-checkout extras remain available for experimental development:
+
+```bash
+uv sync --project kaji --extra anthropic  # Anthropic (experimental/WIP)
+uv sync --project kaji --extra gemini     # Gemini provider
+uv sync --project kaji --extra realtime   # Redis event bus (multi-process)
+uv sync --project kaji --extra providers  # all provider SDKs
+```
+
+The future PyPI distribution name is `kaji-sdk`; installed code is imported as
+`kaji`, and the Python CLI command is `kaji`.
 
 ## Quick start
 
@@ -539,7 +543,7 @@ For evaluating cross-process event delivery, replace the in-memory journal with
 the Redis-backed `EventBus`:
 
 ```bash
-pip install 'kaji-sdk[realtime]==0.2.0b1'
+uv sync --project kaji --extra realtime
 export REDIS_URL=redis://localhost:6379/0
 ```
 

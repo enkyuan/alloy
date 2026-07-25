@@ -3,7 +3,9 @@
 Kaji betas are immutable, same-commit releases. A release is rebuilt from a
 verified, signed, annotated beta tag; passes offline, compatibility,
 performance, and provider gates; and then requires a separate approval before
-either registry may be written.
+npm may be written. This release publishes the TypeScript package only. The
+Python wheel and sdist remain protected build and compatibility evidence; PyPI
+publication is deferred.
 
 Only a signed beta tag accepted by the protected `kaji-beta` environment can
 advance to provider proof; registry authorization remains separate.
@@ -15,10 +17,10 @@ The two protected environments have intentionally different authority:
   `OPENAI_API_KEY` and the raw redacted JSON document as
   `KAJI_TTHW_EVIDENCE_JSON`; missing or invalid evidence blocks release. This
   environment has no registry publisher authority.
-- `kaji-beta-publish` permits PyPI trusted publishing and npm publication. Its
-  required reviewers approve registry writes only after all preceding evidence
-  is green. It must not contain `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any
-  other provider key.
+- `kaji-beta-publish` permits npm publication only. Its required reviewers
+  approve that registry write only after all preceding evidence is green. It
+  must not contain `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any other provider
+  key.
 
 Protect `kaji-v*-beta.*` tags against update and deletion. Each tag must be an
 annotated Git tag with a verified signature and must target a commit directly.
@@ -28,9 +30,9 @@ signed tagger metadata must match that value at every verification point. This
 is the repository's current signer policy; it does not claim a separately
 managed GPG/SSH fingerprint allowlist.
 The publish workflow records both the annotated tag object SHA and the peeled
-commit, then verifies the same pair again immediately before each registry
-write and before attaching release assets. Lightweight, unsigned, retargeted,
-or indirect tags fail closed.
+commit, then verifies the same pair again immediately before the npm write and
+before attaching release assets. Lightweight, unsigned, retargeted, or
+indirect tags fail closed.
 
 ## First-publication prerequisites
 
@@ -50,10 +52,7 @@ Complete these once before creating the release tag:
    `Copyright 2026 Enkang Yuan`. Record each version's first-public-availability
    date in its changelog and release notes: that version becomes available
    under Apache-2.0 on the second anniversary of that date.
-4. In PyPI account publishing settings, add a pending trusted publisher for
-   project `kaji-sdk`, owner `enkyuan`, repository `alloy`, workflow `kaji.publish.yml`,
-   and environment `kaji-beta-publish`.
-5. Confirm `npm view kaji-sdk name --json --registry=https://registry.npmjs.org/`
+4. Confirm `npm view kaji-sdk name --json --registry=https://registry.npmjs.org/`
    returns `E404` immediately before tagging, then confirm
    `npm whoami --registry=https://registry.npmjs.org/` returns the approved
    `KAJI_NPM_PUBLISHER`. The first unscoped publication requires a short-lived
@@ -63,13 +62,13 @@ Complete these once before creating the release tag:
    for `kaji-sdk` and revoke the bootstrap token. npm exposes no non-mutating
    check that proves a token may create a new unscoped package, so the protected
    publisher remains the fail-closed authorization check.
-6. Configure `kaji-beta` with required reviewers and `OPENAI_API_KEY` as its
+5. Configure `kaji-beta` with required reviewers and `OPENAI_API_KEY` as its
    only provider key. Leave the final
    `KAJI_TTHW_EVIDENCE_JSON` value unset until the tag-triggered workflow has
    built the exact artifacts used by the five participants. Configure
    `kaji-beta-publish` with separate required reviewers, `NPM_TOKEN`, and
    `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
-7. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
+6. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
    run on GitHub-hosted `macos-15` ARM64 and fail closed unless GitHub's runner
    classification, the actual host, and the image's `imagedata.json` agree.
    The paired benchmark runs the immutable reference recorded in
@@ -106,8 +105,9 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm the exact Python and TypeScript beta versions are unused on both
-   registries.
+1. Confirm npm `kaji-sdk@0.2.0-beta.2` is unused. Confirm PyPI
+   `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
+   create it.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
    `OPENAI_API_KEY`. Leave `KAJI_TTHW_EVIDENCE_JSON` unset; remove any value from
    a prior run because it cannot bind the artifact bytes that this run will
@@ -201,25 +201,24 @@ later run is not acceptable evidence.
    exists. For the first publication it instead requires an unambiguous `E404`
    for the unscoped package name and records that npm cannot prove new-package
    write authorization without performing the protected publication.
-9. After publisher preflight passes, the Python and npm publisher jobs become
-   eligible together under `kaji-beta-publish`. Approve both pending jobs in
-   one final approval batch. Do not approve one publisher and defer or reject
-   the other; neither registry write is intentionally ordered after the other.
-   After approval, each publisher independently revalidates the artifact
-   manifest and reverifies the same signed tag object/direct commit immediately
-   before its registry write.
-10. The workflow records a final registry status. After both publisher jobs
-    report success it polls at most eight times with delays capped at 20 seconds
-    (a 90-second total backoff window), compares PyPI's exact filename/size/
-    SHA-256 metadata to the manifest, downloads and hashes the npm tarball, and
-    verifies npm integrity metadata. Only byte-exact convergence is
-    `byte_verified`; `both_published` is not a success terminal.
-    It attaches the
-    exact wheel, sdist, npm tarball, manifest, checksums, offline test evidence,
-    provider/performance evidence, SPDX SBOM, provenance bundle, attestation ID
-    and URL, and publication status to the GitHub prerelease.
+9. After publisher preflight passes, approve the npm publisher under
+   `kaji-beta-publish`. It revalidates the artifact manifest and reverifies the
+   same signed tag object/direct commit immediately before the registry write.
+   There is no Python publisher job.
+10. The workflow records a final npm publication status. After the publisher
+    reports success it polls at most eight times with delays capped at 20
+    seconds (a 90-second total backoff window), requires PyPI to remain absent,
+    downloads and hashes the npm tarball, and verifies npm integrity,
+    signature, provenance, and GitHub attestation metadata. Only the explicit
+    `npm_byte_verified` terminal is success; `npm_only` remains an incident in
+    the default dual-registry state model.
+    It attaches the exact npm tarball, manifest, checksums, offline test
+    evidence, provider/performance evidence, SPDX SBOM, provenance bundle,
+    attestation ID and URL, and publication status to the GitHub prerelease.
+    The Python wheel and sdist remain retained Actions evidence and are not
+    public release assets.
 
-The GitHub prerelease step is safe to retry only after both registry jobs have
+The GitHub prerelease step is safe to retry only after the npm publisher has
 succeeded: it reuses the existing prerelease, compares every existing asset's
 SHA-256 digest, uploads only missing assets, and fails rather than replacing a
 mismatched asset.
@@ -241,35 +240,37 @@ is failure. Therefore:
   lookup as `partial_or_ambiguous`; preserve `kaji-beta-artifacts`,
   `kaji-offline-evidence`, `kaji-supply-chain-evidence`, and
   `kaji-publication-status` from that run before remediation.
-- Check both registry states exactly:
+- Check the target npm version and the PyPI absence invariant exactly:
 
   ```bash
-  curl --fail --silent --show-error https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
+  test "$(
+    curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+      https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
+  )" = 404
   npm view kaji-sdk@0.2.0-beta.2 version --json --registry=https://registry.npmjs.org/
   ```
 
-- If `registry-preflight` or `publisher-preflight` failed and both publisher
-  jobs were skipped, the workflow records a no-publication status. Do not yank
+- If `registry-preflight` or `publisher-preflight` failed and the npm publisher
+  was skipped, the workflow records a no-publication status. Do not yank
   or deprecate a pre-existing collision based on that run; investigate its
-  ownership and still choose new beta versions.
+  ownership and still choose a new npm beta version.
 
-- If Python `0.2.0b1` exists, open
-  `https://pypi.org/manage/project/kaji-sdk/release/0.2.0b1/`, select **Options**,
-  and yank the release with the incident/new-version reason. Do not delete its
-  files or upload replacements.
+- If Python `0.2.0b1` exists, stop: an out-of-band publication violated this
+  release target. Preserve the evidence and remediate it separately before
+  recommending either SDK.
 - If npm `0.2.0-beta.2` exists, deprecate it with a forward pointer:
 
   ```bash
   npm deprecate kaji-sdk@0.2.0-beta.2 "Unsafe beta; use the next published beta"
   ```
 
-- Increment both package beta versions, update locks/changelogs, pass all gates
-  again from the new commit, and create a new signed annotated tag. Even when
-  only one registry write succeeded, never reuse either old version, retarget
-  the old tag, resume the old workflow, or attach rebuilt files to its release.
+- Increment the npm beta version, update locks/changelogs, pass all gates again
+  from the new commit, and create a new signed annotated tag. Never reuse the
+  old npm version, retarget the old tag, resume the old workflow, or attach
+  rebuilt files to its release.
 
-There is one narrow rerun exception. When both original publisher jobs
-succeeded, `kaji-publication-status/publication-status.json` says `byte_verified`,
+There is one narrow rerun exception. When the original npm publisher succeeded,
+`kaji-publication-status/publication-status.json` says `npm_byte_verified`,
 the registry-byte verification is retained, and the only failed job is
 `release-evidence`, do not republish. In the Actions UI choose **Re-run jobs →
 Re-run failed jobs**, or run:
