@@ -33,10 +33,18 @@ USER_AGENT = "kaji-beta-release-verifier/1"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 PublicationState = Literal[
-    "unpublished", "pypi_only", "npm_only", "both_published", "byte_verified"
+    "unpublished",
+    "pypi_only",
+    "npm_only",
+    "both_published",
+    "byte_verified",
+    "npm_byte_verified",
 ]
+PublicationTarget = Literal["dual", "npm"]
 RegistryObservation = Literal["present", "absent", "unknown"]
-RegistryVerification = Literal["not_run", "failed", "byte_verified"]
+RegistryVerification = Literal[
+    "not_run", "failed", "byte_verified", "npm_byte_verified"
+]
 PublishResult = Literal["success", "failure", "cancelled", "skipped", "unknown"]
 
 _PUBLISHED_BY_STATE: dict[PublicationState, frozenset[str]] = {
@@ -45,6 +53,7 @@ _PUBLISHED_BY_STATE: dict[PublicationState, frozenset[str]] = {
     "npm_only": frozenset({"npm"}),
     "both_published": frozenset({"pypi", "npm"}),
     "byte_verified": frozenset({"pypi", "npm"}),
+    "npm_byte_verified": frozenset({"npm"}),
 }
 
 
@@ -561,26 +570,47 @@ def reduce_publication_state(
     registry_verification: RegistryVerification,
     pypi_publish_result: PublishResult = "skipped",
     npm_publish_result: PublishResult = "skipped",
+    target: PublicationTarget = "dual",
 ) -> PublicationDecision:
     if previous_state not in _PUBLISHED_BY_STATE:
         raise ValueError("unknown previous publication state")
+    if target not in {"dual", "npm"}:
+        raise ValueError("unknown publication target")
     if pypi not in {"present", "absent", "unknown"} or npm not in {
         "present",
         "absent",
         "unknown",
     }:
         raise ValueError("unknown registry observation")
-    if registry_verification not in {"not_run", "failed", "byte_verified"}:
+    if registry_verification not in {
+        "not_run",
+        "failed",
+        "byte_verified",
+        "npm_byte_verified",
+    }:
         raise ValueError("unknown registry verification state")
     publish_results = {pypi_publish_result, npm_publish_result}
     if not publish_results.issubset(
         {"success", "failure", "cancelled", "skipped", "unknown"}
     ):
         raise ValueError("unknown publish job result")
-    if registry_verification == "byte_verified" and (
-        pypi != "present" or npm != "present"
+
+    expected_verification = "npm_byte_verified" if target == "npm" else "byte_verified"
+    if (
+        registry_verification in {"byte_verified", "npm_byte_verified"}
+        and registry_verification != expected_verification
     ):
         return _incident(_observed_state(pypi, npm), "verification_state_mismatch")
+    if target == "npm" and pypi == "present":
+        return _incident(_observed_state(pypi, npm), "publication_target_mismatch")
+    if registry_verification == expected_verification:
+        observations_match = (
+            pypi == "absent" and npm == "present"
+            if target == "npm"
+            else pypi == "present" and npm == "present"
+        )
+        if not observations_match:
+            return _incident(_observed_state(pypi, npm), "verification_state_mismatch")
     if "unknown" in {pypi, npm}:
         return _incident(previous_state, "registry_state_unknown")
 
@@ -595,6 +625,35 @@ def reduce_publication_state(
         ):
             return _incident(previous_state, "state_branch_mismatch")
         return _incident(previous_state, "state_regression")
+
+    if target == "npm":
+        npm_state = (
+            "npm_byte_verified" if previous_state == "npm_byte_verified" else observed
+        )
+        if pypi_publish_result != "skipped":
+            return _incident(npm_state, "publish_target_mismatch")
+        if (
+            npm_publish_result == "skipped"
+            and npm == "absent"
+            and registry_verification == "not_run"
+        ):
+            return PublicationDecision("unpublished", False, False)
+        if npm_publish_result != "success":
+            if npm_publish_result == "unknown":
+                return _incident(npm_state, "publish_outcome_unknown")
+            if npm_publish_result == "failure":
+                return _incident(npm_state, "publish_attempt_failed")
+            if npm_publish_result == "cancelled":
+                return _incident(npm_state, "publish_attempt_cancelled")
+            return _incident(npm_state, "publish_target_mismatch")
+        if npm != "present":
+            return _incident(npm_state, "publish_success_registry_absent")
+        if registry_verification == "failed":
+            return _incident(npm_state, "registry_verification_failed")
+        if registry_verification != "npm_byte_verified":
+            return _incident(npm_state, "verification_incomplete")
+        return PublicationDecision("npm_byte_verified", True, True)
+
     if previous_state == "byte_verified":
         if registry_verification != "byte_verified":
             code = (
@@ -638,11 +697,13 @@ def _write_verification_failure(
     attempt_limit: int,
     checks: dict[str, Any],
     error: BaseException,
+    target: PublicationTarget,
 ) -> None:
     _write_json(
         output,
         {
             "schemaVersion": 1,
+            "target": target,
             "status": "verification_failed",
             "manifestCommit": manifest.get("commit"),
             "packages": manifest.get("packages"),
@@ -659,17 +720,24 @@ def _write_verification_failure(
     )
 
 
-def _fail_invalid_input(output: Path, message: str, error: BaseException) -> NoReturn:
+def _fail_invalid_input(
+    output: Path,
+    message: str,
+    error: BaseException,
+    *,
+    target: PublicationTarget,
+) -> NoReturn:
     _write_json(
         output,
         {
             "schemaVersion": 1,
+            "target": target,
             "status": "verification_failed",
             "manifestCommit": None,
             "failureCode": "invalid_release_input",
             "failureType": type(error).__name__,
             "checks": {
-                "pypi": {"status": "not_run"},
+                "pypi": {"status": "not_targeted" if target == "npm" else "not_run"},
                 "npm": {"status": "not_run"},
             },
         },
@@ -683,6 +751,7 @@ def verification_main(argv: Sequence[str]) -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--downloads-dir", type=Path)
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY"))
+    parser.add_argument("--target", choices=("dual", "npm"), default="dual")
     parser.add_argument("--attempts", type=int, default=8)
     parser.add_argument("--initial-delay", type=float, default=2.0)
     parser.add_argument("--max-delay", type=float, default=20.0)
@@ -692,12 +761,14 @@ def verification_main(argv: Sequence[str]) -> None:
             args.output,
             "polling bounds must be non-negative and attempts must be positive",
             ValueError("invalid polling bounds"),
+            target=args.target,
         )
     if not args.repository or args.repository.count("/") != 1:
         _fail_invalid_input(
             args.output,
             "--repository must be an owner/name GitHub repository",
             ValueError("invalid repository"),
+            target=args.target,
         )
     try:
         manifest, entries = manifest_data(args.artifacts_dir)
@@ -708,12 +779,18 @@ def verification_main(argv: Sequence[str]) -> None:
         UnicodeDecodeError,
         json.JSONDecodeError,
     ) as error:
-        _fail_invalid_input(args.output, "release manifest could not be loaded", error)
+        _fail_invalid_input(
+            args.output,
+            "release manifest could not be loaded",
+            error,
+            target=args.target,
+        )
     if COMMIT_PATTERN.fullmatch(str(manifest.get("commit", ""))) is None:
         _fail_invalid_input(
             args.output,
             "manifest commit must be exactly 40 lowercase hexadecimal characters",
             ValueError("invalid manifest commit"),
+            target=args.target,
         )
     downloads_dir = args.downloads_dir or args.output.parent / "downloaded"
     downloads_dir.mkdir(parents=True, exist_ok=True)
@@ -728,17 +805,20 @@ def verification_main(argv: Sequence[str]) -> None:
     )
     for attempt in range(1, args.attempts + 1):
         checks: dict[str, Any] = {
-            "pypi": {"status": "not_run"},
+            "pypi": {"status": "not_targeted" if args.target == "npm" else "not_run"},
             "npm": {"status": "not_run"},
         }
         try:
-            pypi = verify_pypi(
-                entries,
-                downloads_dir=downloads_dir,
-                repository=args.repository,
-                commit=manifest["commit"],
-            )
-            checks["pypi"] = {"status": "passed", "evidence": pypi}
+            if args.target == "dual":
+                pypi = verify_pypi(
+                    entries,
+                    downloads_dir=downloads_dir,
+                    repository=args.repository,
+                    commit=manifest["commit"],
+                )
+                checks["pypi"] = {"status": "passed", "evidence": pypi}
+            else:
+                pypi = {"status": "not_targeted"}
             npm = verify_npm(
                 entries,
                 downloads_dir=downloads_dir,
@@ -759,6 +839,7 @@ def verification_main(argv: Sequence[str]) -> None:
                 attempt_limit=args.attempts,
                 checks=checks,
                 error=error,
+                target=args.target,
             )
             fail(f"immutable registry verification mismatch: {error}")
         except retryable as error:
@@ -774,6 +855,7 @@ def verification_main(argv: Sequence[str]) -> None:
                 attempt_limit=args.attempts,
                 checks=checks,
                 error=error,
+                target=args.target,
             )
             if attempt == args.attempts:
                 fail(
@@ -792,7 +874,10 @@ def verification_main(argv: Sequence[str]) -> None:
             args.output,
             {
                 "schemaVersion": 1,
-                "status": "byte_verified",
+                "target": args.target,
+                "status": (
+                    "npm_byte_verified" if args.target == "npm" else "byte_verified"
+                ),
                 "manifestCommit": manifest["commit"],
                 "packages": manifest["packages"],
                 "verifiedAt": datetime.now(UTC).isoformat(),
@@ -802,15 +887,22 @@ def verification_main(argv: Sequence[str]) -> None:
                 "npm": npm,
             },
         )
-        print(
-            "PASS: PyPI/npm downloaded bytes, registry attestations, and GitHub "
-            "attestations verified"
-        )
+        if args.target == "npm":
+            print(
+                "PASS: npm downloaded bytes, registry signatures, and GitHub "
+                "attestations verified"
+            )
+        else:
+            print(
+                "PASS: PyPI/npm downloaded bytes, registry attestations, and GitHub "
+                "attestations verified"
+            )
         return
 
 
 def state_main(argv: Sequence[str]) -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--target", choices=("dual", "npm"), default="dual")
     parser.add_argument(
         "--previous-state", required=True, choices=tuple(_PUBLISHED_BY_STATE)
     )
@@ -823,7 +915,7 @@ def state_main(argv: Sequence[str]) -> None:
     parser.add_argument(
         "--registry-verification",
         required=True,
-        choices=("not_run", "failed", "byte_verified"),
+        choices=("not_run", "failed", "byte_verified", "npm_byte_verified"),
     )
     parser.add_argument(
         "--pypi-publish-result",
@@ -849,9 +941,11 @@ def state_main(argv: Sequence[str]) -> None:
         registry_verification=args.registry_verification,
         pypi_publish_result=args.pypi_publish_result,
         npm_publish_result=args.npm_publish_result,
+        target=args.target,
     )
     payload = {
         "schemaVersion": 1,
+        "target": args.target,
         "commit": args.commit,
         "state": decision.state,
         "previousState": args.previous_state,
@@ -891,6 +985,7 @@ def state_main(argv: Sequence[str]) -> None:
     args.markdown.write_text(
         "# Kaji beta publication status\n\n"
         f"- Commit: `{args.commit}`\n"
+        f"- Target: `{args.target}`\n"
         f"- State: **{decision.state}**\n"
         f"- PyPI/npm: `{args.pypi}` / `{args.npm}`\n"
         f"- Publish jobs: `{args.pypi_publish_result}` / "

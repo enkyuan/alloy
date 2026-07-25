@@ -467,7 +467,6 @@ const expectedKajiJobNames = {
     "supply-chain": "supply-chain evidence",
     "registry-preflight": "registry preflight",
     "publisher-preflight": "publisher preflight",
-    "publish-python": "publish Python package",
     "publish-npm": "publish npm package",
     "publication-status": "verify publication",
     "publication-incident": "publication incident",
@@ -502,7 +501,6 @@ const reviewedActionPins: Record<string, string> = {
   "actions/github-script": "f28e40c7f34bde8b3046d885e986cb6290c5673b",
   "actions/attest-build-provenance": "e8998f949152b193b063cb0ec769d69d929409be",
   "anchore/sbom-action": "fbfd9c6c189226748411491745178e0c2017392d",
-  "pypa/gh-action-pypi-publish": "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
   "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
   "astral-sh/setup-uv": "caf0cab7a618c569241d31dcd442f54681755d39",
   "oven-sh/setup-bun": "0c5077e51419868618aeaa5fe8019c62421857d6",
@@ -516,7 +514,6 @@ const reviewedActionReleases: Record<string, string> = {
   "actions/github-script": "v7.1.0",
   "actions/attest-build-provenance": "v2.4.0",
   "anchore/sbom-action": "v0.20.10",
-  "pypa/gh-action-pypi-publish": "v1.14.0",
   "actions/setup-python": "v5.6.0",
   "astral-sh/setup-uv": "v3.2.4",
   "oven-sh/setup-bun": "v2.2.0",
@@ -544,7 +541,6 @@ const expectedJobPermissionDeclarations: Partial<
       attestations: "write",
     },
     "publisher-preflight": { contents: "read" },
-    "publish-python": { contents: "read", "id-token": "write" },
     "publish-npm": { contents: "read", "id-token": "write" },
     "publication-status": { contents: "read", attestations: "read" },
     "publication-incident": { contents: "write" },
@@ -1436,7 +1432,7 @@ describe("Kaji workflow contracts", () => {
     const publish = readWorkflow("kaji.publish.yml");
 
     expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(7);
-    expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(15);
+    expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(14);
     for (const [workflowName, { source, workflow }] of [
       ["kaji.rehearsal.yml", rehearsal],
       ["kaji.publish.yml", publish],
@@ -1502,7 +1498,6 @@ describe("Kaji workflow contracts", () => {
       "supply-chain",
       "registry-preflight",
       "publisher-preflight",
-      "publish-python",
       "publish-npm",
       "publication-status",
       "publication-incident",
@@ -1519,8 +1514,9 @@ describe("Kaji workflow contracts", () => {
     expect(classifier?.run).toContain('[ "$PYPI_STATE" = absent ]');
     expect(classifier?.run).toContain('[ "$NPM_STATE" = absent ]');
     expect(classifier?.run).toContain('[ "$REGISTRY_VERIFICATION" = not_run ]');
-    expect(classifier?.run).toContain('[ "$PYPI_PUBLISH_RESULT" = skipped ]');
     expect(classifier?.run).toContain('[ "$NPM_PUBLISH_RESULT" = skipped ]');
+    expect(classifier?.run).toContain("--target npm");
+    expect(classifier?.run).toContain("npm_byte_verified");
   });
 
   it("collects TTHW from current tag artifacts before environment approval", () => {
@@ -1998,6 +1994,85 @@ describe("Kaji workflow contracts", () => {
     },
   );
 
+  it("publishes and byte-verifies npm only while requiring PyPI absence", () => {
+    const { source, workflow } = readWorkflow("kaji.publish.yml");
+    const jobs = workflow.jobs ?? {};
+
+    expect(jobs).not.toHaveProperty("publish-python");
+    expect(source).not.toContain("pypa/gh-action-pypi-publish");
+    expect(source).not.toContain("pypi-attestations");
+
+    const registryPreflight = jobs["registry-preflight"]?.steps?.find((step) =>
+      step.run?.includes("https://pypi.org/pypi/kaji-sdk/0.2.0b1/json"),
+    );
+    expect(registryPreflight?.run).toContain("404)");
+    expect(registryPreflight?.run).toContain("PyPI beta 0.2.0b1 must remain absent");
+
+    const npmPublish = workflowStep(jobs["publish-npm"]!, "Publish exact npm beta with provenance");
+    expect(npmPublish.run).toContain("npm publish");
+    expect(npmPublish.run).toContain("--provenance");
+    expect(npmPublish.run).toContain("--access public");
+    expect(npmPublish.run).toContain("--tag beta");
+    expect([...dependencyClosure(workflow, "publish-npm")].sort()).toEqual([
+      "keyed-proof",
+      "node-compat",
+      "offline-gates",
+      "performance",
+      "publisher-preflight",
+      "python-compat",
+      "registry-preflight",
+      "supply-chain",
+      "tthw-evidence",
+      "verify-tag",
+    ]);
+
+    const publicationStatus = jobs["publication-status"]!;
+    expect(publicationStatus.needs).toEqual([
+      "verify-tag",
+      "supply-chain",
+      "registry-preflight",
+      "publisher-preflight",
+      "publish-npm",
+    ]);
+    const registryVerifier = workflowStep(
+      publicationStatus,
+      "Poll bounded npm propagation and verify published bytes",
+    );
+    expect(registryVerifier.run).toContain("verify_published_packages.py");
+    expect(registryVerifier.run).toContain("--target npm");
+    const classifier = workflowStep(publicationStatus, "Reduce monotonic publication state");
+    expect(classifier.run).toContain("verify_published_packages.py state");
+    expect(classifier.run).toContain("--target npm");
+    expect(classifier.run).toContain('--pypi "$PYPI_STATE"');
+    expect(classifier.run).toContain("npm_byte_verified");
+    expect(classifier.run).not.toMatch(/(^|[^_])byte_verified([^_]|$)/u);
+
+    const exactState = workflowStep(
+      publicationStatus,
+      "Require exact npm byte-verified publication state",
+    );
+    expect(exactState.if).toContain("npm_byte_verified");
+    expect(jobs["publication-incident"]?.if).toContain("npm_byte_verified");
+    expect(jobs["release-evidence"]?.if).toContain("npm_byte_verified");
+
+    const pythonEvidence = JSON.stringify(jobs["supply-chain"]);
+    expect(pythonEvidence).toContain("kaji_sdk-0.2.0b1-py3-none-any.whl");
+    expect(pythonEvidence).toContain("kaji_sdk-0.2.0b1.tar.gz");
+
+    const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
+      step.run?.includes("kaji/scripts/attach_release_assets.py"),
+    )?.run;
+    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.2.tgz");
+    for (const forbidden of [
+      "kaji_sdk-0.2.0b1-py3-none-any.whl",
+      "kaji_sdk-0.2.0b1.tar.gz",
+      "registry-kaji_sdk",
+      "pypi-attestations",
+    ]) {
+      expect(releaseAttach).not.toContain(forbidden);
+    }
+  });
+
   it("fans every release-byte consumer out from one same-run artifact producer", () => {
     const cases = [
       {
@@ -2022,7 +2097,6 @@ describe("Kaji workflow contracts", () => {
           "tthw-evidence",
           "keyed-proof",
           "supply-chain",
-          "publish-python",
           "publish-npm",
           "publication-status",
           "release-evidence",

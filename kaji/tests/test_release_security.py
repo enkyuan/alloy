@@ -50,7 +50,6 @@ REVIEWED_ACTION_PINS = {
     "actions/github-script": "f28e40c7f34bde8b3046d885e986cb6290c5673b",
     "actions/attest-build-provenance": "e8998f949152b193b063cb0ec769d69d929409be",
     "anchore/sbom-action": "fbfd9c6c189226748411491745178e0c2017392d",
-    "pypa/gh-action-pypi-publish": "cef221092ed1bacb1cc03d23a2d87d1d172e277b",
     "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
     "astral-sh/setup-uv": "caf0cab7a618c569241d31dcd442f54681755d39",
     "oven-sh/setup-bun": "0c5077e51419868618aeaa5fe8019c62421857d6",

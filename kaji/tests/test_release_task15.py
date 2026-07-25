@@ -265,7 +265,7 @@ def test_release_workflows_bound_every_job() -> None:
     performance = _read(".github/workflows/kaji.performance.yml")
 
     assert rehearsal.count("timeout-minutes:") == 6
-    assert publish.count("timeout-minutes:") == 14
+    assert publish.count("timeout-minutes:") == 13
     assert performance.count("timeout-minutes:") == 5
     assert "timeout-minutes: 90" in performance
     assert "timeout-minutes: 45" in publish
@@ -433,7 +433,6 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "verification.verified",
         "environment: kaji-beta",
         "environment: kaji-beta-publish",
-        "pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b",
         "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
         "--provenance",
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
@@ -464,13 +463,12 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "kaji-tthw-evidence",
         "validate_tthw_evidence.py",
         "tthw/tthw-evidence.json",
-        "pypi-attestations==0.0.29",
         "npm@11.16.0",
         "--downloads-dir .artifacts/kaji-publication-status/downloaded",
         '--repository "$GITHUB_REPOSITORY"',
         "verify_published_packages.py state",
         "steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state",
-        "needs.publication-status.outputs.state == 'byte_verified'",
+        "needs.publication-status.outputs.state == 'npm_byte_verified'",
         "installation recommendations remain withheld",
         "github.run_attempt == 1",
         "publisher-preflight:",
@@ -484,14 +482,14 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "verify_npm_package.py",
         "verify_archives.py",
         "Rebuild and verify exact package contents against the clean checkout",
-        "Reverify Python archive contents against the clean checkout",
         "Rebuild and verify npm archive contents against the clean checkout",
         "verify_published_packages.py",
         "--attempts 8 --initial-delay 2 --max-delay 20",
         "attach_release_assets.py",
         "registry-verification.json",
         "Initialize fail-closed publication status before setup",
-        '--pypi-publish-result "$PYPI_PUBLISH_RESULT"',
+        "--target npm",
+        "--pypi-publish-result skipped",
         '--npm-publish-result "$NPM_PUBLISH_RESULT"',
         "status_classifier_unavailable",
         "Create or update fail-closed incident prerelease status",
@@ -501,6 +499,8 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "needs.publication-status.outputs.incident == 'true'",
     ):
         assert expected in publish
+    assert "pypa/gh-action-pypi-publish" not in publish
+    assert "pypi-attestations" not in publish
     publish_keyed_steps = publish.split("  keyed-proof:", 1)[1].split(
         "      - uses: actions/checkout@", 1
     )[0]
@@ -533,15 +533,15 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "github.run_attempt == 1" in incident_job
     assert "--clobber" not in incident_job
     assert (
-        publish.count("Revalidate downloaded filenames, sizes, hashes, and commit") == 3
+        publish.count("Revalidate downloaded filenames, sizes, hashes, and commit") == 2
     )
-    assert publish.count("uses: ./.github/actions/verify-kaji-beta-tag") == 3
-    assert publish.count("environment: kaji-beta-publish") == 3
+    assert publish.count("uses: ./.github/actions/verify-kaji-beta-tag") == 2
+    assert publish.count("environment: kaji-beta-publish") == 2
     assert (
         publish.count(
             "needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]"
         )
-        == 2
+        == 1
     )
     assert (
         "needs: [verify-tag, tthw-evidence, supply-chain, publication-status]"
@@ -550,10 +550,6 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "if-no-files-found: error" in publish
     assert "--clobber" not in publish
     for reverify, mutation in (
-        (
-            "Reverify signed tag immediately before PyPI publication",
-            "Publish exact Python beta through trusted publishing",
-        ),
         (
             "Reverify signed tag immediately before npm publication",
             "Publish exact npm beta with provenance",
@@ -610,7 +606,11 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         '["npm", "audit", "signatures", "--json", "--include-attestations"]' in registry
     )
     assert re.search(r'"gh",\s*"attestation",\s*"verify"', registry)
-    assert '"status": "byte_verified"' in registry
+    assert re.search(
+        r'"status":\s*\(\s*"npm_byte_verified"\s+if args\.target == "npm"'
+        r'\s+else "byte_verified"',
+        registry,
+    )
     assert '"status": "verification_failed"' in registry
     for evidence_field in (
         '"manifestCommit"',
@@ -1012,6 +1012,232 @@ def test_publication_state_reducer_is_monotonic_and_byte_verified_is_sole_succes
     assert (decision.state == "byte_verified") is ready
 
 
+def test_npm_target_has_a_distinct_byte_verified_terminal() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="unpublished",
+        pypi="absent",
+        npm="present",
+        registry_verification="npm_byte_verified",
+        pypi_publish_result="skipped",
+        npm_publish_result="success",
+        target="npm",
+    )
+
+    assert decision.state == "npm_byte_verified"
+    assert decision.release_ready is True
+    assert decision.install_recommendation is True
+    assert decision.incident_code is None
+
+
+def test_dual_target_retains_npm_only_as_a_partial_publication_incident() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="unpublished",
+        pypi="absent",
+        npm="present",
+        registry_verification="not_run",
+        pypi_publish_result="skipped",
+        npm_publish_result="success",
+        target="dual",
+    )
+
+    assert decision.state == "npm_only"
+    assert decision.incident_code == "partial_publication"
+    assert decision.release_ready is False
+
+
+def test_npm_target_keeps_a_clean_preflight_stop_unpublished() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="unpublished",
+        pypi="absent",
+        npm="absent",
+        registry_verification="not_run",
+        pypi_publish_result="skipped",
+        npm_publish_result="skipped",
+        target="npm",
+    )
+
+    assert decision == verifier.PublicationDecision("unpublished", False, False)
+
+
+@pytest.mark.parametrize(
+    (
+        "previous",
+        "pypi",
+        "npm",
+        "verification",
+        "pypi_publish",
+        "npm_publish",
+        "incident",
+    ),
+    [
+        (
+            "unpublished",
+            "present",
+            "present",
+            "npm_byte_verified",
+            "skipped",
+            "success",
+            "publication_target_mismatch",
+        ),
+        (
+            "unpublished",
+            "unknown",
+            "present",
+            "npm_byte_verified",
+            "skipped",
+            "success",
+            "verification_state_mismatch",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "npm_byte_verified",
+            "success",
+            "success",
+            "publish_target_mismatch",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "absent",
+            "npm_byte_verified",
+            "skipped",
+            "success",
+            "verification_state_mismatch",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "unknown",
+            "not_run",
+            "skipped",
+            "unknown",
+            "registry_state_unknown",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "not_run",
+            "skipped",
+            "success",
+            "verification_incomplete",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "failed",
+            "skipped",
+            "success",
+            "registry_verification_failed",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "byte_verified",
+            "skipped",
+            "success",
+            "verification_state_mismatch",
+        ),
+        (
+            "unpublished",
+            "absent",
+            "present",
+            "npm_byte_verified",
+            "skipped",
+            "skipped",
+            "publish_target_mismatch",
+        ),
+        (
+            "npm_byte_verified",
+            "absent",
+            "absent",
+            "not_run",
+            "skipped",
+            "skipped",
+            "state_regression",
+        ),
+    ],
+)
+def test_npm_target_fails_closed_on_unknown_mismatch_or_regression(
+    previous: str,
+    pypi: str,
+    npm: str,
+    verification: str,
+    pypi_publish: str,
+    npm_publish: str,
+    incident: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state=previous,
+        pypi=pypi,
+        npm=npm,
+        registry_verification=verification,
+        pypi_publish_result=pypi_publish,
+        npm_publish_result=npm_publish,
+        target="npm",
+    )
+
+    assert decision.incident_code == incident
+    assert decision.release_ready is False
+    assert decision.install_recommendation is False
+
+
+def test_npm_target_retains_its_verified_terminal_only_with_exact_evidence() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="npm_byte_verified",
+        pypi="absent",
+        npm="present",
+        registry_verification="npm_byte_verified",
+        pypi_publish_result="skipped",
+        npm_publish_result="success",
+        target="npm",
+    )
+
+    assert decision == verifier.PublicationDecision("npm_byte_verified", True, True)
+
+
+@pytest.mark.parametrize(
+    ("verification", "incident"),
+    [
+        ("not_run", "verification_incomplete"),
+        ("failed", "registry_verification_failed"),
+    ],
+)
+def test_npm_target_withholds_but_retains_its_previous_terminal(
+    verification: str, incident: str
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    decision = verifier.reduce_publication_state(
+        previous_state="npm_byte_verified",
+        pypi="absent",
+        npm="present",
+        registry_verification=verification,
+        pypi_publish_result="skipped",
+        npm_publish_result="success",
+        target="npm",
+    )
+
+    assert decision.state == "npm_byte_verified"
+    assert decision.incident_code == incident
+    assert decision.release_ready is False
+    assert decision.install_recommendation is False
+
+
 @pytest.mark.parametrize(
     ("pypi", "npm", "verification", "incident"),
     [
@@ -1052,7 +1278,9 @@ def test_only_exact_clean_no_attempt_state_avoids_an_incident(
     assert '[ "$PYPI_STATE" = absent ]' in status_job
     assert '[ "$NPM_STATE" = absent ]' in status_job
     assert '[ "$REGISTRY_VERIFICATION" = not_run ]' in status_job
-    assert '[ "$PYPI_PUBLISH_RESULT" = skipped ]' in status_job
+    assert "--target npm" in status_job
+    assert "--pypi-publish-result skipped" in status_job
+    assert 'publishJobs: {pypi: "skipped", npm: $npmPublish}' in status_job
     assert '[ "$NPM_PUBLISH_RESULT" = skipped ]' in status_job
     assert "*) FALLBACK_STATE=unpublished ;;" in status_job
 
@@ -1352,6 +1580,118 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
     assert attempts == 2
     assert retained["status"] == "byte_verified"
     assert retained["attempt"] == 2
+
+
+def test_npm_target_verifier_skips_pypi_and_records_the_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "manifest.json").write_text(
+        json.dumps(
+            {
+                "commit": "a" * 40,
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.2"},
+                "artifacts": [
+                    {
+                        "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+                        "package": "python",
+                        "sha256": "0" * 64,
+                        "size": 1,
+                    },
+                    {
+                        "file": "kaji-sdk-0.2.0-beta.2.tgz",
+                        "package": "typescript",
+                        "sha256": "1" * 64,
+                        "size": 1,
+                    },
+                ],
+            }
+        )
+    )
+    output = tmp_path / "registry-verification.json"
+    monkeypatch.setattr(
+        verifier,
+        "verify_pypi",
+        lambda *_args, **_kwargs: pytest.fail("npm target called verify_pypi"),
+    )
+    npm_calls = 0
+
+    def verify_npm(*_args: object, **_kwargs: object) -> dict[str, object]:
+        nonlocal npm_calls
+        npm_calls += 1
+        return {"byteVerified": True}
+
+    monkeypatch.setattr(verifier, "verify_npm", verify_npm)
+
+    verifier.verification_main(
+        [
+            "--artifacts-dir",
+            str(artifacts),
+            "--output",
+            str(output),
+            "--repository",
+            "alloy-org/alloy",
+            "--target",
+            "npm",
+            "--attempts",
+            "1",
+        ]
+    )
+
+    retained = json.loads(output.read_text())
+    assert npm_calls == 1
+    assert retained["target"] == "npm"
+    assert retained["status"] == "npm_byte_verified"
+    assert retained["pypi"] == {"status": "not_targeted"}
+    assert retained["npm"] == {"byteVerified": True}
+    assert retained["packages"] == {
+        "python": "0.2.0b1",
+        "typescript": "0.2.0-beta.2",
+    }
+
+
+def test_npm_target_state_cli_persists_target_and_terminal(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    output = tmp_path / "publication-status.json"
+    markdown = tmp_path / "publication-status.md"
+
+    verifier.state_main(
+        [
+            "--target",
+            "npm",
+            "--previous-state",
+            "unpublished",
+            "--pypi",
+            "absent",
+            "--npm",
+            "present",
+            "--registry-verification",
+            "npm_byte_verified",
+            "--pypi-publish-result",
+            "skipped",
+            "--npm-publish-result",
+            "success",
+            "--commit",
+            "a" * 40,
+            "--workflow-run",
+            "https://github.example/run/1",
+            "--output",
+            str(output),
+            "--markdown",
+            str(markdown),
+        ]
+    )
+
+    retained = json.loads(output.read_text())
+    assert retained["target"] == "npm"
+    assert retained["state"] == "npm_byte_verified"
+    assert retained["releaseReady"] is True
+    assert retained["installRecommendation"] is True
+    assert "- Target: `npm`" in markdown.read_text()
 
 
 def test_malformed_registry_json_is_retained_as_typed_machine_failure(
@@ -1885,23 +2225,23 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "yank",
         "npm deprecate",
         "preserve",
-        "never reuse",
+        "Never reuse the",
         "No keyed provider or publisher evidence is claimed",
         "`kaji-beta-publish`",
         "Protect `kaji-v*-beta.*` tags against update and deletion",
         "annotated tag object SHA",
         "never click **Re-run failed jobs**",
         "partial_or_ambiguous",
-        "never reuse either old version",
         'git tag -s -a kaji-v0.2.0-beta.2 <approved-commit> -m "Kaji 0.2.0 beta 2"',
         "npm deprecate kaji-sdk@0.2.0-beta.2",
         "compares every existing asset's",
         "SHA-256 digest",
         "`KAJI_RELEASE_SIGNER_EMAIL`",
         "does not claim a separately",
-        "pending trusted publisher",
-        "project `kaji-sdk`",
-        "workflow `kaji.publish.yml`",
+        "publication is deferred",
+        "There is no Python publisher job",
+        "`npm_byte_verified`",
+        "public release assets",
         "Land the approved release commit on the default branch",
         "Never tag a feature-branch-only commit",
         "first unscoped publication requires a short-lived",

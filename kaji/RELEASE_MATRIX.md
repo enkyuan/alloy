@@ -69,7 +69,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 | Anthropic adapter                      | Experimental cross-SDK | implemented and test-covered, but outside the beta support and publication-proof promise |
 | Distributed same-session serialization | Deferred     | the beta coordinator is process-local   |
 | Exactly-once external side effects     | Deferred     | external systems must honor idempotency |
-| Unbounded or cross-process replay      | Deferred     | beta replay is capacity-limited         |
+| Unbounded or cross-process replay      | Deferred     | the beta replay is capacity-limited     |
 | Durable snapshotting                   | Deferred     | promoted with a durable storage backend |
 
 ## TypeScript Not Ported
@@ -133,7 +133,7 @@ TypeScript optional provider imports, and cancellation error shape.
 | Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh arm64 macOS users across Python/npm/Bun, each bound to the installed candidate artifact | Unmeasured |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
-| Registry publication proof | protected PyPI/npm jobs plus byte verification | Yes | Pending approval/publication |
+| Registry publication proof | protected npm publication plus exact npm byte, integrity, signature, provenance, and attestation verification; PyPI remains absent/deferred | Yes for the TypeScript beta; Python registry promotion is deferred | Pending approval/publication |
 
 No-key provider hygiene proves only that missing credentials fail safely. It is
 not provider-readiness evidence. Every protected row must come
