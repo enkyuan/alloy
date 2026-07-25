@@ -3,18 +3,18 @@ title: GitHub integration
 description: Wire the packaged TypeScript GitHub catalog with a repository allowlist, lazy credentials, read-only tool exposure, and explicit lifecycle ownership.
 ---
 
-`kaji-sdk/integrations/github` is an experimental TypeScript package subpath
-for bounded GitHub evidence and issue mutations. It uses a fixed
+`kaji-sdk/integrations/github` is a WIP TypeScript package subpath whose machine
+registry tier is `experimental`. Its implemented subset provides bounded GitHub
+evidence and issue mutations. It uses a fixed
 `https://api.github.com` origin, rejects redirects, validates repository names
 against an application-owned allowlist before reading credentials, and adds its
 own stable request identity headers.
 
 ## Read-only investigation agent
 
-Install `kaji-sdk`, `zod`, your provider SDK, and `@dotenvx/dotenvx`, then put
-`OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` in an encrypted or ignored
-environment file. Replace `owner/repo` with every exact repository the agent may
-read.
+Use the [source checkout setup](/docs/install#source-checkout), then export
+`OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` with your environment
+tooling. Replace `owner/repo` with every exact repository the agent may read.
 
 {/* docs-test:github-read-only:start */}
 
@@ -75,8 +75,8 @@ case-sensitive.
 `toolExposure: "read-only"` filters tools before registration, so mutation
 schemas are not sent to the model. This is a model-exposure boundary, not a token
 permission boundary. Use a fine-grained token limited to the selected
-repositories and only the read permissions required for Contents, Issues, Pull
-requests, Checks, Actions, and Deployments.
+repositories and grant only the permissions required for the GitHub endpoints
+you expose. Verify GitHub's permission names when creating the token.
 
 ## Tool catalog
 
@@ -94,8 +94,9 @@ with 15-second tool deadlines. External effects do not require approval by
 default: configure a `ToolPolicy` that requires approval for
 `external_effect`, install an approval handler, and use a token with the needed
 write permission before choosing `"all"`. A connection loss after mutation
-dispatch is an unknown outcome; reconcile the issue or comment marker before
-retrying.
+dispatch is an unknown outcome. Include an application-owned marker in the
+issue title or body and reconcile it before retrying. Kaji's internal
+idempotency key is not sent to GitHub.
 
 ## Lifecycle and observability
 
@@ -107,7 +108,7 @@ If the application uses metrics or trace sinks, pass the same sinks to both the
 builder and `createGithubIntegration`; builder configuration does not
 automatically flow into the integration requester.
 
-## Current limits
+## Limits
 
 The package is deliberately bounded:
 
@@ -118,5 +119,4 @@ The package is deliberately bounded:
 - the SDK does not read `GITHUB_TOKEN` automatically and does not exchange
   GitHub App, OAuth, or installation credentials; the application owns
   `tokenFor`;
-- the package remains experimental until the protected keyed API and release
-  evidence gates pass.
+- the package remains WIP, and its machine registry tier is `experimental`.

@@ -9,7 +9,7 @@ implementations and contracts belong in [`kaji/`](../kaji).
 | path                | name         | what it is                                                                                | stack                                                   |
 | ------------------- | ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | [`apps/web`](web)   | `@ryo/web`   | Studio: merchant dashboard for configuring agents, wallets, payment configs, and webhooks | React 19, Vite, TanStack Router, Tailwind v4, shadcn/ui |
-| [`apps/docs`](docs) | `@kaji/docs` | Private deployment package for the public Kaji documentation site                         | Next.js, Fumadocs                                       |
+| [`apps/docs`](docs) | `@kaji/docs` | Private deployment package for the public Kaji documentation site                         | Astro, MDX                                               |
 | [`apps/cli`](cli)   | `@kaji/cli`  | Published cross-language `kaji` CLI for scaffolding and code generation                   | Bun, TypeScript                                         |
 
 The standalone `@kaji/cli` is a project-level developer tool. The Python

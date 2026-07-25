@@ -1,0 +1,28 @@
+---
+interface Props {
+  items: string[];
+}
+
+const { items } = Astro.props;
+---
+
+<div class="tabs" data-tabs>
+  <div class="tab-list" role="tablist" aria-label="Code language">
+    {
+      items.map((item, index) => (
+        <button
+          type="button"
+          role="tab"
+          data-tab-button={item}
+          aria-selected={index === 0 ? "true" : "false"}
+          tabindex={index === 0 ? 0 : -1}
+        >
+          {item}
+        </button>
+      ))
+    }
+  </div>
+  <div class="tab-panels">
+    <slot />
+  </div>
+</div>

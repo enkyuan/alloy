@@ -1,11 +1,12 @@
 ---
 title: Events
-description: All kaji session state derives from an append-only event log. Wire-format type strings are identical across the Python and TypeScript SDKs.
+description: Kaji's replayable SessionState derives from a sequenced append-only event log whose event types remain wire-compatible between TypeScript and Python.
 ---
 
-Session state in kaji is a deterministic projection of an append-only
-event log. The runtime appends events as you call `turn()` or the lower-level
-`send`; `replaySession` reads them back into a usable `SessionState`.
+Kaji's replayable session state is a deterministic projection of a sequenced
+append-only event log. The runtime appends events as you call `turn()` or the
+lower-level `send`; `replaySession` reads them back into a usable
+`SessionState`.
 
 You usually don't emit runtime events yourself. Reserved wire variants are
 included for interoperability, but have no producer in the embedded beta
@@ -13,59 +14,53 @@ runtime; hosts must not infer implemented behavior from schema presence.
 
 ## Event types
 
-The same strings are used over the wire by both SDKs. A log written by
-the Python SDK can be replayed by the TypeScript SDK and vice versa.
+The same strings are used over the wire by both SDKs. A TypeScript log can be
+replayed by the Python SDK and vice versa.
 
-| Type                         | Emitted by                                    |
-| ---------------------------- | --------------------------------------------- |
-| `session.created`            | First event in a new session                  |
-| `session.closed`             | Session was closed                            |
-| `user.message`               | Caller (via `runtime.turn` or `runtime.send`) |
-| `user.audio.chunk`           | Reserved; no embedded runtime producer        |
-| `transcript.partial`         | Reserved; no embedded runtime producer        |
-| `transcript.final`           | Reserved; no embedded runtime producer        |
-| `memory.retrieval.started`   | Reserved; no embedded runtime producer        |
-| `memory.retrieval.completed` | Reserved; no embedded runtime producer        |
-| `agent.reasoning.started`    | Model began reasoning                         |
-| `agent.message.delta`        | Provider streaming a text chunk               |
-| `agent.message.completed`    | Provider finished a turn                      |
-| `agent.turn.exhausted`       | Runtime reached its configured iteration cap  |
-| `agent.turn.failed`          | Runtime persisted a closed turn failure       |
-| `tool.call.requested`        | Model decided to call a tool                  |
-| `tool.call.started`          | Tool handler execution began                  |
-| `tool.call.completed`        | Tool handler returned a result                |
-| `tool.call.failed`           | Tool handler raised an error                  |
-| `tool.approval.requested`    | Awaiting approval to execute tool             |
-| `tool.approval.approved`     | User approved tool execution                  |
-| `tool.approval.rejected`     | User rejected tool execution                  |
-| `workflow.started`           | Reserved; no embedded runtime producer        |
-| `workflow.completed`         | Reserved; no embedded runtime producer        |
-| `workflow.failed`            | Reserved; no embedded runtime producer        |
-| `cancellation.requested`     | Reserved; no embedded runtime producer        |
-| `cancellation.completed`     | Session cancellation finalized                |
+| Type                         | Emitted by                                     |
+| ---------------------------- | ---------------------------------------------- |
+| `session.created`            | `runtime.turn()` when the session log is empty |
+| `session.closed`             | Reserved; no embedded runtime producer         |
+| `user.message`               | Caller (via `runtime.turn` or `runtime.send`)  |
+| `user.audio.chunk`           | Reserved; no embedded runtime producer         |
+| `transcript.partial`         | Reserved; no embedded runtime producer         |
+| `transcript.final`           | Reserved; no embedded runtime producer         |
+| `memory.retrieval.started`   | Reserved; no embedded runtime producer         |
+| `memory.retrieval.completed` | Reserved; no embedded runtime producer         |
+| `agent.reasoning.started`    | Model began reasoning                          |
+| `agent.message.delta`        | Provider streaming a text chunk                |
+| `agent.message.completed`    | Runtime finalized text for one provider pass   |
+| `agent.turn.exhausted`       | Runtime reached its configured iteration cap   |
+| `agent.turn.failed`          | Runtime attempted to record a closed failure   |
+| `tool.call.requested`        | Model decided to call a tool                   |
+| `tool.call.started`          | Tool handler execution began                   |
+| `tool.call.completed`        | Tool handler returned a result                 |
+| `tool.call.failed`           | Tool handler raised an error                   |
+| `tool.approval.requested`    | Awaiting approval to execute tool              |
+| `tool.approval.approved`     | User approved tool execution                   |
+| `tool.approval.rejected`     | User rejected tool execution                   |
+| `workflow.started`           | Reserved; no embedded runtime producer         |
+| `workflow.completed`         | Reserved; no embedded runtime producer         |
+| `workflow.failed`            | Reserved; no embedded runtime producer         |
+| `cancellation.requested`     | Reserved; no embedded runtime producer         |
+| `cancellation.completed`     | Session cancellation finalized                 |
 
 The canonical list is in the SDK source -- check there before relying on
 any event type:
 
-- Python: `kaji/src/kaji/infra/events/types.py`
 - TypeScript: `kaji/ts/src/events/types.ts`
+- Python: `kaji/src/kaji/infra/events/types.py`
 
 ## Reading the log
 
-```python
-# Python
-events = await runtime.history("session-1")
-for e in events:
-    print(e.type, getattr(e, "content", ""))
-```
-
 ```ts
-// TypeScript
 const events = await runtime.history("session-1");
 for (const e of events) {
-  console.log(e.type, e.content ?? "");
+  console.log(e.sequence, e.type);
 }
 ```
 
-`replaySession` projects the log into a `SessionState` for you on every
-turn -- see [session state](/docs/concepts/session-state).
+The runtime maintains an incremental `SessionProjector`. Call `replaySession`
+directly when you need to rebuild state from a complete stored log. The Python
+equivalents are `runtime.history(...)` and `replay_session`. See
+[session state](/docs/concepts/session-state).

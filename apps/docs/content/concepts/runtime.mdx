@@ -1,71 +1,49 @@
 ---
 title: Runtime
-description: AgentBuilder configures the runtime; AgentRuntime.turn runs the high-level user-message path; AgentRuntime.history reads back the event log.
+description: AgentBuilder configures the runtime; AgentRuntime.turn runs the high-level user-message path; AgentRuntime.history reads a bounded cursor page of stored events.
 ---
 
 `AgentRuntime` is the loop that takes a user message, calls the LLM,
 validates and dispatches tool calls, and projects stored events into session
 state. Tool calls are sequential unless their specs explicitly opt into
 parallel-safe execution; even then, the default concurrency limit is four. You
-build a runtime with `AgentBuilder`.
+compose a TypeScript runtime with `AgentBuilder`.
 
 ## AgentBuilder
 
-| Method                               | Description                                                                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `.provider(p)`                       | Sets the LLM provider (required).                                                                                                     |
-| `.tool(t)`                           | Adds one tool. Call multiple times for multiple tools.                                                                                |
-| `.integration(i)`                    | Adds an `Integration` that registers a bundle of tools.                                                                               |
-| `.system_prompt(s)` (Python)         | Sets the system prompt. `.systemPrompt(s)` in TypeScript.                                                                             |
-| `.strategy(s)`                       | Overrides loop strategy (e.g. max iterations).                                                                                        |
-| `.policy(p)`                         | Attaches a `ToolPolicy` for risk-based approval.                                                                                      |
-| `.default_context(c)` (Python)       | Sets an explicit single-tenant default. TypeScript uses `.defaultContext(c)`. Prefer per-turn identity in multi-tenant hosts.         |
-| `.tool_execution_limits(l)` (Python) | Overrides bounded tool execution. TypeScript uses `.toolExecutionLimits(l)`.                                                          |
-| `.build(...)`                        | Builds the runtime with a bounded in-memory store and atomic journal/committer unless application-owned implementations are supplied. |
+| Method                         | Description                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `.provider(provider)`          | Sets the model provider. Required before `build()`.                                                                            |
+| `.tool(tool)`                  | Adds one function tool. Call it again to add more.                                                                             |
+| `.integration(value)`          | Adds an integration that registers a scoped bundle of tools.                                                                   |
+| `.systemPrompt(prompt)`        | Sets the instruction sent with provider requests.                                                                              |
+| `.strategy(strategy)`          | Overrides loop behavior such as maximum iterations.                                                                            |
+| `.policy(policy)`              | Adds risk-based tool approval policy.                                                                                          |
+| `.defaultContext(context)`     | Sets an explicit single-tenant default. Prefer per-turn identity in multi-tenant hosts.                                        |
+| `.toolExecutionLimits(limits)` | Overrides bounded tool execution.                                                                                              |
+| `.build(options)`              | Creates a runtime with a bounded in-memory store and atomic committer unless the application supplies its own implementations. |
 
 ## AgentRuntime
 
-| Method                                | Returns                   | Description                                                                                           |
-| ------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `turn(text)`                          | turn result               | High-level path for one user message and model/tool loop.                                             |
-| `send(session_id, text)`              | `None` / `Promise<void>`  | Lower-level session API: append a `USER_MESSAGE` and run one turn.                                    |
-| `history(session_id, cursor options)` | bounded stored-event page | Events strictly after the supplied sequence cursor, in append order; the default page limit is 1,024. |
-
-In Python, methods are snake_case (`send`, `history`) and async. In
-TypeScript they are camelCase (`send`, `history`) and return Promises.
+| Method                              | Returns               | Description                                                                                         |
+| ----------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------- |
+| `turn(text, options)`               | `Promise<TurnResult>` | Runs one user message through the model/tool loop.                                                  |
+| `send(sessionId, text, options)`    | `Promise<void>`       | Appends a user message to a known session and runs one turn.                                        |
+| `history(sessionId, cursorOptions)` | stored-event page     | Returns events after the supplied sequence cursor in append order; the default page limit is 1,024. |
 
 ## Example
 
-<Tabs items={["python", "typescript"]}>
-  <Tab value="python">
-    ```python
-    from kaji import AgentBuilder, get_provider
+```ts
+import { AgentBuilder, openai } from "kaji-sdk";
 
-    runtime = (
-        AgentBuilder()
-        .provider(get_provider("openai"))
-        .system_prompt("You are a helpful assistant.")
-        .build()
-    )
-    result = await runtime.turn("Hello")
-    print(result.text)
-    ```
+const runtime = new AgentBuilder()
+  .provider(openai())
+  .systemPrompt("You are a helpful assistant.")
+  .build();
 
-  </Tab>
-  <Tab value="typescript">
-    ```ts
-    import { AgentBuilder, OpenAIProvider } from "kaji-sdk";
-
-    const runtime = new AgentBuilder()
-      .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
-      .systemPrompt("You are a helpful assistant.")
-      .build();
-    const result = await runtime.turn("Hello");
-    console.log(result.text);
-    ```
-
-  </Tab>
-</Tabs>
+const result = await runtime.turn("Hello");
+console.log(result.text);
+```
 
 See [event delivery](/docs/concepts/event-bus) for the underlying mechanism.
 
@@ -73,13 +51,16 @@ See [event delivery](/docs/concepts/event-bus) for the underlying mechanism.
 
 Turns for the same session serialize FIFO within the process-local coordinator;
 different sessions may run concurrently. Persisted `sequence`, not timestamp,
-defines event order. Page history with `after_sequence` / `afterSequence` and
-resume subscriptions from the last stored sequence.
+defines event order. Page history with `afterSequence` and resume subscriptions
+from the last stored sequence.
 
 A text-only runtime may omit a principal. Once enabled tools are present, pass
-`TurnContext(principal_id=...)` to the Python turn or
-`{ context: { principalId: ... } }` to the TypeScript turn. Kaji resolves that
-caller-owned input into a detached, immutable `ToolExecutionContext` for every
-handler. The snapshot includes correlation IDs, the canonical idempotency key,
-deadline, and cancellation signal/token; handlers must not replace identity or
-correlation fields.
+`{ context: { principalId: ... } }` to `turn()`. Kaji resolves that
+caller-owned input into a detached, validated, readonly `ToolExecutionContext`
+for each handler; metadata is recursively frozen. The snapshot includes
+correlation IDs, the canonical idempotency key, deadline, and cancellation
+signal. Handlers must not replace identity or correlation fields.
+
+The Python SDK follows the same lifecycle with snake_case configuration and
+context fields, including `system_prompt`, `default_context`,
+`tool_execution_limits`, and `principal_id`.

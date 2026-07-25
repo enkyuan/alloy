@@ -1,0 +1,37 @@
+---
+import Base from "@/layouts/base.astro";
+import Wordmark from "@/components/site/wordmark.astro";
+import { ArrowRight } from "reicon";
+
+const arrowIcon = ArrowRight.toSvg({
+  size: 14,
+  color: "currentColor",
+  className: "inline-icon",
+});
+---
+
+<Base
+  title="Page not found"
+  description="The requested Kaji documentation page does not exist."
+  activeHref=""
+  shell="standalone"
+>
+  <article class="article error-page">
+    <Wordmark />
+    <header class="error-copy">
+      <p class="error-code">
+        <span aria-hidden="true">404</span>
+        <span class="sr-only">Error 404.</span>
+        <code>route.missing</code>
+      </p>
+      <h1>Page not found</h1>
+      <p class="tagline">
+        This route is outside the Kaji documentation. Return to the overview to continue.
+      </p>
+    </header>
+    <a class="error-return" href="/">
+      <span>Return to the overview</span>
+      <span aria-hidden="true"><Fragment set:html={arrowIcon} /></span>
+    </a>
+  </article>
+</Base>

@@ -1,94 +1,132 @@
 ---
 title: Troubleshooting
-description: Common errors when importing kaji, running a provider, or installing the CLI -- and how to fix each one.
+description: Diagnose common TypeScript and Python SDK setup, provider, tool, and event-history failures.
 ---
 
-If you see one of these errors, try the matching fix below.
+Start with the first error you can reproduce, then apply the matching fix.
 
-## ModuleNotFoundError: No module named 'openai'
+## Cannot find package `kaji-sdk`
 
-You installed `kaji-sdk` without the provider extra.
-
-```bash
-pip install "kaji-sdk[openai]==0.2.0b1" # or select another extra at this version
-```
-
-In TypeScript, Zod `>=4.3 <5` is required and the provider clients are optional
-peers. Install Zod plus the provider you'll use:
+The public beta uses the exact npm prerelease:
 
 ```bash
-bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5" openai
+bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"
 ```
 
-## ProviderConfigError: `<PROVIDER>_API_KEY` is required
+If the registry returns `404`, confirm the package name, prerelease suffix, and
+configured npm registry. Python is unavailable from PyPI for this release; use
+the [source-checkout setup](/docs/install#source-checkout) for Python.
 
-The provider client cannot find its key. For the beta-supported OpenAI path,
-export it in your shell or put it in a `.env` file that your runtime loads.
+## Cannot find package `openai`
+
+The OpenAI adapter imports its optional peer only when selected. In a consumer
+project that already has an installable Kaji artifact, add the OpenAI client
+within the declared peer range:
+
+```bash
+bun add "openai@>=4 <8"
+```
+
+If you only use `MockProvider` from `kaji-sdk/testing`, you can omit `openai`.
+
+## `OPENAI_API_KEY` is required
+
+The `openai()` factory could not resolve a key from its options or
+`OPENAI_API_KEY`, or `OpenAIProvider` received a blank explicit key. Export the
+variable or load it from an ignored or encrypted environment file:
 
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
-Run `kaji doctor` to verify the key is present. Anthropic, Gemini, Kimi, and
-OpenRouter keys are only needed when intentionally evaluating those
-experimental/WIP adapters.
+Generated TypeScript projects use dotenvx in their `start` script. The
+Anthropic, OpenRouter, Kimi, and Gemini paths use their own documented keys and
+remain WIP; they are not fallback credentials for OpenAI.
 
-## Peer dep version mismatch (TS)
+## Peer dependency version mismatch
 
-If installation warns about a peer-dependency conflict, check the beta ranges:
-`zod >=4.3 <5` and `openai >=4 <8`. Zod is required; OpenAI is optional.
-The experimental/WIP Anthropic adapter separately declares
-`@anthropic-ai/sdk >=0.30 <2`. Upgrade or pin the conflicting workspace
-dependency to the corresponding range.
+The declared ranges are `zod >=4.3 <5` and `openai >=4 <8`. Zod is required;
+OpenAI is optional. The WIP Anthropic adapter, whose machine tier is
+`experimental`, separately declares `@anthropic-ai/sdk >=0.30 <2`. Upgrade or
+pin the conflicting workspace dependency to a declared range.
 
 ## `MISSING_TOOL_IDENTITY` or unclassified tool risk
 
 Every enabled tool needs an explicit risk classification. Every turn that can
-execute one needs a caller principal. Pass `TurnContext(principal_id=...)` in
-Python or `{ context: { principalId: ... } }` in TypeScript. Do not hardcode a
-shared principal inside a tool handler. Text-only runtimes may omit identity.
+execute a tool needs a caller principal:
+
+```ts
+await runtime.turn("Run the tool", {
+  context: { principalId: "my-app" },
+});
+```
+
+Do not hardcode a shared principal inside a handler. Text-only runtimes may
+omit identity.
 
 ## Tool calls never fire
 
-Three usual causes, in order of likelihood:
+Check these boundaries in order:
 
-1. The tool was registered with `register_tool` / `registerTool` but not
-   passed to `AgentBuilder().tool(...)`. The runtime only sees tools
-   bound to it.
-2. The model wasn't given the spec. Check `kaji info --json` for the
-   provider, and confirm your provider's API supports function calling.
-3. The model decided not to call the tool. Reduce ambiguity in the
-   tool's `description` and parameter docs.
+1. Pass the result of `functionTool(...)` to `AgentBuilder().tool(...)`. The
+   global `registerTool(...)` function returns `void` and writes to the default
+   registry; it does not bind a tool to the builder's scoped registry.
+2. Confirm the selected provider API supports function calling.
+3. Make the tool description and parameter schema specific enough for the
+   model to select it.
 
-## Events log is empty after a turn
+## Event history is empty after a turn
 
-`runtime.history(sessionId)` reads a bounded cursor page from the `EventStore`
-you passed (or the default `InMemoryEventStore`). If you instantiated a fresh
-store between the turn and the read, it will be empty. Reuse the store and page
-with `after_sequence` / `afterSequence`; ordering is by stored sequence, not
-timestamp. To stream events as they happen, subscribe through the journal or
-committer -- see [event delivery](/docs/concepts/event-bus).
+`runtime.history(sessionId)` reads from the `EventStore` supplied to the
+runtime, or its default `InMemoryEventStore`. Reuse the same store between the
+turn and the read. Page with `afterSequence`; persisted sequence, not
+timestamp, defines order.
+
+To consume events as they are committed, subscribe through the committer. See
+[event delivery](/docs/concepts/event-bus).
 
 ## Provider request failed
 
-Catch the package-root `ProviderError` (`from kaji import ProviderError` or
-`import { ProviderError } from "kaji-sdk"`) and inspect
-`normalize_provider_error(error)` / `normalizeProviderError(error)`. All Kaji
-provider auth, rate-limit, network, configuration, and API failures are
-catchable through that type. The normalized fields are safe for routing and
-retry policy. Do not log vendor exceptions, response bodies, causes, prompts,
-credentials, headers, or tool arguments.
+Catch `ProviderError` from the package root and normalize it:
 
-## `import kaji` is slow
+```ts
+import { normalizeProviderError, ProviderError } from "kaji-sdk";
 
-The Python SDK uses PEP 562 lazy loading. The top-level import is
-cheap; first attribute access triggers a submodule import. If a specific
-name is slow on first access, import it directly from its subpackage
-(e.g. `from kaji.runtime.tools.registry import ToolSpec`).
+try {
+  await runtime.turn("Hello");
+} catch (error) {
+  if (error instanceof ProviderError) {
+    const failure = normalizeProviderError(error);
+    console.error(failure.code, failure.retryable);
+  }
+}
+```
 
-## kaji CLI not on PATH after `pip install`
+The normalized fields are safe for routing and retry policy. Do not log vendor
+exceptions, response bodies, causes, prompts, credentials, headers, or tool
+arguments.
 
-Your shell hasn't picked up the new entrypoint. Restart the shell or
-run `hash -r` (bash/zsh). If the CLI is installed inside a virtualenv,
-activate the venv (`poetry shell` or `source .venv/bin/activate`)
-before running `kaji`.
+## Python SDK issues
+
+### `ModuleNotFoundError: No module named 'openai'`
+
+The Python distribution is unavailable from PyPI for this release. In a source
+checkout, install the provider extra through the project environment:
+
+```bash
+uv sync --project kaji --extra openai
+```
+
+### Control top-level import loading
+
+The top-level package uses PEP 562 lazy loading. First access to a symbol
+imports its submodule. Import a specific name from its public subpackage when
+you need to control that first-access cost.
+
+### `kaji` is not on `PATH` after source setup
+
+Run the CLI through the project environment:
+
+```bash
+uv run --project kaji kaji --help
+```

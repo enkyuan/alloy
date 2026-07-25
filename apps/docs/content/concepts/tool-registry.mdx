@@ -6,71 +6,53 @@ description: Register a risk-classified tool as a spec plus a handler, then exec
 Reach for the tool registry to expose functions your agent can call. The
 runtime sends the full spec list to the model each turn, dispatches whatever
 the model picks, and validates each call before approval or execution. Calls
-run sequentially by default. Set `parallel_safe=True` in Python or
-`parallel_safe: true` in TypeScript only for effect-independent tools; the
-runtime then permits at most four handlers to run at once by default.
+run sequentially by default. Set `parallel_safe: true` only for
+effect-independent tools; the runtime then permits at most four handlers to
+run at once by default.
 
-The shortest path is `@function_tool` (Python) or `functionTool(...)` (TypeScript),
-which derives the spec from type hints / a Zod schema and the docstring.
+The shortest TypeScript path is `functionTool(...)`, which derives the JSON
+Schema contract from Zod:
 
-<Tabs items={["python", "typescript"]}>
-  <Tab value="python">
-    ```python
-    import kaji
+```ts
+import { functionTool } from "kaji-sdk";
+import { z } from "zod";
 
-    @kaji.function_tool(risk="read")
-    async def get_weather(
-        context: kaji.ToolExecutionContext,
-        city: str,
-    ) -> dict:
-        """Look up the weather for a city."""
-        return {
-            "city": city,
-            "tempF": 68,
-            "principal": context.principal_id,
-        }
-    ```
+const getWeather = functionTool(
+  {
+    name: "get_weather",
+    description: "Look up the weather for a city.",
+    parameters: z.object({ city: z.string() }),
+    risk: "read",
+  },
+  async ({ city }, context) => ({
+    city,
+    tempF: 68,
+    principal: context.principalId,
+  }),
+);
+```
 
-  </Tab>
-  <Tab value="typescript">
-    ```ts
-    import { functionTool } from "kaji-sdk";
-    import { z } from "zod";
-
-    const getWeather = functionTool(
-      {
-        name: "get_weather",
-        description: "Look up the weather for a city.",
-        parameters: z.object({ city: z.string() }),
-        risk: "read",
-      },
-      async ({ city }, context) => ({
-        city,
-        tempF: 68,
-        principal: context.principalId,
-      }),
-    );
-    ```
-
-  </Tab>
-</Tabs>
-
-Pass tools to the runtime via `AgentBuilder().tool(...)`. For a hand-written
-spec, use `ToolSpec` and `register_tool` (Python) or `registerTool` (TS).
+Pass tools to the runtime via `AgentBuilder().tool(...)`. For direct registry
+use, register a `ToolSpec` and handler on `ToolRegistry`. To bind a hand-written
+spec to `AgentBuilder`, provide an integration whose `register(registry)`
+method registers the spec, then pass it to `.integration(...)`.
 
 Every enabled spec requires one closed risk value: `read`, `write`,
 `external_effect`, `destructive`, or `admin`. A runtime turn that
-can execute a tool also requires `TurnContext.principal_id` (Python) or
-`TurnContext.principalId` (TypeScript). Missing risk or identity fails before
-the handler starts.
+can execute a tool also requires `TurnContext.principalId`. Missing risk or
+identity fails before the handler starts.
 
-Handlers receive an immutable `ToolExecutionContext` snapshot. It carries the
-principal, session, turn, request, trace, tool-call, idempotency, deadline,
-cancellation, metadata, and optional application-owned `db` values. Python
-integration handlers use `(context, args)`. TypeScript function and integration
-handlers use `(args, context)`, and the current direct registry executor order
-is `(toolName, toolArgs, context)`.
+Handlers receive a detached, validated, readonly `ToolExecutionContext`; its
+metadata is recursively frozen. It carries the principal, session, turn,
+request, trace, tool-call, idempotency, deadline, cancellation, metadata, and
+optional application-owned `db` values. TypeScript function and integration
+handlers use `(args, context)`, and the direct registry executor order is
+`(toolName, toolArgs, context)`.
 
 Timeout or cancellation after a handler starts can have an unknown external
-outcome. Reconcile with `context.idempotency_key` / `context.idempotencyKey`
-before deciding to retry the effect.
+outcome. Reconcile with `context.idempotencyKey` before deciding to retry the
+effect.
+
+The Python SDK exposes the same contract through `@function_tool`,
+`register_tool`, `principal_id`, and `idempotency_key`; Python integration
+handlers receive `(context, args)`.

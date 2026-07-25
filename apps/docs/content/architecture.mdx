@@ -1,42 +1,105 @@
 ---
 title: Architecture
-description: How the modality-agnostic ReAct runtime loop projects session state, calls the LLM provider, and dispatches tools. STT/TTS attach at the voice edges.
+description: How the TypeScript runtime projects session state, calls a model provider, dispatches tools, and persists the resulting events.
 ---
+
+import Diagram from "@/components/content/diagram.astro";
 
 ## Runtime loop
 
-```
-   ┌────────────────────────────────────────────────────┐
-   │  your app                                          │
-   │  session manager   tool registry   model provider  │
-   └────────────────────────┬───────────────────────────┘
-                            ▼
-   ┌───────────────────────────────────────────────────┐
-   │  agent runtime  (ReAct loop)                      │
-   │  1. project session state from event log          │
-   │  2. call LLM provider with history + tool specs   │
-   │  3. execute tool calls sequentially by default    │
-   │  4. loop until model response is final            │
-   └────────┬────────────────────────────┬─────────────┘
-            │ events                     │ tool calls
-            ▼                            ▼
-   ┌──────────────────┐        ┌──────────────────────┐
-   │  event store     │        │  tool handlers       │
-   │  (in-memory or   │        │  (your functions)    │
-   │   persistent)    │        │                      │
-   └──────────────────┘        └──────────────────────┘
-```
+<Diagram
+  id="architecture-runtime"
+  label="Your application supplies sessions, tools, and a provider to the agent runtime. The runtime projects state, calls the provider, executes bounded tools, and appends events to the event store."
+  rows={[
+    { text: "┌────────────────────────────────────────────────────┐", frameStage: 0 },
+    {
+      text: "│  your app                                          │",
+      frameStage: 0,
+      copyStage: 1,
+    },
+    {
+      text: "│  session manager   tool registry   model provider  │",
+      frameStage: 0,
+      copyStage: 2,
+    },
+    { text: "└────────────────────────┬───────────────────────────┘", frameStage: 0 },
+    { text: "                         ▼", connectorStage: 6 },
+    { text: "┌────────────────────────────────────────────────────┐", frameStage: 7 },
+    {
+      text: "│  agent runtime  (ReAct loop)                       │",
+      frameStage: 7,
+      copyStage: 8,
+    },
+    {
+      text: "│  1. project session state from event log           │",
+      frameStage: 7,
+      copyStage: 9,
+    },
+    {
+      text: "│  2. call LLM provider with history + tool specs    │",
+      frameStage: 7,
+      copyStage: 10,
+    },
+    {
+      text: "│  3. execute tool calls sequentially by default     │",
+      frameStage: 7,
+      copyStage: 11,
+    },
+    {
+      text: "│  4. loop until model response is final             │",
+      frameStage: 7,
+      copyStage: 12,
+    },
+    { text: "└───────────┬─────────────────────────────┬──────────┘", frameStage: 7 },
+    { text: "            │ events                      │ tool calls", connectorStage: 16 },
+    { text: "            ▼                             ▼", connectorStage: 17 },
+    {
+      text: "┌──────────────────────┐      ┌──────────────────────┐",
+      frameStage: 19,
+    },
+    {
+      text: "│  event store         │      │  tool handlers       │",
+      frameStage: 19,
+      copyStage: 20,
+    },
+    {
+      text: "│  app-owned memory    │      │  your functions      │",
+      frameStage: 19,
+      copyStage: 21,
+    },
+    {
+      text: "└──────────────────────┘      └──────────────────────┘",
+      frameStage: 19,
+    },
+  ]}
+/>
 
 Tool calls execute sequentially by default. Only adjacent tools explicitly
 marked `parallel_safe` may overlap, and that overlap is bounded by the
 configured tool concurrency (four handlers by default).
 
-## Modality edges
+## Modality boundary
 
-The reasoning loop is modality-agnostic. Voice adds STT at the input edge and
-TTS at the output edge. Text skips both.
+The TypeScript beta implements the text path. Python provides WIP TTS adapters,
+and `kaji-serve` separately exposes a WIP Soniox STT WebSocket. This checkout
+does not compose those pieces into an end-to-end voice agent.
 
-```
-   voice:   audio → STT → [runtime loop] → TTS → audio
-   text:    text  →       [runtime loop] →       text
-```
+<Diagram
+  id="architecture-modality"
+  label="The TypeScript beta accepts text input, runs the agent loop, and returns text output."
+  rows={[
+    { text: "┌───────────────────┐", frameStage: 0 },
+    { text: "│  text input       │", frameStage: 0, copyStage: 1 },
+    { text: "└─────────┬─────────┘", frameStage: 0 },
+    { text: "          │", connectorStage: 4 },
+    { text: "          ▼", connectorStage: 5 },
+    { text: "┌───────────────────┐", frameStage: 6 },
+    { text: "│  runtime loop     │", frameStage: 6, copyStage: 7 },
+    { text: "└─────────┬─────────┘", frameStage: 6 },
+    { text: "          │", connectorStage: 10 },
+    { text: "          ▼", connectorStage: 11 },
+    { text: "┌───────────────────┐", frameStage: 12 },
+    { text: "│  text output      │", frameStage: 12, copyStage: 13 },
+    { text: "└───────────────────┘", frameStage: 12 },
+  ]}
+/>

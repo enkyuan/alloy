@@ -52,7 +52,7 @@
     },
     "@kaji/docs#build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**"],
+      "outputs": ["dist/**"],
       "cache": true
     },
     "@kaji/docs#dev": {

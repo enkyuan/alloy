@@ -1,12 +1,10 @@
-# Next.js build output (also in root .gitignore, repeated here for oxfmt)
+# Astro build and generated types
+.astro/
+dist/
+
+# Removed framework caches (may remain after switching branches)
 .next/
-out/
-
-# fumadocs generated content map
-.source
-
-# Next.js type declarations (auto-regenerated)
-next-env.d.ts
+.source/
 
 # superpowers skill cache (dev-only, not committed)
 /docs/superpowers

@@ -1,16 +1,20 @@
 ---
 title: Session State
-description: replaySession deterministically projects an event log into a SessionState (isActive and the message history) that gets passed to the LLM.
+description: replaySession rebuilds SessionState from a complete stored-event log; the runtime derives bounded provider context from that projection.
 ---
 
-The runtime calls `replaySession` for you on every turn. Call it directly when
-you want to inspect a session's current state or rebuild state from a stored
-log.
+The runtime maintains an incremental `SessionProjector` and syncs only events
+after its stored cursor. Call `replaySession` directly when you want to inspect
+a session's state or rebuild it from a complete stored log.
 
 `replaySession` (Python: `replay_session`) takes the event log for a session
-and projects it into a `SessionState`: `isActive` (Python: `is_active`) and
-`messages`, the conversation history in `{ role, content }` form passed to
-the LLM.
+and projects it into `SessionState`. The projection includes session identity,
+active or closed state, provider-history messages, and approval state.
+TypeScript also accumulates token and cost totals.
+
+`messages` stores user, assistant, and tool history; tool-related entries carry
+call IDs and spec data. The runtime converts a bounded suffix into neutral
+provider messages before calling the model.
 
 State is a pure projection of the log, so replay is deterministic: the same
 events always yield the same `SessionState`.

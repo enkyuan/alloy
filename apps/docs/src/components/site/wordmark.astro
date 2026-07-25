@@ -1,0 +1,18 @@
+---
+interface Props {
+  current?: boolean;
+}
+
+const { current = false } = Astro.props;
+---
+
+<a
+  class="kaji-wordmark"
+  href="/"
+  aria-label="Kaji documentation"
+  aria-current={current ? "page" : undefined}
+>
+  <span class="wordmark-text" aria-hidden="true">
+    <span class="wordmark-glyph">鍛</span><span class="wordmark-glyph">冶</span>
+  </span>
+</a>

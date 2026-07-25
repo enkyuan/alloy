@@ -1,54 +1,57 @@
 ---
 title: Kaji
-description: Kaji is an embeddable agent runtime for Python and TypeScript with event-sourced sessions, bounded tool execution, and pluggable model providers.
+description: Kaji is an embeddable TypeScript agent runtime with event-sourced sessions, bounded tool execution, and pluggable model providers.
 ---
 
-Kaji is an embeddable SDK for building agents. The stable core needs no
-database or server. Run `kaji-serve` only when you need its experimental REST
-or Soniox speech-to-text edge.
+Kaji is an embeddable TypeScript SDK for building agents. Compose a provider,
+tools, and policy in your application, then run the model/tool loop in process.
+The core needs no database, server, or control plane.
 
 ## Packages
 
-| Package      | Path         | What it is                                         |
-| ------------ | ------------ | -------------------------------------------------- |
-| `kaji`       | `kaji`       | Python SDK: stable core plus experimental add-ons  |
-| `kaji-sdk`   | `kaji/ts`    | TypeScript SDK: stable core and copyable catalog   |
-| `@kaji/cli`  | `apps/cli`   | Standalone cross-language scaffold and diagnostics |
-| `kaji-serve` | `kaji/serve` | Experimental REST + Soniox STT reference service   |
+| Package             | Path         | What it is                                        |
+| ------------------- | ------------ | ------------------------------------------------- |
+| `kaji-sdk`          | `kaji/ts`    | TypeScript SDK and the primary path in these docs |
+| `kaji-sdk` (Python) | `kaji`       | Python SDK with shared event and tool contracts   |
+| `@kaji/cli`         | `apps/cli`   | WIP cross-language scaffold and diagnostics       |
+| `kaji-serve`        | `kaji/serve` | WIP REST and Soniox STT reference service         |
 
-The wire format (event-type strings, field names) is identical across the
-Python SDK and the TypeScript port, so logs round-trip between them.
+## Start in process
 
-## Embed or serve?
+| If you want…                                  | Use                |
+| --------------------------------------------- | ------------------ |
+| In-process agent in a Node or Bun application | `kaji-sdk`         |
+| Deterministic provider tests without API keys | `kaji-sdk/testing` |
+| WIP REST or transcription over WebSocket      | `kaji-serve`       |
 
-| If you want…                                   | Use          |
-| ---------------------------------------------- | ------------ |
-| In-process agent in your own app, no infra     | `kaji`       |
-| REST routes or real-time transcription over WS | `kaji-serve` |
+Use the [reference service](/docs/reference-service) only to evaluate the WIP
+Python REST and Soniox STT service.
 
-See [reference service](/docs/reference-service) for the supported edge surface.
+## Core model
 
-## Composition
+`AgentBuilder` composes a model provider, risk-classified tools, and an optional
+policy. `AgentRuntime.turn()` records the user message, calls the provider,
+validates selected tools, and returns the final text with the events produced
+by that turn. The default store and committer are bounded, in-memory, and
+process-local.
 
-Kaji's core is a set of primitives: events, sessions, tools, providers, and
-runtime. It does not pick a vendor for you: Python configuration and generated
-scaffolds select the in-memory mock by default, not a third-party service. Both
-SDKs also package a source-owned integration catalog. `echo` is the only beta
-catalog entry; GitHub and the TypeScript-only filesystem, HTTP, SQLite, and web
-entries remain explicit opt-in experiments.
+Start with `MockProvider` from `kaji-sdk/testing` to verify the local runtime.
+OpenAI is the stable live-provider adapter in the 0.2 beta contract. The
+packaged catalog contains the beta `echo` integration and the WIP GitHub
+integration, whose registry tier is `experimental`. Catalog tools are never
+activated implicitly.
 
-For the 0.2 beta candidate, the Python SDK still bundles a few opinionated
-modules for convenience: `kaji.cli` (project scaffolding),
-`kaji.knowledge` (RAG building blocks), `kaji.modalities.voice`
-(STT / TTS edges), and `kaji.infra.observability` (metrics, tracing).
-Only observability is part of the stable core; RAG, voice, Redis realtime, and
-native Gemini/Kimi remain experimental Python-only surfaces.
+## Python compatibility
 
-See [integrations](/docs/integrations) for the exact catalog and the explicit
-Gmail hold.
+The TypeScript and Python SDKs validate the same v1 event schema. The Python
+package also contains WIP RAG, voice, and Redis surfaces. Those extras are not
+part of the TypeScript SDK or the stable beta core.
+
+See [integrations](/docs/integrations) for the exact catalog and stability
+boundaries.
 
 ## Next
 
-- [Getting started](/docs/getting-started) -- install and run your first agent
+- [Getting started](/docs/getting-started) -- run your first agent from source
 - [Concepts](/docs/concepts/events) -- events, session state, tools, providers
 - [Architecture](/docs/architecture) -- the runtime loop

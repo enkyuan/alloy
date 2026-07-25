@@ -1,0 +1,114 @@
+---
+import KajiWordmark from "@/components/site/wordmark.astro";
+import { navigation } from "@/data/navigation";
+import { Github } from "reicon-brands";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  activeHref: string;
+  headings?: Heading[];
+}
+
+const { activeHref: currentHref, headings = [] } = Astro.props;
+const tableOfContents = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
+const tocLabels: Record<string, string> = {
+  "prepare-the-source-checkout": "Prepare source checkout",
+  "run-with-docker-compose": "Run with docker",
+  "when-to-use-the-reference-service": "When to use",
+};
+const tocLabel = (heading: Heading) => tocLabels[heading.slug] ?? heading.text;
+const navStartMs = 800;
+const navStepMs = 30;
+let navAnimationIndex = 0;
+const animatedNavigation = navigation.map((section) => {
+  const labelAnimationIndex = section.label ? navAnimationIndex++ : undefined;
+  const items = section.items.map((item) => ({
+    ...item,
+    animationIndex: navAnimationIndex++,
+  }));
+
+  return { ...section, items, labelAnimationIndex };
+});
+const navMetaDelay = `${navStartMs + navAnimationIndex * navStepMs}ms`;
+const githubIcon = Github.toSvg({
+  size: 12,
+  className: "nav-github-icon",
+}).replace(' role="img"', ' aria-hidden="true" focusable="false"');
+---
+
+<nav class="side-nav" aria-label="Documentation">
+  <KajiWordmark current={currentHref === "/"} />
+
+  <div class="nav-links">
+    {
+      animatedNavigation.map((section) => (
+        <>
+          {section.label && (
+            <div
+              class="nav-section"
+              style={`--nav-delay: ${navStartMs + (section.labelAnimationIndex ?? 0) * navStepMs}ms`}
+            >
+              {section.label}
+            </div>
+          )}
+          {section.items.map((item) => {
+            const isActive = currentHref === item.href;
+
+            return (
+              <div
+                class="nav-item-wrapper"
+                style={`--nav-delay: ${navStartMs + item.animationIndex * navStepMs}ms`}
+              >
+                <a
+                  class:list={["nav-link", { active: isActive }]}
+                  href={item.href}
+                  aria-current={isActive ? "page" : undefined}
+                >
+                  {item.label}
+                  {
+                    item.status === "wip" && (
+                      <sup class="nav-wip" aria-label="work in progress">
+                        WIP
+                      </sup>
+                    )
+                  }
+                </a>
+
+                {isActive && tableOfContents.length > 0 && (
+                  <ol class="nav-toc" data-toc-list>
+                    {tableOfContents.map((heading) => (
+                      <li data-toc-item data-level={heading.depth}>
+                        <a href={`#${heading.slug}`} data-toc-link={heading.slug}>
+                          {tocLabel(heading)}
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            );
+          })}
+        </>
+      ))
+    }
+  </div>
+
+  <div class="nav-meta" style={`--nav-delay: ${navMetaDelay}`}>
+    <span class="nav-version">v0.2 beta candidate</span>
+    <span class="nav-dot" aria-hidden="true">·</span>
+    <a
+      class="nav-github"
+      href="https://github.com/enkyuan/alloy"
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Kaji on GitHub"
+    >
+      <Fragment set:html={githubIcon} />
+    </a>
+  </div>
+</nav>
