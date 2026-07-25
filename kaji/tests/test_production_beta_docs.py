@@ -361,6 +361,30 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     )
 
 
+def test_tthw_typescript_echo_instructions_use_the_certified_toolchain() -> None:
+    guide = (REPO_ROOT / "docs" / "kaji" / "tthw-evidence.md").read_text()
+
+    assert (
+        'npm install "$KAJI_TARBALL" zod@4.3.6 tsx typescript@6.0.3 @types/node'
+        in guide
+    )
+    assert "bun remove typescript" in guide
+    assert 'bun add "$KAJI_TARBALL" zod@4.3.6 tsx @types/node' in guide
+    assert "bun add --dev typescript@6.0.3" in guide
+    assert "Save the following as `echo-loop.mts`." in guide
+    assert "`./node_modules/.bin/tsx echo-loop.mts` for npm or" in guide
+    assert "`bun --no-install echo-loop.mts` for Bun:" in guide
+    assert "echo-loop.ts`" not in guide
+
+
+def test_typescript_readme_quick_start_uses_an_esm_filename() -> None:
+    readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
+    normalized = " ".join(readme.split())
+
+    assert "Save this example as `quickstart.mts`" in normalized
+    assert "quickstart.ts`" not in readme
+
+
 def test_public_beta_install_paths_select_the_prerelease_artifacts() -> None:
     documents = {
         path: path.read_text()

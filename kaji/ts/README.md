@@ -30,7 +30,9 @@ current TypeScript 6 release.
 ## Quick start
 
 First prove a text-only turn without credentials. No principal is required
-because this runtime has no enabled tools:
+because this runtime has no enabled tools. Save this example as
+`quickstart.mts` so top-level await runs as ESM, including from npm's default
+CommonJS project:
 
 ```ts
 import { AgentBuilder } from "kaji-sdk";

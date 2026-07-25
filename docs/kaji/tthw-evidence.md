@@ -161,7 +161,7 @@ export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.2.tgz"
 mkdir "$HOME/kaji-tthw-npm"
 cd "$HOME/kaji-tthw-npm"
 npm init --yes
-npm install "$KAJI_TARBALL" zod@4.3.6 tsx typescript @types/node
+npm install "$KAJI_TARBALL" zod@4.3.6 tsx typescript@6.0.3 @types/node
 ./node_modules/.bin/kaji --no-color init generated --provider mock --yes
 npm pkg set "dependencies.kaji-sdk=file:$KAJI_TARBALL" --prefix generated
 npm install --prefix generated
@@ -185,7 +185,9 @@ export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.2.tgz"
 mkdir "$HOME/kaji-tthw-bun"
 cd "$HOME/kaji-tthw-bun"
 bun init --yes
-bun add "$KAJI_TARBALL" zod@4.3.6 tsx typescript @types/node
+bun remove typescript
+bun add "$KAJI_TARBALL" zod@4.3.6 tsx @types/node
+bun add --dev typescript@6.0.3
 ./node_modules/.bin/kaji --no-color init generated --provider mock --yes
 node -e 'const fs=require("node:fs");const p="generated/package.json";const j=JSON.parse(fs.readFileSync(p));j.dependencies["kaji-sdk"]="file:"+process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+"\n")' "$KAJI_TARBALL"
 bun install --cwd generated
@@ -193,8 +195,9 @@ bun run --cwd generated start
 ./node_modules/.bin/kaji --no-color add echo --out echo
 ```
 
-Save the following as `echo-loop.ts`. Run it with
-`./node_modules/.bin/tsx echo-loop.ts` for npm or `bun echo-loop.ts` for Bun:
+Save the following as `echo-loop.mts`. Run it with
+`./node_modules/.bin/tsx echo-loop.mts` for npm or
+`bun --no-install echo-loop.mts` for Bun:
 
 <!-- tthw-echo:typescript:start -->
 ```ts
