@@ -55,7 +55,10 @@ const HANDOFF_PHASES = [
 const STATIC_SMOKE_PHASES = [
   "npm:pack",
   "node:version",
+  "npm:version",
+  "bun:version",
   "npm:audit",
+  "bun:audit",
   "exports:esm",
   "exports:cjs",
   "cli:help",
@@ -1594,6 +1597,24 @@ function semverFromVersionOutput(output: string, label: string): string {
   return version;
 }
 
+export function retainedSmokeToolVersion(output: string, tool: "node" | "npm" | "bun"): string {
+  const retained = output.trim();
+  const label = tool === "node" ? "Node" : tool === "bun" ? "Bun" : "npm";
+  const phase = `${tool}:version` as const;
+  try {
+    const normalized = semverFromVersionOutput(retained, label);
+    if (retained !== (tool === "node" ? `v${normalized}` : normalized)) {
+      throw new Error("unexpected version prefix");
+    }
+    if (tool === "node" && !isRetainedNodeVersion(retained)) {
+      throw new Error("unsupported Node major");
+    }
+  } catch {
+    throw new SmokeCommandError(phase, "capture");
+  }
+  return retained;
+}
+
 async function compileHandoffGitHubTypes(
   root: string,
   runtimeBinary: string,
@@ -2488,6 +2509,18 @@ async function runScaffold(
     [tarball, "zod@4.3.6", nodeTypesPackage, conflictingPackage],
     environment,
   );
+  if (manager === "bun") {
+    // Keep Bun's default any-advisory threshold; it is intentionally stricter
+    // than npm's high-severity compatibility gate.
+    await runCommand(
+      "bun:audit",
+      "bun",
+      ["audit", "--production"],
+      bootstrap,
+      environment,
+      PACKAGE_TIMEOUT_MS,
+    );
+  }
 
   const installedConflict = join(bootstrap, "node_modules/conflicting-kaji-cli/kaji.mjs");
   if (!existsSync(installedConflict)) {
@@ -2746,9 +2779,21 @@ export function ordinarySuccessReceipt(
   tarball: string,
   installedPackagePath: string,
   nodeVersion: string,
+  npmVersion: string,
+  bunVersion: string,
   npmTiming: ScaffoldTiming,
   bunTiming: ScaffoldTiming,
 ): Record<string, unknown> {
+  const normalizedNodeVersion = semverFromVersionOutput(nodeVersion, "Node");
+  const normalizedNpmVersion = semverFromVersionOutput(npmVersion, "npm");
+  const normalizedBunVersion = semverFromVersionOutput(bunVersion, "Bun");
+  if (nodeVersion !== `v${normalizedNodeVersion}`) {
+    throw new Error("Node toolchain version must retain the official v prefix");
+  }
+  if (JSON.stringify(npmTiming.githubProof) !== JSON.stringify(bunTiming.githubProof)) {
+    throw new Error("npm and Bun installed-package proofs differ");
+  }
+  const declarations = npmTiming.githubProof.typescriptDeclarationChecks;
   return {
     schemaVersion: 1,
     commit: identity.commit,
@@ -2760,6 +2805,14 @@ export function ordinarySuccessReceipt(
     timings: {
       npm: retainedScaffoldTiming(npmTiming),
       bun: retainedScaffoldTiming(bunTiming),
+    },
+    toolchain: {
+      python: "not-used",
+      uv: "not-used",
+      node: nodeVersion,
+      npm: normalizedNpmVersion,
+      bun: normalizedBunVersion,
+      typescript: `${declarations.typescript57.version} and ${declarations.typescriptCurrent.version}`,
     },
     conclusion: "passed",
     failureCode: null,
@@ -2866,11 +2919,19 @@ async function main(rawArguments = process.argv.slice(2)): Promise<void> {
         arguments_.expectedCommit,
       );
 
-      const nodeVersion = (await runCommand("node:version", nodeBinary, ["--version"])).trim();
-      if (!isRetainedNodeVersion(nodeVersion)) {
-        throw new Error("package smoke requires exact official Node 22 or 24 version output");
-      }
+      const nodeVersion = retainedSmokeToolVersion(
+        await runCommand("node:version", nodeBinary, ["--version"]),
+        "node",
+      );
       receiptNodeVersion = nodeVersion;
+      const npmVersion = retainedSmokeToolVersion(
+        await runCommand("npm:version", "npm", ["--version"]),
+        "npm",
+      );
+      const bunVersion = retainedSmokeToolVersion(
+        await runCommand("bun:version", "bun", ["--version"]),
+        "bun",
+      );
 
       const npmEnvironment = {
         ...baseEnvironment,
@@ -3008,6 +3069,8 @@ gmailRequester.close();
           receiptTarball,
           installedPackagePath,
           receiptNodeVersion,
+          npmVersion,
+          bunVersion,
           npmTiming,
           bunTiming,
         ),

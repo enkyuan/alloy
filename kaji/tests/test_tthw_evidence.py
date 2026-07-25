@@ -21,6 +21,7 @@ ARTIFACTS = {
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
+WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 
 
 def _module() -> ModuleType:
@@ -151,12 +152,42 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
         "releaseManifestSha256": manifest_hash,
         "artifacts": artifact_rows,
         "automatedTimings": {
-            name: {
-                "coldSetupToOutputMs": 10_000,
-                "warmRunMs": 500,
-                "toolchain": toolchain,
-            }
-            for name in ("python", "npm", "bun")
+            "python": {
+                "coldSetupToOutputMs": 10_001,
+                "warmRunMs": 501,
+                "toolchain": {
+                    "python": "3.14.6",
+                    "uv": "0.11.25",
+                    "node": "not-used",
+                    "npm": "not-used",
+                    "bun": "not-used",
+                    "typescript": "not-used",
+                },
+            },
+            "npm": {
+                "coldSetupToOutputMs": 20_001,
+                "warmRunMs": 601,
+                "toolchain": {
+                    "python": "not-used",
+                    "uv": "not-used",
+                    "node": "v24.4.1",
+                    "npm": "11.4.2",
+                    "bun": "1.3.11",
+                    "typescript": "5.7.3 and 6.0.3",
+                },
+            },
+            "bun": {
+                "coldSetupToOutputMs": 20_002,
+                "warmRunMs": 602,
+                "toolchain": {
+                    "python": "not-used",
+                    "uv": "not-used",
+                    "node": "v24.4.1",
+                    "npm": "11.4.2",
+                    "bun": "1.3.11",
+                    "typescript": "5.7.3 and 6.0.3",
+                },
+            },
         },
         "humanRuns": runs,
         "summary": {
@@ -169,13 +200,106 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
     return document, manifest_path, artifacts_dir
 
 
+def _compatibility_receipts(document: dict, artifacts_dir: Path) -> tuple[dict, dict]:
+    by_name = {row["name"]: row for row in document["artifacts"]}
+    python = {
+        "schemaVersion": 1,
+        "commit": document["commit"],
+        "releaseManifestSha256": document["releaseManifestSha256"],
+        "artifactSha256": {
+            name: by_name[name]["sha256"]
+            for name in (
+                "kaji_sdk-0.2.0b1-py3-none-any.whl",
+                "kaji_sdk-0.2.0b1.tar.gz",
+            )
+        },
+        "runtime": {
+            "implementation": "CPython",
+            "version": "3.14.6",
+            "executable": "/opt/python/3.14/bin/python",
+        },
+        "artifacts": {
+            "wheel": str(artifacts_dir / "kaji_sdk-0.2.0b1-py3-none-any.whl"),
+            "sdist": str(artifacts_dir / "kaji_sdk-0.2.0b1.tar.gz"),
+        },
+        "githubPackageProofs": {"wheel": {}, "sdist": {}},
+        "timings": {
+            "wheel": {"coldSetupToOutputMs": 10_001, "warmRunMs": 501},
+            "sdist": {"coldSetupToOutputMs": 10_002, "warmRunMs": 502},
+        },
+        "conclusion": "passed",
+        "failureCode": None,
+        "workflowRun": WORKFLOW_RUN,
+        "workflowRunAttempt": 1,
+        "toolchain": document["automatedTimings"]["python"]["toolchain"],
+    }
+    node = {
+        "schemaVersion": 1,
+        "commit": document["commit"],
+        "releaseManifestSha256": document["releaseManifestSha256"],
+        "artifactSha256": {
+            "kaji-sdk-0.2.0-beta.2.tgz": by_name["kaji-sdk-0.2.0-beta.2.tgz"]["sha256"]
+        },
+        "runtime": {"version": "v24.4.1"},
+        "artifacts": {
+            "tarball": str(artifacts_dir / "kaji-sdk-0.2.0-beta.2.tgz"),
+            "package": "/opt/node/24/node_modules/kaji-sdk",
+        },
+        "githubPackageProofs": {
+            manager: {
+                "typescriptDeclarationChecks": {
+                    "typescript57": {"version": "5.7.3"},
+                    "typescriptCurrent": {"version": "6.0.3"},
+                }
+            }
+            for manager in ("npm", "bun")
+        },
+        "timings": {
+            "npm": {"coldSetupToOutputMs": 20_001, "warmRunMs": 601},
+            "bun": {"coldSetupToOutputMs": 20_002, "warmRunMs": 602},
+        },
+        "conclusion": "passed",
+        "failureCode": None,
+        "workflowRun": WORKFLOW_RUN,
+        "workflowRunAttempt": 1,
+        "toolchain": document["automatedTimings"]["npm"]["toolchain"],
+    }
+    return python, node
+
+
 def test_synthetic_exact_commit_evidence_validates(tmp_path: Path) -> None:
     module = _module()
     document, manifest, artifacts = _fixture(tmp_path)
+    python, node = _compatibility_receipts(document, artifacts)
 
     Draft202012Validator.check_schema(json.loads(SCHEMA.read_text()))
     assert module.validate_document(document) == document["summary"]
     module.validate_bindings(document, manifest, artifacts)
+    module.validate_compatibility_receipts(
+        document,
+        python,
+        node,
+        expected_workflow_run=WORKFLOW_RUN,
+        expected_workflow_run_attempt=1,
+    )
+
+
+def test_validator_rejects_timing_not_derived_from_compatibility_receipts(
+    tmp_path: Path,
+) -> None:
+    module = _module()
+    document, _manifest, artifacts = _fixture(tmp_path)
+    python, node = _compatibility_receipts(document, artifacts)
+    document["automatedTimings"]["python"]["warmRunMs"] += 1
+
+    with pytest.raises(module.EvidenceError, match="/automatedTimings"):
+        module.validate_compatibility_receipts(
+            document,
+            python,
+            node,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
+        )
 
 
 def test_validator_requires_five_distinct_pseudonyms(tmp_path: Path) -> None:

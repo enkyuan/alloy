@@ -628,12 +628,6 @@ def run_release_checks(environment: dict[str, str]) -> None:
             cwd=SDK,
             environment=environment,
         )
-        run_checked(
-            ["bun", "audit", "--production"],
-            cwd=TYPESCRIPT,
-            environment=environment,
-        )
-
         section("Construct release npm tarball")
         npm_environment = environment.copy()
         npm_environment["npm_config_cache"] = str(release_temporary / "npm-cache")

@@ -26,6 +26,7 @@ import {
   finalizeSmokeRun,
   ordinaryFailureReceipt,
   ordinarySuccessReceipt,
+  retainedSmokeToolVersion,
   safeGitHubProofFailureCode,
   SmokeCommandError,
   type PendingSmokeReceipt,
@@ -229,7 +230,7 @@ const GITHUB_PACKAGE_PROOF = {
   failureCode: null,
 } as const;
 
-const typedGitHubPackageProof: Parameters<typeof ordinarySuccessReceipt>[4]["githubProof"] =
+const typedGitHubPackageProof: Parameters<typeof ordinarySuccessReceipt>[6]["githubProof"] =
   GITHUB_PACKAGE_PROOF;
 
 const EXPECTED_PACKED_REGISTRY_FILES = [
@@ -327,6 +328,8 @@ describe("npm contract artifact", () => {
         "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
         "/tmp/node_modules/kaji-sdk",
         "v24.4.0",
+        "11.4.2",
+        "1.3.11",
         { coldSetupToOutputMs: 11, warmRunMs: 2, githubProof: typedGitHubPackageProof },
         { coldSetupToOutputMs: 13, warmRunMs: 3, githubProof: typedGitHubPackageProof },
       );
@@ -336,6 +339,14 @@ describe("npm contract artifact", () => {
       expect(retained).toEqual(receipt);
       expect(retained).toMatchObject({
         conclusion: "passed",
+        toolchain: {
+          python: "not-used",
+          uv: "not-used",
+          node: "v24.4.0",
+          npm: "11.4.2",
+          bun: "1.3.11",
+          typescript: `5.7.3 and ${CURRENT_TYPESCRIPT_VERSION}`,
+        },
         timings: {
           npm: { coldSetupToOutputMs: 11, warmRunMs: 2 },
           bun: { coldSetupToOutputMs: 13, warmRunMs: 3 },
@@ -357,6 +368,8 @@ describe("npm contract artifact", () => {
           "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
           "/tmp/node_modules/kaji-sdk",
           "v24.4.0",
+          "11.4.2",
+          "1.3.11",
           {
             coldSetupToOutputMs: Number.MAX_SAFE_INTEGER + 1,
             warmRunMs: 2,
@@ -663,6 +676,8 @@ describe("npm contract artifact", () => {
       "`${manager}:cli-inspect`",
       "`${manager}:cli-list`",
       "`${manager}:cli-replay`",
+      '"bun:audit"',
+      '["audit", "--production"]',
       "assertCliInitOutput(initOutput, generated)",
       "assertCliAddOutput(addOutput, echo, installedPackageRoot)",
       "assertExperimentalDenial(denialOutput, deniedGithub)",
@@ -763,6 +778,9 @@ describe("npm contract artifact", () => {
     expect(source.split(expectedIntegrationExportList)).toHaveLength(3);
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?nodeTypesPackage[\s\S]*?environment,\s*\)/,
+    );
+    expect(source).toMatch(
+      /await install\(\s*manager,\s*"bootstrap",[\s\S]*?if \(manager === "bun"\) \{[\s\S]*?"bun:audit"[\s\S]*?\["audit", "--production"\][\s\S]*?bootstrap/,
     );
   });
 
@@ -873,6 +891,7 @@ describe("npm contract artifact", () => {
       githubPackageProofs: {},
     });
     expect(forgedReceipt).not.toHaveProperty("timings");
+    expect(forgedReceipt).not.toHaveProperty("toolchain");
     expect(JSON.stringify(forgedReceipt)).not.toContain(canary);
 
     expect(
@@ -886,6 +905,49 @@ describe("npm contract artifact", () => {
       failedPhase: "handoff:node-version",
       failureKind: "output_limit",
     });
+  });
+
+  it("classifies malformed successful tool-version output at its exact phase", () => {
+    for (const [tool, output] of [
+      ["node", "24.4.0"],
+      ["node", "v25.0.0"],
+      ["npm", "11.4.2\nSK_MULTILINE_CANARY"],
+      ["bun", "not-a-version"],
+    ] as const) {
+      let failure: unknown;
+      try {
+        retainedSmokeToolVersion(output, tool);
+      } catch (error) {
+        failure = error;
+      }
+      expect(ordinaryFailureReceipt(failure, {}, null, process.version), tool).toMatchObject({
+        conclusion: "failed",
+        failureCode: "artifact_identity_failed",
+        failedPhase: `${tool}:version`,
+        failureKind: "capture",
+      });
+    }
+    expect(retainedSmokeToolVersion("v24.4.0\n", "node")).toBe("v24.4.0");
+    expect(retainedSmokeToolVersion("11.4.2\n", "npm")).toBe("11.4.2");
+    expect(retainedSmokeToolVersion("1.3.11\n", "bun")).toBe("1.3.11");
+  });
+
+  it("retains a closed Bun artifact-audit failure receipt", () => {
+    const receipt = ordinaryFailureReceipt(
+      new SmokeCommandError("bun:audit", "exit"),
+      {},
+      null,
+      process.version,
+    );
+
+    expect(receipt).toMatchObject({
+      conclusion: "failed",
+      failureCode: "artifact_identity_failed",
+      failedPhase: "bun:audit",
+      failureKind: "exit",
+    });
+    expect(receipt).not.toHaveProperty("timings");
+    expect(receipt).not.toHaveProperty("toolchain");
   });
 
   it("omits absolute workspace paths from raw ordinary failure receipts", () => {
@@ -930,6 +992,7 @@ describe("npm contract artifact", () => {
       failureKind: "timeout",
     });
     expect(receipt).not.toHaveProperty("timings");
+    expect(receipt).not.toHaveProperty("toolchain");
     for (const encoded of [stdout, output]) {
       expect(encoded).not.toContain(state.receiptTarball);
       expect(encoded).not.toContain(state.installedPackagePath);

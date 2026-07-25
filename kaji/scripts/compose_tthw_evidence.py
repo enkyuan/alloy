@@ -112,7 +112,10 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, int]:
 def compose(
     *,
     participant_receipts: list[Path],
-    automated_timings: Path,
+    python_compatibility_receipt: Path,
+    node_compatibility_receipt: Path,
+    expected_workflow_run: str,
+    expected_workflow_run_attempt: int,
     release_manifest: Path,
     artifacts_dir: Path,
 ) -> dict[str, Any]:
@@ -123,7 +126,21 @@ def compose(
         release_manifest, artifacts_dir
     )
     artifacts_by_name = {row["name"]: row for row in artifacts}
-    timings = validation.load_json(automated_timings, "automated timings")
+    timings = validation.automated_timings_from_compatibility_receipts(
+        validation.load_json(
+            python_compatibility_receipt,
+            "Python 3.14 compatibility receipt",
+        ),
+        validation.load_json(
+            node_compatibility_receipt,
+            "Node 24 compatibility receipt",
+        ),
+        commit=commit,
+        manifest_hash=manifest_hash,
+        artifacts=artifacts,
+        expected_workflow_run=expected_workflow_run,
+        expected_workflow_run_attempt=expected_workflow_run_attempt,
+    )
     runs = [
         _participant_receipt(
             path,
@@ -186,18 +203,32 @@ def parse_args() -> argparse.Namespace:
         metavar="{python,npm,bun}",
         help="write a candidate-bound participant skeleton for this path",
     )
-    parser.add_argument("--automated-timings", type=Path)
+    parser.add_argument("--python-compatibility-receipt", type=Path)
+    parser.add_argument("--node-compatibility-receipt", type=Path)
+    parser.add_argument("--expected-workflow-run")
+    parser.add_argument("--expected-workflow-run-attempt", type=int)
     parser.add_argument("--release-manifest", type=Path, required=True)
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if args.participant is not None and args.automated_timings is None:
-        parser.error("--automated-timings is required with --participant")
-    if (
-        args.generate_participant_template is not None
-        and args.automated_timings is not None
+    compatibility_inputs = (
+        args.python_compatibility_receipt,
+        args.node_compatibility_receipt,
+        args.expected_workflow_run,
+        args.expected_workflow_run_attempt,
+    )
+    if args.participant is not None and any(
+        value is None for value in compatibility_inputs
     ):
-        parser.error("--automated-timings is only valid with --participant")
+        parser.error(
+            "--python-compatibility-receipt, --node-compatibility-receipt, and "
+            "--expected-workflow-run, and --expected-workflow-run-attempt are "
+            "required with --participant"
+        )
+    if args.generate_participant_template is not None and any(
+        value is not None for value in compatibility_inputs
+    ):
+        parser.error("compatibility receipt inputs are only valid with --participant")
     return args
 
 
@@ -214,7 +245,10 @@ def main() -> int:
         else:
             document = compose(
                 participant_receipts=args.participant,
-                automated_timings=args.automated_timings,
+                python_compatibility_receipt=args.python_compatibility_receipt,
+                node_compatibility_receipt=args.node_compatibility_receipt,
+                expected_workflow_run=args.expected_workflow_run,
+                expected_workflow_run_attempt=args.expected_workflow_run_attempt,
                 release_manifest=args.release_manifest,
                 artifacts_dir=args.artifacts_dir,
             )

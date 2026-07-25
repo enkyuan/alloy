@@ -50,7 +50,6 @@ REQUIRED_JSON = {
     "parity/scenarios.json",
     "parity/scenarios.schema.json",
     "providers/cost-conformance.json",
-    "release/tthw-automated-timings.template.json",
     "release/github-proof-v1.schema.json",
     "release/tthw-evidence-v1.schema.json",
     "release/kaji-ts-consumer-handoff-v1.schema.json",
@@ -62,7 +61,6 @@ REQUIRED_JSON = {
 DATA_DOCUMENTS = {
     "integrations/abi-index-v1.json",
     "parity/expected-normalized.json",
-    "release/tthw-automated-timings.template.json",
     "release/tthw-participant.template.json",
 }
 APPROVAL_FAILURE_RETRYABILITY = {

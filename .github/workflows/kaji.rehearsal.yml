@@ -219,11 +219,11 @@ jobs:
               index($kind) != null;
             def smoke_phase:
               type == "string" and
-              test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
+              test("^(npm:pack|node:version|npm:version|bun:version|(npm|bun):audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
             def passed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
                "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
-               "timings"];
+               "timings", "toolchain"];
             def failed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
                "failureCode", "failureKind", "githubPackageProofs",
@@ -337,7 +337,14 @@ jobs:
                     (.wheel | github_proof("python"))) and
                   (.timings |
                     type == "object" and keys == ["sdist", "wheel"] and
-                    all(.[]; python_timing))
+                    all(.[]; python_timing)) and
+                  (.runtime.version as $pythonVersion |
+                   .toolchain |
+                    type == "object" and
+                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
+                    .python == $pythonVersion and .uv == "0.11.25" and
+                    .node == "not-used" and .npm == "not-used" and
+                    .bun == "not-used" and .typescript == "not-used")
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -357,7 +364,18 @@ jobs:
                     (.npm | github_proof("typescript"))) and
                   (.timings |
                     type == "object" and keys == ["bun", "npm"] and
-                    all(.[]; typescript_timing))
+                    all(.[]; typescript_timing)) and
+                  (.runtime.version as $nodeVersion |
+                   .githubPackageProofs.npm.typescriptDeclarationChecks as $declarations |
+                   .toolchain |
+                    type == "object" and
+                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
+                    .python == "not-used" and .uv == "not-used" and
+                    .node == $nodeVersion and
+                    (.npm | test("^[0-9]+[.][0-9]+[.][0-9]+(?:[-+][0-9A-Za-z.-]+)?$")) and
+                    .bun == "1.3.11" and
+                    .typescript == ($declarations.typescript57.version + " and " +
+                      $declarations.typescriptCurrent.version))
                 end
               ))
             )
@@ -412,7 +430,8 @@ jobs:
           jq \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '. + {workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            '. + {workflowRun: $workflowRun,
+                  workflowRunAttempt: $workflowRunAttempt}' \
             "$receipt" >"$temporary"
           mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
@@ -570,11 +589,11 @@ jobs:
               index($kind) != null;
             def smoke_phase:
               type == "string" and
-              test("^(npm:pack|node:version|npm:audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
+              test("^(npm:pack|node:version|npm:version|bun:version|(npm|bun):audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
             def passed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
                "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
-               "timings"];
+               "timings", "toolchain"];
             def failed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
                "failureCode", "failureKind", "githubPackageProofs",
@@ -688,7 +707,14 @@ jobs:
                     (.wheel | github_proof("python"))) and
                   (.timings |
                     type == "object" and keys == ["sdist", "wheel"] and
-                    all(.[]; python_timing))
+                    all(.[]; python_timing)) and
+                  (.runtime.version as $pythonVersion |
+                   .toolchain |
+                    type == "object" and
+                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
+                    .python == $pythonVersion and .uv == "0.11.25" and
+                    .node == "not-used" and .npm == "not-used" and
+                    .bun == "not-used" and .typescript == "not-used")
                 else
                   (.artifactSha256 |
                     type == "object" and
@@ -708,7 +734,18 @@ jobs:
                     (.npm | github_proof("typescript"))) and
                   (.timings |
                     type == "object" and keys == ["bun", "npm"] and
-                    all(.[]; typescript_timing))
+                    all(.[]; typescript_timing)) and
+                  (.runtime.version as $nodeVersion |
+                   .githubPackageProofs.npm.typescriptDeclarationChecks as $declarations |
+                   .toolchain |
+                    type == "object" and
+                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
+                    .python == "not-used" and .uv == "not-used" and
+                    .node == $nodeVersion and
+                    (.npm | test("^[0-9]+[.][0-9]+[.][0-9]+(?:[-+][0-9A-Za-z.-]+)?$")) and
+                    .bun == "1.3.11" and
+                    .typescript == ($declarations.typescript57.version + " and " +
+                      $declarations.typescriptCurrent.version))
                 end
               ))
             )
@@ -763,7 +800,8 @@ jobs:
           jq \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '. + {workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
+            '. + {workflowRun: $workflowRun,
+                  workflowRunAttempt: $workflowRunAttempt}' \
             "$receipt" >"$temporary"
           mv "$temporary" "$receipt"
           if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
@@ -784,8 +822,8 @@ jobs:
 
   tthw-evidence:
     name: time-to-hello-world evidence
-    needs: offline-release
-    if: ${{ always() && needs.offline-release.result == 'success' }}
+    needs: [offline-release, python-compat, node-compat]
+    if: ${{ always() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: kaji-beta
@@ -826,6 +864,16 @@ jobs:
         with:
           name: kaji-beta-artifacts
           path: .artifacts/kaji-release
+      - id: download_python_compat
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-python-compat-3.14
+          path: .artifacts/kaji-tthw-compat/python-3.14
+      - id: download_node_compat
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: kaji-node-compat-24
+          path: .artifacts/kaji-tthw-compat/node-24
       - name: Revalidate exact current-run artifacts before TTHW validation
         id: verify
         env:
@@ -849,6 +897,10 @@ jobs:
             "$raw_evidence" \
             --release-manifest .artifacts/kaji-release/manifest.json \
             --artifacts-dir .artifacts/kaji-release \
+            --python-compatibility-receipt .artifacts/kaji-tthw-compat/python-3.14/compatibility-receipt.json \
+            --node-compatibility-receipt .artifacts/kaji-tthw-compat/node-24/compatibility-receipt.json \
+            --expected-workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --expected-workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
             > >(tee "$KAJI_TTHW_EVIDENCE_DIR/validation.log") 2>&1
           status=$?
           set -e
@@ -881,6 +933,8 @@ jobs:
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
           RUNTIME_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
           DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          PYTHON_COMPAT_DOWNLOAD_OUTCOME: ${{ steps.download_python_compat.outcome }}
+          NODE_COMPAT_DOWNLOAD_OUTCOME: ${{ steps.download_node_compat.outcome }}
           VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
           TTHW_OUTCOME: ${{ steps.tthw.outcome }}
         run: |
@@ -893,6 +947,9 @@ jobs:
             failure_code=runtime_setup_not_completed
           elif [ "$DOWNLOAD_OUTCOME" != success ]; then
             failure_code=artifact_download_not_completed
+          elif [ "$PYTHON_COMPAT_DOWNLOAD_OUTCOME" != success ] || \
+            [ "$NODE_COMPAT_DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=compatibility_download_not_completed
           elif [ "$VERIFICATION_OUTCOME" != success ]; then
             failure_code=artifact_verification_not_completed
           elif [ "$TTHW_OUTCOME" != success ]; then
@@ -901,7 +958,10 @@ jobs:
             failure_code=tthw_receipt_not_terminal
           fi
           if [ "$CHECKOUT_OUTCOME" = success ] && [ "$RUNTIME_SETUP_OUTCOME" = success ] && \
-            [ "$DOWNLOAD_OUTCOME" = success ] && [ "$VERIFICATION_OUTCOME" = success ] && \
+            [ "$DOWNLOAD_OUTCOME" = success ] && \
+            [ "$PYTHON_COMPAT_DOWNLOAD_OUTCOME" = success ] && \
+            [ "$NODE_COMPAT_DOWNLOAD_OUTCOME" = success ] && \
+            [ "$VERIFICATION_OUTCOME" = success ] && \
             [ "$TTHW_OUTCOME" = success ] && jq -e \
               --arg commit "$KAJI_RELEASE_COMMIT" \
               '.schemaVersion == 1 and .commit == $commit and .conclusion == "passed" and

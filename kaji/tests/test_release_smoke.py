@@ -75,6 +75,8 @@ def test_release_smoke_preserves_build_verify_install_order(
 
     def fake_run_capture(command: list[str], **_kwargs: object) -> str:
         commands.append(command)
+        if command == ["uv", "--version"]:
+            return "uv 0.11.25 (Homebrew 2026-07-25)\n"
         if any("installed_github_smoke.py" in part for part in command):
             return json.dumps(GITHUB_PACKAGE_PROOF)
         if command == ["kaji", "--help"]:
@@ -193,6 +195,14 @@ def test_release_smoke_preserves_build_verify_install_order(
         for value in timing.values()
     )
     assert receipt["conclusion"] == "passed"
+    assert receipt["toolchain"] == {
+        "python": module.platform.python_version(),
+        "uv": "0.11.25",
+        "node": "not-used",
+        "npm": "not-used",
+        "bun": "not-used",
+        "typescript": "not-used",
+    }
 
 
 @pytest.mark.parametrize(
@@ -460,6 +470,7 @@ def test_release_smoke_consume_failure_overwrites_receipt(
     assert receipt["conclusion"] == "failed"
     assert receipt["failureCode"] == "artifact_verification_failed"
     assert "timings" not in receipt
+    assert "toolchain" not in receipt
 
 
 def test_release_smoke_failure_overwrites_partial_timings(
@@ -532,6 +543,7 @@ def test_release_smoke_failure_overwrites_partial_timings(
     assert receipt["conclusion"] == "failed"
     assert receipt["failureCode"] == "python_smoke_failed"
     assert "timings" not in receipt
+    assert "toolchain" not in receipt
 
 
 def test_release_smoke_asserts_all_installed_stable_cli_results(

@@ -320,7 +320,6 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
         '"openai",',
         '"anthropic",',
         '"build-requirements.txt",',
-        '["bun", "audit", "--production"]',
         '("bun", "x", "publint")',
         '["bun", "x", "attw", "--pack", "."]',
         "verify_package_metadata.py",
@@ -333,6 +332,10 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
         '"check:integrations"',
     ):
         assert expected in script
+    assert '["bun", "audit", "--production"]' not in script
+    package_smoke = _read("kaji/ts/scripts/smoke_package.mts")
+    assert '"bun:audit",' in package_smoke
+    assert '["audit", "--production"]' in package_smoke
     metadata_verifier = _read("kaji/scripts/verify_package_metadata.py")
     assert '"buildAudit": {' in metadata_verifier
     assert '"file": "kaji/build-requirements.txt"' in metadata_verifier
@@ -674,12 +677,12 @@ def test_performance_evidence_is_bound_before_retention(
     [
         (
             ".github/workflows/kaji.rehearsal.yml",
-            "offline-release",
+            "[offline-release, python-compat, node-compat]",
             "${{ github.sha }}",
         ),
         (
             ".github/workflows/kaji.publish.yml",
-            "[verify-tag, offline-gates]",
+            "[verify-tag, offline-gates, python-compat, node-compat]",
             "${{ needs.verify-tag.outputs.commit }}",
         ),
     ],
@@ -707,6 +710,9 @@ def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
     assert "validate_tthw_evidence.py" in validation
     assert "--release-manifest .artifacts/kaji-release/manifest.json" in validation
     assert "--artifacts-dir .artifacts/kaji-release" in validation
+    assert "--python-compatibility-receipt" in validation
+    assert "--node-compatibility-receipt" in validation
+    assert "--expected-workflow-run-attempt" in validation
     assert (
         'if [ "$status" -eq 0 ]; then\n'
         '            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"'
@@ -788,7 +794,8 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
     )
     assert "`kaji-beta-publish` remains a separate" in runbook
 
-    guide = " ".join(_read("docs/kaji/tthw-evidence.md").split())
+    guide_source = _read("docs/kaji/tthw-evidence.md")
+    guide = " ".join(guide_source.split())
     assert "exact `kaji-beta-artifacts` upload from the current tag-triggered" in guide
     assert "workflow run ID and artifact ID" in guide
     assert ': "${EVIDENCE_ROOT:?follow the release runbook first}"' in guide
@@ -799,6 +806,16 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
         "Prior release, rehearsal, and performance artifacts are invalid substitutes."
         in guide
     )
+    timing_section = guide_source.split("## Automated timings and composition", 1)[1]
+    compatibility_shell = timing_section.split("```bash\n", 1)[1].split("\n```", 1)[0]
+    syntax = subprocess.run(
+        ["/bin/bash", "-n"],
+        input=compatibility_shell,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert syntax.returncode == 0, syntax.stderr
 
 
 @pytest.mark.parametrize(
@@ -2204,6 +2221,14 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
             "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
             "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
         },
+        "toolchain": {
+            "python": "not-used",
+            "uv": "not-used",
+            "node": "v22.1.0",
+            "npm": "11.4.2",
+            "bun": "1.3.11",
+            "typescript": "5.7.3 and 6.0.2",
+        },
         "conclusion": "passed",
         "failureCode": None,
     }
@@ -2390,6 +2415,14 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "wheel": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
                 "sdist": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
             },
+            "toolchain": {
+                "python": f"{runtime_version}.9",
+                "uv": "0.11.25",
+                "node": "not-used",
+                "npm": "not-used",
+                "bun": "not-used",
+                "typescript": "not-used",
+            },
         }
     else:
         passed = {
@@ -2408,6 +2441,14 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             "timings": {
                 "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
                 "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
+            },
+            "toolchain": {
+                "python": "not-used",
+                "uv": "not-used",
+                "node": f"v{runtime_version}.1.0",
+                "npm": "11.4.2",
+                "bun": "1.3.11",
+                "typescript": "5.7.3 and 6.0.2",
             },
         }
     valid_hashes = passed["artifactSha256"]
@@ -2533,6 +2574,25 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         assert "timings" not in invalid_timing_receipt
 
     if runtime_kind == "node":
+        for label, field, value in (
+            ("wrong-toolchain-node", "node", "v99.0.0"),
+            ("wrong-toolchain-npm", "npm", "latest"),
+            ("wrong-toolchain-bun", "bun", "1.3.12"),
+            ("wrong-toolchain-typescript", "typescript", "5.7.3 and 6.0.3"),
+        ):
+            invalid_toolchain = json.loads(json.dumps(passed))
+            invalid_toolchain["toolchain"][field] = value
+            rejected, rejected_receipt, _ = run_case(
+                label,
+                receipt=invalid_toolchain,
+                outcomes=all_success,
+            )
+            assert rejected.returncode != 0
+            assert rejected_receipt["conclusion"] == "not_run"
+            assert (
+                rejected_receipt["failureCode"] == "compatibility_receipt_not_terminal"
+            )
+
         for label in (
             "typescript-schema-1",
             "typescript-schema-3",
@@ -2813,6 +2873,14 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 },
                 "conclusion": "passed",
                 "failureCode": None,
+                "toolchain": {
+                    "python": f"{version}.9",
+                    "uv": "0.11.25",
+                    "node": "not-used",
+                    "npm": "not-used",
+                    "bun": "not-used",
+                    "typescript": "not-used",
+                },
                 **run_identity,
             },
         )
@@ -2843,6 +2911,14 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 },
                 "conclusion": "passed",
                 "failureCode": None,
+                "toolchain": {
+                    "python": "not-used",
+                    "uv": "not-used",
+                    "node": f"v{version}.14.0",
+                    "npm": "11.4.2",
+                    "bun": "1.3.11",
+                    "typescript": "5.7.3 and 6.0.2",
+                },
                 **run_identity,
             },
         )
@@ -3115,12 +3191,42 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
             for entry in entries
         ],
         "automatedTimings": {
-            name: {
-                "coldSetupToOutputMs": 10_000,
-                "warmRunMs": 500,
-                "toolchain": toolchain,
-            }
-            for name in ("python", "npm", "bun")
+            "python": {
+                "coldSetupToOutputMs": 11,
+                "warmRunMs": 2,
+                "toolchain": {
+                    "python": "3.14.9",
+                    "uv": "0.11.25",
+                    "node": "not-used",
+                    "npm": "not-used",
+                    "bun": "not-used",
+                    "typescript": "not-used",
+                },
+            },
+            "npm": {
+                "coldSetupToOutputMs": 11,
+                "warmRunMs": 2,
+                "toolchain": {
+                    "python": "not-used",
+                    "uv": "not-used",
+                    "node": "v24.14.0",
+                    "npm": "11.4.2",
+                    "bun": "1.3.11",
+                    "typescript": "5.7.3 and 6.0.2",
+                },
+            },
+            "bun": {
+                "coldSetupToOutputMs": 13,
+                "warmRunMs": 3,
+                "toolchain": {
+                    "python": "not-used",
+                    "uv": "not-used",
+                    "node": "v24.14.0",
+                    "npm": "11.4.2",
+                    "bun": "1.3.11",
+                    "typescript": "5.7.3 and 6.0.2",
+                },
+            },
         },
         "humanRuns": tthw_runs,
         "summary": {
@@ -3346,6 +3452,8 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
     ("hostile_case", "expected_code"),
     (
         ("missing_receipt", "evidence_missing"),
+        ("missing_canonical_python_receipt", "evidence_missing"),
+        ("missing_canonical_node_receipt", "evidence_missing"),
         ("not_run_receipt", "receipt_not_passed"),
         ("failed_receipt", "receipt_not_passed"),
         ("mixed_manifest", "manifest_hash_mismatch"),
@@ -3382,6 +3490,11 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
         ("invalid_tthw_raw", "tthw_evidence_invalid"),
+        ("manual_tthw_timing", "tthw_evidence_invalid"),
+        ("canonical_extra_top_level", "tthw_evidence_invalid"),
+        ("canonical_negative_timing", "tthw_evidence_invalid"),
+        ("canonical_toolchain_drift", "tthw_evidence_invalid"),
+        ("canonical_boolean_attempt", "tthw_evidence_invalid"),
     ),
 )
 def test_release_evidence_validator_rejects_hostile_retained_receipts(
@@ -3392,6 +3505,10 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
     fixture = _release_evidence_fixture(tmp_path)
     if hostile_case == "missing_receipt":
         fixture.paths["compat-python-3.11"].unlink()
+    elif hostile_case == "missing_canonical_python_receipt":
+        fixture.paths["compat-python-3.14"].unlink()
+    elif hostile_case == "missing_canonical_node_receipt":
+        fixture.paths["compat-node-24"].unlink()
     elif hostile_case == "missing_performance_image_data":
         fixture.paths["performance-image-data"].unlink()
     elif hostile_case == "tampered_performance_image_data":
@@ -3454,6 +3571,11 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "missing_provider_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
             "invalid_tthw_raw": "tthw-evidence",
+            "manual_tthw_timing": "tthw-evidence",
+            "canonical_extra_top_level": "compat-python-3.14",
+            "canonical_negative_timing": "compat-node-24",
+            "canonical_toolchain_drift": "compat-node-24",
+            "canonical_boolean_attempt": "compat-python-3.14",
         }[hostile_case]
         path = fixture.paths[target]
         document = json.loads(path.read_text())
@@ -3524,6 +3646,16 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["proofs"].pop()
         elif hostile_case == "mixed_tthw_status":
             document["artifactSha256"]["kaji-sdk-0.2.0-beta.2.tgz"] = "0" * 64
+        elif hostile_case == "manual_tthw_timing":
+            document["automatedTimings"]["python"]["warmRunMs"] += 1
+        elif hostile_case == "canonical_extra_top_level":
+            document["untrusted"] = True
+        elif hostile_case == "canonical_negative_timing":
+            document["timings"]["npm"]["warmRunMs"] = -1
+        elif hostile_case == "canonical_toolchain_drift":
+            document["toolchain"]["bun"] = "1.3.12"
+        elif hostile_case == "canonical_boolean_attempt":
+            document["workflowRunAttempt"] = True
         else:
             document["artifacts"][0]["sha256"] = "0" * 64
         if target == "benchmark-results" and hostile_case != "paired_receipt_mismatch":
@@ -3585,6 +3717,64 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
     assert repeated.returncode != 0
     assert fixture.output.read_bytes() == first_output
     assert repeated.stdout == first.stdout
+
+
+@pytest.mark.parametrize(
+    "receipt_label",
+    (
+        "compat-python-3.11",
+        "compat-python-3.14",
+        "compat-node-22",
+        "compat-node-24",
+    ),
+)
+@pytest.mark.parametrize(
+    "hostile_case",
+    (
+        "extra-field",
+        "boolean-schema",
+        "negative-timing",
+        "unsafe-timing",
+        "toolchain-drift",
+    ),
+)
+def test_release_evidence_closes_every_compatibility_receipt_shape(
+    tmp_path: Path,
+    receipt_label: str,
+    hostile_case: str,
+) -> None:
+    fixture = _release_evidence_fixture(tmp_path)
+    path = fixture.paths[receipt_label]
+    document = json.loads(path.read_text())
+    timing_name = "wheel" if receipt_label.startswith("compat-python") else "npm"
+
+    if hostile_case == "extra-field":
+        document["untrusted"] = True
+    elif hostile_case == "boolean-schema":
+        document["schemaVersion"] = True
+    elif hostile_case == "negative-timing":
+        document["timings"][timing_name]["warmRunMs"] = -1
+    elif hostile_case == "unsafe-timing":
+        document["timings"][timing_name]["coldSetupToOutputMs"] = 9_007_199_254_740_992
+    else:
+        field = "python" if receipt_label.startswith("compat-python") else "node"
+        document["toolchain"][field] = "mismatched"
+    _write_release_evidence_json(path, document)
+
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    summary = json.loads(fixture.output.read_text())
+    assert {
+        "evidence": receipt_label,
+        "code": "compatibility_receipt_invalid",
+    } in summary["failures"]
 
 
 def test_github_exact_artifact_proof_contract_and_operator_wiring() -> None:

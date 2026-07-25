@@ -48,6 +48,7 @@ GITHUB_PROOF_ENVIRONMENT = frozenset(
     }
 )
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
+UV_VERSION = re.compile(r"^uv ([0-9]+\.[0-9]+\.[0-9]+)(?: .*)?$")
 
 
 def elapsed_milliseconds(started_ns: int, ended_ns: int) -> int:
@@ -58,6 +59,20 @@ def elapsed_milliseconds(started_ns: int, ended_ns: int) -> int:
     if elapsed_ms > MAX_SAFE_INTEGER:
         raise ValueError("elapsed milliseconds exceed Number.MAX_SAFE_INTEGER")
     return elapsed_ms
+
+
+def measured_toolchain() -> dict[str, str]:
+    match = UV_VERSION.fullmatch(run_capture(["uv", "--version"]).strip())
+    if match is None:
+        raise SystemExit("FAIL: uv returned an invalid version")
+    return {
+        "python": platform.python_version(),
+        "uv": match.group(1),
+        "node": "not-used",
+        "npm": "not-used",
+        "bun": "not-used",
+        "typescript": "not-used",
+    }
 
 
 def run(command: list[str], *, budget: CommandBudget = PACKAGE_COMMAND_BUDGET) -> None:
@@ -671,6 +686,7 @@ def smoke_archives(
         "artifacts": {"wheel": str(wheel), "sdist": str(sdist)},
         "githubPackageProofs": github_package_proofs,
         "timings": timings,
+        "toolchain": measured_toolchain(),
         "conclusion": "passed",
         "failureCode": None,
     }

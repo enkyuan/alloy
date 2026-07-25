@@ -42,9 +42,7 @@ uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
 ```
 
 Repeat that command for all five assignments, changing the selected path and
-output file. Copy
-`kaji/contracts/release/tthw-automated-timings.template.json` once per release
-to `"$TTHW_DIR/automated-timings.json"`.
+output file. There is no operator-authored automated-timing input.
 The generator verifies the canonical manifest and all three artifacts, then
 atomically binds the selected wheel or npm tarball into an owner-only skeleton.
 
@@ -252,14 +250,66 @@ terminal event may occur.
 
 ## Automated timings and composition
 
-Populate the automated-timings template from the retained exact-artifact
-Python, npm, and Bun cold/warm smoke receipts. Copy their already
-ceiling-normalized integer values verbatim; do not substitute participant
-wall-clock estimates. For the single `automatedTimings.python` slot, use the
-Python `receipt.timings.wheel` values and retain `receipt.timings.sdist` only
-as compatibility evidence. Extract the TypeScript values from
-`receipt.timings.npm` and `receipt.timings.bun`. Keep raw participant receipts
-outside the repository and redact confusion notes before composition.
+Download only the final `kaji-python-compat-3.14` and
+`kaji-node-compat-24` artifacts from the exact protected workflow run being
+reviewed. Record that run's numeric `RUN_ID`, positive integer `RUN_ATTEMPT`,
+and the two exact artifact IDs. Extract them into separate owner-only
+directories; never merge them with each other or with an `*-initial` artifact.
+Verify both `compatibility-receipt.json` files name
+`https://github.com/enkyuan/alloy/actions/runs/$RUN_ID` and the exact
+`RUN_ATTEMPT`.
+
+```bash
+set -euo pipefail
+umask 077
+: "${RUN_ID:?set the exact protected workflow run ID}"
+: "${RUN_ATTEMPT:?set the current protected workflow run attempt}"
+
+PYTHON_COMPAT_ID="$(
+  gh api "repos/enkyuan/alloy/actions/runs/$RUN_ID/artifacts?per_page=100" \
+    --jq '.artifacts
+      | map(select(.name == "kaji-python-compat-3.14" and .expired == false))
+      | if length == 1 then .[0].id else error("expected one final Python 3.14 artifact") end'
+)"
+NODE_COMPAT_ID="$(
+  gh api "repos/enkyuan/alloy/actions/runs/$RUN_ID/artifacts?per_page=100" \
+    --jq '.artifacts
+      | map(select(.name == "kaji-node-compat-24" and .expired == false))
+      | if length == 1 then .[0].id else error("expected one final Node 24 artifact") end'
+)"
+
+PYTHON_COMPAT_DIR="$TTHW_DIR/compat-python-3.14"
+NODE_COMPAT_DIR="$TTHW_DIR/compat-node-24"
+mkdir -m 700 "$PYTHON_COMPAT_DIR" "$NODE_COMPAT_DIR"
+gh api "repos/enkyuan/alloy/actions/artifacts/$PYTHON_COMPAT_ID/zip" \
+  >"$TTHW_DIR/compat-python-3.14.zip"
+gh api "repos/enkyuan/alloy/actions/artifacts/$NODE_COMPAT_ID/zip" \
+  >"$TTHW_DIR/compat-node-24.zip"
+unzip -q "$TTHW_DIR/compat-python-3.14.zip" -d "$PYTHON_COMPAT_DIR"
+unzip -q "$TTHW_DIR/compat-node-24.zip" -d "$NODE_COMPAT_DIR"
+
+EXPECTED_WORKFLOW_RUN="https://github.com/enkyuan/alloy/actions/runs/$RUN_ID"
+for receipt in \
+  "$PYTHON_COMPAT_DIR/compatibility-receipt.json" \
+  "$NODE_COMPAT_DIR/compatibility-receipt.json"; do
+  jq -e \
+    --arg run "$EXPECTED_WORKFLOW_RUN" \
+    --argjson attempt "$RUN_ATTEMPT" \
+    '.workflowRun == $run and .workflowRunAttempt == $attempt and
+     .conclusion == "passed" and .failureCode == null' \
+    "$receipt" >/dev/null
+done
+```
+
+The composer derives `automatedTimings.python` from
+`receipt.timings.wheel` in the Python 3.14 receipt and derives
+`automatedTimings.npm` from `receipt.timings.npm` and
+`automatedTimings.bun` from `receipt.timings.bun` in the Node 24 receipt.
+Python 3.11, Node 22, and `receipt.timings.sdist` remain
+retained compatibility evidence; they are not canonical TTHW timing inputs.
+The closed receipts also supply the measured runtime toolchain. Keep raw
+participant receipts outside the repository and redact confusion notes before
+composition.
 
 Run the composer from the release checkout, listing each participant exactly
 once:
@@ -271,7 +321,13 @@ uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
   --participant "$TTHW_DIR/user-003.json" \
   --participant "$TTHW_DIR/user-004.json" \
   --participant "$TTHW_DIR/user-005.json" \
-  --automated-timings "$TTHW_DIR/automated-timings.json" \
+  --python-compatibility-receipt \
+    "$PYTHON_COMPAT_DIR/compatibility-receipt.json" \
+  --node-compatibility-receipt \
+    "$NODE_COMPAT_DIR/compatibility-receipt.json" \
+  --expected-workflow-run \
+    "https://github.com/enkyuan/alloy/actions/runs/$RUN_ID" \
+  --expected-workflow-run-attempt "$RUN_ATTEMPT" \
   --release-manifest "$ARTIFACTS_DIR/manifest.json" \
   --artifacts-dir "$ARTIFACTS_DIR" \
   --output "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"
@@ -281,6 +337,15 @@ The output is written atomically with owner-only permissions after
 `validate_tthw_evidence.py` passes. Copy the file bytes, without shell quoting
 or a trailing explanation, into the protected `KAJI_TTHW_EVIDENCE_JSON`
 secret. Never commit participant receipts or the composed document.
+
+A rehearsal may exercise this same derivation against its own current run and
+attempt, but that document is rehearsal evidence only. Final publication proof
+must be recomposed from the final artifacts and compatibility receipts emitted
+by the tag-triggered protected publish workflow.
+When rerunning a rehearsal, rerun the whole workflow so both compatibility
+producer jobs and TTHW validation emit the same `RUN_ATTEMPT`; never rerun only
+the TTHW job. Mixed-attempt receipts are intentionally rejected. The protected
+publish workflow remains first-attempt-only.
 
 ## Performance evidence is separate
 

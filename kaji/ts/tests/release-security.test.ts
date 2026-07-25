@@ -1437,8 +1437,16 @@ describe("Kaji workflow contracts", () => {
 
     expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(7);
     expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(15);
-    for (const { source, workflow } of [rehearsal, publish]) {
+    for (const [workflowName, { source, workflow }] of [
+      ["kaji.rehearsal.yml", rehearsal],
+      ["kaji.publish.yml", publish],
+    ] as const) {
       const job = workflow.jobs?.["tthw-evidence"];
+      expect(job?.needs).toEqual(
+        workflowName === "kaji.rehearsal.yml"
+          ? ["offline-release", "python-compat", "node-compat"]
+          : ["verify-tag", "offline-gates", "python-compat", "node-compat"],
+      );
       expect(job?.environment).toBe("kaji-beta");
       expect(effectivePermissions(workflow, job!)).toEqual(readOnlyPermissions);
       expect(JSON.stringify(job?.env ?? {})).not.toContain("secrets.KAJI_TTHW_EVIDENCE_JSON");
@@ -1454,7 +1462,29 @@ describe("Kaji workflow contracts", () => {
         "--release-manifest .artifacts/kaji-release/manifest.json",
       );
       expect(secretSteps[0]?.run).toContain("--artifacts-dir .artifacts/kaji-release");
+      expect(secretSteps[0]?.run).toContain(
+        "--python-compatibility-receipt .artifacts/kaji-tthw-compat/python-3.14/compatibility-receipt.json",
+      );
+      expect(secretSteps[0]?.run).toContain(
+        "--node-compatibility-receipt .artifacts/kaji-tthw-compat/node-24/compatibility-receipt.json",
+      );
+      expect(secretSteps[0]?.run).toContain("--expected-workflow-run-attempt");
       expect(secretSteps[0]?.run).toContain('if [ "$status" -eq 0 ]; then');
+
+      const compatibilityDownloads = (job?.steps ?? []).filter((step) =>
+        ["kaji-python-compat-3.14", "kaji-node-compat-24"].includes(String(step.with?.name ?? "")),
+      );
+      expect(compatibilityDownloads.map((step) => step.with?.name)).toEqual([
+        "kaji-python-compat-3.14",
+        "kaji-node-compat-24",
+      ]);
+      expect(compatibilityDownloads.map((step) => step.with?.path)).toEqual([
+        ".artifacts/kaji-tthw-compat/python-3.14",
+        ".artifacts/kaji-tthw-compat/node-24",
+      ]);
+      expect(
+        compatibilityDownloads.every((step) => !String(step.with?.name).endsWith("-initial")),
+      ).toBe(true);
 
       const uploads = (job?.steps ?? []).filter((step) =>
         step.uses?.startsWith("actions/upload-artifact@"),
@@ -1481,6 +1511,7 @@ describe("Kaji workflow contracts", () => {
       expect(dependencyClosure(publish.workflow, jobId), jobId).toContain("tthw-evidence");
     }
     expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain("github.run_attempt == 1");
+    expect(rehearsal.workflow.jobs?.["tthw-evidence"]?.if).not.toContain("github.run_attempt == 1");
 
     const classifier = publish.workflow.jobs?.["publication-status"]?.steps?.find(
       (step) => step.name === "Reduce monotonic publication state",
@@ -1549,6 +1580,8 @@ describe("Kaji workflow contracts", () => {
     expect(guide).toContain(': "${ARTIFACTS_DIR:?follow the release runbook first}"');
     expect(guide).toContain('TTHW_DIR="$EVIDENCE_ROOT/tthw"');
     expect(guide).not.toContain("/secure/");
+    expect(guide).toContain("never rerun only the TTHW job");
+    expect(guide).toContain("Mixed-attempt receipts are intentionally rejected");
     expect(guide).toContain(
       "Prior release, rehearsal, and performance artifacts are invalid substitutes.",
     );
@@ -1840,6 +1873,14 @@ describe("Kaji workflow contracts", () => {
         timings: {
           wheel: { coldSetupToOutputMs: 11, warmRunMs: 2 },
           sdist: { coldSetupToOutputMs: 13, warmRunMs: 3 },
+        },
+        toolchain: {
+          python: "3.11.9",
+          uv: "0.11.25",
+          node: "not-used",
+          npm: "not-used",
+          bun: "not-used",
+          typescript: "not-used",
         },
       })}\n`;
       writeFileSync(receipt, terminal);

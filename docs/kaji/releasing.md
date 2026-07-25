@@ -168,11 +168,19 @@ later run is not acceptable evidence.
    evidence is complete; verify its downloaded manifest and all three artifacts
    before distributing them.
 
-6. Generate five candidate-bound participant skeletons from that manifest and
-   artifact directory, collect the five real arm64 macOS runs, fill the
-   automated timing receipt from those same bytes, and compose the final
-   document by following [the TTHW evidence operator guide](tthw-evidence.md).
-   Prior release, rehearsal, and performance artifacts are invalid substitutes.
+6. After the Python and Node compatibility jobs finish, download the exact
+   final `kaji-python-compat-3.14` and `kaji-node-compat-24` artifacts by their
+   artifact IDs from this same `RUN_ID`. Extract them into distinct owner-only
+   directories, set `RUN_ATTEMPT` to this run's current attempt, and verify both
+   receipts contain the exact run URL and attempt. Do not download an
+   `*-initial` artifact. Generate five candidate-bound participant skeletons
+   from the manifest and artifact directory, collect the five real arm64 macOS
+   runs, and let the composer derive Python-wheel and Node npm/Bun timings from
+   those two closed receipts by following
+   [the TTHW evidence operator guide](tthw-evidence.md). Python 3.11, Node 22,
+   and the Python sdist timing remain secondary compatibility evidence. Prior
+   release, rehearsal, and performance artifacts are invalid substitutes;
+   rehearsal evidence is never publication proof.
 7. Set `KAJI_TTHW_EVIDENCE_JSON` to the exact composed document bytes. Only then
    approve the waiting `tthw-evidence` job. Protected environment secrets are
    read when that job starts, so it validates the value just set against the
@@ -290,13 +298,15 @@ Python/npm/Bun. Each participant receipt repeats the exact commit, manifest
 hash, measured macOS version, and artifact it installed: Python uses the wheel,
 while npm and Bun use the npm tarball. Configuration alone does not claim that the cohort passed;
 until that real evidence exists, TTHW is **unmeasured**.
+Prior release, rehearsal, and performance artifacts are invalid substitutes.
 
 Collect and compose it only through the
 [TTHW evidence operator guide](tthw-evidence.md). The guide provides the
-candidate-bound participant-template command, checked-in automated-timing
-template, exact no-source Python/npm/Bun commands, required Echo tool-loop
-observations, and the atomic `compose_tthw_evidence.py` command. The composer
-rejects stale participant identity, derives totals and summary, and calls the
+candidate-bound participant-template command, exact no-source Python/npm/Bun
+commands, required Echo tool-loop observations, canonical Python 3.14 and
+Node 24 compatibility-receipt derivation, and the atomic
+`compose_tthw_evidence.py` command. The composer rejects stale participant and
+workflow-attempt identity, derives timings, totals, and summary, and calls the
 same protected validator before writing owner-only output.
 
 The validator recomputes median and maximum totals. No-key median must be under

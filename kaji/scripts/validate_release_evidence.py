@@ -36,7 +36,9 @@ from paired_benchmark import (
 )
 from validate_tthw_evidence import (
     EvidenceError as TthwEvidenceError,
+    validate_closed_compatibility_receipt,
     validate_bindings as validate_tthw_bindings,
+    validate_compatibility_receipts as validate_tthw_compatibility_receipts,
     validate_document as validate_tthw_document,
 )
 from verify_release_artifacts import VerifiedReleaseArtifacts, verify
@@ -392,24 +394,22 @@ def validate_compatibility(
             document.get("artifactSha256") == expected_hashes,
             "artifact_hash_mismatch",
         )
-        runtime_version = runtime_value.get("version")
-        require(
-            isinstance(runtime_version, str)
-            and re.fullmatch(rf"{re.escape(version)}\.[0-9]+", runtime_version)
-            is not None,
-            "compatibility_runtime_mismatch",
-        )
-        require(
-            isinstance(runtime_value.get("implementation"), str)
-            and bool(runtime_value["implementation"]),
-            "compatibility_runtime_invalid",
-        )
-        require(
-            Path(str(artifacts.get("wheel"))).name == PYTHON_WHEEL
-            and Path(str(artifacts.get("sdist"))).name == PYTHON_SDIST,
-            "compatibility_artifacts_invalid",
-        )
         validate_github_package_proofs(document.get("githubPackageProofs"), runtime)
+        try:
+            validate_closed_compatibility_receipt(
+                document,
+                runtime="python",
+                expected_runtime_version=version,
+                commit=args.expected_commit,
+                manifest_hash=release.manifest_sha256,
+                artifacts_by_name={
+                    name: {"sha256": digest} for name, digest in expected_hashes.items()
+                },
+                expected_workflow_run=args.workflow_run,
+                expected_workflow_run_attempt=args.workflow_run_attempt,
+            )
+        except TthwEvidenceError:
+            reject("compatibility_receipt_invalid")
         return
 
     expected_hashes = {TYPESCRIPT_TARBALL: release.artifact_sha256[TYPESCRIPT_TARBALL]}
@@ -417,19 +417,25 @@ def validate_compatibility(
         document.get("artifactSha256") == expected_hashes,
         "artifact_hash_mismatch",
     )
-    runtime_version = runtime_value.get("version")
-    require(
-        isinstance(runtime_version, str)
-        and re.fullmatch(rf"v{re.escape(version)}\.[0-9]+\.[0-9]+", runtime_version)
-        is not None,
-        "compatibility_runtime_mismatch",
-    )
-    require(
-        Path(str(artifacts.get("tarball"))).name == TYPESCRIPT_TARBALL,
-        "compatibility_artifacts_invalid",
-    )
-    validate_package_path(artifacts.get("package"), "typescript", args.workspace)
     validate_github_package_proofs(document.get("githubPackageProofs"), "typescript")
+    try:
+        validate_closed_compatibility_receipt(
+            document,
+            runtime="node",
+            expected_runtime_version=version,
+            commit=args.expected_commit,
+            manifest_hash=release.manifest_sha256,
+            artifacts_by_name={
+                TYPESCRIPT_TARBALL: {
+                    "sha256": release.artifact_sha256[TYPESCRIPT_TARBALL]
+                }
+            },
+            expected_workflow_run=args.workflow_run,
+            expected_workflow_run_attempt=args.workflow_run_attempt,
+        )
+    except TthwEvidenceError:
+        reject("compatibility_receipt_invalid")
+    validate_package_path(artifacts.get("package"), "typescript", args.workspace)
 
 
 def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
@@ -569,10 +575,8 @@ def validate_paired_benchmark(
     )
 
     replicas = document.get("replicas")
-    require(
-        isinstance(replicas, dict) and set(replicas) == {"1", "2", "3"},
-        "paired_benchmark_replicas_invalid",
-    )
+    if not isinstance(replicas, dict) or set(replicas) != {"1", "2", "3"}:
+        reject("paired_benchmark_replicas_invalid")
     require(
         set(raw_replicas) == {"1", "2", "3"},
         "paired_raw_replica_missing",
@@ -630,16 +634,12 @@ def validate_paired_benchmark(
 
     ordered_replicas = [validated_raw_replicas[replica] for replica in ("1", "2", "3")]
     cases = document.get("cases")
-    require(
-        isinstance(cases, dict) and set(cases) == set(RUNTIMES),
-        "performance_results_invalid",
-    )
+    if not isinstance(cases, dict) or set(cases) != set(RUNTIMES):
+        reject("performance_results_invalid")
     for runtime in RUNTIMES:
         runtime_cases = cases[runtime]
-        require(
-            isinstance(runtime_cases, dict) and set(runtime_cases) == set(CASES),
-            "performance_results_invalid",
-        )
+        if not isinstance(runtime_cases, dict) or set(runtime_cases) != set(CASES):
+            reject("performance_results_invalid")
         for case in CASES:
             evidence = runtime_cases[case]
             expected = _aggregate_case(ordered_replicas, runtime, case)
@@ -900,6 +900,8 @@ def validate_tthw_status(
 def validate_tthw_raw(
     document: dict[str, Any],
     *,
+    python_compatibility: dict[str, Any],
+    node_compatibility: dict[str, Any],
     release: VerifiedReleaseArtifacts,
     args: argparse.Namespace,
 ) -> None:
@@ -911,6 +913,13 @@ def validate_tthw_raw(
             document,
             release.root / "manifest.json",
             release.root,
+        )
+        validate_tthw_compatibility_receipts(
+            document,
+            python_compatibility,
+            node_compatibility,
+            expected_workflow_run=args.workflow_run,
+            expected_workflow_run_attempt=args.workflow_run_attempt,
         )
     except (TthwEvidenceError, KeyError, TypeError, ValueError):
         reject("tthw_evidence_invalid")
@@ -1107,12 +1116,24 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
                 documents["tthw-status"], release=release, args=args
             ),
         )
-        check(
-            "tthw-evidence",
-            lambda: validate_tthw_raw(
-                documents["tthw-evidence"], release=release, args=args
-            ),
-        )
+        if all(
+            label in documents
+            for label in (
+                "tthw-evidence",
+                "compat-python-3.14",
+                "compat-node-24",
+            )
+        ):
+            check(
+                "tthw-evidence",
+                lambda: validate_tthw_raw(
+                    documents["tthw-evidence"],
+                    python_compatibility=documents["compat-python-3.14"],
+                    node_compatibility=documents["compat-node-24"],
+                    release=release,
+                    args=args,
+                ),
+            )
 
     failures.sort(key=lambda item: (item["evidence"], item["code"]))
     conclusion = "passed" if not failures else "failed"

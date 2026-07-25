@@ -24,14 +24,12 @@ COMPOSER = SCRIPTS / "compose_tthw_evidence.py"
 PARTICIPANT_TEMPLATE = (
     REPO_ROOT / "kaji/contracts/release/tthw-participant.template.json"
 )
-TIMINGS_TEMPLATE = (
-    REPO_ROOT / "kaji/contracts/release/tthw-automated-timings.template.json"
-)
 ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
+WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 
 
 def _marked_snippet(path: Path, name: str, language: str) -> str:
@@ -99,7 +97,11 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _fixture(tmp_path: Path) -> tuple[list[Path], Path, Path, Path]:
+def _fixture(
+    tmp_path: Path,
+    *,
+    workflow_run_attempt: int = 1,
+) -> tuple[list[Path], Path, Path, Path, Path]:
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
     commit = "a" * 40
@@ -120,7 +122,9 @@ def _fixture(tmp_path: Path) -> tuple[list[Path], Path, Path, Path]:
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"commit": commit, "artifacts": manifest_rows}))
     manifest_hash = _sha(manifest)
-    artifacts_by_name = {row["file"]: row for row in manifest_rows}
+    artifacts_by_name: dict[str, dict[str, Any]] = {
+        str(row["file"]): row for row in manifest_rows
+    }
 
     toolchain = {
         "python": "3.14.6",
@@ -185,25 +189,99 @@ def _fixture(tmp_path: Path) -> tuple[list[Path], Path, Path, Path]:
         receipt_path.write_text(json.dumps(receipt))
         receipts.append(receipt_path)
 
-    timings = tmp_path / "automated-timings.json"
-    timings.write_text(
+    python_compat = tmp_path / "python-3.14-compatibility-receipt.json"
+    python_toolchain = {
+        "python": "3.14.6",
+        "uv": "0.11.25",
+        "node": "not-used",
+        "npm": "not-used",
+        "bun": "not-used",
+        "typescript": "not-used",
+    }
+    python_compat.write_text(
         json.dumps(
             {
-                path_name: {
-                    "coldSetupToOutputMs": 10_000,
-                    "warmRunMs": 500,
-                    "toolchain": toolchain,
-                }
-                for path_name in ("python", "npm", "bun")
+                "schemaVersion": 1,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifactSha256": {
+                    name: row["sha256"]
+                    for name, row in artifacts_by_name.items()
+                    if name.endswith((".whl", ".tar.gz"))
+                },
+                "runtime": {
+                    "implementation": "CPython",
+                    "version": "3.14.6",
+                    "executable": "/opt/python/3.14/bin/python",
+                },
+                "artifacts": {
+                    "wheel": "/artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl",
+                    "sdist": "/artifacts/kaji_sdk-0.2.0b1.tar.gz",
+                },
+                "githubPackageProofs": {"wheel": {}, "sdist": {}},
+                "timings": {
+                    "wheel": {"coldSetupToOutputMs": 10_001, "warmRunMs": 501},
+                    "sdist": {"coldSetupToOutputMs": 10_002, "warmRunMs": 502},
+                },
+                "conclusion": "passed",
+                "failureCode": None,
+                "workflowRun": WORKFLOW_RUN,
+                "workflowRunAttempt": workflow_run_attempt,
+                "toolchain": python_toolchain,
             }
         )
     )
-    return receipts, timings, manifest, artifacts_dir
+    node_compat = tmp_path / "node-24-compatibility-receipt.json"
+    node_toolchain = {
+        "python": "not-used",
+        "uv": "not-used",
+        "node": "v24.4.1",
+        "npm": "11.4.2",
+        "bun": "1.3.11",
+        "typescript": "5.7.3 and 6.0.3",
+    }
+    node_compat.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "commit": commit,
+                "releaseManifestSha256": manifest_hash,
+                "artifactSha256": {
+                    "kaji-sdk-0.2.0-beta.2.tgz": artifacts_by_name[
+                        "kaji-sdk-0.2.0-beta.2.tgz"
+                    ]["sha256"]
+                },
+                "runtime": {"version": "v24.4.1"},
+                "artifacts": {
+                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.2.tgz",
+                    "package": "/opt/node/24/node_modules/kaji-sdk",
+                },
+                "githubPackageProofs": {
+                    manager: {
+                        "typescriptDeclarationChecks": {
+                            "typescript57": {"version": "5.7.3"},
+                            "typescriptCurrent": {"version": "6.0.3"},
+                        }
+                    }
+                    for manager in ("npm", "bun")
+                },
+                "timings": {
+                    "npm": {"coldSetupToOutputMs": 20_001, "warmRunMs": 601},
+                    "bun": {"coldSetupToOutputMs": 20_002, "warmRunMs": 602},
+                },
+                "conclusion": "passed",
+                "failureCode": None,
+                "workflowRun": WORKFLOW_RUN,
+                "workflowRunAttempt": workflow_run_attempt,
+                "toolchain": node_toolchain,
+            }
+        )
+    )
+    return receipts, python_compat, node_compat, manifest, artifacts_dir
 
 
 def test_checked_in_tthw_input_templates_have_exact_composer_shapes() -> None:
     participant = json.loads(PARTICIPANT_TEMPLATE.read_text())
-    timings = json.loads(TIMINGS_TEMPLATE.read_text())
 
     assert [step["name"] for step in participant["steps"]] == [
         "artifact-install",
@@ -224,25 +302,29 @@ def test_checked_in_tthw_input_templates_have_exact_composer_shapes() -> None:
         "replace-with-generated-release-manifest-sha256"
     )
     assert set(participant["artifact"]) == {"name", "package", "version", "sha256"}
-    assert set(timings) == {"python", "npm", "bun"}
-    assert all(timing["coldSetupToOutputMs"] == -1 for timing in timings.values())
 
 
 def test_composer_derives_identity_totals_summary_and_deterministic_order(
     tmp_path: Path,
 ) -> None:
     module = _load_script(COMPOSER)
-    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
 
     document = module.compose(
         participant_receipts=list(reversed(receipts)),
-        automated_timings=timings,
+        python_compatibility_receipt=python_compat,
+        node_compatibility_receipt=node_compat,
+        expected_workflow_run=WORKFLOW_RUN,
+        expected_workflow_run_attempt=1,
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
     repeated = module.compose(
         participant_receipts=receipts,
-        automated_timings=timings,
+        python_compatibility_receipt=python_compat,
+        node_compatibility_receipt=node_compat,
+        expected_workflow_run=WORKFLOW_RUN,
+        expected_workflow_run_attempt=1,
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
@@ -258,12 +340,139 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     assert document["humanRuns"][0]["artifact"]["name"] == (
         "kaji_sdk-0.2.0b1-py3-none-any.whl"
     )
+
+
+def test_composer_accepts_current_rerun_compatibility_receipts(
+    tmp_path: Path,
+) -> None:
+    module = _load_script(COMPOSER)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(
+        tmp_path,
+        workflow_run_attempt=2,
+    )
+
+    document = module.compose(
+        participant_receipts=receipts,
+        python_compatibility_receipt=python_compat,
+        node_compatibility_receipt=node_compat,
+        expected_workflow_run=WORKFLOW_RUN,
+        expected_workflow_run_attempt=2,
+        release_manifest=manifest,
+        artifacts_dir=artifacts,
+    )
+
+    assert document["automatedTimings"]["python"]["warmRunMs"] == 501
+    assert document["automatedTimings"] == {
+        "python": {
+            "coldSetupToOutputMs": 10_001,
+            "warmRunMs": 501,
+            "toolchain": json.loads(python_compat.read_text())["toolchain"],
+        },
+        "npm": {
+            "coldSetupToOutputMs": 20_001,
+            "warmRunMs": 601,
+            "toolchain": json.loads(node_compat.read_text())["toolchain"],
+        },
+        "bun": {
+            "coldSetupToOutputMs": 20_002,
+            "warmRunMs": 602,
+            "toolchain": json.loads(node_compat.read_text())["toolchain"],
+        },
+    }
     assert document["summary"] == {
         "noKeyMedianMs": 9_000,
         "noKeyMaxMs": 15_000,
         "echoMedianMs": 15_000,
         "echoMaxMs": 25_000,
     }
+
+
+def test_composer_cli_requires_canonical_compatibility_receipts() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(COMPOSER), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert "--python-compatibility-receipt" in completed.stdout
+    assert "--node-compatibility-receipt" in completed.stdout
+    assert "--expected-workflow-run" in completed.stdout
+    assert "--expected-workflow-run-attempt" in completed.stdout
+    assert "--automated-timings" not in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("receipt_name", "path", "value"),
+    [
+        ("python", ("conclusion",), "failed"),
+        ("python", ("failureCode",), "compatibility_not_completed"),
+        ("python", ("commit",), "b" * 40),
+        ("node", ("releaseManifestSha256",), "c" * 64),
+        (
+            "python",
+            ("artifactSha256", "kaji_sdk-0.2.0b1-py3-none-any.whl"),
+            "d" * 64,
+        ),
+        ("python", ("runtime", "version"), "3.13.9"),
+        ("node", ("runtime", "version"), "v22.14.0"),
+        ("node", ("workflowRunAttempt",), 2),
+        (
+            "node",
+            ("workflowRun",),
+            "https://github.com/enkyuan/alloy/actions/runs/999",
+        ),
+        (
+            "node",
+            ("timings", "npm"),
+            {
+                "coldSetupToOutputMs": 20_001,
+                "warmRunMs": 601,
+                "untrusted": 1,
+            },
+        ),
+        (
+            "node",
+            ("toolchain",),
+            {
+                "python": "not-used",
+                "uv": "not-used",
+                "node": "v24.4.1",
+                "npm": "11.4.2",
+                "bun": "1.3.12",
+                "typescript": "5.7.3 and 6.0.3",
+            },
+        ),
+    ],
+)
+def test_composer_rejects_noncanonical_compatibility_receipts(
+    tmp_path: Path,
+    receipt_name: str,
+    path: tuple[str, ...],
+    value: object,
+) -> None:
+    module = _load_script(COMPOSER)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
+    target = python_compat if receipt_name == "python" else node_compat
+    document = json.loads(target.read_text())
+    owner = document
+    for part in path[:-1]:
+        owner = owner[part]
+    owner[path[-1]] = value
+    target.write_text(json.dumps(document))
+
+    with pytest.raises(module.validation.EvidenceError):
+        module.compose(
+            participant_receipts=receipts,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
+            release_manifest=manifest,
+            artifacts_dir=artifacts,
+        )
 
 
 def test_atomic_writer_replaces_with_owner_only_secret_file(tmp_path: Path) -> None:
@@ -282,7 +491,7 @@ def test_composer_fails_before_replacing_output_on_invalid_receipt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _load_script(COMPOSER)
-    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
     invalid = json.loads(receipts[0].read_text())
     invalid["confusion"] = [
         {"summary": "API_KEY=not-redacted", "remediation": "redact it"}
@@ -295,7 +504,10 @@ def test_composer_fails_before_replacing_output_on_invalid_receipt(
         "parse_args",
         lambda: module.argparse.Namespace(
             participant=receipts,
-            automated_timings=timings,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
             release_manifest=manifest,
             artifacts_dir=artifacts,
             output=output,
@@ -318,7 +530,7 @@ def test_template_generation_binds_selected_candidate_artifact(
     tmp_path: Path, path_name: str, artifact_name: str
 ) -> None:
     module = _load_script(COMPOSER)
-    _receipts, _timings, manifest, artifacts = _fixture(tmp_path)
+    _receipts, _python_compat, _node_compat, manifest, artifacts = _fixture(tmp_path)
 
     participant = module.participant_template(
         path_name=path_name,
@@ -338,7 +550,7 @@ def test_template_generation_binds_selected_candidate_artifact(
 def test_template_generation_cli_writes_candidate_bound_skeleton(
     tmp_path: Path,
 ) -> None:
-    _receipts, _timings, manifest, artifacts = _fixture(tmp_path)
+    _receipts, _python_compat, _node_compat, manifest, artifacts = _fixture(tmp_path)
     output = tmp_path / "participant.json"
 
     completed = subprocess.run(
@@ -370,7 +582,7 @@ def test_composer_rejects_stale_receipt_instead_of_injecting_candidate_identity(
     tmp_path: Path,
 ) -> None:
     module = _load_script(COMPOSER)
-    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
     stale = json.loads(receipts[0].read_text())
     stale["commit"] = "b" * 40
     receipts[0].write_text(json.dumps(stale))
@@ -378,7 +590,10 @@ def test_composer_rejects_stale_receipt_instead_of_injecting_candidate_identity(
     with pytest.raises(module.validation.EvidenceError, match="/humanRuns/0/commit"):
         module.compose(
             participant_receipts=receipts,
-            automated_timings=timings,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
             release_manifest=manifest,
             artifacts_dir=artifacts,
         )
@@ -386,7 +601,7 @@ def test_composer_rejects_stale_receipt_instead_of_injecting_candidate_identity(
 
 def test_composer_rejects_python_receipt_bound_to_sdist(tmp_path: Path) -> None:
     module = _load_script(COMPOSER)
-    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
     receipt = json.loads(receipts[0].read_text())
     sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
     receipt["artifact"] = {
@@ -402,7 +617,10 @@ def test_composer_rejects_python_receipt_bound_to_sdist(tmp_path: Path) -> None:
     ):
         module.compose(
             participant_receipts=receipts,
-            automated_timings=timings,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
             release_manifest=manifest,
             artifacts_dir=artifacts,
         )
@@ -412,7 +630,7 @@ def test_composer_rechecks_retained_artifacts_after_participant_collection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     module = _load_script(COMPOSER)
-    receipts, timings, manifest, artifacts = _fixture(tmp_path)
+    receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
     original = module._participant_receipt
     mutated = False
 
@@ -430,7 +648,10 @@ def test_composer_rechecks_retained_artifacts_after_participant_collection(
     ):
         module.compose(
             participant_receipts=receipts,
-            automated_timings=timings,
+            python_compatibility_receipt=python_compat,
+            node_compatibility_receipt=node_compat,
+            expected_workflow_run=WORKFLOW_RUN,
+            expected_workflow_run_attempt=1,
             release_manifest=manifest,
             artifacts_dir=artifacts,
         )

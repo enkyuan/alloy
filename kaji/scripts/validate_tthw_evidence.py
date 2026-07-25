@@ -28,6 +28,29 @@ PATH_ARTIFACTS = {
     "npm": "kaji-sdk-0.2.0-beta.2.tgz",
     "bun": "kaji-sdk-0.2.0-beta.2.tgz",
 }
+COMPATIBILITY_RECEIPT_FIELDS = {
+    "artifactSha256",
+    "artifacts",
+    "commit",
+    "conclusion",
+    "failureCode",
+    "githubPackageProofs",
+    "releaseManifestSha256",
+    "runtime",
+    "schemaVersion",
+    "timings",
+    "toolchain",
+    "workflowRun",
+    "workflowRunAttempt",
+}
+TOOLCHAIN_FIELDS = {"python", "uv", "node", "npm", "bun", "typescript"}
+TIMING_FIELDS = {"coldSetupToOutputMs", "warmRunMs"}
+MAX_SAFE_INTEGER = 9_007_199_254_740_991
+WORKFLOW_RUN = re.compile(r"https?://.+/actions/runs/[1-9][0-9]*")
+SEMVER = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?"
+)
 MAX_RELEASE_MANIFEST_BYTES = 1024 * 1024
 STEP_ORDER = (
     "artifact-install",
@@ -190,6 +213,299 @@ def release_identity(
     return commit, manifest_hash, rows
 
 
+def _compatibility_timing(value: Any, location: str) -> dict[str, int]:
+    if not isinstance(value, dict) or set(value) != TIMING_FIELDS:
+        fail(location, "compatibility timing shape is invalid")
+    for field in TIMING_FIELDS:
+        duration = value[field]
+        if type(duration) is not int or duration < 0 or duration > MAX_SAFE_INTEGER:
+            fail(f"{location}/{field}", "compatibility timing is invalid")
+    return {
+        "coldSetupToOutputMs": value["coldSetupToOutputMs"],
+        "warmRunMs": value["warmRunMs"],
+    }
+
+
+def _compatibility_toolchain(
+    value: Any,
+    *,
+    runtime: str,
+    runtime_version: str,
+    location: str,
+) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != TOOLCHAIN_FIELDS:
+        fail(location, "compatibility toolchain shape is invalid")
+    if any(
+        not isinstance(item, str) or not item or len(item) > 80
+        for item in value.values()
+    ):
+        fail(location, "compatibility toolchain value is invalid")
+    if runtime == "python":
+        if (
+            value["python"] != runtime_version
+            or value["uv"] != "0.11.25"
+            or any(
+                value[field] != "not-used"
+                for field in ("node", "npm", "bun", "typescript")
+            )
+        ):
+            fail(location, "Python compatibility toolchain differs")
+    else:
+        typescript = value["typescript"]
+        current_typescript = (
+            typescript.removeprefix("5.7.3 and ")
+            if typescript.startswith("5.7.3 and ")
+            else ""
+        )
+        if (
+            value["python"] != "not-used"
+            or value["uv"] != "not-used"
+            or value["node"] != runtime_version
+            or SEMVER.fullmatch(value["npm"]) is None
+            or value["bun"] != "1.3.11"
+            or SEMVER.fullmatch(current_typescript) is None
+            or current_typescript == "5.7.3"
+        ):
+            fail(location, "Node compatibility toolchain differs")
+    return {field: value[field] for field in sorted(TOOLCHAIN_FIELDS)}
+
+
+def validate_closed_compatibility_receipt(
+    receipt: dict[str, Any],
+    *,
+    runtime: str,
+    expected_runtime_version: str,
+    commit: str,
+    manifest_hash: str,
+    artifacts_by_name: dict[str, dict[str, Any]],
+    expected_workflow_run: str,
+    expected_workflow_run_attempt: int,
+) -> tuple[dict[str, dict[str, int]], dict[str, str]]:
+    location = f"/compatibility/{runtime}"
+    if set(receipt) != COMPATIBILITY_RECEIPT_FIELDS:
+        fail(location, "compatibility receipt shape is invalid")
+    if (
+        type(receipt.get("schemaVersion")) is not int
+        or receipt.get("schemaVersion") != 1
+        or receipt.get("conclusion") != "passed"
+        or receipt.get("failureCode") is not None
+    ):
+        fail(location, "compatibility receipt did not pass")
+    if receipt.get("commit") != commit:
+        fail(f"{location}/commit", "compatibility commit differs")
+    if receipt.get("releaseManifestSha256") != manifest_hash:
+        fail(
+            f"{location}/releaseManifestSha256",
+            "compatibility release manifest differs",
+        )
+    if (
+        type(receipt.get("workflowRunAttempt")) is not int
+        or receipt.get("workflowRunAttempt") != expected_workflow_run_attempt
+    ):
+        fail(
+            f"{location}/workflowRunAttempt",
+            "compatibility workflow run attempt differs",
+        )
+    if receipt.get("workflowRun") != expected_workflow_run:
+        fail(f"{location}/workflowRun", "compatibility workflow run differs")
+    runtime_value = receipt.get("runtime")
+    artifact_paths = receipt.get("artifacts")
+    proofs = receipt.get("githubPackageProofs")
+    timings = receipt.get("timings")
+    if not isinstance(proofs, dict):
+        fail(f"{location}/githubPackageProofs", "compatibility proofs are invalid")
+
+    if runtime == "python":
+        expected_names = (
+            "kaji_sdk-0.2.0b1-py3-none-any.whl",
+            "kaji_sdk-0.2.0b1.tar.gz",
+        )
+        if (
+            not isinstance(runtime_value, dict)
+            or set(runtime_value) != {"implementation", "version", "executable"}
+            or runtime_value.get("implementation") != "CPython"
+            or not isinstance(runtime_value.get("version"), str)
+            or re.fullmatch(
+                rf"{re.escape(expected_runtime_version)}[.][0-9]+",
+                runtime_value["version"],
+            )
+            is None
+            or not isinstance(runtime_value.get("executable"), str)
+            or not runtime_value["executable"]
+        ):
+            fail(
+                f"{location}/runtime",
+                f"Python {expected_runtime_version} runtime is required",
+            )
+        if (
+            not isinstance(artifact_paths, dict)
+            or set(artifact_paths) != {"wheel", "sdist"}
+            or Path(str(artifact_paths["wheel"])).name != expected_names[0]
+            or Path(str(artifact_paths["sdist"])).name != expected_names[1]
+        ):
+            fail(f"{location}/artifacts", "Python compatibility artifacts differ")
+        if set(proofs) != {"wheel", "sdist"}:
+            fail(
+                f"{location}/githubPackageProofs",
+                "Python compatibility proofs are invalid",
+            )
+        if not isinstance(timings, dict) or set(timings) != {"wheel", "sdist"}:
+            fail(f"{location}/timings", "Python compatibility timings are invalid")
+        selected_timings = {
+            name: _compatibility_timing(timings[name], f"{location}/timings/{name}")
+            for name in ("wheel", "sdist")
+        }
+    else:
+        expected_names = ("kaji-sdk-0.2.0-beta.2.tgz",)
+        if (
+            not isinstance(runtime_value, dict)
+            or set(runtime_value) != {"version"}
+            or not isinstance(runtime_value.get("version"), str)
+            or re.fullmatch(
+                rf"v{re.escape(expected_runtime_version)}[.][0-9]+[.][0-9]+",
+                runtime_value["version"],
+            )
+            is None
+        ):
+            fail(
+                f"{location}/runtime",
+                f"Node {expected_runtime_version} runtime is required",
+            )
+        if (
+            not isinstance(artifact_paths, dict)
+            or set(artifact_paths) != {"tarball", "package"}
+            or Path(str(artifact_paths["tarball"])).name != expected_names[0]
+            or not isinstance(artifact_paths["package"], str)
+            or not artifact_paths["package"]
+        ):
+            fail(f"{location}/artifacts", "Node compatibility artifacts differ")
+        if (
+            set(proofs) != {"npm", "bun"}
+            or not isinstance(proofs["npm"], dict)
+            or proofs["npm"] != proofs["bun"]
+        ):
+            fail(
+                f"{location}/githubPackageProofs",
+                "Node compatibility proofs are invalid",
+            )
+        if not isinstance(timings, dict) or set(timings) != {"npm", "bun"}:
+            fail(f"{location}/timings", "Node compatibility timings are invalid")
+        selected_timings = {
+            name: _compatibility_timing(timings[name], f"{location}/timings/{name}")
+            for name in ("npm", "bun")
+        }
+
+    expected_hashes = {
+        name: artifacts_by_name[name]["sha256"] for name in expected_names
+    }
+    if receipt.get("artifactSha256") != expected_hashes:
+        fail(f"{location}/artifactSha256", "compatibility artifact hashes differ")
+    runtime_version = runtime_value["version"]
+    toolchain = _compatibility_toolchain(
+        receipt.get("toolchain"),
+        runtime=runtime,
+        runtime_version=runtime_version,
+        location=f"{location}/toolchain",
+    )
+    if runtime == "node":
+        declarations = proofs["npm"].get("typescriptDeclarationChecks")
+        typescript_57 = (
+            declarations.get("typescript57") if isinstance(declarations, dict) else None
+        )
+        typescript_current = (
+            declarations.get("typescriptCurrent")
+            if isinstance(declarations, dict)
+            else None
+        )
+        if (
+            not isinstance(typescript_57, dict)
+            or not isinstance(typescript_current, dict)
+            or toolchain["typescript"]
+            != (
+                f"{typescript_57.get('version')} and "
+                f"{typescript_current.get('version')}"
+            )
+        ):
+            fail(
+                f"{location}/toolchain/typescript",
+                "TypeScript toolchain differs from installed proof",
+            )
+    return selected_timings, toolchain
+
+
+def automated_timings_from_compatibility_receipts(
+    python_receipt: dict[str, Any],
+    node_receipt: dict[str, Any],
+    *,
+    commit: str,
+    manifest_hash: str,
+    artifacts: list[dict[str, Any]],
+    expected_workflow_run: str,
+    expected_workflow_run_attempt: int,
+) -> dict[str, dict[str, Any]]:
+    if WORKFLOW_RUN.fullmatch(expected_workflow_run) is None:
+        fail("/compatibility/workflowRun", "expected workflow run is invalid")
+    if (
+        type(expected_workflow_run_attempt) is not int
+        or expected_workflow_run_attempt < 1
+        or expected_workflow_run_attempt > MAX_SAFE_INTEGER
+    ):
+        fail(
+            "/compatibility/workflowRunAttempt",
+            "expected workflow run attempt is invalid",
+        )
+    artifacts_by_name = {row["name"]: row for row in artifacts}
+    python_timings, python_toolchain = validate_closed_compatibility_receipt(
+        python_receipt,
+        runtime="python",
+        expected_runtime_version="3.14",
+        commit=commit,
+        manifest_hash=manifest_hash,
+        artifacts_by_name=artifacts_by_name,
+        expected_workflow_run=expected_workflow_run,
+        expected_workflow_run_attempt=expected_workflow_run_attempt,
+    )
+    node_timings, node_toolchain = validate_closed_compatibility_receipt(
+        node_receipt,
+        runtime="node",
+        expected_runtime_version="24",
+        commit=commit,
+        manifest_hash=manifest_hash,
+        artifacts_by_name=artifacts_by_name,
+        expected_workflow_run=expected_workflow_run,
+        expected_workflow_run_attempt=expected_workflow_run_attempt,
+    )
+    return {
+        "python": {**python_timings["wheel"], "toolchain": python_toolchain},
+        "npm": {**node_timings["npm"], "toolchain": node_toolchain},
+        "bun": {**node_timings["bun"], "toolchain": node_toolchain},
+    }
+
+
+def validate_compatibility_receipts(
+    document: dict[str, Any],
+    python_receipt: dict[str, Any],
+    node_receipt: dict[str, Any],
+    *,
+    expected_workflow_run: str,
+    expected_workflow_run_attempt: int,
+) -> None:
+    expected = automated_timings_from_compatibility_receipts(
+        python_receipt,
+        node_receipt,
+        commit=document["commit"],
+        manifest_hash=document["releaseManifestSha256"],
+        artifacts=document["artifacts"],
+        expected_workflow_run=expected_workflow_run,
+        expected_workflow_run_attempt=expected_workflow_run_attempt,
+    )
+    if document.get("automatedTimings") != expected:
+        fail(
+            "/automatedTimings",
+            "must be derived from canonical compatibility receipts",
+        )
+
+
 def validate_document(document: dict[str, Any]) -> dict[str, int]:
     schema = load_json(SCHEMA, "TTHW schema")
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
@@ -302,6 +618,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--release-manifest", type=Path, required=True)
     parser.add_argument("--artifacts-dir", type=Path, required=True)
+    parser.add_argument("--python-compatibility-receipt", type=Path, required=True)
+    parser.add_argument("--node-compatibility-receipt", type=Path, required=True)
+    parser.add_argument("--expected-workflow-run", required=True)
+    parser.add_argument(
+        "--expected-workflow-run-attempt",
+        type=int,
+        required=True,
+    )
     return parser.parse_args()
 
 
@@ -311,6 +635,19 @@ def main() -> int:
         document = load_json(args.evidence, "TTHW evidence")
         summary = validate_document(document)
         validate_bindings(document, args.release_manifest, args.artifacts_dir)
+        validate_compatibility_receipts(
+            document,
+            load_json(
+                args.python_compatibility_receipt,
+                "Python 3.14 compatibility receipt",
+            ),
+            load_json(
+                args.node_compatibility_receipt,
+                "Node 24 compatibility receipt",
+            ),
+            expected_workflow_run=args.expected_workflow_run,
+            expected_workflow_run_attempt=args.expected_workflow_run_attempt,
+        )
     except EvidenceError as error:
         print(f"FAIL: {error}")
         return 1
