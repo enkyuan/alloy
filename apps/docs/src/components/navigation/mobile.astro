@@ -1,0 +1,68 @@
+---
+import KajiWordmark from "@/components/site/wordmark.astro";
+import { navigation } from "@/data/navigation";
+import { Menu, X } from "reicon";
+
+interface Props {
+  activeHref: string;
+}
+
+const { activeHref: currentHref } = Astro.props;
+const menuIcon = Menu.toSvg({
+  size: 16,
+  color: "currentColor",
+  className: "mobile-nav-menu",
+});
+const closeIcon = X.toSvg({
+  size: 16,
+  color: "currentColor",
+  className: "mobile-nav-close",
+});
+---
+
+<nav class="mobile-nav" aria-label="Mobile documentation">
+  <div class="mobile-nav-header">
+    <KajiWordmark current={currentHref === "/"} />
+    <button
+      class="mobile-nav-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="mobile-navigation-links"
+      data-mobile-nav-toggle
+    >
+      <span class="sr-only">Toggle navigation</span>
+      <span class="mobile-nav-icon" aria-hidden="true">
+        <Fragment set:html={menuIcon} />
+        <Fragment set:html={closeIcon} />
+      </span>
+    </button>
+  </div>
+
+  <div class="mobile-nav-links" id="mobile-navigation-links" data-mobile-nav-links>
+    <div class="mobile-nav-links-inner">
+      {
+        navigation.map((section) => (
+          <>
+            {section.label && <span class="mobile-nav-section">{section.label}</span>}
+            {section.items.map((item) => (
+              <a
+                class:list={["mobile-nav-link", { active: currentHref === item.href }]}
+                href={item.href}
+                aria-current={currentHref === item.href ? "page" : undefined}
+              >
+                {item.label}
+                {
+                  item.status === "wip" && (
+                    <sup class="nav-wip" aria-label="work in progress">
+                      WIP
+                    </sup>
+                  )
+                }
+              </a>
+            ))}
+          </>
+        ))
+      }
+    </div>
+  </div>
+</nav>

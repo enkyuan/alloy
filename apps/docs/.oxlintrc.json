@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "import", "nextjs"],
+  "plugins": ["typescript", "import"],
   "categories": {},
   "rules": {
     "max-lines": [
@@ -15,13 +15,5 @@
   "env": {
     "builtin": true
   },
-  "settings": {
-    "react": {
-      "version": "19.2.7"
-    },
-    "tailwindcss": {
-      "callees": ["clsx", "cva", "cn"]
-    }
-  },
-  "ignorePatterns": ["node_modules/", "dist/"]
+  "ignorePatterns": ["node_modules/", "dist/", ".astro/", ".next/", ".source/"]
 }

@@ -1,0 +1,193 @@
+---
+import {
+  countDiagramTokens,
+  DIAGRAM_TOKEN_STEP_MS,
+  diagramConnectorMarkup,
+  diagramLayer,
+  diagramTokenMarkup,
+} from "@/lib/diagram";
+
+interface DiagramRow {
+  text: string;
+  frameStage?: number;
+  copyStage?: number;
+  connectorStage?: number;
+}
+
+interface Props {
+  id: string;
+  label: string;
+  rows: DiagramRow[];
+  stepMs?: number;
+}
+
+const { id, label, rows, stepMs = 240 } = Astro.props;
+const hasContent = (text: string) => text.trim().length > 0;
+const preparedRows = rows.map((row) => ({
+  ...row,
+  frame: diagramLayer(row.text, true),
+  copy: diagramLayer(row.text, false),
+}));
+const maxStage = Math.max(
+  0,
+  ...rows.flatMap(({ frameStage, copyStage, connectorStage }) =>
+    [frameStage, copyStage, connectorStage].filter(
+      (stage): stage is number => stage !== undefined,
+    ),
+  ),
+);
+const maxTokens = Math.max(0, ...preparedRows.map(({ copy }) => countDiagramTokens(copy)));
+const duration = 180 + maxStage * stepMs + maxTokens * DIAGRAM_TOKEN_STEP_MS + 620;
+const captionId = `${id}-caption`;
+---
+
+<figure
+  class="ascii-diagram"
+  aria-labelledby={captionId}
+  data-kaji-once={id}
+  data-kaji-duration={duration}
+  style={`--diagram-step: ${stepMs}ms; --diagram-token-step: ${DIAGRAM_TOKEN_STEP_MS}ms`}
+>
+  <div class="diagram-viewport">
+    <div class="diagram-canvas" aria-hidden="true">
+      {
+        preparedRows.map((row) => (
+          <span class="diagram-row">
+            <span class="diagram-measure">{row.text}</span>
+            {row.connectorStage !== undefined ? (
+              <span
+                class="diagram-layer diagram-connector"
+                style={`--diagram-stage: ${row.connectorStage}`}
+                set:html={diagramConnectorMarkup(row.text)}
+              />
+            ) : (
+              <>
+                {row.frameStage !== undefined && hasContent(row.frame) && (
+                  <span
+                    class="diagram-layer diagram-frame"
+                    style={`--diagram-stage: ${row.frameStage}`}
+                  >
+                    {row.frame}
+                  </span>
+                )}
+                {row.copyStage !== undefined && hasContent(row.copy) && (
+                  <span
+                    class="diagram-layer diagram-copy"
+                    style={`--diagram-stage: ${row.copyStage}; --diagram-token-base: calc(400ms + var(--diagram-stage) * var(--diagram-step))`}
+                    set:html={diagramTokenMarkup(row.copy)}
+                  />
+                )}
+              </>
+            )}
+          </span>
+        ))
+      }
+    </div>
+  </div>
+  <figcaption id={captionId} class="sr-only">{label}</figcaption>
+</figure>
+
+<style>
+  .ascii-diagram {
+    width: 100%;
+    margin: 1.75rem 0 2rem;
+    color: var(--sumi-iro);
+  }
+
+  .diagram-viewport {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0 0.625rem;
+    scrollbar-color: var(--shironezumi-iro) transparent;
+    scrollbar-width: thin;
+  }
+
+  .diagram-canvas {
+    width: max-content;
+    margin: 0 auto;
+    color: var(--sumi-iro);
+    font-family: var(--font-code);
+    font-size: clamp(0.45rem, 1.35vw, 0.625rem);
+    font-variant-ligatures: none;
+    line-height: 1.55;
+  }
+
+  .diagram-row {
+    display: grid;
+    grid-template-areas: "layer";
+    width: 100%;
+    white-space: pre;
+  }
+
+  .diagram-measure,
+  .diagram-layer {
+    grid-area: layer;
+  }
+
+  .diagram-measure {
+    visibility: hidden;
+  }
+
+  .diagram-layer {
+    display: block;
+    color: var(--sumi-iro);
+  }
+
+  :global(html[data-kaji-motion])
+    .ascii-diagram:not([data-kaji-ready])
+    .diagram-layer {
+    opacity: 0;
+  }
+
+  .ascii-diagram[data-kaji-animate] .diagram-frame {
+    animation: diagram-frame-reveal 520ms
+      calc(120ms + var(--diagram-stage) * var(--diagram-step)) var(--ease-out) both;
+  }
+
+  .ascii-diagram[data-kaji-animate] .diagram-copy {
+    opacity: 1;
+  }
+
+  .ascii-diagram[data-kaji-animate] .diagram-connector {
+    animation: diagram-connector-reveal 400ms
+      calc(160ms + var(--diagram-stage) * var(--diagram-step)) var(--ease-out) both;
+  }
+
+  .diagram-connector :global(.diagram-arrow) {
+    display: inline-block;
+    width: 1ch;
+    text-align: center;
+  }
+
+  @keyframes diagram-frame-reveal {
+    from {
+      opacity: 0;
+      clip-path: inset(0 100% 0 0);
+    }
+
+    to {
+      opacity: 1;
+      clip-path: inset(0);
+    }
+  }
+
+  @keyframes diagram-connector-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(-0.15em);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ascii-diagram[data-kaji-animate] .diagram-frame,
+    .ascii-diagram[data-kaji-animate] .diagram-connector {
+      animation: none;
+    }
+  }
+</style>

@@ -24,7 +24,7 @@ TypeScript project.
 | [`kaji/serve`](kaji/serve)           | Kaji         | `kaji-serve`: experimental REST + Soniox STT edge           | Python, FastAPI, Soniox           |
 | [`kaji/ts`](kaji/ts)                 | Kaji         | `kaji-sdk`: TypeScript runtime                             | TypeScript                        |
 | [`apps/cli`](apps/cli)               | Kaji tooling | `@kaji/cli`: cross-language scaffolding and code generation | Bun, TypeScript                   |
-| [`apps/docs`](apps/docs)             | Kaji tooling | `@kaji/docs`: public documentation site                     | Next.js, Fumadocs                 |
+| [`apps/docs`](apps/docs)             | Kaji tooling | `@kaji/docs`: public documentation site                     | Astro, MDX                        |
 | [`packages/ui`](packages/ui)         | Shared       | `@kaji/ui`: shared UI and development helpers               | React, TypeScript                 |
 | [`packages/shared`](packages/shared) | Shared       | `@kaji/shared`: workspace TypeScript configurations         | TypeScript                        |
 

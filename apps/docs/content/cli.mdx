@@ -1,80 +1,63 @@
 ---
 title: CLI
-description: Choose the Python SDK CLI, the embedded kaji-sdk CLI, or the standalone cross-language @kaji/cli.
+description: Use the CLI embedded in the TypeScript SDK to scaffold projects, copy integrations, and replay event logs.
 ---
 
-Kaji has three binaries named `kaji`. They are separate packages with separate
-command sets. Install the one that owns the workflow you need, and use its
-`--help` output as the exact flag reference.
+The TypeScript package declares a `kaji` binary, but its npm package is not
+available as of July 25, 2026. Run it from the source checkout. The Python SDK
+and WIP standalone package use the same binary name, but their command sets
+differ.
 
 ## Command surfaces
 
-| Command             | Python `kaji-sdk` distribution | Embedded `kaji-sdk` |         Standalone `@kaji/cli`          |
-| ------------------- | :----------------------------: | :-----------------: | :-------------------------------------: |
-| `init`              |        Python scaffold         | TypeScript scaffold |      Python or TypeScript scaffold      |
-| `add`               |              Yes               |         Yes         |                   No                    |
-| `connect`           |              Yes               |         Yes         |                   No                    |
-| `disconnect`        |              Yes               |         Yes         |                   No                    |
-| `list-integrations` |              Yes               |         Yes         |                   No                    |
-| `replay`            |               No               |         Yes         |                   No                    |
-| `gen`               |          Experimental          |         No          |              Experimental               |
-| `info`              |          Experimental          |         No          |              Experimental               |
-| `secret`            |          Experimental          |         No          |              Experimental               |
-| `doctor`            |          Experimental          |         No          |              Experimental               |
-| `upgrade`           |          Experimental          |         No          |              Experimental               |
-| `mcp`               |               No               |         No          | Status only; no server or config writer |
+| Command             | TypeScript `kaji-sdk` | Python `kaji-sdk` distribution |     Standalone `@kaji/cli`      |
+| ------------------- | :-------------------: | :----------------------------: | :-----------------------------: |
+| `init`              |  TypeScript scaffold  |        Python scaffold         |  Python or TypeScript scaffold  |
+| `add`               |          Yes          |              Yes               |               No                |
+| `connect`           |          Yes          |              Yes               |               No                |
+| `disconnect`        |          Yes          |              Yes               |               No                |
+| `list-integrations` |          Yes          |              Yes               |               No                |
+| `replay`            |          Yes          |               No               |               No                |
+| `gen`               |          No           |   WIP (`experimental` tier)    |    WIP (`experimental` tier)    |
+| `info`              |          No           |   WIP (`experimental` tier)    |    WIP (`experimental` tier)    |
+| `secret`            |          No           |   WIP (`experimental` tier)    |    WIP (`experimental` tier)    |
+| `doctor`            |          No           |   WIP (`experimental` tier)    |    WIP (`experimental` tier)    |
+| `upgrade`           |          No           |   WIP (`experimental` tier)    |    WIP (`experimental` tier)    |
+| `mcp`               |          No           |               No               | WIP; no server or config writer |
 
-## Python SDK CLI
+Use the selected package's `--help` output as the exact flag reference.
 
-`pip install 'kaji-sdk==0.2.0b1'` installs the Python SDK and its `kaji` CLI. It scaffolds Python
-projects, generates Python or TypeScript OpenAPI handlers, and manages the
-packaged integration registry.
+## TypeScript SDK CLI
 
-```bash
-kaji init ./my-agent --provider mock --yes
-kaji gen --spec openapi.yaml --out tools/ --lang python
-kaji list-integrations
-kaji add echo --out ./integrations
-kaji add github --out ./integrations --allow-experimental
-kaji info --json
-kaji doctor
-```
-
-`init` takes the destination as a positional path. It writes `agent.py` and
-`.env.example`. Use `--force` to overwrite. `add` copies integration source so
-the application owns it; inspect the manifest's risk and auth requirements
-before enabling the copied tools. `connect` and `disconnect` manage grants only
-for integrations whose manifest declares OAuth; no such integration is bundled
-in the current catalog.
-
-## Embedded TypeScript SDK CLI
-
-Installing `kaji-sdk` exposes a small CLI for the packaged TypeScript registry
-and replay tooling. It is not the standalone scaffold/diagnostics package.
+From the repository root, invoke the embedded CLI source to scaffold TypeScript
+projects, manage the packaged registry, and render stored event logs:
 
 ```bash
-kaji init ./my-agent --provider mock --yes
-kaji list-integrations
-kaji add echo --out ./integrations
-kaji add github --out ./integrations --allow-experimental
-kaji connect <oauth-integration> --principal <stable-host-principal-id>
-kaji disconnect <oauth-integration> --principal <stable-host-principal-id>
-kaji replay ./session.jsonl --format summary
+bun kaji/ts/src/cli/bin.ts init ./my-agent --provider mock --yes
+bun kaji/ts/src/cli/bin.ts list-integrations
+bun kaji/ts/src/cli/bin.ts add echo --out ./integrations/echo
+bun kaji/ts/src/cli/bin.ts add github --out ./integrations/github --allow-experimental
+bun kaji/ts/src/cli/bin.ts connect <oauth-integration> --principal <stable-host-principal-id>
+bun kaji/ts/src/cli/bin.ts disconnect <oauth-integration> --principal <stable-host-principal-id>
+bun kaji/ts/src/cli/bin.ts replay ./session.jsonl --format summary
 ```
 
-The embedded `init` uses the same positional path, provider, `--yes`, and
-`--force` grammar as Python. The removed `--out` alias is rejected for `init`;
-use the positional path. (`add` still uses `--out` for its destination.)
-Generated TypeScript projects pin dotenvx; copy `.env.example` to `.env`, fill
-the selected provider key, and run the generated `start` script.
-Experimental integrations require `--allow-experimental`. The auth commands
-are present for manifest-declared OAuth integrations, but Gmail tools and a
-Gmail manifest are not shipped at this checkpoint. `replay` accepts
-`tree`, `summary`, or `json` output plus optional `--filter`, `--grep`, and
+`init` takes a positional destination and accepts `--provider`, `--yes`, and
+`--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
+destination.
+
+Generated projects pin dotenvx and reference the unpublished
+`kaji-sdk@0.2.0-beta.2` dependency. The scaffold is inspectable, but its
+dependency installation is not runnable from the public registry.
+Experimental-registry integrations require `--allow-experimental`.
+
+`connect` and `disconnect` are available for integrations whose manifest
+declares OAuth. No such integration ships in the 0.2 catalog. `replay`
+supports `tree`, `summary`, and `json`, plus optional `--filter`, `--grep`, and
 `--tail` arguments.
 
-Both embedded SDK CLIs accept global `--no-color` and `--verbose` before the
-command. Successful data uses stdout and diagnostics use stderr.
+The TypeScript SDK CLI accepts global `--no-color` and `--verbose` flags before
+the command. Successful data uses stdout; diagnostics use stderr.
 
 | Exit | Meaning                                                                     |
 | ---: | --------------------------------------------------------------------------- |
@@ -86,27 +69,42 @@ command. Successful data uses stdout and diagnostics use stderr.
 |  `5` | `add --check`: bundle has local modifications or another ownership conflict |
 |  `6` | `add --check`: bundle is demoted and cannot be promoted automatically       |
 
-Codes `3`-`6` classify copied bundle state, primarily for `add --check`; they
-are not generic runtime failures. Replay output is a closed redaction-safe
-projection.
+Codes `3` through `6` classify copied bundle state; they are not generic
+runtime failures. Replay output is a closed, redaction-safe projection.
 
-## Standalone cross-language CLI (source only)
+## Python SDK CLI
 
-`@kaji/cli` is not published yet. Contributors can run its source from this
-repository when they want one scaffold and diagnostic tool for either language:
+The Python distribution is not available from PyPI as of July 25, 2026. From a
+source checkout, its `kaji` CLI scaffolds Python projects, generates Python or
+TypeScript OpenAPI handlers, and manages the Python registry:
 
 ```bash
-bun run --cwd apps/cli dev -- --help
+uv run --project kaji kaji init ./my-agent --provider mock --yes
+uv run --project kaji kaji gen --spec openapi.json --out tools/ --lang python
+uv run --project kaji kaji list-integrations
+uv run --project kaji kaji add echo --out ./integrations
+uv run --project kaji kaji info --json
+uv run --project kaji kaji doctor
 ```
 
-It provides `init`, `gen`, `info`, `secret`, `doctor`, `upgrade`, and `mcp`.
-Its `init` uses `--cwd` and requires an explicit `--lang` for non-interactive
-cross-language scaffolding. The `mcp` command only reports that server support
-is deferred; it does not install a server or write AI-tool configuration.
+Its `init` writes `agent.py` and `.env.example`. The `gen`, `info`, `secret`,
+`doctor`, and `upgrade` commands are WIP; their machine contract tier is
+`experimental`.
 
-Its repository version is `0.1.0`, but no npm release exists. The standalone
-CLI is outside the SDK beta-core compatibility and publication promise.
+## Standalone cross-language CLI
 
-If it is published later, avoid relying on whichever `kaji` bin wins
-package-manager linking when both npm packages are present. Invoke the intended
-package explicitly or run the embedded SDK binary from its package script.
+`@kaji/cli` is not available from npm as of July 25, 2026. Contributors can run
+its WIP source when evaluating a single scaffold and diagnostic tool for both
+languages:
+
+```bash
+bun apps/cli/src/index.ts --help
+```
+
+Its repository version is `0.1.0`. It provides `init`, `gen`, `info`, `secret`,
+`doctor`, `upgrade`, and `mcp`. The `mcp` command reports that no server is
+available; it does not install a server or write AI-tool configuration.
+
+Avoid relying on whichever `kaji` binary wins package-manager linking when
+multiple Kaji packages are installed. Invoke the intended package from a
+package script or with an explicit package runner.

@@ -1,0 +1,31 @@
+---
+import { adjacentDocs } from "@/lib/docs";
+
+interface Props {
+  currentHref: string;
+}
+
+const { currentHref } = Astro.props;
+const { previous, next } = adjacentDocs(currentHref);
+---
+
+{
+  (previous || next) && (
+    <nav class="doc-pagination" aria-label="Documentation pages">
+      {previous ? (
+        <a class="doc-pagination-link previous" href={previous.href}>
+          <span>Previous</span>
+          {previous.label}
+        </a>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <a class="doc-pagination-link next" href={next.href}>
+          <span>Next</span>
+          {next.label}
+        </a>
+      )}
+    </nav>
+  )
+}

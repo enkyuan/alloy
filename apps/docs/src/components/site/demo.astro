@@ -1,0 +1,279 @@
+---
+import {
+  countDiagramTokens,
+  DIAGRAM_TOKEN_STEP_MS,
+  diagramTokenMarkup,
+} from "@/lib/diagram";
+
+const glyph = {
+  horizontal: "\u2500",
+  vertical: "\u2502",
+  topLeft: "\u250c",
+  topRight: "\u2510",
+  bottomLeft: "\u2514",
+  bottomRight: "\u2518",
+  teeDown: "\u252c",
+  arrowDown: "\u25bc",
+} as const;
+
+const innerWidth = 37;
+const leftRail = Math.floor(innerWidth / 2);
+const rightRail = innerWidth - leftRail - 1;
+const rail = glyph.horizontal.repeat(innerWidth);
+const topFrame = `${glyph.topLeft}${rail}${glyph.topRight}`;
+const bottomFrame = `${glyph.bottomLeft}${rail}${glyph.bottomRight}`;
+const linkedBottom = `${glyph.bottomLeft}${glyph.horizontal.repeat(leftRail)}${glyph.teeDown}${glyph.horizontal.repeat(rightRail)}${glyph.bottomRight}`;
+
+const runtimeLines = [
+  { text: "runtime.turn(...)", stage: 0, kind: "turn" },
+  { text: glyph.vertical, stage: 1, kind: "connector" },
+  { text: glyph.arrowDown, stage: 1.5, kind: "connector" },
+  { text: "01  session.created", stage: 2, kind: "event" },
+  { text: "02  user.message", stage: 3, kind: "event" },
+  { text: "03  agent.reasoning.started", stage: 4, kind: "event" },
+  { text: "04  tool.call.requested", stage: 5, kind: "event" },
+  { text: "05  tool.call.started", stage: 6, kind: "event" },
+  { text: "06  tool.call.completed", stage: 7, kind: "event" },
+  { text: "07  agent.reasoning.started", stage: 8, kind: "event" },
+  { text: "08  agent.message.delta", stage: 9, kind: "event" },
+  { text: "09  agent.message.completed", stage: 10, kind: "event" },
+] as const;
+
+type RuntimeLine = (typeof runtimeLines)[number];
+
+const [turnLine, ...remainingLines] = runtimeLines;
+const connectorLines = remainingLines.slice(0, 2);
+const eventLines = remainingLines.slice(2);
+const visualStage = ({ stage, kind }: RuntimeLine) => {
+  if (kind === "turn") return 3;
+  if (kind === "connector") return stage + 4;
+  return stage + 8;
+};
+const runtimeStartMs = 120;
+const firstVisitRuntimeStartMs = 1780;
+const runtimeStageStepMs = 160;
+const runtimeTokenOffsetMs = 90;
+const runtimeTokenDurationMs = 260;
+const calculateRuntimeDuration = (startMs: number) =>
+  Math.ceil(
+    Math.max(
+      ...runtimeLines.map((line) => {
+        const tokenCount = line.kind === "connector" ? 1 : countDiagramTokens(line.text);
+        const lineDuration = line.kind === "connector" ? 360 : runtimeTokenDurationMs;
+        return (
+          startMs +
+          runtimeTokenOffsetMs +
+          visualStage(line) * runtimeStageStepMs +
+          Math.max(tokenCount - 1, 0) * DIAGRAM_TOKEN_STEP_MS +
+          lineDuration
+        );
+      }),
+    ) + 80,
+  );
+const runtimeDuration = calculateRuntimeDuration(runtimeStartMs);
+const firstVisitRuntimeDuration = calculateRuntimeDuration(firstVisitRuntimeStartMs);
+const lineMarkup = (line: RuntimeLine) => {
+  const stage = visualStage(line);
+  const copy = line.kind === "connector" ? line.text : diagramTokenMarkup(line.text);
+  return `<span class="runtime-line" data-kind="${line.kind}" style="--runtime-stage: ${stage}; --diagram-token-base: calc(var(--runtime-start) + 90ms + ${stage} * 160ms)">${copy}</span>`;
+};
+const rowMarkup = (line: RuntimeLine) =>
+  `<span class="runtime-row"><span class="runtime-rail" aria-hidden="true">${glyph.vertical} </span>${lineMarkup(line)}<span class="runtime-rail runtime-rail-end" aria-hidden="true"> ${glyph.vertical}</span></span>`;
+const boxMarkup = (
+  rows: readonly RuntimeLine[],
+  bottom: string,
+  frameStage: number,
+  className: string,
+) =>
+  `<span class="runtime-box ${className}" style="--runtime-frame-stage: ${frameStage}"><span class="runtime-frame runtime-frame-top" aria-hidden="true">${topFrame}</span>${rows.map(rowMarkup).join("")}<span class="runtime-frame runtime-frame-bottom" aria-hidden="true">${bottom}</span></span>`;
+const runtimeMarkup = [
+  boxMarkup([turnLine], linkedBottom, 0, "runtime-turn"),
+  `<span class="runtime-connector">${connectorLines.map(lineMarkup).join("")}</span>`,
+  boxMarkup(eventLines, bottomFrame, 7, "runtime-events"),
+].join("");
+---
+
+<figure
+  class="runtime-demo"
+  aria-labelledby="runtime-diagram-caption"
+  data-kaji-once="runtime-demo"
+  data-kaji-duration={runtimeDuration}
+  data-kaji-first-duration={firstVisitRuntimeDuration}
+  style={`--diagram-token-step: ${DIAGRAM_TOKEN_STEP_MS}ms`}
+>
+  <pre class="runtime-diagram" aria-hidden="true" set:html={runtimeMarkup}></pre>
+  <figcaption id="runtime-diagram-caption" class="sr-only">
+    A first tool-enabled turn appends session, user-message, reasoning, tool-call, and completed
+    assistant-message events in sequence.
+  </figcaption>
+</figure>
+
+<style>
+  .runtime-demo {
+    --runtime-start: 120ms;
+
+    width: 100%;
+    margin: 1.5rem 0 0.75rem;
+    overflow: hidden;
+    padding: 1.5rem 0 1.75rem;
+  }
+
+  :global(html[data-kaji-first-visit]) .runtime-demo {
+    --runtime-start: 1780ms;
+  }
+
+  .runtime-diagram {
+    width: 39ch;
+    max-width: 100%;
+    margin: 0 auto;
+    overflow: hidden;
+    color: var(--sumi-iro);
+    background: transparent;
+    font-family: var(--font-code);
+    font-size: clamp(0.35rem, 1.5vw, 0.625rem);
+    font-variant-ligatures: none;
+    line-height: 1.55;
+    white-space: pre;
+  }
+
+  .runtime-diagram :global(.runtime-line) {
+    --runtime-line-color: var(--sumi-iro);
+
+    display: block;
+    overflow: hidden;
+    color: var(--runtime-line-color);
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  :global(html[data-kaji-motion])
+    .runtime-demo:not([data-kaji-ready])
+    .runtime-diagram
+    :global(.runtime-line),
+  :global(html[data-kaji-motion])
+    .runtime-demo:not([data-kaji-ready])
+    .runtime-diagram
+    :global(.runtime-frame),
+  :global(html[data-kaji-motion])
+    .runtime-demo:not([data-kaji-ready])
+    .runtime-diagram
+    :global(.runtime-rail) {
+    opacity: 0;
+  }
+
+  .runtime-demo[data-kaji-animate]
+    .runtime-diagram
+    :global(.runtime-line[data-kind="connector"]) {
+    animation: runtime-line-reveal 360ms
+      calc(var(--runtime-start) + 90ms + var(--runtime-stage) * 160ms) var(--ease-out) both;
+  }
+
+  .runtime-demo[data-kaji-animate]
+    .runtime-diagram
+    :global(.runtime-line:not([data-kind="connector"])) {
+    opacity: 1;
+  }
+
+  .runtime-diagram :global(.runtime-box) {
+    display: block;
+    width: 39ch;
+  }
+
+  .runtime-diagram :global(.runtime-frame) {
+    display: block;
+    color: var(--sumi-iro);
+  }
+
+  .runtime-demo[data-kaji-animate] .runtime-diagram :global(.runtime-frame) {
+    animation: runtime-frame-reveal 420ms
+      calc(var(--runtime-start) + 90ms + var(--runtime-frame-stage) * 160ms) var(--ease-out) both;
+  }
+
+  .runtime-diagram :global(.runtime-row) {
+    display: grid;
+    grid-template-columns: 2ch minmax(0, 35ch) 2ch;
+    width: 39ch;
+  }
+
+  .runtime-diagram :global(.runtime-rail) {
+    display: block;
+    color: var(--sumi-iro);
+  }
+
+  .runtime-demo[data-kaji-animate] .runtime-diagram :global(.runtime-rail) {
+    animation: runtime-rail-reveal 300ms
+      calc(var(--runtime-start) + 170ms + var(--runtime-frame-stage) * 160ms) var(--ease-out)
+      both;
+  }
+
+  .runtime-diagram :global(.runtime-rail-end) {
+    text-align: right;
+  }
+
+  .runtime-diagram :global(.runtime-connector) {
+    display: block;
+  }
+
+  .runtime-diagram :global(.runtime-line[data-kind="connector"]) {
+    --runtime-line-color: var(--sumi-iro);
+
+    display: grid;
+    width: 100%;
+    place-items: center;
+    line-height: 1.25;
+    text-align: center;
+  }
+
+  .runtime-diagram :global(.runtime-line[data-kind="connector"]:last-child) {
+    font-size: 1.25em;
+    line-height: 1;
+  }
+
+  .runtime-diagram :global(.runtime-line[data-kind="turn"]) {
+    --runtime-line-color: var(--kuro-iro);
+  }
+
+  @keyframes runtime-frame-reveal {
+    from {
+      opacity: 0;
+      clip-path: inset(0 100% 0 0);
+    }
+
+    to {
+      opacity: 1;
+      clip-path: inset(0);
+    }
+  }
+
+  @keyframes runtime-rail-reveal {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes runtime-line-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(0.2em);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .runtime-demo[data-kaji-animate]
+      .runtime-diagram
+      :global(.runtime-line[data-kind="connector"]),
+    .runtime-demo[data-kaji-animate] .runtime-diagram :global(.runtime-frame),
+    .runtime-demo[data-kaji-animate] .runtime-diagram :global(.runtime-rail) {
+      animation: none;
+    }
+  }
+</style>

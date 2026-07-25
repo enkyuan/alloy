@@ -1,7 +1,6 @@
 # @kaji/docs
 
-Public documentation for Kaji, built with
-[Fumadocs](https://fumadocs.dev) and Next.js.
+Public documentation for Kaji, built with [Astro](https://astro.build).
 
 ## Local development
 
@@ -17,19 +16,23 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Structure
 
-| Path                      | Purpose                              |
-| ------------------------- | ------------------------------------ |
-| `app/page.tsx`            | Landing page                         |
-| `app/docs/`               | Documentation routes and layout      |
-| `content/`                | MDX pages and navigation metadata    |
-| `components/`             | Site, navigation, and MDX components |
-| `lib/source.ts`           | Fumadocs content source adapter      |
-| `app/api/search/route.ts` | Full-text search endpoint            |
+| Path                         | Purpose                                |
+| ---------------------------- | -------------------------------------- |
+| `src/pages/index.astro`      | Landing page                           |
+| `src/pages/docs/`            | Static documentation routes            |
+| `content/`                   | MDX pages                              |
+| `src/components/content/`    | MDX primitives and page behavior       |
+| `src/components/navigation/` | Desktop, mobile, and page navigation   |
+| `src/components/site/`       | Brand, footer, and landing demo        |
+| `src/content.config.ts`      | Astro content collection schema        |
+| `src/data/navigation.ts`     | Documentation information architecture |
+| `src/styles/global.css`      | Agentation-derived visual system       |
 
 ## Content contracts
 
-Documentation lives in `content/`. The source config in `source.config.ts`
-controls frontmatter and page metadata. `bun run check:sdk-sync` verifies the
+Documentation lives in `content/`. The collection schema in
+`src/content.config.ts` controls frontmatter and page metadata.
+`bun run check:sdk-sync` verifies the
 documented SDK versions, CLI commands, event types, integration catalog, and
 recovery anchors against the repository contracts.
 
@@ -42,7 +45,7 @@ explicitly; do not turn local or unprotected evidence into a release claim.
 ```bash
 bun run check:sdk-sync
 bun run build      # production build
-bun run typecheck  # tsc --noemit
+bun run typecheck  # SDK sync + Astro diagnostics
 bun run lint       # oxlint
 bun run format:check
 ```

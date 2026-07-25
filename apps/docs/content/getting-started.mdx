@@ -1,259 +1,213 @@
 ---
 title: Getting Started
-description: Install kaji, define a tool, and run an agent turn end-to-end. Python and TypeScript.
+description: Run the Kaji TypeScript SDK from a source checkout, define a typed tool, and inspect an agent turn end to end.
 ---
 
-This page takes you from `install` to a working agent in six steps. By the
-end you'll have sent a user message and received a model response, with one
-tool wired in.
+This tutorial builds one TypeScript agent in six steps. You will first verify
+the runtime without credentials, then configure OpenAI and a risk-classified
+tool.
 
 <Steps>
   <Step>
-    ### Install
+    ### Prepare the source checkout
 
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        ```bash
-        pip install "kaji-sdk==0.2.0b1"
-        ```
-      </Tab>
-      <Tab value="typescript">
-        ```bash
-        bun add kaji-sdk@0.2.0-beta.2 "zod@>=4.3 <5"
-        ```
-      </Tab>
-    </Tabs>
+    ```bash
+    git clone https://github.com/enkyuan/alloy.git
+    cd alloy
+    bun install --frozen-lockfile
+    ```
 
-    These install the base SDK. TypeScript also requires Zod `>=4.3 <5` as a
-    peer dependency. No provider key is needed for the first run.
+    The `0.2.0-beta.2` TypeScript package is not available from npm as of July
+    25, 2026. This WIP tutorial therefore runs from the repository checkout.
+    You do not need a provider key for the first run.
 
   </Step>
 
   <Step>
-    ### Run without a key
+    ### Verify the local runtime
 
-    Start with the deterministic mock provider so package and runtime setup are
-    known-good before adding a network or credential boundary.
+    Start with the deterministic mock provider. This separates package and
+    runtime setup from network and credential failures.
 
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        {/* getting-started:no-key:python:start */}
-        ```python
-        import asyncio
+    {/* getting-started:no-key:typescript:start */}
+    ```ts
+    import { AgentBuilder } from "kaji-sdk";
+    import { MockProvider } from "kaji-sdk/testing";
 
-        import kaji
+    const runtime = new AgentBuilder().provider(new MockProvider()).build();
+    const result = await runtime.turn("Say hello.");
+    console.log(result.text);
+    ```
+    {/* getting-started:no-key:typescript:end */}
+
+    Save the example as `kaji/ts/smoke.mts`, then run it from the repository
+    root:
+
+    ```bash
+    bun kaji/ts/smoke.mts
+    ```
+
+    It prints `The mock provider has completed the tool loop.`
+
+    The Python distribution is also unavailable from PyPI as of July 25, 2026.
+    From this checkout, the same no-key proof keeps risk and caller identity
+    explicit. `AgentBuilder` wires a provider and tools to the runtime's event
+    journal:
+
+    {/* getting-started:no-key:python:start */}
+    ```python
+    import asyncio
+
+    import kaji
 
 
-        async def main() -> None:
-            runtime = (
-                kaji.AgentBuilder()
-                .provider(kaji.get_provider("mock"))
-                .build()
-            )
+    @kaji.function_tool(description="Return a local status.", risk="read")
+    async def local_status() -> dict:
+        return {"status": "ready"}
+
+
+    async def main() -> None:
+        runtime = (
+            kaji.AgentBuilder()
+            .provider(kaji.get_provider("mock", reply="mock"))
+            .tool(local_status)
+            .default_context(kaji.TurnContext(principal_id="docs-source"))
+            .build()
+        )
+        try:
             result = await runtime.turn("Say hello.")
             print(result.text)
+        finally:
+            runtime.close()
 
 
-        asyncio.run(main())
-        ```
-        {/* getting-started:no-key:python:end */}
-      </Tab>
-      <Tab value="typescript">
-        {/* getting-started:no-key:typescript:start */}
-        ```ts
-        import { AgentBuilder } from "kaji-sdk";
-        import { MockProvider } from "kaji-sdk/testing";
+    asyncio.run(main())
+    ```
+    {/* getting-started:no-key:python:end */}
 
-        const runtime = new AgentBuilder().provider(new MockProvider()).build();
-        const result = await runtime.turn("Say hello.");
-        console.log(result.text);
-        ```
-        {/* getting-started:no-key:typescript:end */}
-      </Tab>
-    </Tabs>
+    Save the Python example as `kaji/smoke.py`, then run it:
 
-    Python prints `mock`; TypeScript prints
-    `The mock provider has completed the tool loop.`
+    ```bash
+    uv sync --project kaji
+    uv run --project kaji python kaji/smoke.py
+    ```
 
   </Step>
 
   <Step>
-    ### Set up a real provider
+    ### Configure OpenAI
 
-    Add the provider client only after the no-key run succeeds.
-
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        ```bash
-        pip install "kaji-sdk[openai]==0.2.0b1"
-        ```
-      </Tab>
-      <Tab value="typescript">
-        ```bash
-        bun add openai
-        ```
-      </Tab>
-    </Tabs>
-
-    Export the OpenAI key for the beta-supported provider. The base SDK uses a
-    mock provider for tests until you configure a real one; scaffolds generated with
-    `--provider openai` set `KAJI_MODEL_PROVIDER=openai`.
+    The source workspace already includes the optional OpenAI peer. Export its
+    credential before running the live-provider example:
 
     ```bash
     export OPENAI_API_KEY=sk-...
     ```
 
-    Anthropic, Gemini, Kimi, and OpenRouter remain experimental/WIP. To evaluate
-    one intentionally, see its optional dependency and configuration in
-    [install](/docs/install).
+    The `openai()` provider factory reads `OPENAI_API_KEY`. Load the variable
+    with your application's environment tooling. OpenAI is the stable
+    live-provider adapter in the 0.2 beta contract. Anthropic, Gemini, Kimi,
+    and OpenRouter are implemented but remain WIP; their machine contract tier
+    is `experimental`.
 
   </Step>
 
   <Step>
-    ### Define a tool
+    ### Define a typed tool
 
-    Tools are a spec (name, description, JSON Schema parameters, and risk)
-    plus a handler. The `@function_tool` decorator (Python) /
-    `functionTool(...)` helper (TS) derives the parameter schema from type
-    hints or Zod. Every enabled tool must declare risk explicitly.
+    A tool combines a model-visible description, a Zod parameter schema, an
+    explicit risk classification, and a handler. Create `kaji/ts/agent.mts`:
 
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        ```python
-        import kaji
+    ```ts
+    import { AgentBuilder, deadlineAfter, functionTool, openai } from "kaji-sdk";
+    import { z } from "zod";
 
-        @kaji.function_tool(risk="read")
-        async def get_weather(
-            context: kaji.ToolExecutionContext,
-            city: str,
-        ) -> dict:
-            """Look up the weather for a city."""
-            return {
-                "city": city,
-                "tempF": 68,
-                "principal": context.principal_id,
-            }
-        ```
-      </Tab>
-      <Tab value="typescript">
-        ```ts
-        import { functionTool } from "kaji-sdk";
-        import { z } from "zod";
+    const getWeather = functionTool(
+      {
+        name: "get_weather",
+        description: "Look up the weather for a city.",
+        parameters: z.object({ city: z.string() }),
+        risk: "read",
+      },
+      async ({ city }, context) => ({
+        city,
+        tempF: 68,
+        principal: context.principalId,
+      }),
+    );
+    ```
 
-        const getWeather = functionTool(
-          {
-            name: "get_weather",
-            description: "Look up the weather for a city.",
-            parameters: z.object({ city: z.string() }),
-            risk: "read",
-          },
-          async ({ city }, context) => ({
-            city,
-            tempF: 68,
-            principal: context.principalId,
-          }),
-        );
-        ```
-      </Tab>
-    </Tabs>
+    Kaji validates model-generated arguments against the Zod schema before the
+    handler runs.
 
   </Step>
 
   <Step>
     ### Build the runtime
 
-    `AgentBuilder` wires a provider and tools to the runtime's event
-    journal/committer, producing a runnable `AgentRuntime`.
+    Continue in `kaji/ts/agent.mts`. `AgentBuilder` makes the provider and
+    available tools explicit:
 
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        ```python
-        from kaji import AgentBuilder, get_provider
+    ```ts
+    const runtime = new AgentBuilder()
+      .provider(openai())
+      .tool(getWeather)
+      .systemPrompt("You are a helpful weather assistant.")
+      .build();
+    ```
 
-        runtime = (
-            AgentBuilder()
-            .provider(get_provider("openai"))
-            .tool(get_weather)
-            .system_prompt("You are a helpful assistant.")
-            .build()
-        )
-        ```
-      </Tab>
-      <Tab value="typescript">
-        ```ts
-        import { AgentBuilder, deadlineAfter, OpenAIProvider } from "kaji-sdk";
-
-        const runtime = new AgentBuilder()
-          .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
-          .tool(getWeather)
-          .systemPrompt("You are a helpful assistant.")
-          .build();
-        ```
-      </Tab>
-    </Tabs>
-
-    No DB or server is required. The runtime uses a bounded in-memory event
-    store and atomic in-memory journal/committer by default.
+    No database or server is required. The default event store and committer
+    are bounded, in-memory, and process-local.
 
   </Step>
 
   <Step>
     ### Run a turn
 
-    `turn()` appends the user message, runs one model/tool loop, and returns
-    the final assistant text. The model decides whether to call your tool; the
-    runtime dispatches it, collects the result, and produces a response.
+    Tool-capable turns require a caller principal. Add a deadline so the caller
+    can tighten the runtime's whole-turn limit:
 
-    <Tabs items={["python", "typescript"]}>
-      <Tab value="python">
-        ```python
-        import asyncio
+    ```ts
+    try {
+      const result = await runtime.turn("What's the weather in Chicago?", {
+        context: {
+          principalId: "weather-app",
+          deadlineAtMs: deadlineAfter(30_000),
+        },
+      });
+      console.log(result.text);
+    } finally {
+      runtime.close();
+    }
+    ```
 
-        async def main():
-            loop = asyncio.get_running_loop()
-            result = await runtime.turn(
-                "What's the weather in NYC?",
-                context=kaji.TurnContext(
-                    principal_id="weather-app",
-                    deadline_monotonic=loop.time() + 30,
-                ),
-            )
-            print(result.text, result.session_id, result.turn_id)
+    Run the completed example from the repository root:
 
-        asyncio.run(main())
-        ```
-      </Tab>
-      <Tab value="typescript">
-        ```ts
-        const result = await runtime.turn("What's the weather in NYC?", {
-          context: {
-            principalId: "weather-app",
-            deadlineAtMs: deadlineAfter(30_000),
-          },
-        });
-        console.log(result.text, result.sessionId, result.turnId);
-        ```
-      </Tab>
-    </Tabs>
+    ```bash
+    bun kaji/ts/agent.mts
+    ```
 
-    Python's `deadline_monotonic` is absolute monotonic time. TypeScript's
-    `deadlineAtMs` is absolute Unix epoch milliseconds; `deadlineAfter()`
-    converts a duration for you. Either caller deadline can only tighten the
-    runtime's configured whole-turn maximum.
-
-    Tool-capable turns require a per-turn principal unless the host has
-    deliberately configured a single-tenant builder default. Handlers receive
-    a detached, immutable execution context containing principal, session,
-    turn, request, trace, call, idempotency, deadline, and cancellation data.
-
-    To stream events as they happen instead of reading a bounded history page,
-    subscribe through the event journal/committer. See
-    [event delivery](/docs/concepts/event-bus).
+    `turn()` records the user message, calls the provider, validates and
+    dispatches any selected tool, and returns the final assistant text.
+    `deadlineAfter()` converts a duration to the absolute epoch value expected
+    by `deadlineAtMs`.
 
   </Step>
 </Steps>
 
-## Next
+## What to read next
 
-Read [core concepts](/docs/concepts/events) for events, session state, the
-tool registry, event delivery, providers, and integrations.
+- [Runtime](/docs/concepts/runtime) explains turn ordering, context, and
+  lifecycle.
+- [Tool registry](/docs/concepts/tool-registry) covers risk, approval, and
+  idempotency.
+- [Events](/docs/concepts/events) shows how to inspect and replay session state.
+- [GitHub integration](/docs/integrations/github) builds a bounded read-only
+  investigation agent.
+
+## Using Python?
+
+The Python SDK implements the shared event and tool contracts, but it is not
+the primary path in this tutorial. The distribution is not available from
+PyPI as of July 25, 2026. See the
+[Python source setup](/docs/install#python-sdk) for Python-specific commands.

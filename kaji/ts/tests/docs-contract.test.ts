@@ -131,10 +131,15 @@ async function executeGitHubExampleFailure(
 }
 
 describe("cross-SDK release matrix docs", () => {
-  it("executes the exact no-key and TTHW TypeScript snippets offline", () => {
+  it("executes the exact offline TypeScript examples", () => {
     const gettingStarted = snippet(
       read("apps/docs/content/getting-started.mdx"),
       "getting-started:no-key:typescript",
+      "ts",
+    );
+    const eventDelivery = snippet(
+      read("apps/docs/content/concepts/event-bus.mdx"),
+      "event-delivery:typescript",
       "ts",
     );
     const tthw = snippet(read("docs/kaji/tthw-evidence.md"), "tthw-echo:typescript", "ts");
@@ -146,9 +151,15 @@ describe("cross-SDK release matrix docs", () => {
         resolve(workdir, "echo/index.ts"),
       );
       writeFileSync(resolve(workdir, "getting-started.mts"), gettingStarted);
+      writeFileSync(resolve(workdir, "event-delivery.mts"), eventDelivery);
       writeFileSync(resolve(workdir, "echo-loop.mts"), tthw);
       const environment = tokenFreeEnvironment();
       const noKey = execFileSync("bun", ["getting-started.mts"], {
+        cwd: workdir,
+        env: environment,
+        encoding: "utf8",
+      });
+      const delivery = execFileSync("bun", ["event-delivery.mts"], {
         cwd: workdir,
         env: environment,
         encoding: "utf8",
@@ -159,6 +170,7 @@ describe("cross-SDK release matrix docs", () => {
         encoding: "utf8",
       });
       expect(noKey.trim()).toBe("The mock provider has completed the tool loop.");
+      expect(delivery).toContain("agent.message.completed");
       expect(echo.trim()).toBe("PASS: echo requested, started, completed, and observed");
     } finally {
       rmSync(workdir, { recursive: true, force: true });

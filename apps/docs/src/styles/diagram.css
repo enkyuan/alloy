@@ -1,0 +1,35 @@
+.diagram-token {
+  display: inline-block;
+}
+
+html[data-kaji-motion] [data-kaji-once]:not([data-kaji-ready]) .diagram-token {
+  opacity: 0;
+}
+
+[data-kaji-animate] .diagram-token {
+  animation: diagram-token-enter 260ms
+    calc(
+      var(--diagram-token-base, 0ms) + var(--diagram-token-index) * var(--diagram-token-step, 42ms)
+    )
+    var(--ease-out) both;
+}
+
+@keyframes diagram-token-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.18em);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-kaji-animate] .diagram-token {
+    animation-duration: 160ms;
+    animation-delay: 0ms;
+    transform: none;
+  }
+}

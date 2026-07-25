@@ -1,0 +1,46 @@
+---
+import DocPagination from "@/components/navigation/pagination.astro";
+import Footer from "@/components/site/footer.astro";
+import Base from "@/layouts/base.astro";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  title: string;
+  description: string;
+  activeHref: string;
+  headings: Heading[];
+  sourcePath: string;
+}
+
+const { title, description, activeHref, headings, sourcePath } = Astro.props;
+const slug = activeHref === "/docs" ? undefined : activeHref.slice("/docs/".length);
+const markdownHref =
+  slug === undefined ? "/llms.mdx/docs/content.md" : `/llms.mdx/docs/${slug}/content.md`;
+const editHref = `https://github.com/enkyuan/alloy/blob/main/apps/docs/content/${sourcePath}`;
+---
+
+<Base title={title} description={description} activeHref={activeHref} headings={headings}>
+  <article class="article doc-article">
+    <header>
+      <h1>{title}</h1>
+      <p class="tagline">{description}</p>
+      <div class="doc-actions">
+        <a href={markdownHref}>Markdown</a>
+        <span aria-hidden="true">·</span>
+        <a href={editHref}>Edit on GitHub</a>
+      </div>
+    </header>
+
+    <div class="doc-content">
+      <slot />
+    </div>
+
+    <DocPagination currentHref={activeHref} />
+  </article>
+  <Footer />
+</Base>

@@ -3,55 +3,44 @@ title: Integrations
 description: Use packaged integrations or copy source-owned registry bundles, with explicit stability, auth, and risk boundaries.
 ---
 
-Kaji supports source-owned registry bundles and selected packaged subpaths.
-`kaji add` copies a manifest, implementation, fixtures, and any included tests
-into your project. Review the copy, configure its dependencies and credentials,
-then register the integration with `AgentBuilder`. A packaged subpath is imported
-directly instead. Kaji does not silently activate catalog tools.
+The TypeScript SDK supports packaged integration subpaths and source-owned
+registry bundles. Import a packaged subpath directly, or use `kaji add` to copy
+the files declared by a registry manifest plus a provenance sidecar into your
+project. Review copied code before registering it with `AgentBuilder`. Kaji
+never activates catalog tools implicitly.
 
 ## Catalog status
 
-This is the 0.2 beta-candidate catalog. “Experimental” entries require
-`--allow-experimental` and are outside the first beta compatibility promise.
+This is the catalog in TypeScript `0.2.0-beta.2` and Python `0.2.0b1`.
+WIP entries whose registry tier is `experimental` require
+`--allow-experimental` and are outside the stable beta set.
 
-| Integration | Stability    | Runtime            | Auth                    | Tools                     |
-| ----------- | ------------ | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta         | Python, TypeScript | None                    | 2                         |
-| `github`    | Experimental | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status                | Runtime            | Auth                    | Tools                     |
+| ----------- | ----------------------------- | ------------------ | ----------------------- | ------------------------- |
+| `echo`      | Beta                          | Python, TypeScript | None                    | 2                         |
+| `github`    | WIP (`experimental` registry) | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
 
-The Python and TypeScript registries currently contain only `echo` and
-`github`. Their manifests and JSON schemas are validated, and the shared entries
-are checked for cross-SDK ABI parity. Source modules outside this index are not
-discoverable or installable catalog entries.
+The TypeScript and Python registries contain only `echo` and `github`. Their
+manifests and JSON schemas are validated, and shared entries are checked for
+cross-SDK ABI parity. Source modules outside this index are not discoverable or
+installable catalog entries.
 
 ## Discover and copy
 
-<Tabs items={["python", "typescript"]}>
-  <Tab value="python">
-    ```bash
-    kaji list-integrations
-    kaji add echo --out ./integrations
-    kaji add github --out ./integrations --allow-experimental
-    ```
-
-  </Tab>
-  <Tab value="typescript">
-    ```bash
-    npx --package=kaji-sdk kaji list-integrations
-    npx --package=kaji-sdk kaji add echo --out ./integrations
-    npx --package=kaji-sdk kaji add github --out ./integrations --allow-experimental
-    ```
-
-  </Tab>
-</Tabs>
+```bash
+bun kaji/ts/src/cli/bin.ts list-integrations
+bun kaji/ts/src/cli/bin.ts add echo --out ./integrations/echo
+bun kaji/ts/src/cli/bin.ts add github --out ./integrations/github --allow-experimental
+```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.
-A current unmodified bundle is a no-op. `--force` replaces only an unmodified,
+A matching unmodified bundle is a no-op. `--force` replaces only an unmodified,
 same-provider outdated bundle; it does not overwrite arbitrary local edits.
+The Python SDK exposes the same copy workflow through its own `kaji` binary.
 
 ## GitHub
 
-The copied experimental GitHub bundle exposes four parallel-safe reads:
+The copied WIP GitHub bundle exposes four parallel-safe reads:
 `get_file`, `get_issue`, `list_issues`, and `search_code`; and two serialized
 external effects: `create_issue` and `add_comment`. The integration namespace
 is applied before provider dispatch.
@@ -63,24 +52,26 @@ workflow runs and jobs, file history, releases, and deployments. Use
 default is the complete 15-tool catalog.
 
 The runtime requires an application-owned repository allowlist and invokes the
-application's `tokenFor` callback per tool execution context. Its client is fixed to
-`https://api.github.com`, rejects redirects, bounds response headers and bodies,
-and treats a connection loss after mutation dispatch as an unknown outcome.
-Reconcile the issue or comment marker before retrying such a mutation.
+application's `tokenFor` callback per tool execution context. Its client is
+fixed to `https://api.github.com`, rejects redirects, bounds response headers
+and bodies, and treats a connection loss after mutation dispatch as an unknown
+outcome. Include an application-owned marker in the issue title or body and
+reconcile that marker before retrying. Kaji does not send its internal
+idempotency key to GitHub.
 
-GitHub has deterministic package and ABI proofs, but it remains experimental
-until protected keyed API evidence and the release gates complete.
+GitHub remains WIP; its machine registry tier is `experimental`. Local package
+and ABI checks do not establish protected keyed-API or release evidence.
 
 See the [GitHub integration guide](/docs/integrations/github) for package wiring,
 token ownership, lifecycle, permissions, limits, and unsupported surfaces.
 
 ## Gmail status
 
-No Gmail manifest, client, or tool bundle is shipped in either registry at this
-checkpoint. The SDKs contain shared Google OAuth, macOS Keychain, fixed-origin,
-and recovery-contract primitives for a future Gmail integration. Those
-primitives -- and the presence of `connect` / `disconnect` commands -- do not make
-`kaji add gmail` or `kaji connect gmail` valid today.
+No Gmail manifest, client, or tool bundle is shipped in either registry. The
+SDKs contain shared Google OAuth, macOS Keychain, fixed-origin, and
+recovery-contract primitives. Those primitives, together with the presence of
+`connect` and `disconnect` commands, do not make `kaji add gmail` or
+`kaji connect gmail` valid.
 
 See [integration recovery](/docs/integrations/recovery-v1) for the closed error
 vocabulary, including the Gmail rows reserved by the shared contract.

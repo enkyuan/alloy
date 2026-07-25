@@ -1,12 +1,12 @@
 ---
-title: Experimental Reference Service
-description: kaji-serve is a pre-beta FastAPI and Soniox STT edge. It is not part of the supported 0.2 SDK beta.
+title: Reference Service
+description: The WIP kaji-serve package exposes a FastAPI and Soniox STT edge outside the supported 0.2 SDK beta.
 ---
 
 `kaji-serve` (`kaji/serve`) exposes one FastAPI process with REST routes and a
-Soniox speech-to-text WebSocket on port 8080. It is an experimental reference
-edge, not part of the 0.2 SDK beta core or a production durability or
-horizontal-scaling claim.
+Soniox speech-to-text WebSocket on port 8080. It is a WIP reference edge, not
+part of the 0.2 SDK beta core or a production durability or horizontal-scaling
+claim.
 
 The STT socket authenticates the caller, accepts audio frames, and returns
 partial, final, and complete transcripts. It does not queue an agent command,
@@ -15,10 +15,12 @@ own the explicit hand-off from a final transcript to the embedded SDK runtime.
 
 ## Run with docker compose
 
-The fastest path. It starts the API and its Postgres/Supabase dependencies.
+Compose starts the API and its Postgres/Supabase dependencies. Copy the
+environment template and replace every `CHANGE_ME` value before non-local use:
 
 ```bash
 cd docker/kaji
+cp .env.example .env
 docker compose up
 ```
 
@@ -42,10 +44,12 @@ uv run uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
 
 Use it only to evaluate:
 
-- the current FastAPI service shell,
+- the FastAPI service shell,
 - real-time Soniox transcription over a WebSocket,
-- service migration requirements before a supported hosted beta.
+- the present service boundary before supplying production persistence and
+  coordination.
 
-For agent execution and embedded apps, use the SDK directly. A future hosted
-runtime needs a canonical adapter, persistent event store, restart-safe tool
-idempotency, and distributed same-session coordination. See [index](/docs).
+For agent execution and embedded apps, use the SDK directly. `kaji-serve` does
+not wire an `AgentRuntime` adapter, a persistent Kaji event store, restart-safe
+effect idempotency, or distributed same-session coordination. See the
+[SDK overview](/docs).

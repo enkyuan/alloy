@@ -1,0 +1,321 @@
+---
+import { CheckCircle, Copy } from "reicon";
+
+const copyIconMarkup = Copy.toSvg({
+  size: 14,
+  color: "currentColor",
+});
+const checkIconMarkup = CheckCircle.toSvg({
+  size: 14,
+  color: "currentColor",
+  className: "copy-status-icon copy-status-icon-check",
+});
+---
+
+<template data-copy-icon><Fragment set:html={copyIconMarkup} /></template>
+<template data-check-icon><Fragment set:html={checkIconMarkup} /></template>
+
+<script>
+  import { activeTocIndex } from "@/lib/toc";
+
+  const copyResetTimers = new WeakMap<HTMLButtonElement, number>();
+  const copyIconMarkup =
+    document.querySelector<HTMLTemplateElement>("[data-copy-icon]")?.innerHTML ?? "";
+  const checkIconMarkup =
+    document.querySelector<HTMLTemplateElement>("[data-check-icon]")?.innerHTML ?? "";
+
+  function enhanceCopyButton(button: HTMLButtonElement) {
+    if (button.querySelector(".copy-status")) return;
+
+    const copyIcon = button.querySelector<SVGElement>(":scope > svg");
+    if (!copyIcon) return;
+
+    const status = document.createElement("span");
+    status.className = "copy-status";
+    status.setAttribute("aria-hidden", "true");
+    copyIcon.classList.add("copy-status-icon", "copy-status-icon-copy");
+    copyIcon.before(status);
+    status.append(copyIcon);
+    status.insertAdjacentHTML("beforeend", checkIconMarkup);
+  }
+
+  function setCopyState(button: HTMLButtonElement, state: "copied" | "copyFailed", label: string) {
+    const originalLabel =
+      button.dataset.copyLabel ?? button.getAttribute("aria-label") ?? "Copy to clipboard";
+    const existingTimer = copyResetTimers.get(button);
+    if (existingTimer) window.clearTimeout(existingTimer);
+
+    button.dataset.copyLabel = originalLabel;
+    delete button.dataset.copied;
+    delete button.dataset.copyFailed;
+    button.dataset[state] = "true";
+    button.setAttribute("aria-label", label);
+
+    copyResetTimers.set(
+      button,
+      window.setTimeout(() => {
+        delete button.dataset.copied;
+        delete button.dataset.copyFailed;
+        button.setAttribute("aria-label", originalLabel);
+        copyResetTimers.delete(button);
+      }, 1600),
+    );
+  }
+
+  function copyText(button: HTMLButtonElement, text: string) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => setCopyState(button, "copied", "Copied"))
+      .catch(() => setCopyState(button, "copyFailed", "Copy failed"));
+  }
+
+  let pageController: AbortController | undefined;
+  let wordmarkFeedbackTimer: number | undefined;
+  let pageDocument: HTMLElement | null = null;
+
+  function setupPage() {
+    pageController?.abort();
+    if (wordmarkFeedbackTimer !== undefined) {
+      window.clearTimeout(wordmarkFeedbackTimer);
+      wordmarkFeedbackTimer = undefined;
+    }
+
+    const controller = new AbortController();
+    const { signal } = controller;
+    pageController = controller;
+
+    const mobileToggle = document.querySelector<HTMLButtonElement>("[data-mobile-nav-toggle]");
+    const mobileLinks = document.querySelector<HTMLElement>("[data-mobile-nav-links]");
+
+    mobileToggle?.addEventListener(
+      "click",
+      () => {
+        const isOpen = mobileToggle.getAttribute("aria-expanded") === "true";
+        mobileToggle.setAttribute("aria-expanded", String(!isOpen));
+        mobileToggle.classList.toggle("open", !isOpen);
+        mobileLinks?.classList.toggle("open", !isOpen);
+      },
+      { signal },
+    );
+
+    document.querySelectorAll<HTMLAnchorElement>('a[aria-current="page"]').forEach((link) => {
+      link.addEventListener(
+        "click",
+        (event) => {
+          const target = new URL(link.href, window.location.href);
+          if (
+            target.pathname === window.location.pathname &&
+            target.search === window.location.search &&
+            !target.hash
+          ) {
+            event.preventDefault();
+          }
+        },
+        { signal },
+      );
+    });
+
+    const wordmark = document.querySelector<HTMLAnchorElement>(".kaji-wordmark");
+    wordmark?.addEventListener(
+      "click",
+      () => {
+        if (wordmarkFeedbackTimer !== undefined) {
+          window.clearTimeout(wordmarkFeedbackTimer);
+        }
+        wordmark.dataset.pressFeedback = "";
+        wordmarkFeedbackTimer = window.setTimeout(() => {
+          delete wordmark.dataset.pressFeedback;
+          wordmarkFeedbackTimer = undefined;
+        }, 150);
+      },
+      { signal },
+    );
+
+    document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {
+      enhanceCopyButton(button);
+      button.addEventListener("click", () => copyText(button, button.dataset.copy ?? ""), {
+        signal,
+      });
+    });
+
+    document.querySelectorAll<HTMLPreElement>(".doc-content pre").forEach((pre) => {
+      if (pre.parentElement?.classList.contains("code-frame")) return;
+
+      const frame = document.createElement("div");
+      const button = document.createElement("button");
+      frame.className = "code-frame";
+      button.className = "code-copy";
+      button.type = "button";
+      button.setAttribute("aria-label", "Copy code");
+      button.innerHTML = copyIconMarkup;
+      enhanceCopyButton(button);
+      pre.before(frame);
+      frame.append(pre, button);
+      button.addEventListener("click", () => copyText(button, pre.textContent ?? ""), { signal });
+    });
+
+    document.querySelectorAll<HTMLElement>("[data-tabs]").forEach((tabs) => {
+      const buttons = [...tabs.querySelectorAll<HTMLButtonElement>("[data-tab-button]")];
+      const panels = [...tabs.querySelectorAll<HTMLElement>("[data-tab-panel]")];
+
+      const select = (value: string) => {
+        buttons.forEach((button) => {
+          const selected = button.dataset.tabButton === value;
+          button.setAttribute("aria-selected", String(selected));
+          button.tabIndex = selected ? 0 : -1;
+        });
+        panels.forEach((panel) => {
+          panel.dataset.active = String(panel.dataset.tabPanel === value);
+        });
+        tabs.dataset.ready = "true";
+      };
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => select(button.dataset.tabButton ?? ""), { signal });
+      });
+
+      if (buttons[0]?.dataset.tabButton) select(buttons[0].dataset.tabButton);
+    });
+
+    const tocLinks = [...document.querySelectorAll<HTMLAnchorElement>("[data-toc-link]")];
+    if (tocLinks.length > 0) {
+      const headings = tocLinks
+        .map((link) => document.getElementById(link.dataset.tocLink ?? ""))
+        .filter((heading): heading is HTMLElement => heading !== null);
+      const tocIdFromHash = () => {
+        const hash = window.location.hash.slice(1);
+        try {
+          return decodeURIComponent(hash);
+        } catch {
+          return hash;
+        }
+      };
+      let activeTocId = "";
+      let preferredTocId = tocIdFromHash();
+      let tocFrame: number | undefined;
+
+      const keepTocLinkVisible = (link: HTMLAnchorElement) => {
+        const navigation = link.closest<HTMLElement>(".side-nav");
+        if (!navigation) return;
+
+        const navigationRect = navigation.getBoundingClientRect();
+        const linkRect = link.getBoundingClientRect();
+        const edgePadding = 12;
+
+        if (linkRect.top < navigationRect.top + edgePadding) {
+          navigation.scrollTop += linkRect.top - navigationRect.top - edgePadding;
+        } else if (linkRect.bottom > navigationRect.bottom - edgePadding) {
+          navigation.scrollTop += linkRect.bottom - navigationRect.bottom + edgePadding;
+        }
+      };
+
+      const updateToc = () => {
+        const documentHeight = document.documentElement.scrollHeight;
+        const maxScrollY = Math.max(0, documentHeight - window.innerHeight);
+        const preferredHeading = headings.find((heading) => heading.id === preferredTocId);
+        const active =
+          preferredHeading ??
+          headings[
+            activeTocIndex(
+              headings.map((heading) => heading.getBoundingClientRect().top),
+              window.innerHeight,
+              window.scrollY,
+              maxScrollY,
+            )
+          ];
+        if (!active || active.id === activeTocId) return;
+
+        tocLinks.forEach((link) => {
+          const current = link.dataset.tocLink === active.id;
+          if (current) link.setAttribute("aria-current", "true");
+          else link.removeAttribute("aria-current");
+        });
+
+        activeTocId = active.id;
+        const activeLink = tocLinks.find((link) => link.dataset.tocLink === active.id);
+        if (activeLink) keepTocLinkVisible(activeLink);
+      };
+
+      const scheduleTocUpdate = () => {
+        if (tocFrame !== undefined) return;
+
+        tocFrame = window.requestAnimationFrame(() => {
+          tocFrame = undefined;
+          updateToc();
+        });
+      };
+
+      const content = document.querySelector<HTMLElement>(".doc-content");
+      const contentObserver =
+        content && "ResizeObserver" in window ? new ResizeObserver(scheduleTocUpdate) : undefined;
+      if (content && contentObserver) contentObserver.observe(content);
+
+      const clearPreferredToc = () => {
+        preferredTocId = "";
+        scheduleTocUpdate();
+      };
+      const setPreferredTocFromHash = () => {
+        preferredTocId = tocIdFromHash();
+        scheduleTocUpdate();
+      };
+
+      tocLinks.forEach((link) => {
+        link.addEventListener(
+          "click",
+          () => {
+            preferredTocId = link.dataset.tocLink ?? "";
+            scheduleTocUpdate();
+          },
+          { signal },
+        );
+      });
+
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (tocFrame !== undefined) window.cancelAnimationFrame(tocFrame);
+          contentObserver?.disconnect();
+        },
+        { once: true },
+      );
+
+      scheduleTocUpdate();
+      window.addEventListener("scroll", scheduleTocUpdate, { passive: true, signal });
+      window.addEventListener("resize", scheduleTocUpdate, { signal });
+      window.addEventListener("hashchange", setPreferredTocFromHash, { signal });
+      window.addEventListener("wheel", clearPreferredToc, { passive: true, signal });
+      window.addEventListener("touchstart", clearPreferredToc, { passive: true, signal });
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (
+            ["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "].includes(event.key)
+          ) {
+            clearPreferredToc();
+          }
+        },
+        { signal },
+      );
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!(event.target instanceof Element) || !event.target.closest("[data-toc-link]")) {
+            clearPreferredToc();
+          }
+        },
+        { signal },
+      );
+    }
+  }
+
+  function setupCurrentPage() {
+    const main = document.querySelector<HTMLElement>("#main-content");
+    if (main === pageDocument) return;
+
+    pageDocument = main;
+    setupPage();
+  }
+
+  setupCurrentPage();
+  document.addEventListener("astro:page-load", setupCurrentPage);
+</script>

@@ -8,16 +8,18 @@ Integration failures expose a closed tuple of `error_code`, `reason_code`,
 messages or log credentials, request bodies, tool arguments, or vendor errors.
 
 Gmail rows below are reserved by the shared contract. No Gmail integration or
-Gmail tools are bundled at this checkpoint.
+Gmail tools are bundled.
 
 ## GitHub token
 
-`CONFIGURE_GITHUB_TOKEN`: set the manifest-declared `GITHUB_TOKEN` and retry.
+`CONFIGURE_GITHUB_TOKEN`: for a copied registry bundle, set its
+manifest-declared `GITHUB_TOKEN` and retry. The packaged TypeScript subpath
+instead requires the application to provide `tokenFor`.
 
 ## Gmail grant
 
-`CONNECT_GMAIL`: once a reviewed Gmail manifest exists, use its
-package-qualified `connect` command with the same stable host principal.
+`CONNECT_GMAIL`: WIP contract row only. No Gmail manifest exists, so this
+action is not executable.
 
 ## Keychain missing
 
@@ -29,8 +31,7 @@ package-qualified `connect` command with the same stable host principal.
 
 ## Keychain corrupt
 
-`RESET_GMAIL_GRANT`: remove the invalid local grant and reconnect with the same
-principal after a Gmail bundle is available.
+`RESET_GMAIL_GRANT`: WIP contract row only. No Gmail grant flow is executable.
 
 ## Keychain unsupported
 
@@ -39,8 +40,7 @@ plaintext OAuth credential storage.
 
 ## Gmail scope drift
 
-`RECONNECT_GMAIL`: reconnect the same principal and consent to the exact
-manifest-declared scopes after a Gmail bundle is available.
+`RECONNECT_GMAIL`: WIP contract row only. No Gmail manifest declares scopes.
 
 ## Policy rejected
 
@@ -74,10 +74,11 @@ response was rejected.
 
 ## GitHub mutation unknown
 
-`RECONCILE_GITHUB_MUTATION`: look up the issue or comment marker associated
-with the idempotency key before deciding whether to retry.
+`RECONCILE_GITHUB_MUTATION`: look up an application-owned marker embedded in
+the issue title or body before deciding whether to retry. Kaji does not send
+its internal idempotency key to GitHub.
 
 ## Gmail mutation unknown
 
-`RECONCILE_GMAIL_MUTATION`: once Gmail tools exist, reconcile the draft key or
-sent message before deciding whether to retry.
+`RECONCILE_GMAIL_MUTATION`: WIP contract row only. No Gmail mutation tool is
+available to reconcile.

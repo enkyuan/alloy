@@ -1,57 +1,58 @@
 ---
 title: Event Delivery
-description: Subscribe through the canonical event journal in Python or event committer in TypeScript; the split event bus adapters are experimental.
+description: Subscribe through the TypeScript event committer for gap-free process-local delivery; split event-bus adapters are WIP compatibility surfaces.
 ---
 
 Subscribe to the canonical append-and-delivery boundary when you want to push
-agent deltas to a UI or consume a resumable event stream. Python calls this an
-`EventJournal`; TypeScript calls it an `EventCommitter`.
+agent deltas to a UI or consume a resumable event stream. TypeScript calls this
+boundary an `EventCommitter`.
 
-The default builders create `InMemoryEventJournal` (Python) or
-`InMemoryEventCommitter` (TypeScript). Each commits to an `EventStore` and
-attaches bounded per-session subscribers through one gap-free process-local
-boundary.
+The default builder creates `InMemoryEventCommitter`. It commits to an
+`EventStore` and attaches bounded per-session subscribers through one gap-free
+process-local boundary.
 
-<Tabs items={["python", "typescript"]}>
-  <Tab value="python">
-    ```python
-    import kaji
+{/* event-delivery:typescript:start */}
 
-    journal = kaji.InMemoryEventJournal()
-    runtime = kaji.AgentBuilder().provider(provider).build(journal=journal)
+```ts
+import { AgentBuilder, InMemoryEventCommitter } from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
 
-    subscription = await journal.open_subscription("session-1")
-    try:
-        async for event in subscription:
-            print(event.sequence, event.type)
-    finally:
-        await subscription.aclose()
-    ```
+const sessionId = "session-1";
+const committer = new InMemoryEventCommitter();
+const runtime = new AgentBuilder()
+  .provider(new MockProvider({ reply: "Hello" }))
+  .build({ committer });
+const subscription = committer.subscribe(sessionId, { afterSequence: 0 });
 
-  </Tab>
-  <Tab value="typescript">
-    ```ts
-    import { AgentBuilder, InMemoryEventCommitter } from "kaji-sdk";
+const turn = runtime.turn("Hello", { sessionId });
+try {
+  for await (const event of subscription) {
+    console.log(event.sequence, event.type);
+    if (event.type === "agent.message.completed") break;
+  }
+} finally {
+  await subscription.return();
+}
+await turn;
+runtime.close();
+```
 
-    const committer = new InMemoryEventCommitter();
-    const runtime = new AgentBuilder().provider(provider).build({ committer });
+{/* event-delivery:typescript:end */}
 
-    for await (const event of committer.subscribe("session-1")) {
-      console.log(event.sequence, event.type);
-    }
-    ```
-
-  </Tab>
-</Tabs>
-
-Resume strictly after the last persisted cursor with `after_sequence` in
-Python or `afterSequence` in TypeScript. A subscriber queue holds 1,024 events
-by default and raises `EventBufferOverflowError` instead of silently dropping
-history. Always close or return a subscription when the consumer stops.
+Resume strictly after the last persisted cursor with `afterSequence`. A
+subscriber queue holds 1,024 events by default and raises
+`EventBufferOverflowError` instead of silently dropping history. When the
+consumer stops, break out of `for await` or call the subscription's `return()`
+method so it detaches.
 
 `EventBus` / `InMemoryEventBus` and the split journal/committer adapters remain
-compatibility surfaces for deployments that cannot share one atomic boundary.
-They are experimental because a separate store and bus need explicit retry and
-delivery-failure policy. Python's optional Redis adapters can provide
-cross-process hand-off, not durable replay; production replay still needs an
-application-owned persistent `EventStore`.
+WIP compatibility surfaces for deployments that cannot share one atomic
+boundary. Split persistence and publication expose delivery failures and
+pending-event recovery to the host. Production replay needs an
+application-owned persistent `EventStore`; the TypeScript beta ships no
+persistent store or distributed coordinator.
+
+The Python equivalent is `EventJournal` /
+`InMemoryEventJournal`, with `after_sequence` cursors. Its optional Redis
+event bus provides cross-process stream delivery, but it is not an
+`EventStore`; canonical replay still depends on the application's event store.
