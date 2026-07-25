@@ -3,7 +3,7 @@
 This is the canonical, versioned operating path for the Python `kaji` and
 TypeScript `kaji-sdk` packages. Package pages link here for scope and to the
 [release matrix](../../kaji/RELEASE_MATRIX.md) for evidence. Package README
-bytes do not change when release status changes.
+canonical-status-link blocks do not change when release status changes.
 
 Human time-to-hello-world evidence is **unmeasured**. The target protocol is
 defined in [testing](testing.md) and [releasing](releasing.md); no cohort result
@@ -26,7 +26,10 @@ is inferred from automated smoke tests.
 
 Stable and experimental features and exports are classified by
 [`feature-tiers-v1.json`](../../kaji/contracts/feature-tiers-v1.json).
-OpenAI and Anthropic adapters are declared stable, so protected Python and
-TypeScript tool-loop proof for both is mandatory release evidence. Missing
-credentials block a release. Experimental surfaces remain available only with
-their documented opt-in and carry no beta compatibility promise.
+OpenAI is Kaji's sole beta-supported primary provider. Keyed OpenAI proof in
+both Python and TypeScript is mandatory release evidence, and a missing
+`OPENAI_API_KEY` blocks release.
+Anthropic remains implemented but experimental/WIP.
+Anthropic, Gemini, Kimi, and OpenRouter are opt-in and carry no beta
+compatibility or publication-proof commitment. `MockProvider` remains the
+deterministic local/test default.

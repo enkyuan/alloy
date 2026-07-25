@@ -15,12 +15,14 @@ Both SDKs target the same five-step developer path:
 Before you write any code:
 
 1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install kaji-sdk@0.2.0-beta.2 zod`)
-2. **Install your provider SDK** (OpenAI or Anthropic; see below)
-3. **Set an API key for live providers** (`OPENAI_API_KEY` or
-   `ANTHROPIC_API_KEY`). The installed-package mock quickstart needs no key.
+2. **Install the OpenAI provider SDK** for the beta-supported live path
+3. **Set `OPENAI_API_KEY`** for live OpenAI runs. The installed-package mock
+   quickstart needs no key.
 
 The SDK core has no required LLM dependency. The provider package is opt-in so
-your image size reflects only what you use.
+your image size reflects only what you use. Anthropic, Gemini, Kimi, and
+OpenRouter adapters remain available as opt-in experimental/WIP paths without a
+beta compatibility or publication-proof commitment.
 
 ---
 
@@ -32,7 +34,7 @@ your image size reflects only what you use.
 | `AgentRuntime` ReAct loop                    | Yes    | Yes        |
 | Tool registry + `ToolPlanner` + `ToolPolicy` | Yes    | Yes        |
 | OpenAI provider                              | Yes    | Yes        |
-| Anthropic provider                           | Yes    | Yes        |
+| Anthropic provider (experimental/WIP)        | Yes    | Yes        |
 | Event store + bus (in-memory)                | Yes    | Yes        |
 | Session replay (`replaySession`)             | Yes    | Yes        |
 | `kaji init` CLI scaffold                     | Yes    | Yes        |
@@ -45,7 +47,7 @@ your image size reflects only what you use.
 The core runtime exists in both packages. This is a pre-beta release
 implementation, not a production-beta claim. Promotion remains blocked until
 the same release commit supplies the protected floor/latest runtime, required
-keyed OpenAI and Anthropic proofs, three-replica paired A/B benchmark, separate
+keyed OpenAI proof in both SDKs, three-replica paired A/B benchmark, separate
 30-minute soak, signed-tag, provenance, and publication evidence.
 
 The operating contract and exact defaults are in
@@ -53,21 +55,22 @@ The operating contract and exact defaults are in
 tool-safety, integration-schema, migration, and failure guidance live beside
 it in [`docs/kaji/`](kaji/).
 
-| Area                            | Python SDK                                                                                                  | TypeScript SDK                                                                                   | MVP status                                                                           |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Embedded ReAct runtime          | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`.                           | Same shape as Python.                                                                            | Implemented.                                                                         |
-| Custom tools                    | Works through `ToolRegistry`; `Integration` + `tool` are exported from top-level `kaji`.                    | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters.       | Implemented.                                                                         |
-| Provider setup                  | OpenAI/Anthropic raise `ProviderConfigError` and `ProviderAPIError`.                                        | OpenAI/Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented.                                                                         |
-| Provider-safe tool names        | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`.                                                                | Implemented.                                                                         |
-| First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.             | Catalog contract implemented; production third-party integrations remain out of MVP. |
-| Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                   | Implemented.                                                                         |
-| Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                      | Implemented.                                                                         |
-| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji-sdk/testing`.                     | Implemented; keep docs honest.                                                       |
+| Area                            | Python SDK                                                                                                  | TypeScript SDK                                                                                                    | MVP status                                                                           |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Embedded ReAct runtime          | `AgentBuilder` builds a scoped `ToolRegistry`, `ToolPlanner`, and `AgentRuntime`.                           | Same shape as Python.                                                                                             | Implemented.                                                                         |
+| Custom tools                    | Works through `ToolRegistry`; `Integration` + `tool` are exported from top-level `kaji`.                    | Works through `ToolRegistry`; `Integration` + `tool` accept Zod or JSON Schema parameters.                        | Implemented.                                                                         |
+| Provider setup                  | OpenAI and experimental Anthropic raise `ProviderConfigError` and `ProviderAPIError`.                       | OpenAI and experimental Anthropic raise `ProviderConfigError`, `ProviderAPIError`, and `ProviderConnectionError`. | Implemented; only OpenAI is beta-supported.                                          |
+| Provider-safe tool names        | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`.                                                                                 | Implemented.                                                                         |
+| First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.                              | Catalog contract implemented; production third-party integrations remain out of MVP. |
+| Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                                    | Implemented.                                                                         |
+| Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                                       | Implemented.                                                                         |
+| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji-sdk/testing`.                                       | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
 
-- Both SDKs satisfy the five-step embedded-agent path with OpenAI/Anthropic
-  and developer-authored tools.
+- Both SDKs satisfy the five-step embedded-agent path with OpenAI and
+  developer-authored tools. `MockProvider` is the deterministic local/test
+  default.
 - Provider error contracts, tool-name safety, and the public surface are
   aligned across Python and TypeScript.
 - Catalog contract implemented: both SDKs validate the same closed manifest
@@ -87,7 +90,9 @@ to build a working embedded agent and are not part of the getting-started path:
 
 | Feature                          | Status                                                  |
 | -------------------------------- | ------------------------------------------------------- |
+| Anthropic provider               | Cross-SDK experimental/WIP adapter                      |
 | Kimi / Gemini providers          | Python native; TS OpenAI-compatible factories           |
+| OpenRouter provider              | Experimental/WIP adapter                                |
 | Document RAG / vector store      | Python only                                             |
 | Tool retriever                   | Python only                                             |
 | Text modality adapter            | Python only                                             |
@@ -104,8 +109,11 @@ README for details.
 ## Stability tiers
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
-  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  `ToolPlanner`, session replay, the OpenAI provider, and the in-memory
   event bus/store are the embedded-agent contract both SDKs must keep green.
+- **Experimental providers:** Anthropic, Gemini, Kimi, and OpenRouter remain
+  opt-in WIP surfaces without a beta compatibility or publication-proof
+  commitment.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities are available in Python but are not production-hardened.
@@ -132,7 +140,7 @@ gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 ```bash
 pip install 'kaji-sdk[openai]==0.2.0b1'     # OpenAI
 # or
-pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
+pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic (experimental/WIP)
 ```
 
 **TypeScript**
@@ -140,7 +148,7 @@ pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
 ```bash
 npm install kaji-sdk@0.2.0-beta.2 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
+npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 ```
 
 ### Step 2 - Configure provider
@@ -149,14 +157,14 @@ npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
 
 ```bash
 export OPENAI_API_KEY=sk-...
-# or
+# Experimental/WIP alternative:
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```python
 import kaji
 provider = kaji.get_provider("openai")   # reads OPENAI_API_KEY
-# or
+# Experimental/WIP alternative:
 provider = kaji.get_provider("anthropic")
 ```
 
@@ -164,14 +172,14 @@ provider = kaji.get_provider("anthropic")
 
 ```bash
 export OPENAI_API_KEY=sk-...
-# or
+# Experimental/WIP alternative:
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
 import { OpenAIProvider } from "kaji-sdk";
 const provider = new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! });
-// or
+// Experimental/WIP alternative:
 import { AnthropicProvider } from "kaji-sdk";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
@@ -201,9 +209,9 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
 ```
 
 These developer tests may skip without keys, but a skip is not release
-evidence. The protected release requires OpenAI and Anthropic normalized tool
-loops in Python and TypeScript on one exact commit; either missing credential
-blocks release. Native Gemini and Kimi remain experimental.
+evidence. The protected release requires an OpenAI normalized tool loop in
+Python and TypeScript on one exact commit; a missing `OPENAI_API_KEY` blocks
+release. Anthropic, Gemini, Kimi, and OpenRouter remain experimental/WIP.
 
 For release readiness, run the cross-SDK gate from the repository root:
 
@@ -224,8 +232,7 @@ KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji python kaji/scripts/verify_openai
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
 It is not provider evidence. The protected `live_provider_proof.py` gate
-requires both OpenAI and Anthropic credentials and fails loudly if either is
-absent.
+requires OpenAI credentials and fails loudly when they are absent.
 
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji python kaji/scripts/verify_openai_loop.py
@@ -401,7 +408,7 @@ fixed and does not reflect real LLM outputs.
 
 | Package      | Checks                                                                                    |
 | ------------ | ----------------------------------------------------------------------------------------- |
-| `kaji`   | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
+| `kaji`       | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
 | `kaji/ts`    | tsc (type check), oxfmt (format), vitest (unit + quickstart)                              |
 | `kaji/serve` | ruff (lint), pytest (unit); no ty until typing debt is addressed                          |
 

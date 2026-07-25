@@ -62,7 +62,7 @@ def test_release_matrix_preserves_cross_sdk_contract() -> None:
         "Redis realtime/history",
         "voice/TTS",
         "DocumentRAG",
-        "Keyed OpenAI + Anthropic proof",
+        "Keyed OpenAI proof",
         "gpt-5.4-mini",
     ]:
         assert phrase in combined
@@ -103,6 +103,47 @@ def test_release_matrix_matches_machine_readable_feature_tiers() -> None:
     stable_section = matrix.split("## Stable Core", 1)[1].split("\n## ", 1)[0]
     for entry in tiers["stable"]:
         assert f"| {entry['surface']} | Stable core | Stable core |" in stable_section
+
+
+def test_openai_is_the_only_beta_supported_external_provider() -> None:
+    tiers = json.loads(FEATURE_TIERS.read_text())
+    stable_ids = {entry["id"] for entry in tiers["stable"]}
+    experimental_ids = {entry["id"] for entry in tiers["experimental"]}
+    python_exports = tiers["publicExports"]["python"]
+    typescript_exports = tiers["publicExports"]["typescript"]
+    subpaths = tiers["packageSubpaths"]["typescript"]
+
+    assert "openai-adapter" in stable_ids
+    assert "anthropic-adapter" not in stable_ids
+    assert "anthropic-adapter" in experimental_ids
+    assert "to_openai" in python_exports["stable"]
+    assert "to_anthropic" in python_exports["experimental"]
+    assert {"OpenAIProvider", "OpenAIProviderOptions", "openai"} <= set(
+        typescript_exports["stable"]
+    )
+    assert {"AnthropicProvider", "AnthropicProviderOptions", "anthropic"} <= set(
+        typescript_exports["experimental"]
+    )
+    assert subpaths["./openai"]["tier"] == "stable"
+    assert subpaths["./anthropic"]["tier"] == "experimental"
+
+
+def test_live_docs_state_the_openai_only_beta_provider_boundary() -> None:
+    canonical_docs = [
+        REPO_ROOT / "docs" / "kaji" / "README.md",
+        REPO_ROOT / "docs" / "kaji" / "production-beta.md",
+        REPO_ROOT / "docs" / "kaji" / "testing.md",
+        REPO_ROOT / "docs" / "kaji" / "releasing.md",
+        REPO_ROOT / "docs" / "MVP.md",
+        REPO_ROOT / "kaji" / "README.md",
+        REPO_ROOT / "kaji" / "ts" / "README.md",
+    ]
+    combined = "\n".join(path.read_text() for path in canonical_docs)
+
+    assert "OpenAI is Kaji's sole beta-supported primary provider." in combined
+    assert "Anthropic remains implemented but experimental/WIP" in combined
+    assert "OpenAI and Anthropic adapters are declared stable" not in combined
+    assert "Keyed OpenAI + Anthropic proof" not in combined
 
 
 def _release_matrix_parity_scenario_count(matrix: str) -> int:

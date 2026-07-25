@@ -6,14 +6,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "kaji-sdk";
-import { AnthropicProvider } from "kaji-sdk/anthropic";
 import { OpenAIProvider } from "kaji-sdk/openai";
 
 const MARKER = "kaji-installed-provider-proof-marker";
-const PROVIDER_KEYS = {
-  openai: "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-} as const;
+const PROVIDER_KEYS = { openai: "OPENAI_API_KEY" } as const;
 const FORBIDDEN_TERMINALS = new Set<string>([
   EventType.AGENT_TURN_EXHAUSTED,
   EventType.AGENT_TURN_FAILED,
@@ -79,7 +75,7 @@ function parseArguments(argv: string[]): { provider: ProviderName; model: string
     else if (argv[index] === "--model") model = value;
     else throw new Error("invalid provider proof argument");
   }
-  if ((provider !== "openai" && provider !== "anthropic") || !model?.trim()) {
+  if (provider !== "openai" || !model?.trim()) {
     throw new Error("invalid provider proof configuration");
   }
   return { provider, model: model.trim() };
@@ -95,10 +91,7 @@ function echoMatches(value: unknown): boolean {
 }
 
 async function runProof(providerName: ProviderName, model: string, apiKey: string) {
-  const provider =
-    providerName === "openai"
-      ? new OpenAIProvider({ apiKey, model, temperature: 0 })
-      : new AnthropicProvider({ apiKey, model, temperature: 0 });
+  const provider = new OpenAIProvider({ apiKey, model, temperature: 0 });
   const runtime = new AgentBuilder()
     .provider(provider)
     .integration(new EchoProofIntegration())

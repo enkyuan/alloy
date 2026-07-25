@@ -1,6 +1,6 @@
 # Kaji CLI contract
 
-The stable scaffold grammar in both packages is:
+The scaffold grammar in both packages is:
 
 ```text
 kaji [--no-color] [--verbose] init [path] --provider mock|openai|anthropic --yes --force
@@ -18,13 +18,14 @@ including the removed init-only `--out` spelling, fail with a usage error. The
 
 ## Command stability
 
-| Operation | Python | TypeScript | Tier |
-|---|---|---|---|
-| `init` with mock/OpenAI/Anthropic | Yes | Yes | Stable |
-| Echo `add` and `list-integrations` | Yes | Yes | Stable for Echo only |
-| `replay` | No | Yes | Stable, redaction-safe projection |
-| Python `doctor`, `gen`, `info`, `secret`, `upgrade` | Experimental | No | Experimental |
-| GitHub `add` | Opt-in | Opt-in | Experimental |
+| Operation                                           | Python       | TypeScript | Tier                              |
+| --------------------------------------------------- | ------------ | ---------- | --------------------------------- |
+| `init` with mock/OpenAI                             | Yes          | Yes        | Stable                            |
+| `init` with Anthropic                               | Yes          | Yes        | Experimental/WIP                  |
+| Echo `add` and `list-integrations`                  | Yes          | Yes        | Stable for Echo only              |
+| `replay`                                            | No           | Yes        | Stable, redaction-safe projection |
+| Python `doctor`, `gen`, `info`, `secret`, `upgrade` | Experimental | No         | Experimental                      |
+| GitHub `add`                                        | Opt-in       | Opt-in     | Experimental                      |
 
 Python OAuth hosts implement the public asynchronous `CredentialStore`
 protocol to load, save, and delete principal-scoped credential records behind
@@ -36,15 +37,15 @@ out of integration and runtime code.
 Requested data and successful write summaries use stdout. Warnings and
 diagnostics use stderr. Both SDK CLIs use the same closed exit contract:
 
-| Exit | Meaning |
-|---:|---|
-| `0` | Success, help, or an `add --check` result that is current |
-| `1` | Validation, runtime, file, or copy failure |
-| `2` | Malformed usage |
-| `3` | `add --check`: bundle is absent |
-| `4` | `add --check`: bundle is outdated |
-| `5` | `add --check`: bundle has local modifications or another ownership conflict |
-| `6` | `add --check`: bundle is demoted and cannot be promoted automatically |
+| Exit | Meaning                                                                     |
+| ---: | --------------------------------------------------------------------------- |
+|  `0` | Success, help, or an `add --check` result that is current                   |
+|  `1` | Validation, runtime, file, or copy failure                                  |
+|  `2` | Malformed usage                                                             |
+|  `3` | `add --check`: bundle is absent                                             |
+|  `4` | `add --check`: bundle is outdated                                           |
+|  `5` | `add --check`: bundle has local modifications or another ownership conflict |
+|  `6` | `add --check`: bundle is demoted and cannot be promoted automatically       |
 
 Codes `3`-`6` are bundle-state classifications, primarily from `add --check`;
 they are not generic runtime failures.

@@ -408,7 +408,8 @@ describe("npm contract artifact", () => {
 
     expect(source).toContain('from "kaji-sdk"');
     expect(source).toContain('from "kaji-sdk/openai"');
-    expect(source).toContain('from "kaji-sdk/anthropic"');
+    expect(source).not.toContain('from "kaji-sdk/anthropic"');
+    expect(source).not.toContain("ANTHROPIC_API_KEY");
     expect(source).toContain('import.meta.resolve("kaji-sdk")');
     expect(source).toContain(".build({ store: new InMemoryEventStore() })");
     for (const field of [
@@ -632,7 +633,7 @@ describe("npm contract artifact", () => {
       exports: ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"],
     });
     expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
-      tier: "stable",
+      tier: "experimental",
       exports: ["AnthropicProvider", "AnthropicProviderOptions"],
     });
     expect(tiers.packageSubpaths.typescript["./testing"]).toEqual({

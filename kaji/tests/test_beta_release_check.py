@@ -266,12 +266,12 @@ def test_workflow_check_prepares_frozen_dependencies(
     assert gate_calls == [environment]
 
 
-def test_protected_provider_proof_requires_both_keys_before_success(
+def test_protected_provider_proof_requires_openai_key_before_success(
     tmp_path: Path,
 ) -> None:
     env = os.environ.copy()
     env.pop("OPENAI_API_KEY", None)
-    env.pop("ANTHROPIC_API_KEY", None)
+    env["ANTHROPIC_API_KEY"] = "wip-provider-key-must-not-satisfy-beta-proof"
     env["KAJI_RELEASE_COMMIT"] = "a" * 40
     proof = REPO_ROOT / "kaji" / "scripts" / "live_provider_proof.py"
     result = subprocess.run(
@@ -297,15 +297,15 @@ def test_protected_provider_proof_requires_both_keys_before_success(
     assert "PASS:" not in output
 
 
-def test_protected_provider_proof_uses_one_installed_runtime_for_four_cells() -> None:
+def test_protected_provider_proof_uses_one_installed_runtime_for_two_openai_cells() -> (
+    None
+):
     module = _load_root_script("live_provider_proof.py")
     source = (BETA_GATE.parent / "live_provider_proof.py").read_text()
 
     assert module.CELLS == (
         ("python", "openai"),
         ("typescript", "openai"),
-        ("python", "anthropic"),
-        ("typescript", "anthropic"),
     )
     calls = [
         node
@@ -1259,16 +1259,16 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
 
 
 @pytest.mark.parametrize(
-    ("include_providers", "expected_extras"),
+    ("include_openai", "expected_extras"),
     [
         (False, []),
-        (True, ["openai", "anthropic"]),
+        (True, ["openai"]),
     ],
 )
-def test_installed_python_provider_dependencies_are_opt_in(
+def test_installed_python_openai_dependency_is_opt_in(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    include_providers: bool,
+    include_openai: bool,
     expected_extras: list[str],
 ) -> None:
     module = _load_root_script("installed_release_runtime.py")
@@ -1297,7 +1297,7 @@ def test_installed_python_provider_dependencies_are_opt_in(
         root,
         release,
         {"PATH": "/tools"},
-        include_providers=include_providers,
+        include_openai=include_openai,
     )
 
     export = next(command for command in commands if command[1] == "export")
@@ -1310,25 +1310,28 @@ def test_installed_python_provider_dependencies_are_opt_in(
 
 
 @pytest.mark.parametrize(
-    ("include_providers", "expected_providers"),
+    ("include_openai", "expected_providers"),
     [
         (False, set()),
-        (True, {"openai", "@anthropic-ai/sdk"}),
+        (True, {"openai"}),
     ],
 )
-def test_installed_typescript_provider_dependencies_are_opt_in(
-    include_providers: bool,
+def test_installed_typescript_openai_dependency_is_opt_in(
+    include_openai: bool,
     expected_providers: set[str],
 ) -> None:
     module = _load_root_script("installed_release_runtime.py")
-    manifest, lock = module._typescript_consumer_fixture(include_providers)
+    manifest, lock = module._typescript_consumer_fixture(include_openai)
     manifest_dependencies = json.loads(manifest.read_text())["dependencies"]
-    lock_dependencies = json.loads(lock.read_text())["packages"][""]["dependencies"]
+    lock_packages = json.loads(lock.read_text())["packages"]
+    lock_dependencies = lock_packages[""]["dependencies"]
     providers = {"openai", "@anthropic-ai/sdk"}
 
     assert providers.intersection(manifest_dependencies) == expected_providers
     assert providers.intersection(lock_dependencies) == expected_providers
     assert manifest_dependencies == lock_dependencies
+    if include_openai:
+        assert "node_modules/@anthropic-ai/sdk" not in lock_packages
 
 
 def test_installed_runtime_rejects_wrong_commit_before_install(
@@ -3873,10 +3876,10 @@ def test_release_docs_reference_beta_release_check() -> None:
     assert "SDK/service boundary" in combined
     assert "TypeScript optional provider imports" in combined
     for readme in readmes:
-        assert "OPENAI_API_KEY=... ANTHROPIC_API_KEY=..." in readme
+        assert "OPENAI_API_KEY=..." in readme
         assert "KAJI_RELEASE_ARTIFACTS_DIR=" in readme
         assert "KAJI_RELEASE_COMMIT=<40-character-commit>" in readme
-        assert "OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1" not in readme
+        assert "ANTHROPIC_API_KEY=... KAJI_RUN_KEYED_LIVE=1" not in readme
 
 
 def test_release_matrix_names_pending_protected_release_gate_truthfully() -> None:

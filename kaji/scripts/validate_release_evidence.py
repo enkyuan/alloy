@@ -829,12 +829,10 @@ def validate_provider(
     proofs = document.get("proofs")
     if not isinstance(proofs, list):
         reject("provider_cells_mismatch")
-    require(len(proofs) == 4, "provider_cells_mismatch")
+    require(len(proofs) == 2, "provider_cells_mismatch")
     expected_cells = {
         ("python", "openai"),
         ("typescript", "openai"),
-        ("python", "anthropic"),
-        ("typescript", "anthropic"),
     }
     cells = {
         (row.get("sdk"), row.get("provider")) for row in proofs if isinstance(row, dict)

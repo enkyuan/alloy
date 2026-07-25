@@ -4,9 +4,9 @@
 
 Kaji is in pre-beta release implementation. Promotion is blocked pending
 same-commit protected release evidence: floor/latest runtime matrices, the
-required keyed OpenAI and Anthropic proofs, the paired A/B benchmark, a
+required keyed OpenAI proof, the paired A/B benchmark, a
 30-minute soak, a real signed tag, provenance, and publication verification.
-Both declared stable provider adapters must complete a real model-requested
+The sole beta-supported external provider must complete a real model-requested
 tool loop in Python and TypeScript on that exact release commit. It does not
 mean every Python-only modality or infrastructure adapter is beta-ready.
 
@@ -17,20 +17,23 @@ is checked against the machine feature contract and both registry indexes by
 
 ## Stable Core
 
-<!-- beta-stable: agent-builder,runtime-turn-loop,cancellation,sessions,in-memory-event-store-journal,event-replay,tool-registry-planner-policy,openai-adapter,anthropic-adapter,echo-integration -->
+<!-- beta-stable: agent-builder,runtime-turn-loop,cancellation,sessions,in-memory-event-store-journal,event-replay,tool-registry-planner-policy,openai-adapter,echo-integration -->
 
 | Surface | Python | TypeScript | Release gate |
 | --- | --- | --- | --- |
 | Agent builder | Stable core | Stable core | unit tests |
-| Runtime turn loop | Stable core | Stable core | unit tests + mandatory live OpenAI and Anthropic tool loops |
+| Runtime turn loop | Stable core | Stable core | unit tests + mandatory live OpenAI tool loops |
 | Cancellation | Stable core | Stable core | cancellation lifecycle tests |
 | Sessions | Stable core | Stable core | session isolation tests |
 | In-memory event store/journal | Stable core | Stable core | journal/store tests |
 | Event replay | Stable core | Stable core | replay tests |
 | Tool registry/planner/policy | Stable core | Stable core | unit tests + echo integration |
 | OpenAI adapter | Stable core | Stable core | unit tests + mandatory live tool loop in both SDKs |
-| Anthropic adapter | Stable core | Stable core | unit tests + mandatory live tool loop in both SDKs |
 | Echo integration | Stable core | Stable core | integration tests |
+
+OpenAI is Kaji's sole beta-supported primary provider. Anthropic remains
+implemented but experimental/WIP, with no beta compatibility or
+publication-proof commitment.
 
 The echo integration is the only catalog entry inside the first beta promise.
 GitHub remains an explicit opt-in experiment.
@@ -47,7 +50,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 | echo | beta | python, typescript |
 | github | experimental | python, typescript |
 
-<!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,retriever-selection,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
+<!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,anthropic-adapter,retriever-selection,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 
 ## Experimental Python-Only
 
@@ -63,6 +66,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 | Surface                                | Status       | Why                                     |
 | -------------------------------------- | ------------ | --------------------------------------- |
+| Anthropic adapter                      | Experimental cross-SDK | implemented and test-covered, but outside the beta support and publication-proof promise |
 | Distributed same-session serialization | Deferred     | the beta coordinator is process-local   |
 | Exactly-once external side effects     | Deferred     | external systems must honor idempotency |
 | Unbounded or cross-process replay      | Deferred     | beta replay is capacity-limited         |
@@ -85,6 +89,7 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 | voice/TTS              | Configured TTS adapter smoke tests, interruption/cancellation tests, and explicit fallback behavior for unconfigured adapters.                        |
 | DocumentRAG            | Deterministic retrieval tests, fixture-based indexing tests, eval set for answer grounding, and documented storage requirements.                     |
 | native Gemini/Kimi     | Native keyed provider smoke tests, tool-call tests where supported, error mapping tests, and cost metadata tests.                                    |
+| Anthropic adapter      | Explicit product promotion plus protected Python and TypeScript tool-loop evidence on one exact candidate.                                           |
 | tool retrieval         | Ranking fixture tests, policy interaction tests, and runtime integration tests proving retrieved tools are callable.                                 |
 
 ## Release Gates
@@ -103,8 +108,8 @@ uv run --project kaji python kaji/scripts/beta_release_check.py
 The wrapper runs the non-keyed local checks below and fails clearly when
 required local tooling such as `bun` or `uv` is missing. This is an offline
 rehearsal, not provider-readiness evidence. The protected `kaji-beta` workflow
-requires OpenAI and Anthropic credentials and completes both provider tool
-loops in both SDKs; a missing credential blocks the release.
+requires an OpenAI credential and completes the OpenAI provider tool loop in
+both SDKs; a missing credential blocks the release.
 
 The pinned ast-grep step is mandatory. It guards the Python SDK/service
 boundary, core package dependency direction, legacy tool-model imports,
@@ -123,7 +128,7 @@ TypeScript optional provider imports, and cancellation error shape.
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
 | Paired A/B benchmark | `kaji.performance.yml`: immutable reference artifacts and the exact candidate on three numbered GitHub-hosted `macos-15` matrix replicas in one run attempt; five adjacent matched pairs after two warmups per case, with retained raw runner/image receipts; diagnostic runner names may repeat | Yes; timing must pass unanimously at ≤1.20 across all three replicas, mixed timing is inconclusive, and any per-pair RSS ratio >1.20 is a hard failure | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30 --protected` on the exact candidate, with retained `macos-15` image provenance | Yes; independent of the paired benchmark | Pending protected run |
-| Keyed OpenAI + Anthropic proof | `live_provider_proof.py` in `kaji-beta` | Yes; both providers in Python and TypeScript, missing key blocks | Pending protected run |
+| Keyed OpenAI proof | `live_provider_proof.py` in `kaji-beta` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
 | Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly five fresh arm64 macOS users across Python/npm/Bun, each bound to the installed candidate artifact | Unmeasured |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |

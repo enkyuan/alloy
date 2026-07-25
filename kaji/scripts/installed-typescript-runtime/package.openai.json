@@ -1,0 +1,10 @@
+{
+  "name": "kaji-installed-release-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
+    "openai": "6.45.0",
+    "zod": "4.4.3"
+  }
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run four protected provider proofs from one verified installed artifact runtime."""
+"""Run the two protected OpenAI proofs from one verified installed artifact runtime."""
 
 from __future__ import annotations
 
@@ -31,21 +31,16 @@ COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 KEYED_PROOF_BUDGET = CommandBudget(timeout_seconds=180, terminate_grace_seconds=1)
 PROVIDER_KEYS = {
     "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
 }
 MODEL_ENV = {
     "openai": "KAJI_LIVE_OPENAI_MODEL",
-    "anthropic": "KAJI_LIVE_ANTHROPIC_MODEL",
 }
 DEFAULT_MODELS = {
     "openai": "gpt-5.4-mini",
-    "anthropic": "claude-sonnet-4-6",
 }
 CELLS = (
     ("python", "openai"),
     ("typescript", "openai"),
-    ("python", "anthropic"),
-    ("typescript", "anthropic"),
 )
 CHILD_ENV_ALLOWLIST = {
     "ALL_PROXY",
@@ -331,7 +326,7 @@ def main(
         with installed_release_runtime(
             args.artifacts_dir,
             expected_commit=args.expected_commit,
-            include_providers=True,
+            include_openai=True,
         ) as runtime:
             identity = runtime.identity()
             if identity.get("commit") != args.expected_commit:
@@ -408,7 +403,7 @@ def main(
         evidence.update(conclusion="passed", failureCode=None)
         if not _retain_final(evidence, parent):
             return 1
-        print("PASS: four installed provider tool loops completed")
+        print("PASS: two installed OpenAI provider tool loops completed")
         return 0
 
     if current_index is not None:

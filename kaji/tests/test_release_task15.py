@@ -375,6 +375,7 @@ def test_npm_lock_uses_patched_fast_uri() -> None:
     for relative in (
         "kaji/scripts/installed-typescript-runtime/package-lock.json",
         "kaji/scripts/installed-typescript-runtime/package-lock.core.json",
+        "kaji/scripts/installed-typescript-runtime/package-lock.openai.json",
     ):
         package_lock = json.loads(_read(relative))
         fast_uri = package_lock["packages"]["node_modules/fast-uri"]
@@ -405,7 +406,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
 
     assert "environment: kaji-beta" in rehearsal
     assert "OPENAI_API_KEY" in rehearsal
-    assert "ANTHROPIC_API_KEY" in rehearsal
+    assert "ANTHROPIC_API_KEY" not in rehearsal
     assert "live_provider_proof.py" in rehearsal
     assert (
         "needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]"
@@ -839,9 +840,16 @@ def test_keyed_proof_secrets_are_step_scoped_and_initial_evidence_precedes_setup
     assert "secrets.OPENAI_API_KEY" not in job_environment
     assert "secrets.ANTHROPIC_API_KEY" not in job_environment
     assert keyed.count("secrets.OPENAI_API_KEY") == 1
-    assert keyed.count("secrets.ANTHROPIC_API_KEY") == 1
+    assert "secrets.ANTHROPIC_API_KEY" not in keyed
     assert "OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}" in proof_step
-    assert "ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}" in proof_step
+    assert "ANTHROPIC_API_KEY" not in proof_step
+    assert keyed.count('provider: "openai"') == 2
+    assert 'provider: "anthropic"' not in keyed
+    assert ".proofs | length == 2" in keyed
+    normalized_keyed = re.sub(r"\s+", " ", keyed)
+    assert (
+        'map(.sdk + "/" + .provider) | sort == ["python/openai", "typescript/openai"]'
+    ) in normalized_keyed
     assert "uv run --project kaji --no-sync python" in proof_step
     assert "uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6" in keyed
     assert "uses: ./.github/actions/setup-bun-cache" not in keyed
@@ -3072,8 +3080,6 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     for sdk, provider in (
         ("python", "openai"),
         ("typescript", "openai"),
-        ("python", "anthropic"),
-        ("typescript", "anthropic"),
     ):
         artifact = runtime_artifacts[sdk]
         call_id = f"{sdk}-{provider}-call"
@@ -3488,6 +3494,7 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         ("missing_raw_paired_replica", "evidence_missing"),
         ("tampered_raw_paired_replica", "paired_raw_replica_mismatch"),
         ("missing_provider_cell", "provider_cells_mismatch"),
+        ("unexpected_anthropic_cell", "provider_cells_mismatch"),
         ("mixed_tthw_status", "artifact_hash_mismatch"),
         ("invalid_tthw_raw", "tthw_evidence_invalid"),
         ("manual_tthw_timing", "tthw_evidence_invalid"),
@@ -3569,6 +3576,7 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "forged_paired_ratio": "benchmark-results",
             "stale_paired_run": "benchmark-results",
             "missing_provider_cell": "provider-evidence",
+            "unexpected_anthropic_cell": "provider-evidence",
             "mixed_tthw_status": "tthw-status",
             "invalid_tthw_raw": "tthw-evidence",
             "manual_tthw_timing": "tthw-evidence",
@@ -3644,6 +3652,14 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["replicas"]["3"]["runnerEvidence"]["invocation"]["runId"] = 122
         elif hostile_case == "missing_provider_cell":
             document["proofs"].pop()
+        elif hostile_case == "unexpected_anthropic_cell":
+            document["proofs"].append(
+                {
+                    **document["proofs"][0],
+                    "provider": "anthropic",
+                    "model": "claude-test-model",
+                }
+            )
         elif hostile_case == "mixed_tthw_status":
             document["artifactSha256"]["kaji-sdk-0.2.0-beta.2.tgz"] = "0" * 64
         elif hostile_case == "manual_tthw_timing":

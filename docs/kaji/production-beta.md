@@ -2,11 +2,11 @@
 
 Kaji is in pre-beta release implementation. The stable core described here is
 implemented and covered by local deterministic gates, but promotion is blocked
-until the same release commit passes required keyed OpenAI and Anthropic tool
-loops in both SDKs, floor/latest runtime, the three-replica paired A/B
-benchmark, a separate 30-minute soak, signed-tag, provenance, and publication
-checks. Do not describe either package as production beta-ready before those
-artifacts are attached to the release.
+until the same release commit passes required keyed OpenAI tool loops in both
+SDKs, floor/latest runtime, the three-replica paired A/B benchmark, a separate
+30-minute soak, signed-tag, provenance, and publication checks. Do not describe
+either package as production beta-ready before those artifacts are attached to
+the release.
 
 The shared machine contract is
 [`kaji/contracts/beta-core-v1.json`](../../kaji/contracts/beta-core-v1.json).
@@ -16,9 +16,10 @@ The feature promise is generated and checked through
 ## First success
 
 These examples use the deterministic mock provider so they run from the exact
-installed wheel and npm tarball without credentials. Replace it with OpenAI or
-Anthropic only after this local path works. Both examples demonstrate the same
-four boundaries:
+installed wheel and npm tarball without credentials. Replace it with OpenAI
+only after this local path works. Anthropic remains available as an opt-in
+experimental/WIP adapter, not as a beta-supported path. Both examples
+demonstrate the same four boundaries:
 
 1. A text-only turn needs no principal because it cannot execute a tool.
 2. A tool-enabled turn supplies an explicit principal and every tool declares risk.
@@ -263,9 +264,12 @@ aggregate accounting result.
 
 The beta promise is the cross-SDK embedded loop: agent builder and runtime,
 same-session coordination, cancellation, sequenced in-memory event history and
-replay, tool schema/policy/execution, OpenAI and Anthropic adapters, and the echo
-catalog integration. RAG/retrieval may be implemented in Python but remains
-experimental and outside this promise.
+replay, tool schema/policy/execution, the OpenAI adapter, and the echo catalog
+integration. Anthropic, Gemini, Kimi, and OpenRouter adapters remain
+experimental/WIP, opt-in, and outside the beta compatibility and
+publication-proof commitment. RAG/retrieval may be implemented in Python but
+also remains experimental and outside this promise. `MockProvider` is the
+deterministic local/test default.
 
 Echo is the only beta catalog entry. GitHub is experimental and requires
 explicit opt-in in both SDKs. Python-only
@@ -348,8 +352,8 @@ Promotion additionally requires evidence from the exact release commit for:
 
 - Python 3.11 and the latest supported Python;
 - Node 22 and 24;
-- required keyed OpenAI and Anthropic tool loops in both Python and TypeScript;
-  a missing credential blocks release rather than producing a readiness skip;
+- required keyed OpenAI tool loops in both Python and TypeScript; a missing
+  `OPENAI_API_KEY` blocks release rather than producing a readiness skip;
 - the immutable-reference paired A/B benchmark on three numbered same-attempt
   `macos-15` matrix replicas, including retained raw runner/image receipts;
 - the separate protected 30-minute soak of the exact candidate;

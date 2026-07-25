@@ -15,7 +15,7 @@
   "packageSubpaths": {
     "typescript": {
       "./anthropic": {
-        "tier": "stable",
+        "tier": "experimental",
         "exports": ["AnthropicProvider", "AnthropicProviderOptions"]
       },
       "./auth": {
@@ -167,7 +167,6 @@
         "replay_session",
         "spec_to_neutral",
         "supports_session_purge",
-        "to_anthropic",
         "to_openai",
         "tool"
       ],
@@ -193,6 +192,7 @@
         "SplitEventJournal",
         "ToolRetriever",
         "VectorStore",
+        "to_anthropic",
         "to_gemini"
       ],
       "deprecated": []
@@ -205,8 +205,6 @@
         "AgentRuntimeOptions",
         "AgentStrategy",
         "AgentTurnFailed",
-        "AnthropicProvider",
-        "AnthropicProviderOptions",
         "ApprovalDeadlineSource",
         "ApprovalDecision",
         "ApprovalFailureCode",
@@ -394,7 +392,6 @@
         "UnknownToolError",
         "UuidFactory",
         "VERSION",
-        "anthropic",
         "applyEvent",
         "approvalKey",
         "calculateCostUsd",
@@ -429,6 +426,8 @@
         "validateStoredEvent"
       ],
       "experimental": [
+        "AnthropicProvider",
+        "AnthropicProviderOptions",
         "BoundNetworkTransport",
         "EventBus",
         "GeminiFactoryOptions",
@@ -436,6 +435,7 @@
         "SafeFetchPolicy",
         "SplitEventCommitter",
         "SplitEventCommitterOptions",
+        "anthropic",
         "gemini",
         "kimi",
         "openrouter",
@@ -459,7 +459,6 @@
       "surface": "Tool registry/planner/policy"
     },
     { "id": "openai-adapter", "surface": "OpenAI adapter" },
-    { "id": "anthropic-adapter", "surface": "Anthropic adapter" },
     { "id": "echo-integration", "surface": "Echo integration" }
   ],
   "experimental": [
@@ -470,6 +469,7 @@
     { "id": "voice-tts", "surface": "Voice/TTS" },
     { "id": "rag-retrieval", "surface": "RAG/retrieval" },
     { "id": "native-gemini-kimi", "surface": "Native Gemini/Kimi" },
+    { "id": "anthropic-adapter", "surface": "Anthropic adapter" },
     { "id": "retriever-selection", "surface": "Retriever selection" },
     {
       "id": "distributed-session-serialization",

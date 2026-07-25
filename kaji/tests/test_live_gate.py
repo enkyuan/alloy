@@ -141,11 +141,11 @@ def _fake_installed_runtime(
 
     @contextmanager
     def installed_release_runtime(
-        artifacts_dir: Path, *, expected_commit: str, include_providers: bool = False
+        artifacts_dir: Path, *, expected_commit: str, include_openai: bool = False
     ) -> Iterator[SimpleNamespace]:
         assert artifacts_dir == tmp_path / "artifacts"
         assert expected_commit == "a" * 40
-        assert include_providers is True
+        assert include_openai is True
         yield runtime
 
     monkeypatch.setattr(
@@ -181,13 +181,13 @@ def _runner_receipt(
     }
 
 
-def test_protected_provider_proof_requires_both_keys_and_retains_failure(
+def test_protected_provider_proof_requires_openai_key_and_retains_failure(
     tmp_path: Path,
 ) -> None:
     module = _load_root_script("live_provider_proof.py")
     evidence = tmp_path / "provider-evidence.json"
     environment = {
-        "OPENAI_API_KEY": "openai-test-key",
+        "ANTHROPIC_API_KEY": "wip-provider-key",
         "KAJI_RELEASE_COMMIT": "a" * 40,
         "KAJI_PROVIDER_STATUS_FILE": str(evidence),
     }
@@ -201,8 +201,6 @@ def test_protected_provider_proof_requires_both_keys_and_retains_failure(
     assert {(row["sdk"], row["provider"]) for row in retained["proofs"]} == {
         ("python", "openai"),
         ("typescript", "openai"),
-        ("python", "anthropic"),
-        ("typescript", "anthropic"),
     }
     assert {row["status"] for row in retained["proofs"]} == {"not_run"}
 
@@ -287,7 +285,7 @@ def test_protected_provider_proof_retains_artifact_mismatch_without_details(
     assert "secret detail" not in captured.out + captured.err
 
 
-def test_protected_provider_proof_runs_four_real_tool_loops_and_records_commit(
+def test_protected_provider_proof_runs_two_openai_tool_loops_and_records_commit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     module = _load_root_script("live_provider_proof.py")
@@ -348,13 +346,11 @@ def test_protected_provider_proof_runs_four_real_tool_loops_and_records_commit(
     ] == [
         ("python", "openai", "passed"),
         ("typescript", "openai", "passed"),
-        ("python", "anthropic", "passed"),
-        ("typescript", "anthropic", "passed"),
     ]
     assert all(
         row["proof"] == "real_normalized_tool_loop" for row in retained["proofs"]
     )
-    assert len(calls) == 4
+    assert len(calls) == 2
     commands = [command for command, _cwd, _environment in calls]
     rendered = [" ".join(command) for command in commands]
     assert all("installed_provider_proof.py" in command for command in rendered[::2])
@@ -374,13 +370,9 @@ def test_protected_provider_proof_runs_four_real_tool_loops_and_records_commit(
     for command, _cwd, child in calls:
         provider = command[command.index("--provider") + 1]
         expected_key = module.PROVIDER_KEYS[provider]
-        other_key = module.PROVIDER_KEYS[
-            "anthropic" if provider == "openai" else "openai"
-        ]
-        assert child[expected_key] == (
-            "openai-test-key" if provider == "openai" else "anthropic-test-key"
-        )
-        assert other_key not in child
+        assert provider == "openai"
+        assert child[expected_key] == "openai-test-key"
+        assert "ANTHROPIC_API_KEY" not in child
         assert set(child) == {
             "PATH",
             "HOME",
@@ -419,10 +411,6 @@ def test_provider_child_environment_does_not_mutate_parent() -> None:
     }
 
     openai = module._child_environment(base, parent, "openai", "gpt-5.4-mini", "a" * 40)
-    anthropic = module._child_environment(
-        base, parent, "anthropic", "claude-sonnet-4-6", "a" * 40
-    )
-
     assert openai == {
         "PATH": "/usr/bin",
         "HOME": "/isolated",
@@ -431,15 +419,6 @@ def test_provider_child_environment_does_not_mutate_parent() -> None:
         "KAJI_RELEASE_COMMIT": "a" * 40,
         "OPENAI_API_KEY": "openai-test-key",
         "KAJI_LIVE_OPENAI_MODEL": "gpt-5.4-mini",
-    }
-    assert anthropic == {
-        "PATH": "/usr/bin",
-        "HOME": "/isolated",
-        "TMPDIR": "/isolated/tmp",
-        "HTTPS_PROXY": "https://proxy.invalid",
-        "KAJI_RELEASE_COMMIT": "a" * 40,
-        "ANTHROPIC_API_KEY": "anthropic-test-key",
-        "KAJI_LIVE_ANTHROPIC_MODEL": "claude-sonnet-4-6",
     }
     assert set(parent) == {
         "OPENAI_API_KEY",
@@ -459,9 +438,12 @@ def test_installed_provider_runners_use_only_public_package_imports() -> None:
     typescript_source = typescript.read_text(encoding="utf-8")
     assert "from kaji" in python_source
     assert "kaji/src" not in python_source
+    assert "AnthropicProvider" not in python_source
+    assert "ANTHROPIC_API_KEY" not in python_source
     assert 'from "kaji-sdk"' in typescript_source
     assert 'from "kaji-sdk/openai"' in typescript_source
-    assert 'from "kaji-sdk/anthropic"' in typescript_source
+    assert 'from "kaji-sdk/anthropic"' not in typescript_source
+    assert "ANTHROPIC_API_KEY" not in typescript_source
     assert 'from "@/' not in typescript_source
     assert "/dist/" not in typescript_source
 
@@ -510,8 +492,6 @@ def test_protected_provider_proof_retains_partial_rows_on_command_failure(
     assert [row["status"] for row in retained["proofs"]] == [
         "passed",
         "failed",
-        "not_run",
-        "not_run",
     ]
 
 

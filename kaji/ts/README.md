@@ -10,6 +10,11 @@ server, or environment configured). It mirrors the runtime core of the Python
 > Release status and evidence: https://github.com/enkyuan/alloy/blob/main/kaji/RELEASE_MATRIX.md
 <!-- canonical-status-links:end -->
 
+OpenAI is the sole beta-supported primary provider. Anthropic, Gemini, Kimi,
+and OpenRouter are opt-in experimental/WIP adapters with no beta compatibility
+or publication-proof commitment. Use `MockProvider` as the deterministic
+local/test default.
+
 See [**Kaji MVP**](https://github.com/enkyuan/alloy/blob/main/docs/MVP.md) for
 the full five-step developer path and scope definition.
 
@@ -18,14 +23,14 @@ the full five-step developer path and scope definition.
 ```bash
 npm install kaji-sdk@0.2.0-beta.2 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic
+npm install kaji-sdk@0.2.0-beta.2 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 # or: bun add kaji-sdk@0.2.0-beta.2 zod openai
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
-are optional peers -- install only the one you use. Supported runtimes are
-Node 22 or 24 with npm or Bun. Supported compilers are TypeScript 5.7 and the
-current TypeScript 6 release.
+are optional peers -- install only the one you use. Anthropic is not in the
+beta support tier. Supported runtimes are Node 22 or 24 with npm or Bun.
+Supported compilers are TypeScript 5.7 and the current TypeScript 6 release.
 
 ## Quick start
 
@@ -38,9 +43,7 @@ CommonJS project:
 import { AgentBuilder } from "kaji-sdk";
 import { MockProvider } from "kaji-sdk/testing";
 
-const runtime = new AgentBuilder()
-  .provider(new MockProvider({ reply: "hello" }))
-  .build();
+const runtime = new AgentBuilder().provider(new MockProvider({ reply: "hello" })).build();
 const result = await runtime.turn("Say hello.");
 console.log(result.text, result.accounting);
 ```
@@ -176,17 +179,11 @@ identity, deadline, and cancellation:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-# or: export ANTHROPIC_API_KEY=sk-ant-...
+# Experimental/WIP alternative: export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
-import {
-  AgentBuilder,
-  OpenAIProvider,
-  Integration,
-  deadlineAfter,
-  tool,
-} from "kaji-sdk";
+import { AgentBuilder, OpenAIProvider, Integration, deadlineAfter, tool } from "kaji-sdk";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -218,7 +215,7 @@ console.log(result.text, result.accounting);
 ```
 
 Swap `OpenAIProvider` for `AnthropicProvider` (and `OPENAI_API_KEY` for
-`ANTHROPIC_API_KEY`) to use Anthropic.
+`ANTHROPIC_API_KEY`) to use the experimental/WIP Anthropic adapter.
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
 tools are both visible to the model and executable.
@@ -231,6 +228,7 @@ investigation agent, opt into read-only exposure so the two mutation tools are
 not registered or sent to the model.
 
 <!-- docs-test:github-read-only:start -->
+
 ```ts
 import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji-sdk";
 import { createGithubIntegration } from "kaji-sdk/integrations/github";
@@ -276,6 +274,7 @@ try {
   github.close();
 }
 ```
+
 <!-- docs-test:github-read-only:end -->
 
 `toolExposure` controls which tools reach the model; it does not reduce token
@@ -327,10 +326,10 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
 
 The live test registers a read-only probe tool, verifies the model calls it,
 and verifies the runtime emits final assistant text using the tool result.
-Release evidence requires protected OpenAI and Anthropic tool loops in both
-SDKs on one exact commit. A missing credential blocks that release evidence.
-The TS Kimi and Gemini paths are experimental OpenAI-compatible factories, not
-native provider implementations.
+Keyed OpenAI proof requires protected tool loops in both SDKs on one exact
+commit. A missing `OPENAI_API_KEY` blocks that release evidence. Anthropic,
+Kimi, Gemini, and OpenRouter are experimental/WIP; the latter three are
+OpenAI-compatible factories rather than native provider implementations.
 
 For the cross-SDK release gate, run from the repository root:
 
@@ -350,19 +349,19 @@ KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji python kaji/scripts/verify_openai
 ```
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
-It is not provider evidence. The protected release mode requires both
-`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` and fails when either is absent.
+It is not provider evidence. The protected release mode requires
+`OPENAI_API_KEY` and fails when it is absent.
 
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
-`KAJI_RUN_KEYED_LIVE=1` is not a one-key shortcut. It is the fail-closed
-four-cell proof and requires both provider keys, the frozen artifact set, and
-the exact 40-character release commit:
+`KAJI_RUN_KEYED_LIVE=1` is the fail-closed two-cell OpenAI proof (Python and
+TypeScript). It requires the OpenAI key, frozen artifact set, and exact
+40-character release commit:
 
 ```bash
-OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \
+OPENAI_API_KEY=... \
 KAJI_RELEASE_ARTIFACTS_DIR="$PWD/.artifacts/kaji-release" \
 KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
 uv run --project kaji python kaji/scripts/beta_release_check.py
@@ -374,8 +373,11 @@ single-provider command above is only a local paid smoke test.
 ## Stability tiers
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
-  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  `ToolPlanner`, session replay, the OpenAI provider, and the in-memory
   event store/committer form the supported embedded-agent surface.
+- **Experimental providers:** Anthropic, Gemini, Kimi, and OpenRouter remain
+  opt-in WIP surfaces without a beta compatibility or publication-proof
+  commitment.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities exist in Python but are not production-hardened.
@@ -401,11 +403,7 @@ runtime executes them. All hosts use `TypedApprovalHandler` and return an
 that prints the tool name, risk, and arguments, then reads `y` / `N` on stdin:
 
 ```ts
-import {
-  AgentBuilder,
-  cliApprovalHandler,
-  openai,
-} from "kaji-sdk";
+import { AgentBuilder, cliApprovalHandler, openai } from "kaji-sdk";
 
 const agent = new AgentBuilder()
   .provider(openai())
@@ -479,43 +477,44 @@ const result = await executeTool(
 
 ## What's exported
 
-| Export | What it is |
-| --- | --- |
-| `EventType`, `KajiEvent` | Event discriminants and Zod-validated event union |
-| `EventStore`, `InMemoryEventStore` | Event log that is append-only while retained; explicit session purge is an optional lifecycle capability |
-| `EventBus` | In-memory pub/sub per session |
-| `replaySession`, `SessionManager`, session store types | Session projection and management |
-| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs` | Tool registry (global + scoped) |
-| `ToolPolicy`, `ToolPlanner` | Allow/deny and approval-gated execution |
+| Export                                                                                      | What it is                                                                                                                                 |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `EventType`, `KajiEvent`                                                                    | Event discriminants and Zod-validated event union                                                                                          |
+| `EventStore`, `InMemoryEventStore`                                                          | Event log that is append-only while retained; explicit session purge is an optional lifecycle capability                                   |
+| `EventBus`                                                                                  | In-memory pub/sub per session                                                                                                              |
+| `replaySession`, `SessionManager`, session store types                                      | Session projection and management                                                                                                          |
+| `registerTool`, `ToolRegistry`, `toolSpecFromSchema`, `executeTool`, `listToolSpecs`        | Tool registry (global + scoped)                                                                                                            |
+| `ToolPolicy`, `ToolPlanner`                                                                 | Allow/deny and approval-gated execution                                                                                                    |
 | `TypedApprovalHandler`, `cliApprovalHandler`, `EventApprovalHandler`, `AutoApprovalHandler` | Structured approval handlers: stdin, event-driven (publishes `TOOL_APPROVAL_REQUESTED` for a host UI to answer), and auto-decide by policy |
-| `OpenAIProvider`, `AnthropicProvider` | LLM providers |
-| `normalizeProviderError`, `NormalizedProviderError` | Redaction-safe semantic classification for Kaji provider errors |
-| `openai`, `anthropic`, `kimi`, `gemini`, `openrouter` | One-line provider factories; Kimi, Gemini, and OpenRouter presets are experimental |
-| `getProvider`, `registerProvider` | Name-keyed provider registry, for host code that resolves a provider by config string |
-| `generateText`, `streamText` | One-shot provider calls without a full `AgentRuntime`: a single request/response or stream, no event log |
-| `AgentRuntime`, `AgentBuilder`, `CancellationToken` | ReAct loop and fluent builder |
-| `EffectiveRuntimeLimits` | Immutable values returned by `AgentRuntime.effectiveLimits()` after overrides |
-| `Integration`, `tool` | Integration helper for scoped tools |
-| `EnvSecretSource` | Reads a named secret from `process.env`; the default `SecretSource` implementation |
+| `OpenAIProvider`, `AnthropicProvider`                                                       | LLM providers; Anthropic is experimental/WIP                                                                                               |
+| `normalizeProviderError`, `NormalizedProviderError`                                         | Redaction-safe semantic classification for Kaji provider errors                                                                            |
+| `openai`, `anthropic`, `kimi`, `gemini`, `openrouter`                                       | One-line provider factories; only OpenAI is beta-supported                                                                                 |
+| `getProvider`, `registerProvider`                                                           | Name-keyed provider registry, for host code that resolves a provider by config string                                                      |
+| `generateText`, `streamText`                                                                | One-shot provider calls without a full `AgentRuntime`: a single request/response or stream, no event log                                   |
+| `AgentRuntime`, `AgentBuilder`, `CancellationToken`                                         | ReAct loop and fluent builder                                                                                                              |
+| `EffectiveRuntimeLimits`                                                                    | Immutable values returned by `AgentRuntime.effectiveLimits()` after overrides                                                              |
+| `Integration`, `tool`                                                                       | Integration helper for scoped tools                                                                                                        |
+| `EnvSecretSource`                                                                           | Reads a named secret from `process.env`; the default `SecretSource` implementation                                                         |
 
 Events use snake_case field names (`session_id`, `tool_name`) as the wire format
 shared with the Python SDK.
 
 ## Python vs TypeScript parity
 
-| Feature | Python SDK | TS SDK |
-| --- | --- | --- |
-| Event-sourced runtime | Yes | Yes |
-| Tool registry + planner + policy | Yes | Yes |
-| `AgentBuilder` + integrations | Yes | Yes |
-| OpenAI / Anthropic providers | Yes | Yes |
-| Kimi / Gemini providers | Yes | Yes (OpenAI-compatible factories) |
-| Document RAG / vector store | Yes (non-MVP) | No |
-| Tool retriever | Yes (non-MVP) | No |
-| Text modality adapter | Yes (non-MVP) | No |
-| Voice / TTS | Yes (non-MVP) | No |
-| Redis realtime bus | Yes (non-MVP) | No (in-memory only) |
-| CLI scaffold | Yes | Yes |
+| Feature                               | Python SDK             | TS SDK                                              |
+| ------------------------------------- | ---------------------- | --------------------------------------------------- |
+| Event-sourced runtime                 | Yes                    | Yes                                                 |
+| Tool registry + planner + policy      | Yes                    | Yes                                                 |
+| `AgentBuilder` + integrations         | Yes                    | Yes                                                 |
+| OpenAI provider                       | Yes                    | Yes                                                 |
+| Anthropic provider (experimental/WIP) | Yes                    | Yes                                                 |
+| Kimi / Gemini providers               | Yes (experimental/WIP) | Yes (experimental/WIP, OpenAI-compatible factories) |
+| Document RAG / vector store           | Yes (non-MVP)          | No                                                  |
+| Tool retriever                        | Yes (non-MVP)          | No                                                  |
+| Text modality adapter                 | Yes (non-MVP)          | No                                                  |
+| Voice / TTS                           | Yes (non-MVP)          | No                                                  |
+| Redis realtime bus                    | Yes (non-MVP)          | No (in-memory only)                                 |
+| CLI scaffold                          | Yes                    | Yes                                                 |
 
 ## Testing without API keys
 
@@ -526,7 +525,9 @@ the default test suite:
 bun run test
 ```
 
-Live provider tests are opt-in and skip automatically when keys are absent:
+Live provider tests are opt-in and skip automatically when keys are absent.
+OpenAI is the beta-supported live path; the Anthropic command remains a WIP
+adapter check:
 
 ```bash
 OPENAI_API_KEY=... bun run test:integration

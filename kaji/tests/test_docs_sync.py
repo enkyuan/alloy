@@ -158,7 +158,11 @@ def test_typescript_readme_matches_provider_factory_parity() -> None:
 
     assert "export function kimi" in factory
     assert "export function gemini" in factory
-    assert "| Kimi / Gemini providers | Yes | Yes" in ts_readme
+    assert re.search(
+        r"\|\s*Kimi / Gemini providers\s*\|\s*Yes \(experimental/WIP\)\s*\|"
+        r"\s*Yes \(experimental/WIP, OpenAI-compatible factories\)\s*\|",
+        ts_readme,
+    )
 
 
 def test_user_facing_docs_include_stability_contract() -> None:

@@ -14,16 +14,12 @@ from typing import Any
 import kaji
 from kaji.infra.events.types import EventType
 from kaji.runtime.agents.context import TurnContext
-from kaji.runtime.providers.anthropic import AnthropicProvider
 from kaji.runtime.providers.openai import OpenAIProvider
 
 
 MARKER = "kaji-installed-provider-proof-marker"
 EXPECTED_ECHO = {"marker": MARKER, "source": "kaji-installed-provider-proof"}
-PROVIDER_KEYS = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
+PROVIDER_KEYS = {"openai": "OPENAI_API_KEY"}
 FORBIDDEN_TERMINALS = {
     EventType.AGENT_TURN_EXHAUSTED,
     EventType.AGENT_TURN_FAILED,
@@ -73,11 +69,7 @@ def _base_receipt(provider: str, model: str) -> dict[str, Any]:
 
 
 async def _run(provider_name: str, model: str, api_key: str) -> dict[str, Any]:
-    provider = (
-        OpenAIProvider(api_key=api_key, model=model)
-        if provider_name == "openai"
-        else AnthropicProvider(api_key=api_key, model=model)
-    )
+    provider = OpenAIProvider(api_key=api_key, model=model)
     runtime = (
         kaji.AgentBuilder()
         .provider(provider)

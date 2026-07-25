@@ -281,7 +281,7 @@ describe("cross-SDK release matrix docs", () => {
       "Redis realtime/history",
       "voice/TTS",
       "DocumentRAG",
-      "Keyed OpenAI + Anthropic proof",
+      "Keyed OpenAI proof",
       "gpt-5.4-mini",
       "Promotion criteria",
       "TS not ported",

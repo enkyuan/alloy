@@ -1005,7 +1005,7 @@ jobs:
     needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]
     if: ${{ always() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
-    # Four proofs are capped at three minutes each. Thirty minutes leaves setup
+    # Two proofs are capped at three minutes each. Thirty minutes leaves setup
     # and final evidence upload outside the child-process budget.
     timeout-minutes: 30
     environment: kaji-beta
@@ -1031,9 +1031,7 @@ jobs:
               releaseArtifactDigest: $releaseArtifactDigest,
               proofs: [
                 {sdk: "python", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
-                {sdk: "typescript", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"},
-                {sdk: "python", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"},
-                {sdk: "typescript", provider: "anthropic", proof: "real_normalized_tool_loop", status: "not_run"}
+                {sdk: "typescript", provider: "openai", proof: "real_normalized_tool_loop", status: "not_run"}
               ]}' >"$KAJI_INITIAL_PROVIDER_STATUS_FILE"
       - name: Retain initial not-run provider evidence before setup
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1077,7 +1075,6 @@ jobs:
         id: provider
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: >-
           uv run --project kaji --no-sync python kaji/scripts/live_provider_proof.py
           --protected --artifacts-dir .artifacts/kaji-release
@@ -1116,7 +1113,10 @@ jobs:
             [ "$DOWNLOAD_OUTCOME" = success ] && [ "$VERIFICATION_OUTCOME" = success ] && \
             [ "$PROVIDER_OUTCOME" = success ] && jq -e --arg commit "$KAJI_RELEASE_COMMIT" \
               '.schemaVersion == 1 and .commit == $commit and .conclusion == "passed" and
-               .failureCode == null and (.proofs | length == 4 and all(.[]; .status == "passed"))' \
+               .failureCode == null and
+               (.proofs | length == 2 and all(.[]; .status == "passed") and
+                (map(.sdk + "/" + .provider) | sort ==
+                 ["python/openai", "typescript/openai"]))' \
               "$KAJI_PROVIDER_STATUS_FILE" >/dev/null; then
             jq --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
               --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \

@@ -10,14 +10,15 @@ advance to provider proof; registry authorization remains separate.
 
 The two protected environments have intentionally different authority:
 
-- `kaji-beta` permits mandatory keyed OpenAI and Anthropic proof in Python and
-  TypeScript, plus validation of the exact-commit five-user TTHW document.
-  Configure `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and the raw redacted JSON
-  document as `KAJI_TTHW_EVIDENCE_JSON`; missing or invalid evidence blocks
-  release. This environment has no registry publisher authority.
+- `kaji-beta` permits mandatory keyed OpenAI proof in Python and TypeScript,
+  plus validation of the exact-commit five-user TTHW document. Configure
+  `OPENAI_API_KEY` and the raw redacted JSON document as
+  `KAJI_TTHW_EVIDENCE_JSON`; missing or invalid evidence blocks release. This
+  environment has no registry publisher authority.
 - `kaji-beta-publish` permits PyPI trusted publishing and npm publication. Its
   required reviewers approve registry writes only after all preceding evidence
-  is green. It must not contain provider keys.
+  is green. It must not contain `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any
+  other provider key.
 
 Protect `kaji-v*-beta.*` tags against update and deletion. Each tag must be an
 annotated Git tag with a verified signature and must target a commit directly.
@@ -62,8 +63,8 @@ Complete these once before creating the release tag:
    for `kaji-sdk` and revoke the bootstrap token. npm exposes no non-mutating
    check that proves a token may create a new unscoped package, so the protected
    publisher remains the fail-closed authorization check.
-6. Configure `kaji-beta` with required reviewers and only
-   `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. Leave the final
+6. Configure `kaji-beta` with required reviewers and `OPENAI_API_KEY` as its
+   only provider key. Leave the final
    `KAJI_TTHW_EVIDENCE_JSON` value unset until the tag-triggered workflow has
    built the exact artifacts used by the five participants. Configure
    `kaji-beta-publish` with separate required reviewers, `NPM_TOKEN`, and
@@ -108,7 +109,7 @@ later run is not acceptable evidence.
 1. Confirm the exact Python and TypeScript beta versions are unused on both
    registries.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
-   provider keys. Leave `KAJI_TTHW_EVIDENCE_JSON` unset; remove any value from
+   `OPENAI_API_KEY`. Leave `KAJI_TTHW_EVIDENCE_JSON` unset; remove any value from
    a prior run because it cannot bind the artifact bytes that this run will
    build. Keep the environment approval requirement enabled.
 3. Create and push the signed, annotated tag targeting the approved commit
@@ -186,8 +187,10 @@ later run is not acceptable evidence.
    read when that job starts, so it validates the value just set against the
    current run's downloaded manifest, wheel, sdist, and npm tarball. After it
    passes, approve the downstream provider proof under `kaji-beta` if prompted;
-   both provider keys must complete a normalized tool loop in Python and
-   TypeScript. Missing-key hygiene is not release evidence.
+   `OPENAI_API_KEY` must complete a normalized tool loop in Python and
+   TypeScript. Missing-key hygiene is not release evidence. Anthropic and other
+   experimental/WIP provider credentials are neither required nor accepted as
+   substitutes for this proof.
    `kaji-beta-publish` remains a separate approval boundary and is not approved
    at this stage.
 8. Review the exact manifest, checksums, offline summary, provider status,

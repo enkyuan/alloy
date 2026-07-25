@@ -9,6 +9,11 @@ infra-free (no database, Supabase, FastAPI, or web server required).
 > Release status and evidence: https://github.com/enkyuan/alloy/blob/main/kaji/RELEASE_MATRIX.md
 <!-- canonical-status-links:end -->
 
+OpenAI is the sole beta-supported primary provider. Anthropic, Gemini, Kimi,
+and OpenRouter are opt-in experimental/WIP adapters with no beta compatibility
+or publication-proof commitment. Use the deterministic mock provider for local
+and test flows.
+
 See [**Kaji MVP**](https://github.com/enkyuan/alloy/blob/main/docs/MVP.md) for
 the full five-step developer path and scope definition.
 
@@ -22,7 +27,7 @@ buildable subpackages.
 | ------------ | ------------ | --------------------------- | ----------------------------------------------------- |
 | `kaji-sdk`   | `kaji/`      | `kaji/src/kaji`             | Python embedded agent SDK, imported as `kaji`         |
 | `kaji-serve` | `kaji/serve` | `kaji/serve/src/kaji_serve` | Experimental FastAPI and Soniox STT reference service |
-| `kaji-sdk`  | `kaji/ts`    | `kaji/ts/src`               | TypeScript embedded agent SDK                         |
+| `kaji-sdk`   | `kaji/ts`    | `kaji/ts/src`               | TypeScript embedded agent SDK                         |
 
 Canonical contracts, release scripts, benchmarks, and fixtures live once at
 the Kaji root and are consumed by both SDKs. Package-specific source remains
@@ -34,7 +39,7 @@ while the Python SDK never imports service-only code.
 ```bash
 pip install 'kaji-sdk[openai]==0.2.0b1'     # OpenAI (recommended)
 # or
-pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic
+pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic (experimental/WIP)
 # or
 pip install 'kaji-sdk==0.2.0b1'             # core only, bring your own provider
 ```
@@ -79,7 +84,7 @@ identity, deadline, and cancellation:
 
 ```bash
 export OPENAI_API_KEY=sk-...
-# or: export ANTHROPIC_API_KEY=sk-ant-...
+# Experimental/WIP alternative: export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```python
@@ -128,7 +133,9 @@ asyncio.run(main())
 ```
 
 `AgentBuilder` wires a scoped `ToolRegistry` into `ToolPlanner` so integration
-tools are both visible to the model and executable. Swap `.provider(kaji.get_provider("anthropic"))` to use Anthropic.
+tools are both visible to the model and executable. For an opt-in
+experimental/WIP path, swap `.provider(kaji.get_provider("anthropic"))` to use
+Anthropic.
 
 Catch a Kaji `ProviderError`, then call `normalize_provider_error(error)` for
 the redaction-safe `type`, `code`, `service`, `action`, `status`, and
@@ -276,9 +283,10 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
 
 The live test registers a read-only probe tool, verifies the model calls it,
 and verifies the runtime emits final assistant text using the tool result.
-Release evidence requires protected OpenAI and Anthropic tool loops in both
-SDKs on one exact commit. A missing credential blocks that release evidence.
-Native Gemini and Kimi remain experimental and are evaluated separately.
+Keyed OpenAI proof requires protected tool loops in both SDKs on one exact
+commit. A missing `OPENAI_API_KEY` blocks that release evidence. Anthropic,
+Gemini, Kimi, and OpenRouter are experimental/WIP and are not publication
+proof.
 
 For the cross-SDK release gate, run from the repository root:
 
@@ -298,19 +306,19 @@ KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji python kaji/scripts/verify_openai
 ```
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
-It is not provider evidence. The protected release mode requires both
-`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` and fails when either is absent.
+It is not provider evidence. The protected release mode requires
+`OPENAI_API_KEY` and fails when it is absent.
 
 ```bash
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji python kaji/scripts/verify_openai_loop.py
 ```
 
-`KAJI_RUN_KEYED_LIVE=1` is not a one-key shortcut. It is the fail-closed
-four-cell proof and requires both provider keys, the frozen artifact set, and
-the exact 40-character release commit:
+`KAJI_RUN_KEYED_LIVE=1` is the fail-closed two-cell OpenAI proof (Python and
+TypeScript). It requires the OpenAI key, frozen artifact set, and exact
+40-character release commit:
 
 ```bash
-OPENAI_API_KEY=... ANTHROPIC_API_KEY=... \
+OPENAI_API_KEY=... \
 KAJI_RELEASE_ARTIFACTS_DIR="$PWD/.artifacts/kaji-release" \
 KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
 uv run --project kaji python kaji/scripts/beta_release_check.py
@@ -322,8 +330,11 @@ single-provider command above is only a local paid smoke test.
 ## Stability tiers
 
 - **Stable core:** `AgentBuilder`, `AgentRuntime`, `ToolRegistry`,
-  `ToolPlanner`, session replay, OpenAI/Anthropic providers, and the in-memory
+  `ToolPlanner`, session replay, the OpenAI provider, and the in-memory
   event store/journal form the supported embedded-agent surface.
+- **Experimental providers:** Anthropic, Gemini, Kimi, and OpenRouter remain
+  opt-in WIP surfaces without a beta compatibility or publication-proof
+  commitment.
 - **Experimental Python-only:** Redis realtime/history, voice/TTS,
   `DocumentRAG`, native Gemini/Kimi providers, tool retrieval, and text/voice
   modalities exist for early adopters but are not production-hardened.
@@ -346,8 +357,9 @@ kaji init ./my-agent
 ```
 
 Creates `agent.py` and `.env.example` in `./my-agent` wired to `AgentBuilder`
-with an env-driven provider. Copy `.env.example` to `.env`, then set
-`KAJI_MODEL_PROVIDER` to `openai` or `anthropic` plus the matching API key.
+with an env-driven provider. Copy `.env.example` to `.env`, then use `openai`
+with `OPENAI_API_KEY` for the beta-supported path. The `anthropic` scaffold
+option remains available as experimental/WIP.
 
 ## What's exported
 
@@ -388,19 +400,20 @@ shared with the TypeScript SDK.
 
 ## Python vs TypeScript parity
 
-| Feature                              | Python SDK    | TS SDK                              |
-| ------------------------------------ | ------------- | ----------------------------------- |
-| Event-sourced runtime                | Yes           | Yes                                 |
-| Tool registry + planner + policy     | Yes           | Yes                                 |
-| `AgentBuilder` + integrations        | Yes           | Yes                                 |
-| OpenAI / Anthropic providers         | Yes           | Yes                                 |
-| OpenRouter / Kimi / Gemini providers | Yes (native)  | Yes (via OpenAI-compatible factory) |
-| Document RAG / vector store          | Yes           | No                                  |
-| Tool retriever                       | Yes           | No                                  |
-| Text modality adapter                | Yes (non-MVP) | No                                  |
-| Voice / TTS                          | Yes (non-MVP) | No                                  |
-| Redis realtime bus                   | Yes (non-MVP) | No                                  |
-| CLI scaffold                         | Yes           | Yes                                 |
+| Feature                               | Python SDK                     | TS SDK                                                |
+| ------------------------------------- | ------------------------------ | ----------------------------------------------------- |
+| Event-sourced runtime                 | Yes                            | Yes                                                   |
+| Tool registry + planner + policy      | Yes                            | Yes                                                   |
+| `AgentBuilder` + integrations         | Yes                            | Yes                                                   |
+| OpenAI provider                       | Yes                            | Yes                                                   |
+| Anthropic provider (experimental/WIP) | Yes                            | Yes                                                   |
+| OpenRouter / Kimi / Gemini providers  | Yes (experimental/WIP, native) | Yes (experimental/WIP, via OpenAI-compatible factory) |
+| Document RAG / vector store           | Yes                            | No                                                    |
+| Tool retriever                        | Yes                            | No                                                    |
+| Text modality adapter                 | Yes (non-MVP)                  | No                                                    |
+| Voice / TTS                           | Yes (non-MVP)                  | No                                                    |
+| Redis realtime bus                    | Yes (non-MVP)                  | No                                                    |
+| CLI scaffold                          | Yes                            | Yes                                                   |
 
 ## Development
 
@@ -421,7 +434,8 @@ uv run python scripts/clean_caches.py
 uv run python scripts/release_smoke.py
 ```
 
-Live provider tests are opt-in (extras pull in the provider SDK):
+Live provider tests are opt-in (extras pull in the provider SDK). OpenAI is the
+beta-supported live path; the Anthropic command remains a WIP adapter check:
 
 ```bash
 uv sync --extra openai
@@ -595,17 +609,17 @@ kaji/
 Settings load lazily from environment variables (or a `.env` file). No
 configuration is needed to `import kaji`.
 
-| Variable                 | Required               | Purpose                                                        |
-| ------------------------ | ---------------------- | -------------------------------------------------------------- |
-| `OPENAI_API_KEY`         | for openai provider    | OpenAI LLM                                                     |
-| `ANTHROPIC_API_KEY`      | for anthropic provider | Anthropic LLM                                                  |
-| `KAJI_MODEL_PROVIDER`    | no                     | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
-| `OPENAI_MODEL`           | no                     | OpenAI model (default `gpt-5.4-mini`)                          |
-| `REDIS_URL`              | for realtime extra     | Defaults to `redis://localhost:6379/0`                         |
-| `GEMINI_API_KEY`         | for gemini provider    | Gemini LLM + TTS                                               |
-| `GEMINI_EMBEDDING_MODEL` | no                     | Gemini embeddings (default `gemini-embedding-2`)               |
-| `OPENROUTER_API_KEY`     | for kimi provider      | OpenRouter-hosted Kimi                                         |
-| `TTS_PROVIDER`           | no                     | `none` (default), `gemini`, or `openai`                        |
+| Variable                 | Required                            | Purpose                                                        |
+| ------------------------ | ----------------------------------- | -------------------------------------------------------------- |
+| `OPENAI_API_KEY`         | for openai provider                 | OpenAI LLM                                                     |
+| `ANTHROPIC_API_KEY`      | for experimental anthropic provider | Anthropic LLM                                                  |
+| `KAJI_MODEL_PROVIDER`    | no                                  | Provider name: `openai`, `anthropic`, `kimi`, `gemini`, `mock` |
+| `OPENAI_MODEL`           | no                                  | OpenAI model (default `gpt-5.4-mini`)                          |
+| `REDIS_URL`              | for realtime extra                  | Defaults to `redis://localhost:6379/0`                         |
+| `GEMINI_API_KEY`         | for gemini provider                 | Gemini LLM + TTS                                               |
+| `GEMINI_EMBEDDING_MODEL` | no                                  | Gemini embeddings (default `gemini-embedding-2`)               |
+| `OPENROUTER_API_KEY`     | for kimi provider                   | OpenRouter-hosted Kimi                                         |
+| `TTS_PROVIDER`           | no                                  | `none` (default), `gemini`, or `openai`                        |
 
 See [`.env.example`](https://github.com/enkyuan/alloy/blob/main/.env.example) for the full list.
 

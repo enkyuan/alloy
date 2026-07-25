@@ -30,8 +30,8 @@ TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"
 TS_CONSUMER = Path(__file__).with_name("installed-typescript-runtime")
 TS_CONSUMER_MANIFEST = TS_CONSUMER / "package.core.json"
 TS_CONSUMER_LOCK = TS_CONSUMER / "package-lock.core.json"
-TS_PROVIDER_CONSUMER_MANIFEST = TS_CONSUMER / "package.json"
-TS_PROVIDER_CONSUMER_LOCK = TS_CONSUMER / "package-lock.json"
+TS_OPENAI_CONSUMER_MANIFEST = TS_CONSUMER / "package.openai.json"
+TS_OPENAI_CONSUMER_LOCK = TS_CONSUMER / "package-lock.openai.json"
 SAFE_PARENT_ENV = (
     "PATH",
     "LANG",
@@ -152,7 +152,7 @@ def _install_python(
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
     *,
-    include_providers: bool,
+    include_openai: bool,
 ) -> tuple[Path, Path]:
     uv = shutil.which("uv", path=environment["PATH"])
     if uv is None:
@@ -166,9 +166,7 @@ def _install_python(
         env=environment,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    provider_extras = (
-        ["--extra", "openai", "--extra", "anthropic"] if include_providers else []
-    )
+    provider_extras = ["--extra", "openai"] if include_openai else []
     run_checked(
         [
             uv,
@@ -241,7 +239,7 @@ def _install_typescript(
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
     *,
-    include_providers: bool,
+    include_openai: bool,
 ) -> tuple[Path, Path, Path, Path, str, str]:
     npm = shutil.which("npm", path=environment["PATH"])
     node = shutil.which("node", path=environment["PATH"])
@@ -254,7 +252,7 @@ def _install_typescript(
     template_hash, rendered_hash = _render_typescript_consumer(
         consumer,
         release.npm_tarball,
-        include_providers=include_providers,
+        include_openai=include_openai,
     )
     run_checked(
         [
@@ -301,9 +299,9 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _typescript_consumer_fixture(include_providers: bool) -> tuple[Path, Path]:
-    if include_providers:
-        return TS_PROVIDER_CONSUMER_MANIFEST, TS_PROVIDER_CONSUMER_LOCK
+def _typescript_consumer_fixture(include_openai: bool) -> tuple[Path, Path]:
+    if include_openai:
+        return TS_OPENAI_CONSUMER_MANIFEST, TS_OPENAI_CONSUMER_LOCK
     return TS_CONSUMER_MANIFEST, TS_CONSUMER_LOCK
 
 
@@ -311,9 +309,9 @@ def _render_typescript_consumer(
     consumer: Path,
     tarball: Path,
     *,
-    include_providers: bool = False,
+    include_openai: bool = False,
 ) -> tuple[str, str]:
-    manifest_path, lock_path = _typescript_consumer_fixture(include_providers)
+    manifest_path, lock_path = _typescript_consumer_fixture(include_openai)
     try:
         manifest_bytes = manifest_path.read_bytes()
         template_bytes = lock_path.read_bytes()
@@ -365,7 +363,7 @@ def installed_release_runtime(
     artifacts_dir: Path,
     *,
     expected_commit: str,
-    include_providers: bool = False,
+    include_openai: bool = False,
 ) -> Iterator[InstalledReleaseRuntime]:
     release = verify(artifacts_dir, expected_commit)
     with tempfile.TemporaryDirectory(prefix="kaji-installed-release-") as temporary:
@@ -375,7 +373,7 @@ def installed_release_runtime(
             root,
             release,
             environment,
-            include_providers=include_providers,
+            include_openai=include_openai,
         )
         (
             consumer,
@@ -388,7 +386,7 @@ def installed_release_runtime(
             root,
             release,
             environment,
-            include_providers=include_providers,
+            include_openai=include_openai,
         )
         runtime = InstalledReleaseRuntime(
             root=root,

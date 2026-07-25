@@ -63,9 +63,10 @@ does not narrow the SDK runtime platforms declared by package metadata.
 
 ## Protected evidence
 
-OpenAI and Anthropic each require a real normalized tool loop in Python and
-TypeScript on the exact commit. A missing key is a blocking failure, not a
-skip. The exact-commit five-user TTHW protocol lives in
+OpenAI requires a real normalized tool loop in Python and TypeScript on the
+exact commit. A missing `OPENAI_API_KEY` is a blocking failure, not a skip.
+Anthropic and the other experimental/WIP providers are not beta publication
+proof. The exact-commit five-user TTHW protocol lives in
 `kaji/contracts/release/tthw-evidence-v1.schema.json`. Follow the
 [TTHW evidence operator guide](tthw-evidence.md) for the exact no-source
 Python, npm, and Bun paths, candidate-bound receipt generation, arm64 macOS

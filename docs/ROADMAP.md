@@ -4,6 +4,9 @@
 > captured during earlier implementation phases and are not the current Kaji
 > beta-readiness authority. Use [`kaji/README.md`](kaji/README.md) and the
 > [`Kaji release matrix`](../kaji/RELEASE_MATRIX.md) for maintained guidance.
+> OpenAI is the sole beta-supported primary provider; Anthropic and all other
+> provider adapters described below are experimental/WIP regardless of their
+> historical implementation status.
 
 What remains before kaji and ryo are production-ready. Items are ordered by leverage and grouped into shared timeline blocks -- kaji SDK work and ryo product work are interleaved because ryo depends on kaji capabilities landing first.
 

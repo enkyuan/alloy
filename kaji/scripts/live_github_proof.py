@@ -919,7 +919,7 @@ async def _run_proof_locked(
         with runtime_factory(
             artifacts_dir,
             expected_commit=expected_commit,
-            include_providers=False,
+            include_openai=False,
         ) as runtime:
             _validate_runtime_identity(runtime, prerequisites)
             runtime_preparer(runtime)
