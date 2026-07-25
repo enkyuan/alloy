@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import importlib.util
 import json
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 import sys
 from types import SimpleNamespace
 from typing import Any, cast
+import weakref
 
 import pytest
 
@@ -270,6 +272,44 @@ def test_python_soak_samples_after_subscriber_probe_is_purged(
     assert result["internal"]["metricSubscriberOverflows"] == 1
     assert result["internal"]["subscriberResumes"] == 1
     assert result["internal"]["subscriberCount"] == 0
+
+
+def test_python_soak_releases_turn_results_before_memory_sampling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load(PYTHON_SOAK)
+    result_references: list[weakref.ReferenceType[object]] = []
+    live_results_at_sample: list[int] = []
+
+    class TurnResult:
+        pass
+
+    async def successful_turn(
+        _runtime: object,
+        _prompt: str,
+        **_kwargs: object,
+    ) -> TurnResult:
+        await asyncio.sleep(0.001)
+        result = TurnResult()
+        result_references.append(weakref.ref(result))
+        return result
+
+    def tracked_sample(minute: float) -> dict[str, float]:
+        gc.collect()
+        live_results_at_sample.append(
+            sum(reference() is not None for reference in result_references)
+        )
+        return {"minute": minute, "heapMiB": 50.0, "rssMiB": 100.0}
+
+    monkeypatch.setattr(module.AgentRuntime, "turn", successful_turn)
+    monkeypatch.setattr(module, "_sample_memory", tracked_sample)
+
+    result = asyncio.run(module._run(0.0001, 13))
+
+    assert result["attemptedTurns"] >= 16
+    assert result_references
+    assert live_results_at_sample
+    assert all(count == 0 for count in live_results_at_sample), live_results_at_sample
 
 
 @pytest.mark.parametrize("runtime", ["python", "typescript"])

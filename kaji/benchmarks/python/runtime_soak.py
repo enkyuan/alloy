@@ -447,6 +447,9 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
             await runtime.append_event(SessionClosed(session_id=session_id))
         await runtime.purge_session(session_id)
 
+    async def run_turn(prompt: str, session_id: str) -> None:
+        await runtime.turn(prompt, session_id=session_id)
+
     attempted = completed = failed = 0
     terminal_outcomes = {"completed": 0, "failed": 0, "cancelled": 0}
     ledger_peak_size = 0
@@ -477,7 +480,7 @@ async def _run(minutes: float, seed: int) -> dict[str, Any]:
                 prefix = "approve" if choice == 0 else "tool" if choice < 12 else "turn"
                 prompts.append(f"{prefix}-{batch}-{index}")
             turns = [
-                asyncio.create_task(runtime.turn(prompt, session_id=session_id))
+                asyncio.create_task(run_turn(prompt, session_id))
                 for prompt, session_id in zip(prompts, session_ids, strict=True)
             ]
             attempted += len(turns)
