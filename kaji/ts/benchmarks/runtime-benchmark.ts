@@ -74,6 +74,7 @@ interface WorkerSample {
   readonly cursor?: number;
   readonly coordinatorEntries?: number;
   readonly coordinatorWaiters?: number;
+  readonly batchRepetitions?: number;
   readonly calls?: number;
   readonly turns?: number;
   readonly stuckCalls?: number;
@@ -624,7 +625,38 @@ async function sameSession25(seed: number): Promise<Omit<WorkerSample, "case" | 
   };
 }
 
+interface ToolBatchResult {
+  readonly completed: number;
+  readonly maxActive: number;
+  readonly calls: number;
+  readonly stuckCalls: number;
+}
+
 async function toolBatch100(): Promise<Omit<WorkerSample, "case" | "peakMiB">> {
+  const batchRepetitions = 64;
+  let completed = 0;
+  let maxActive = 0;
+  let calls = 0;
+  let stuckCalls = 0;
+  const started = nowNs();
+  for (let repetition = 0; repetition < batchRepetitions; repetition++) {
+    const result = await toolBatch100Once();
+    completed += result.completed;
+    maxActive = Math.max(maxActive, result.maxActive);
+    calls += result.calls;
+    stuckCalls += result.stuckCalls;
+  }
+  return {
+    durationMs: elapsedMs(started),
+    batchRepetitions,
+    completed,
+    maxActive,
+    calls,
+    stuckCalls,
+  };
+}
+
+async function toolBatch100Once(): Promise<ToolBatchResult> {
   const controller = new ToolExecutionController({
     limits: { maxParallel: 4, timeoutMs: null },
   });
@@ -633,7 +665,6 @@ async function toolBatch100(): Promise<Omit<WorkerSample, "case" | "peakMiB">> {
   let active = 0;
   let maxActive = 0;
   let startedCount = 0;
-  const started = nowNs();
   const executions = Array.from({ length: 100 }, (_, index) =>
     controller.execute({
       name: "parallel",
@@ -662,7 +693,6 @@ async function toolBatch100(): Promise<Omit<WorkerSample, "case" | "peakMiB">> {
   const stuckCalls = (await controller.drain(0)).length;
   if (stuckCalls !== 0) throw new Error("tool handlers leaked");
   return {
-    durationMs: elapsedMs(started),
     completed,
     maxActive,
     calls: executions.length,

@@ -53,7 +53,9 @@ def _invocation(replica: int) -> dict[str, Any]:
     }
 
 
-def _sample(case: str, duration: float, peak: float) -> dict[str, Any]:
+def _sample(
+    case: str, duration: float, peak: float, *, runtime: str = "python"
+) -> dict[str, Any]:
     common: dict[str, Any] = {
         "durationMs": duration,
         "peakMiB": peak,
@@ -125,7 +127,16 @@ def _sample(case: str, duration: float, peak: float) -> dict[str, Any]:
             "providerTaskLeaks": 0,
         },
     }
-    return {**common, **values[case]}
+    sample = {**common, **values[case]}
+    if case == "toolBatch100" and runtime == "typescript":
+        sample.update(
+            {
+                "batchRepetitions": 64,
+                "calls": 6_400,
+                "completed": 6_400,
+            }
+        )
+    return sample
 
 
 def _identity(commit: str, prefix: str) -> dict[str, Any]:
@@ -165,8 +176,13 @@ def _complete_report(
         for case in pair.CASES:
             pairs = []
             for sample_number in range(1, 6):
-                reference_sample = _sample(case, 0.1, 1.0)
-                candidate_sample = _sample(case, 0.1 * duration_ratio, 1.0 * rss_ratio)
+                reference_sample = _sample(case, 0.1, 1.0, runtime=runtime)
+                candidate_sample = _sample(
+                    case,
+                    0.1 * duration_ratio,
+                    1.0 * rss_ratio,
+                    runtime=runtime,
+                )
                 pairs.append(
                     {
                         "sample": sample_number,
@@ -327,6 +343,27 @@ def test_case_evidence_keeps_raw_pairs_and_exact_threshold_passes() -> None:
     assert len(evidence["pairs"]) == 5
 
 
+def test_case_evidence_rejects_incomplete_tool_batch_repetitions() -> None:
+    pair = _load_script("paired_benchmark.py")
+    pairs = [
+        {
+            "sample": index,
+            "order": list(pair._subject_order(1, "toolBatch100", index)),
+            "reference": _sample("toolBatch100", 10.0, 10.0, runtime="typescript"),
+            "candidate": _sample("toolBatch100", 10.0, 10.0, runtime="typescript"),
+        }
+        for index in range(1, 6)
+    ]
+    pairs[0]["candidate"]["completed"] = 6_399
+
+    _, reference_failures, candidate_failures = pair._case_evidence(
+        "typescript", "toolBatch100", pairs
+    )
+
+    assert reference_failures == []
+    assert any("completed" in failure for failure in candidate_failures)
+
+
 def test_case_evidence_rejects_a_masked_pairwise_rss_crossing() -> None:
     pair = _load_script("paired_benchmark.py")
     pairs = [
@@ -446,7 +483,7 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
         runtime: str, case: str, samples: int, warmups: int, installed: Any
     ) -> dict[str, Any]:
         measured.append((runtime, case, samples, warmups, installed.label))
-        sample = _sample(case, 0.1, 1.0)
+        sample = _sample(case, 0.1, 1.0, runtime=runtime)
         return {"sampleResults": [sample]}
 
     monkeypatch.setattr(pair, "installed_release_runtime", installed)

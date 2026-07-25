@@ -449,8 +449,16 @@ def _sample_failures(
         exact("coordinatorWaiters", 0)
     elif case == "toolBatch100":
         exact("maxActive", budget["maxActive"])
-        exact("calls", 100)
-        exact("stuckCalls", 0)
+        if runtime == "typescript":
+            exact("batchRepetitions", budget["batchRepetitions"])
+            exact("calls", budget["calls"])
+            exact("completed", budget["calls"])
+        else:
+            exact("calls", 100)
+            for field in ("batchRepetitions", "completed"):
+                if field in sample:
+                    failures.append(f"{label} {field} is TypeScript-only evidence")
+        exact("stuckCalls", budget["stuckCalls"])
     elif case == "context10kIterations5":
         exact("historyEvents", 10_000)
         exact("fullHistoryScans", budget["maxFullHistoryScans"])

@@ -10,7 +10,10 @@
     "maxActive": 1
   },
   "toolBatch100": {
-    "maxActive": 4
+    "batchRepetitions": 64,
+    "calls": 6400,
+    "maxActive": 4,
+    "stuckCalls": 0
   },
   "context10kIterations5": {
     "maxFullHistoryScans": 1,

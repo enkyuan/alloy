@@ -1430,7 +1430,7 @@ def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
     )
 
 
-def _valid_worst_case_sample(case: str) -> dict[str, object]:
+def _valid_worst_case_sample(case: str, runtime: str = "python") -> dict[str, object]:
     common: dict[str, object] = {"durationMs": 1.0, "peakMiB": 32.0}
     cases: dict[str, dict[str, object]] = {
         "replay10k": {"eventsApplied": 10_000, "cursor": 10_000},
@@ -1498,7 +1498,16 @@ def _valid_worst_case_sample(case: str) -> dict[str, object]:
             "providerTaskLeaks": 0,
         },
     }
-    return {**common, **cases[case]}
+    sample = {**common, **cases[case]}
+    if case == "toolBatch100" and runtime == "typescript":
+        sample.update(
+            {
+                "batchRepetitions": 64,
+                "calls": 6_400,
+                "completed": 6_400,
+            }
+        )
+    return sample
 
 
 def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> None:
@@ -1532,6 +1541,12 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "minOverlappingSessions": 2,
         "maxLaneEntriesAfter": 0,
         "maxReservationEntriesAfter": 0,
+    }
+    assert budgets["toolBatch100"] == {
+        "batchRepetitions": 64,
+        "calls": 6_400,
+        "maxActive": 4,
+        "stuckCalls": 0,
     }
     assert budgets["streamDeltas10k"] == {
         "maxDeltaEvents": 16,
@@ -1589,27 +1604,100 @@ def test_beta_benchmark_gate_accepts_valid_semantics_for_every_case(case: str) -
     )
 
 
+def test_beta_benchmark_gate_accepts_python_tool_batch_contract() -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+
+    assert (
+        module._sample_failures(
+            "python",
+            "toolBatch100",
+            _valid_worst_case_sample("toolBatch100"),
+            budgets["toolBatch100"],
+        )
+        == []
+    )
+
+
+def test_beta_benchmark_gate_rejects_typescript_tool_batch_evidence_for_python() -> (
+    None
+):
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+
+    failures = module._sample_failures(
+        "python",
+        "toolBatch100",
+        _valid_worst_case_sample("toolBatch100", "typescript"),
+        budgets["toolBatch100"],
+    )
+
+    assert any(
+        "batchRepetitions is TypeScript-only evidence" in failure
+        for failure in failures
+    )
+    assert any(
+        "completed is TypeScript-only evidence" in failure for failure in failures
+    )
+    assert any("calls 6400 != 100" in failure for failure in failures)
+
+
+def test_beta_benchmark_gate_accepts_typescript_tool_batch_contract() -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+
+    assert (
+        module._sample_failures(
+            "typescript",
+            "toolBatch100",
+            _valid_worst_case_sample("toolBatch100", "typescript"),
+            budgets["toolBatch100"],
+        )
+        == []
+    )
+
+
 @pytest.mark.parametrize(
-    ("case", "field", "value"),
-    [
-        ("replay10k", "eventsApplied", 9_999),
-        ("crossSession100", "turns", 99),
-        ("sameSession25", "turns", 24),
-        ("toolBatch100", "calls", 99),
-        ("context10kIterations5", "providerIterations", 4),
-        ("crossSessionCommit100", "sessions", 99),
-        ("streamDeltas10k", "characters", 9_999),
-        ("toolArgDeltas10k", "argumentBytes", 65_535),
-    ],
+    ("field", "value"),
+    [("batchRepetitions", 63), ("calls", 6_399), ("completed", 6_399)],
 )
-def test_beta_benchmark_gate_rejects_invalid_semantics_for_every_case(
-    case: str, field: str, value: int
+def test_beta_benchmark_gate_rejects_corrupt_typescript_tool_batch_counters(
+    field: str, value: int
 ) -> None:
     module = _load_root_script("beta_benchmark_gate.py")
     budgets = json.loads(module.BUDGETS_PATH.read_text())
-    sample = {**_valid_worst_case_sample(case), field: value}
+    sample = _valid_worst_case_sample("toolBatch100", "typescript")
+    sample[field] = value
 
-    failures = module._sample_failures("python", case, sample, budgets[case])
+    failures = module._sample_failures(
+        "typescript", "toolBatch100", sample, budgets["toolBatch100"]
+    )
+
+    assert any(field in failure for failure in failures)
+
+
+@pytest.mark.parametrize(
+    ("runtime", "case", "field", "value"),
+    [
+        ("python", "replay10k", "eventsApplied", 9_999),
+        ("python", "crossSession100", "turns", 99),
+        ("python", "sameSession25", "turns", 24),
+        ("typescript", "toolBatch100", "batchRepetitions", 63),
+        ("typescript", "toolBatch100", "completed", 6_399),
+        ("python", "context10kIterations5", "providerIterations", 4),
+        ("python", "crossSessionCommit100", "sessions", 99),
+        ("python", "streamDeltas10k", "characters", 9_999),
+        ("python", "toolArgDeltas10k", "argumentBytes", 65_535),
+    ],
+)
+def test_beta_benchmark_gate_rejects_invalid_semantics_for_every_case(
+    runtime: str, case: str, field: str, value: int
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+    sample = {**_valid_worst_case_sample(case, runtime), field: value}
+
+    failures = module._sample_failures(runtime, case, sample, budgets[case])
 
     assert any(field in failure for failure in failures)
 
