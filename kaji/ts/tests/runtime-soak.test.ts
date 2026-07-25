@@ -91,8 +91,10 @@ it("reclaims closed sessions during sustained churn", async () => {
       projectionCacheSize: number;
       ledgerSize: number;
       ledgerCounts: { running: number };
+      gcAvailable: boolean;
       scenarios: { crossSessionTurns: number; sessionClosures: number };
     };
+    memorySamples: Array<{ heapUsedMiB: number; heapTotalMiB: number }>;
   };
 
   expect(result.attemptedTurns).toBe(result.completedTurns + result.failedTurns);
@@ -102,6 +104,14 @@ it("reclaims closed sessions during sustained churn", async () => {
   expect(result.internal.projectionCacheSize).toBe(0);
   expect(result.internal.ledgerSize).toBe(0);
   expect(result.internal.ledgerCounts.running).toBe(0);
+  expect(result.internal.gcAvailable).toBe(true);
+  expect(result.memorySamples.length).toBeGreaterThan(0);
+  for (const sample of result.memorySamples) {
+    expect(Number.isFinite(sample.heapUsedMiB)).toBe(true);
+    expect(Number.isFinite(sample.heapTotalMiB)).toBe(true);
+    expect(sample.heapUsedMiB).toBeGreaterThan(0);
+    expect(sample.heapTotalMiB).toBeGreaterThanOrEqual(sample.heapUsedMiB);
+  }
   expect(result.internal.scenarios.crossSessionTurns).toBeGreaterThan(0);
   expect(result.internal.scenarios.sessionClosures).toBeGreaterThanOrEqual(
     result.internal.scenarios.crossSessionTurns,

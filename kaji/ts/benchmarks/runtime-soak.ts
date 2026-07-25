@@ -387,19 +387,6 @@ function maxRssMiB(): number {
   return toMiB(maxRssBytes);
 }
 
-function forceGc(): boolean {
-  if (typeof Bun !== "undefined" && typeof Bun.gc === "function") {
-    Bun.gc(true);
-    return true;
-  }
-  const gc = (globalThis as { gc?: () => void }).gc;
-  if (typeof gc === "function") {
-    gc();
-    return true;
-  }
-  return false;
-}
-
 export function countObservedCancellation(outcome: PromiseSettledResult<unknown>): number {
   if (outcome.status !== "rejected" || !(outcome.reason instanceof CancellationError)) {
     throw new Error("unexpected cancellation outcome");
@@ -440,6 +427,7 @@ export function countObservedTimeout(
 }
 
 async function main(): Promise<void> {
+  const { fullGC, heapStats } = await import("bun:jsc");
   const options = parseArgs(process.argv.slice(2));
   const rng = new Mulberry32(options.seed);
   const diagnostics = new DiagnosticsSink();
@@ -506,7 +494,6 @@ async function main(): Promise<void> {
   let sharedGeneration = 0;
   let sharedSession = `shared-${sharedGeneration}`;
   let slowSubscriber = committer.subscribe(sharedSession);
-  let gcAvailable = false;
   const scenarios = {
     sameSessionTurns: 0,
     crossSessionTurns: 0,
@@ -552,13 +539,14 @@ async function main(): Promise<void> {
   let lastSampleBucket = 0;
   const heapSamples: HeapSample[] = [];
   const sample = (observedElapsedMs: number): void => {
-    gcAvailable = forceGc() || gcAvailable;
+    fullGC();
+    const heap = heapStats();
     const memory = process.memoryUsage();
     heapSamples.push({
       minute: observedElapsedMs / 60_000,
       elapsedMs: observedElapsedMs,
-      heapUsedMiB: toMiB(memory.heapUsed),
-      heapTotalMiB: toMiB(memory.heapTotal),
+      heapUsedMiB: toMiB(heap.heapSize),
+      heapTotalMiB: toMiB(heap.heapCapacity),
       rssMiB: toMiB(memory.rss),
       maxRssMiB: maxRssMiB(),
       attempted,
@@ -695,7 +683,7 @@ async function main(): Promise<void> {
       stuckToolCallIds,
       stuckToolCalls: stuckToolCallIds.length,
       releasedLedgerEntries: ledger.releasedEntries,
-      gcAvailable,
+      gcAvailable: true,
       scenarios,
     },
   };

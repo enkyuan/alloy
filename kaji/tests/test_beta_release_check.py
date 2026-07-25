@@ -679,6 +679,7 @@ def test_protected_soak_validates_commit_before_starting_children(
     tmp_path: Path,
 ) -> None:
     module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
     secret = "sk-commit-mismatch"
     monkeypatch.setattr(
         module,
@@ -1121,9 +1122,12 @@ def test_protected_soak_gate_environment_requires_parent_runner_identity(
 
 
 def test_protected_soak_requires_artifacts_before_child_setup(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     module = _load_root_script("run_beta_soak.py")
+    monkeypatch.setattr(module, "ROOT", tmp_path)
     monkeypatch.setattr(
         module,
         "parse_args",
