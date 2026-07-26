@@ -921,6 +921,33 @@ def test_publication_reruns_are_guarded_before_queries_and_release_mutation() ->
     assert '.object.type == "commit" and .object.sha == $commit' in tag_verifier
 
 
+def test_release_runbook_matches_npm_propagation_budget() -> None:
+    publish = _read(".github/workflows/kaji.publish.yml")
+    status_job = publish.split("  publication-status:", 1)[1].split(
+        "  publication-incident:", 1
+    )[0]
+    retry = re.search(
+        r"--attempts (\d+) --initial-delay (\d+) --max-delay (\d+)", status_job
+    )
+    timeout = re.search(r"timeout --signal=TERM --kill-after=10s (\d+)m", status_job)
+    assert retry is not None
+    assert timeout is not None
+    attempts, initial_delay, max_delay = map(int, retry.groups())
+    backoff_seconds = sum(
+        min(initial_delay * 2**retry_number, max_delay)
+        for retry_number in range(attempts - 1)
+    )
+    runbook = re.sub(r"\s+", " ", _read("docs/kaji/releasing.md"))
+
+    assert (
+        f"makes at most {attempts} attempts with exponential delays starting at "
+        f"{initial_delay} seconds and capped at {max_delay} seconds "
+        f"({backoff_seconds} seconds of total scheduled backoff). The npm registry "
+        f"polling subprocess has a {timeout.group(1)}-minute outer cap that includes "
+        "those delays and its bounded verification work."
+    ) in runbook
+
+
 @pytest.mark.parametrize(
     (
         "previous",
@@ -1546,11 +1573,12 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
     )
     output = tmp_path / "registry-verification.json"
     attempts = 0
+    sleep_delays: list[float] = []
 
     def verify_pypi(*_args: object, **_kwargs: object) -> dict[str, object]:
         nonlocal attempts
         attempts += 1
-        if attempts == 1:
+        if attempts < 5:
             raise verifier.VerificationUnavailable("attestations not propagated")
         return {"files": []}
 
@@ -1558,6 +1586,7 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
     monkeypatch.setattr(
         verifier, "verify_npm", lambda *_args, **_kwargs: {"byteVerified": True}
     )
+    monkeypatch.setattr(verifier.time, "sleep", sleep_delays.append)
 
     verifier.verification_main(
         [
@@ -1568,18 +1597,19 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
             "--repository",
             "alloy-org/alloy",
             "--attempts",
-            "2",
+            "5",
             "--initial-delay",
-            "0",
+            "2",
             "--max-delay",
-            "0",
+            "5",
         ]
     )
 
     retained = json.loads(output.read_text())
-    assert attempts == 2
+    assert attempts == 5
+    assert sleep_delays == [2.0, 4.0, 5.0, 5.0]
     assert retained["status"] == "byte_verified"
-    assert retained["attempt"] == 2
+    assert retained["attempt"] == 5
 
 
 def test_npm_target_verifier_skips_pypi_and_records_the_target(
