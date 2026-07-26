@@ -5,6 +5,14 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.5] - 2026-07-26
+
+- Recovered the npm candidate after the immutable beta.4 attempt failed
+  protected TTHW validation and the paired benchmark aggregate before
+  publisher preflight or publication.
+- Delayed protected TTHW validation until performance evidence succeeds and
+  rechecked the approved npm identity in the publication step.
+
 ## [0.2.0-beta.4] - 2026-07-26
 
 - Recovered the npm candidate after the immutable beta.3 tag was rejected
