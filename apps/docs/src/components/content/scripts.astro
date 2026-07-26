@@ -98,24 +98,7 @@ const checkIconMarkup = CheckCircle.toSvg({
       { signal },
     );
 
-    document.querySelectorAll<HTMLAnchorElement>('a[aria-current="page"]').forEach((link) => {
-      link.addEventListener(
-        "click",
-        (event) => {
-          const target = new URL(link.href, window.location.href);
-          if (
-            target.pathname === window.location.pathname &&
-            target.search === window.location.search &&
-            !target.hash
-          ) {
-            event.preventDefault();
-          }
-        },
-        { signal },
-      );
-    });
-
-    const wordmark = document.querySelector<HTMLAnchorElement>(".kaji-wordmark");
+    const wordmark = document.querySelector<HTMLAnchorElement>("a.kaji-wordmark");
     wordmark?.addEventListener(
       "click",
       () => {

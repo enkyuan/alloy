@@ -274,7 +274,7 @@ button:disabled {
   transition: color 150ms ease;
 }
 
-.nav-link:hover {
+a.nav-link:hover {
   color: var(--text-secondary);
   font-variation-settings: "wght" 550;
 }
