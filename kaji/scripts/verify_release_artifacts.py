@@ -24,6 +24,16 @@ EXPECTED_PACKAGES = {
     "python": "0.2.0b1",
     "typescript": "0.2.0-beta.3",
 }
+REFERENCE_EXPECTED_ARTIFACTS = {
+    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
+}
+REFERENCE_EXPECTED_PACKAGES = {
+    "contract": "1.0.0",
+    "python": "0.2.0b1",
+    "typescript": "0.2.0-beta.2",
+}
 EXPECTED_BUILD_TOOL_KEYS = {"bun", "editables", "node", "npm", "setuptools", "uv"}
 EXPECTED_FIXED_BUILD_TOOLS = {
     "bun": "1.3.11",
@@ -54,6 +64,22 @@ class VerifiedReleaseArtifacts:
     artifact_sha256: Mapping[str, str]
 
 
+@dataclass(frozen=True)
+class ReleaseArtifactContract:
+    artifacts: Mapping[str, tuple[str, str]]
+    packages: Mapping[str, str]
+
+
+BETA3_RELEASE_CONTRACT = ReleaseArtifactContract(
+    artifacts=MappingProxyType(EXPECTED_ARTIFACTS),
+    packages=MappingProxyType(EXPECTED_PACKAGES),
+)
+BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
+    artifacts=MappingProxyType(REFERENCE_EXPECTED_ARTIFACTS),
+    packages=MappingProxyType(REFERENCE_EXPECTED_PACKAGES),
+)
+
+
 def fail(message: str) -> NoReturn:
     raise SystemExit(f"FAIL: {message}")
 
@@ -66,14 +92,26 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
+def verify(
+    artifacts: Path,
+    expected_commit: str,
+    *,
+    artifact_contract: ReleaseArtifactContract = BETA3_RELEASE_CONTRACT,
+) -> VerifiedReleaseArtifacts:
+    if artifact_contract not in (
+        BETA3_RELEASE_CONTRACT,
+        BETA2_REFERENCE_RELEASE_CONTRACT,
+    ):
+        fail("unsupported release artifact contract")
+    expected_artifacts = artifact_contract.artifacts
+    expected_packages = artifact_contract.packages
     commit = expected_commit.lower()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         fail("expected commit must be exactly 40 hexadecimal characters")
     if not artifacts.is_dir():
         fail(f"artifact directory does not exist: {artifacts}")
 
-    required = set(EXPECTED_ARTIFACTS) | {"manifest.json", "SHA256SUMS"}
+    required = set(expected_artifacts) | {"manifest.json", "SHA256SUMS"}
     children = list(artifacts.iterdir())
     actual = {path.name for path in children}
     if actual != required:
@@ -89,7 +127,7 @@ def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
         fail(f"invalid manifest: {type(error).__name__}")
     if manifest.get("schemaVersion") != 1 or manifest.get("commit") != commit:
         fail("manifest schema or commit mismatch")
-    if manifest.get("packages") != EXPECTED_PACKAGES:
+    if manifest.get("packages") != expected_packages:
         fail("manifest package versions mismatch")
 
     build_tools = manifest.get("buildTools")
@@ -119,13 +157,13 @@ def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
         fail("manifest build audit hash mismatch")
 
     entries = manifest.get("artifacts")
-    if not isinstance(entries, list) or len(entries) != len(EXPECTED_ARTIFACTS):
+    if not isinstance(entries, list) or len(entries) != len(expected_artifacts):
         fail("manifest artifact count mismatch")
     if any(
         not isinstance(entry, dict) or set(entry) != ENTRY_KEYS for entry in entries
     ):
         fail("manifest artifact entry shape mismatch")
-    if {entry["file"] for entry in entries} != set(EXPECTED_ARTIFACTS):
+    if {entry["file"] for entry in entries} != set(expected_artifacts):
         fail("manifest artifact names mismatch")
 
     manifest_hashes: dict[str, str] = {}
@@ -133,7 +171,7 @@ def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
         name = entry["file"]
         path = artifacts / name
         digest = sha256(path)
-        package, version = EXPECTED_ARTIFACTS[name]
+        package, version = expected_artifacts[name]
         if (entry["package"], entry["version"]) != (package, version):
             fail(f"package metadata mismatch for {name}")
         if entry["commit"] != commit or entry["contractVersion"] != "1.0.0":
@@ -156,9 +194,30 @@ def verify(artifacts: Path, expected_commit: str) -> VerifiedReleaseArtifacts:
         root=root,
         commit=commit,
         manifest_sha256=sha256(artifacts / "manifest.json"),
-        python_wheel=(root / "kaji_sdk-0.2.0b1-py3-none-any.whl"),
-        python_sdist=(root / "kaji_sdk-0.2.0b1.tar.gz"),
-        npm_tarball=(root / "kaji-sdk-0.2.0-beta.3.tgz"),
+        python_wheel=(
+            root
+            / next(
+                name
+                for name, (package, _) in expected_artifacts.items()
+                if package == "python" and name.endswith(".whl")
+            )
+        ),
+        python_sdist=(
+            root
+            / next(
+                name
+                for name, (package, _) in expected_artifacts.items()
+                if package == "python" and name.endswith(".tar.gz")
+            )
+        ),
+        npm_tarball=(
+            root
+            / next(
+                name
+                for name, (package, _) in expected_artifacts.items()
+                if package == "typescript"
+            )
+        ),
         artifact_sha256=MappingProxyType(dict(sorted(manifest_hashes.items()))),
     )
 

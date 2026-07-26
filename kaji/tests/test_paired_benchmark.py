@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -160,6 +161,63 @@ def _identity(commit: str, prefix: str) -> dict[str, Any]:
     }
 
 
+def _write_release_artifacts(
+    root: Path,
+    *,
+    commit: str,
+    typescript_version: str,
+) -> None:
+    root.mkdir()
+    payloads = {
+        "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
+        f"kaji-sdk-{typescript_version}.tgz": b"npm",
+    }
+    entries = []
+    for name, payload in payloads.items():
+        (root / name).write_bytes(payload)
+        package = "typescript" if name.endswith(".tgz") else "python"
+        entries.append(
+            {
+                "commit": commit,
+                "contractVersion": "1.0.0",
+                "file": name,
+                "package": package,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size": len(payload),
+                "version": typescript_version if package == "typescript" else "0.2.0b1",
+            }
+        )
+    manifest = {
+        "schemaVersion": 1,
+        "commit": commit,
+        "buildTools": {
+            "bun": "1.3.11",
+            "editables": "0.6",
+            "node": "24.4.1",
+            "npm": "11.4.2",
+            "setuptools": "83.0.0",
+            "uv": "0.11.25",
+        },
+        "buildAudit": {
+            "file": "kaji/build-requirements.txt",
+            "sha256": hashlib.sha256(
+                (ROOT / "kaji/build-requirements.txt").read_bytes()
+            ).hexdigest(),
+        },
+        "packages": {
+            "contract": "1.0.0",
+            "python": "0.2.0b1",
+            "typescript": typescript_version,
+        },
+        "artifacts": entries,
+    }
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    (root / "SHA256SUMS").write_text(
+        "".join(f"{entry['sha256']}  {entry['file']}\n" for entry in entries)
+    )
+
+
 def _complete_report(
     pair: Any,
     *,
@@ -302,6 +360,104 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
     assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.2.tgz"
     assert pair.IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.3.tgz"
     assert "resolved" not in json.dumps(anchor).lower()
+
+
+def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pair = _load_script("paired_benchmark.py")
+    runtime_module = sys.modules[pair.installed_release_runtime.__module__]
+    reference_commit = pair._load_reference()["commit"]
+    candidate_commit = "f" * 40
+    reference = tmp_path / "reference"
+    candidate = tmp_path / "candidate"
+    _write_release_artifacts(
+        reference,
+        commit=reference_commit,
+        typescript_version="0.2.0-beta.2",
+    )
+    _write_release_artifacts(
+        candidate,
+        commit=candidate_commit,
+        typescript_version="0.2.0-beta.3",
+    )
+
+    monkeypatch.setattr(
+        runtime_module,
+        "_install_python",
+        lambda root, *_args, **_kwargs: (
+            root / "venv/bin/python",
+            root / "venv/site-packages/kaji/__init__.py",
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "_install_typescript",
+        lambda root, *_args, **_kwargs: (
+            root / "typescript",
+            root / "typescript/runtime-benchmark.ts",
+            root / "typescript/runtime-soak.ts",
+            root / "typescript/node_modules/kaji-sdk/dist/index.js",
+            "1" * 64,
+            "2" * 64,
+        ),
+    )
+
+    reference_consumer = tmp_path / "reference-consumer"
+    reference_consumer.mkdir()
+    runtime_module._render_typescript_consumer(
+        reference_consumer,
+        reference / "kaji-sdk-0.2.0-beta.2.tgz",
+        artifact_contract=pair.BETA2_REFERENCE_RELEASE_CONTRACT,
+    )
+    reference_manifest = json.loads((reference_consumer / "package.json").read_text())
+    reference_lock = json.loads((reference_consumer / "package-lock.json").read_text())
+    assert (
+        reference_manifest["dependencies"]["kaji-sdk"]
+        == "file:kaji-sdk-0.2.0-beta.2.tgz"
+    )
+    assert (
+        reference_lock["packages"]["node_modules/kaji-sdk"]["version"] == "0.2.0-beta.2"
+    )
+    assert all(
+        package == reference_lock["packages"][name]
+        for name, package in json.loads(runtime_module.TS_CONSUMER_LOCK.read_text())[
+            "packages"
+        ].items()
+        if name not in {"", "node_modules/kaji-sdk"}
+    )
+
+    with pair.installed_release_runtime(
+        reference,
+        expected_commit=reference_commit,
+        artifact_contract=pair.BETA2_REFERENCE_RELEASE_CONTRACT,
+    ) as installed:
+        assert installed.release.npm_tarball.name == "kaji-sdk-0.2.0-beta.2.tgz"
+
+    with pair.installed_release_runtime(
+        candidate,
+        expected_commit=candidate_commit,
+    ) as installed:
+        assert installed.release.npm_tarball.name == "kaji-sdk-0.2.0-beta.3.tgz"
+
+    with pytest.raises(SystemExit, match="artifact file set mismatch"):
+        with pair.installed_release_runtime(
+            reference,
+            expected_commit=reference_commit,
+        ):
+            pass
+
+    arbitrary_contract = runtime_module.ReleaseArtifactContract(
+        artifacts={},
+        packages={},
+    )
+    with pytest.raises(SystemExit, match="unsupported release artifact contract"):
+        with pair.installed_release_runtime(
+            candidate,
+            expected_commit=candidate_commit,
+            artifact_contract=arbitrary_contract,
+        ):
+            pass
 
 
 def test_subject_order_is_deterministic_and_counterbalanced() -> None:
@@ -458,7 +614,7 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
     candidate_identity = _identity("f" * 40, "1")
     reference_runtime = SimpleNamespace(label="reference")
     candidate_runtime = SimpleNamespace(label="candidate")
-    opened: list[tuple[Path, str]] = []
+    opened: list[tuple[Path, str, Any]] = []
 
     class RuntimeContext:
         def __init__(self, runtime: Any) -> None:
@@ -470,8 +626,13 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
         def __exit__(self, *_args: object) -> None:
             return None
 
-    def installed(artifacts: Path, *, expected_commit: str) -> RuntimeContext:
-        opened.append((artifacts, expected_commit))
+    def installed(
+        artifacts: Path,
+        *,
+        expected_commit: str,
+        artifact_contract: Any = None,
+    ) -> RuntimeContext:
+        opened.append((artifacts, expected_commit, artifact_contract))
         runtime = (
             reference_runtime
             if expected_commit == reference_identity["commit"]
@@ -526,8 +687,12 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
     )
 
     assert opened == [
-        (reference_dir, reference_identity["commit"]),
-        (candidate_dir, "f" * 40),
+        (
+            reference_dir,
+            reference_identity["commit"],
+            pair.BETA2_REFERENCE_RELEASE_CONTRACT,
+        ),
+        (candidate_dir, "f" * 40, None),
     ]
     assert [(samples, warmups) for _, _, samples, warmups, _ in measured] == [
         (1, 2)

@@ -34,6 +34,7 @@ from installed_release_runtime import (
     InstalledReleaseRuntime,
     installed_release_runtime,
 )
+from verify_release_artifacts import BETA2_REFERENCE_RELEASE_CONTRACT
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -579,6 +580,7 @@ def _measure_replica(
             installed_release_runtime(
                 reference_artifacts,
                 expected_commit=reference_identity["commit"],
+                artifact_contract=BETA2_REFERENCE_RELEASE_CONTRACT,
             )
         )
         candidate_runtime = stack.enter_context(

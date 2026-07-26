@@ -19,7 +19,12 @@ from types import MappingProxyType
 from typing import Any
 
 from process_runner import PACKAGE_COMMAND_BUDGET, run_checked
-from verify_release_artifacts import VerifiedReleaseArtifacts, verify
+from verify_release_artifacts import (
+    BETA3_RELEASE_CONTRACT,
+    ReleaseArtifactContract,
+    VerifiedReleaseArtifacts,
+    verify,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -239,6 +244,7 @@ def _install_typescript(
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
     *,
+    artifact_contract: ReleaseArtifactContract = BETA3_RELEASE_CONTRACT,
     include_openai: bool,
 ) -> tuple[Path, Path, Path, Path, str, str]:
     npm = shutil.which("npm", path=environment["PATH"])
@@ -252,6 +258,7 @@ def _install_typescript(
     template_hash, rendered_hash = _render_typescript_consumer(
         consumer,
         release.npm_tarball,
+        artifact_contract=artifact_contract,
         include_openai=include_openai,
     )
     run_checked(
@@ -309,8 +316,17 @@ def _render_typescript_consumer(
     consumer: Path,
     tarball: Path,
     *,
+    artifact_contract: ReleaseArtifactContract = BETA3_RELEASE_CONTRACT,
     include_openai: bool = False,
 ) -> tuple[str, str]:
+    typescript_version = artifact_contract.packages["typescript"]
+    typescript_tarball = next(
+        name
+        for name, (package, version) in artifact_contract.artifacts.items()
+        if package == "typescript" and version == typescript_version
+    )
+    if tarball.name != typescript_tarball:
+        raise RuntimeError("verified TypeScript artifact differs from its contract")
     manifest_path, lock_path = _typescript_consumer_fixture(include_openai)
     try:
         manifest_bytes = manifest_path.read_bytes()
@@ -331,23 +347,36 @@ def _render_typescript_consumer(
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest.get("dependencies")
+        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.3.tgz"
+        or sdk_package.get("version") != "0.2.0-beta.3"
         or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.3.tgz"
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
 
-    copied_tarball = consumer / "kaji-sdk-0.2.0-beta.3.tgz"
+    copied_tarball = consumer / typescript_tarball
     shutil.copyfile(tarball, copied_tarball)
-    (consumer / "package.json").write_bytes(manifest_bytes)
+    rendered_manifest = copy.deepcopy(manifest)
+    rendered_manifest["dependencies"]["kaji-sdk"] = f"file:{typescript_tarball}"
+    (consumer / "package.json").write_text(
+        json.dumps(rendered_manifest, indent=2) + "\n"
+    )
     rendered = copy.deepcopy(template)
+    rendered["packages"][""]["dependencies"]["kaji-sdk"] = f"file:{typescript_tarball}"
     rendered_sdk = rendered["packages"]["node_modules/kaji-sdk"]
+    rendered_sdk["version"] = typescript_version
+    rendered_sdk["resolved"] = f"file:{typescript_tarball}"
     digest = hashlib.sha512(copied_tarball.read_bytes()).digest()
     rendered_sdk["integrity"] = "sha512-" + base64.b64encode(digest).decode("ascii")
 
     comparison = copy.deepcopy(rendered)
-    comparison["packages"]["node_modules/kaji-sdk"]["integrity"] = sdk_package[
-        "integrity"
-    ]
+    comparison["packages"][""]["dependencies"]["kaji-sdk"] = (
+        "file:kaji-sdk-0.2.0-beta.3.tgz"
+    )
+    comparison_sdk = comparison["packages"]["node_modules/kaji-sdk"]
+    comparison_sdk["version"] = "0.2.0-beta.3"
+    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.3.tgz"
+    comparison_sdk["integrity"] = sdk_package["integrity"]
     if comparison != template:
         raise RuntimeError("rendered consumer lock changed frozen registry packages")
     rendered_bytes = (json.dumps(rendered, indent=2) + "\n").encode("utf-8")
@@ -363,9 +392,15 @@ def installed_release_runtime(
     artifacts_dir: Path,
     *,
     expected_commit: str,
+    artifact_contract: ReleaseArtifactContract = BETA3_RELEASE_CONTRACT,
     include_openai: bool = False,
 ) -> Iterator[InstalledReleaseRuntime]:
-    release = verify(artifacts_dir, expected_commit)
+    verify_arguments = (
+        {}
+        if artifact_contract == BETA3_RELEASE_CONTRACT
+        else {"artifact_contract": artifact_contract}
+    )
+    release = verify(artifacts_dir, expected_commit, **verify_arguments)
     with tempfile.TemporaryDirectory(prefix="kaji-installed-release-") as temporary:
         root = Path(temporary).resolve()
         environment = _safe_environment(root)
@@ -386,6 +421,7 @@ def installed_release_runtime(
             root,
             release,
             environment,
+            artifact_contract=artifact_contract,
             include_openai=include_openai,
         )
         runtime = InstalledReleaseRuntime(
@@ -402,5 +438,5 @@ def installed_release_runtime(
             environment=MappingProxyType(dict(environment)),
         )
         yield runtime
-        if verify(artifacts_dir, expected_commit) != release:
+        if verify(artifacts_dir, expected_commit, **verify_arguments) != release:
             raise RuntimeError("release artifacts changed while evidence was running")
