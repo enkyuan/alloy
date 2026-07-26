@@ -405,7 +405,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert ".inline-link .inline-icon,\n.error-return .inline-icon" in styles
     assert "align-items: center" in styles
     assert "vertical-align: -0.15em" in styles
-    assert "inset-block-start: 2px" in styles
+    assert "inset-block-start: 2px" not in styles
     assert (
         "display: inline-block"
         not in styles.split(".error-return {", maxsplit=1)[1].split("}", maxsplit=1)[0]
