@@ -385,9 +385,10 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
         '.code-copy[data-copy-failed="true"] {', maxsplit=1
     )[1].split("}", maxsplit=1)[0]
     assert "color: var(--sango-iro-ink)" in copy_failure_styles
-    assert "text-wrap: pretty" in styles.split(".article li {", maxsplit=1)[1].split(
-        "}", maxsplit=1
-    )[0]
+    assert (
+        "text-wrap: pretty"
+        in styles.split(".article li {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    )
     assert "var(--shiro-nezumi) transparent" in diagram
     assert "--shironezumi-iro" not in diagram
     runtime_rail_keyframes = runtime.split(
