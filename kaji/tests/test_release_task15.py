@@ -2463,6 +2463,76 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     assert "non-regular file or symlink" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("selector", "expected_contract_name"),
+    [
+        ((), "BETA3_RELEASE_CONTRACT"),
+        (
+            ("--artifact-contract", "beta2-reference"),
+            "BETA2_REFERENCE_RELEASE_CONTRACT",
+        ),
+    ],
+)
+def test_release_artifact_cli_selects_exact_allowlisted_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    selector: tuple[str, ...],
+    expected_contract_name: str,
+) -> None:
+    module = _load_root_script("verify_release_artifacts.py")
+    selected: list[object] = []
+
+    def capture_contract(
+        _artifacts: Path,
+        _expected_commit: str,
+        *,
+        artifact_contract: object,
+    ) -> None:
+        selected.append(artifact_contract)
+
+    monkeypatch.setattr(module, "verify", capture_contract)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_release_artifacts.py",
+            "--artifacts-dir",
+            "artifacts",
+            "--expected-commit",
+            "a" * 40,
+            *selector,
+        ],
+    )
+
+    module.main()
+
+    assert selected == [getattr(module, expected_contract_name)]
+
+
+def test_release_artifact_cli_rejects_unsupported_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    module = _load_root_script("verify_release_artifacts.py")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_release_artifacts.py",
+            "--artifacts-dir",
+            "artifacts",
+            "--expected-commit",
+            "a" * 40,
+            "--artifact-contract",
+            "beta1",
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        module.main()
+
+    assert "invalid choice: 'beta1'" in capsys.readouterr().err
+
+
 def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")

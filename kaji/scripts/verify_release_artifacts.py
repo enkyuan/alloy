@@ -78,6 +78,12 @@ BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
     artifacts=MappingProxyType(REFERENCE_EXPECTED_ARTIFACTS),
     packages=MappingProxyType(REFERENCE_EXPECTED_PACKAGES),
 )
+RELEASE_ARTIFACT_CONTRACTS = MappingProxyType(
+    {
+        "beta3": BETA3_RELEASE_CONTRACT,
+        "beta2-reference": BETA2_REFERENCE_RELEASE_CONTRACT,
+    }
+)
 
 
 def fail(message: str) -> NoReturn:
@@ -226,10 +232,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--expected-commit", default=os.environ.get("EXPECTED_COMMIT"))
+    parser.add_argument(
+        "--artifact-contract",
+        choices=tuple(RELEASE_ARTIFACT_CONTRACTS),
+        default="beta3",
+    )
     args = parser.parse_args()
     if args.expected_commit is None:
         fail("--expected-commit or EXPECTED_COMMIT is required")
-    verify(args.artifacts_dir, args.expected_commit)
+    verify(
+        args.artifacts_dir,
+        args.expected_commit,
+        artifact_contract=RELEASE_ARTIFACT_CONTRACTS[args.artifact_contract],
+    )
     print("PASS: release filenames, build tools, sizes, hashes, and commit verified")
 
 

@@ -61,6 +61,25 @@ def test_reusable_performance_workflow_runs_three_independent_replicas() -> None
     assert "artifact-ids: ${{ inputs.candidate-artifact-id }}" in paired
 
 
+def test_paired_workflow_verifies_reference_before_default_candidate() -> None:
+    workflow = _read(PERFORMANCE)
+    paired = workflow.split("  paired-replica:", 1)[1].split("  paired-aggregate:", 1)[
+        0
+    ]
+    verify_step = paired.split(
+        "- name: Verify exact reference and candidate artifacts", 1
+    )[1].split("- name: Measure protected paired replica", 1)[0]
+    verifier = "python3 kaji/scripts/verify_release_artifacts.py"
+    calls = verify_step.split(verifier)[1:]
+
+    assert len(calls) == 2
+    assert workflow.count("--artifact-contract beta2-reference") == 1
+    assert "--artifacts-dir .artifacts/kaji-reference" in calls[0]
+    assert "--artifact-contract beta2-reference" in calls[0]
+    assert "--artifacts-dir .artifacts/kaji-candidate" in calls[1]
+    assert "--artifact-contract" not in calls[1]
+
+
 def test_reusable_performance_workflow_retains_raw_receipts_and_aggregates_once() -> (
     None
 ):

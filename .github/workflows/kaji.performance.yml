@@ -162,7 +162,8 @@ jobs:
         run: |
           python3 kaji/scripts/verify_release_artifacts.py \
             --artifacts-dir .artifacts/kaji-reference \
-            --expected-commit 5ed864c0098a4e8c5d0c065c787947aba9603860
+            --expected-commit 5ed864c0098a4e8c5d0c065c787947aba9603860 \
+            --artifact-contract beta2-reference
           python3 kaji/scripts/verify_release_artifacts.py \
             --artifacts-dir .artifacts/kaji-candidate \
             --expected-commit "$KAJI_RELEASE_COMMIT"
