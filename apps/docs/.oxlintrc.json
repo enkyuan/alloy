@@ -15,5 +15,5 @@
   "env": {
     "builtin": true
   },
-  "ignorePatterns": ["node_modules/", "dist/", ".astro/", ".next/", ".source/"]
+  "ignorePatterns": ["node_modules/", "dist/", ".astro/"]
 }

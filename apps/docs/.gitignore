@@ -2,10 +2,6 @@
 .astro/
 dist/
 
-# Removed framework caches (may remain after switching branches)
-.next/
-.source/
-
 # superpowers skill cache (dev-only, not committed)
 /docs/superpowers
 
