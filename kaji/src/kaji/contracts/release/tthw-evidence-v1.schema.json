@@ -97,11 +97,11 @@
           "enum": [
             "kaji_sdk-0.2.0b1-py3-none-any.whl",
             "kaji_sdk-0.2.0b1.tar.gz",
-            "kaji-sdk-0.2.0-beta.4.tgz"
+            "kaji-sdk-0.2.0-beta.5.tgz"
           ]
         },
         "package": { "enum": ["python", "typescript"] },
-        "version": { "enum": ["0.2.0b1", "0.2.0-beta.4"] },
+        "version": { "enum": ["0.2.0b1", "0.2.0-beta.5"] },
         "size": { "type": "integer", "minimum": 1 },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
@@ -115,11 +115,11 @@
           "enum": [
             "kaji_sdk-0.2.0b1-py3-none-any.whl",
             "kaji_sdk-0.2.0b1.tar.gz",
-            "kaji-sdk-0.2.0-beta.4.tgz"
+            "kaji-sdk-0.2.0-beta.5.tgz"
           ]
         },
         "package": { "enum": ["python", "typescript"] },
-        "version": { "enum": ["0.2.0b1", "0.2.0-beta.4"] },
+        "version": { "enum": ["0.2.0b1", "0.2.0-beta.5"] },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },

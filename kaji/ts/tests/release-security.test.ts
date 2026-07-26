@@ -1441,7 +1441,7 @@ describe("Kaji workflow contracts", () => {
       expect(job?.needs).toEqual(
         workflowName === "kaji.rehearsal.yml"
           ? ["offline-release", "python-compat", "node-compat"]
-          : ["verify-tag", "offline-gates", "python-compat", "node-compat"],
+          : ["verify-tag", "offline-gates", "performance", "python-compat", "node-compat"],
       );
       expect(job?.environment).toBe("kaji-beta");
       expect(effectivePermissions(workflow, job!)).toEqual(readOnlyPermissions);
@@ -1506,6 +1506,9 @@ describe("Kaji workflow contracts", () => {
       expect(dependencyClosure(publish.workflow, jobId), jobId).toContain("tthw-evidence");
     }
     expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain("github.run_attempt == 1");
+    expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain(
+      "needs.performance.result == 'success'",
+    );
     expect(rehearsal.workflow.jobs?.["tthw-evidence"]?.if).not.toContain("github.run_attempt == 1");
 
     const classifier = publish.workflow.jobs?.["publication-status"]?.steps?.find(
@@ -1583,7 +1586,7 @@ describe("Kaji workflow contracts", () => {
     );
   });
 
-  it("binds the current TypeScript candidate to the beta.4 package and tarball identity", () => {
+  it("binds the current TypeScript candidate to the beta.5 package and tarball identity", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;
       version: string;
@@ -1601,16 +1604,18 @@ describe("Kaji workflow contracts", () => {
     );
 
     expect(packageManifest.name).toBe("kaji-sdk");
-    expect(packageManifest.version).toBe("0.2.0-beta.4");
+    expect(packageManifest.version).toBe("0.2.0-beta.5");
     expect(packageManifest.version).not.toBe("0.2.0-beta.2");
+    expect(packageManifest.version).not.toBe("0.2.0-beta.4");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);
     expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
     expect(tarball).toBe(`kaji-sdk-${packageManifest.version}.tgz`);
-    expect(tarball).toBe("kaji-sdk-0.2.0-beta.4.tgz");
+    expect(tarball).toBe("kaji-sdk-0.2.0-beta.5.tgz");
     for (const name of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const { source } = readWorkflow(name);
       expect(source).toContain(tarball);
       expect(source).not.toContain("0.2.0-beta.2");
+      expect(source).not.toContain("0.2.0-beta.4");
     }
   });
 
@@ -2009,7 +2014,15 @@ describe("Kaji workflow contracts", () => {
     expect(registryPreflight?.run).toContain("PyPI beta 0.2.0b1 must remain absent");
 
     const npmPublish = workflowStep(jobs["publish-npm"]!, "Publish exact npm beta with provenance");
-    expect(npmPublish.run).toContain("npm publish");
+    const npmPublishRun = npmPublish.run ?? "";
+    expect(npmPublishRun).toContain("npm whoami --registry=https://registry.npmjs.org/");
+    expect(npmPublishRun).toContain("npm publish");
+    expect(npmPublishRun.indexOf("npm whoami")).toBeLessThan(npmPublishRun.indexOf("npm publish"));
+    expect(npmPublishRun).toContain('"$IDENTITY" = "$EXPECTED_NPM_PUBLISHER"');
+    expect(npmPublish.env).toMatchObject({
+      NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}",
+      EXPECTED_NPM_PUBLISHER: "${{ vars.KAJI_NPM_PUBLISHER }}",
+    });
     expect(npmPublish.run).toContain("--provenance");
     expect(npmPublish.run).toContain("--access public");
     expect(npmPublish.run).toContain("--tag beta");
@@ -2062,7 +2075,7 @@ describe("Kaji workflow contracts", () => {
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     )?.run;
-    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.4.tgz");
+    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.5.tgz");
     for (const forbidden of [
       "kaji_sdk-0.2.0b1-py3-none-any.whl",
       "kaji_sdk-0.2.0b1.tar.gz",

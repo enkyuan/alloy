@@ -105,7 +105,7 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm npm `kaji-sdk@0.2.0-beta.4` is unused. Confirm PyPI
+1. Confirm npm `kaji-sdk@0.2.0-beta.5` is unused. Confirm PyPI
    `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
    create it.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
@@ -116,8 +116,8 @@ later run is not acceptable evidence.
    directly:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.4 <approved-commit> -m "Kaji 0.2.0 beta 4"
-   git push origin refs/tags/kaji-v0.2.0-beta.4
+   git tag -s -a kaji-v0.2.0-beta.5 <approved-commit> -m "Kaji 0.2.0 beta 5"
+   git push origin refs/tags/kaji-v0.2.0-beta.5
    ```
 
 4. Wait for the exact tag-triggered workflow run to upload
@@ -202,9 +202,10 @@ later run is not acceptable evidence.
    for the unscoped package name and records that npm cannot prove new-package
    write authorization without performing the protected publication.
 9. After publisher preflight passes, approve the npm publisher under
-   `kaji-beta-publish`. It revalidates the artifact manifest and reverifies the
-   same signed tag object/direct commit immediately before the registry write.
-   There is no Python publisher job.
+   `kaji-beta-publish`. It revalidates the artifact manifest, reverifies the
+   same signed tag object/direct commit, and rechecks that `npm whoami` still
+   matches `KAJI_NPM_PUBLISHER` in the publication step immediately before the
+   registry write. There is no Python publisher job.
 10. The workflow records a final npm publication status. After the publisher
     reports success, the npm registry byte verifier makes at most 45 attempts
     with exponential delays starting at 2 seconds and capped at 20 seconds (830
@@ -250,7 +251,7 @@ is failure. Therefore:
     curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
       https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
   )" = 404
-  npm view kaji-sdk@0.2.0-beta.4 version --json --registry=https://registry.npmjs.org/
+  npm view kaji-sdk@0.2.0-beta.5 version --json --registry=https://registry.npmjs.org/
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and the npm publisher
@@ -265,6 +266,12 @@ is failure. Therefore:
   run `30190948860` rejected it before artifact build or publication, so it is
   history, not release evidence. Never move or retry it; recovery requires the
   new beta.4 attempt.
+- Treat `kaji-v0.2.0-beta.4` as a burned, immutable TTHW attempt. Protected run `30206052570`
+  built candidate artifacts but failed because the protected TTHW evidence
+  secret was empty; its paired benchmark aggregate also classified Python
+  `toolBatch100` as inconclusive. It never reached publisher preflight or a
+  registry transition. Never move or retry it, and never reuse its artifacts
+  or evidence; recovery requires the new beta.5 attempt.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:

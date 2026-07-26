@@ -26,7 +26,7 @@ PYPI_PROJECT = "kaji-sdk"
 PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
 NPM_PACKAGE = "kaji-sdk"
-NPM_VERSION = "0.2.0-beta.4"
+NPM_VERSION = "0.2.0-beta.5"
 NPM_SPEC = f"{NPM_PACKAGE}@{NPM_VERSION}"
 NPM_REGISTRY = "https://registry.npmjs.org/"
 USER_AGENT = "kaji-beta-release-verifier/1"
@@ -477,7 +477,7 @@ def verify_npm(
     parsed = urllib.parse.urlparse(tarball_url)
     if parsed.scheme != "https" or parsed.hostname != "registry.npmjs.org":
         raise VerificationMismatch("npm tarball URL is outside the expected registry")
-    entry = entries.get("kaji-sdk-0.2.0-beta.4.tgz")
+    entry = entries.get("kaji-sdk-0.2.0-beta.5.tgz")
     if not isinstance(entry, dict):
         raise VerificationMismatch("release manifest omits the npm beta artifact")
     payload = fetch(
