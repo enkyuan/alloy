@@ -16,6 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "kaji" / "scripts"
 _BENCHMARK_REPETITIONS = {
+    ("python", "sameSession25"): 8,
     ("python", "toolBatch100"): 16,
     ("python", "toolArgDeltas10k"): 8,
     ("typescript", "sameSession25"): 8,

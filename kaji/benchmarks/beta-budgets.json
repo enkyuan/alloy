@@ -8,6 +8,7 @@
   },
   "sameSession25": {
     "benchmarkRepetitions": {
+      "python": 8,
       "typescript": 8
     },
     "maxActive": 1
