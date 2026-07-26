@@ -1439,6 +1439,7 @@ def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
 
 
 _BENCHMARK_REPETITIONS = {
+    ("python", "sameSession25"): 8,
     ("python", "toolBatch100"): 16,
     ("python", "toolArgDeltas10k"): 8,
     ("typescript", "sameSession25"): 8,
@@ -1590,7 +1591,7 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "maxProviderTaskLeaks": 0,
     }
     assert budgets["sameSession25"] == {
-        "benchmarkRepetitions": {"typescript": 8},
+        "benchmarkRepetitions": {"python": 8, "typescript": 8},
         "maxActive": 1,
     }
 
@@ -2868,8 +2869,24 @@ def test_python_benchmark_batches_only_short_workloads_and_preserves_counters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load_sdk_benchmark("runtime_benchmark.py")
+    same_session_seeds: list[int] = []
     tool_batch_seeds: list[int] = []
     tool_argument_runs = 0
+
+    async def runtime_concurrency(
+        *, sessions: int, same_session: bool, seed: int
+    ) -> dict[str, float | int]:
+        assert sessions == 25
+        assert same_session is True
+        same_session_seeds.append(seed)
+        return {
+            "durationMs": float(seed),
+            "peakMiB": float(seed),
+            "turns": sessions,
+            "maxActive": 1,
+            "coordinatorEntries": 0,
+            "coordinatorWaiters": 0,
+        }
 
     async def tool_batch(seed: int) -> dict[str, float | int]:
         tool_batch_seeds.append(seed)
@@ -2890,15 +2907,28 @@ def test_python_benchmark_batches_only_short_workloads_and_preserves_counters(
             "providerTaskLeaks": tool_argument_runs - 1,
         }
 
+    monkeypatch.setattr(module, "_runtime_concurrency", runtime_concurrency)
     monkeypatch.setattr(module, "_tool_batch100", tool_batch)
     monkeypatch.setattr(module, "_tool_arg_deltas10k", tool_arguments)
 
+    same_session_result = asyncio.run(module._run_sample("sameSession25", 13))
     tool_batch_result = asyncio.run(module._run_sample("toolBatch100", 13))
     tool_argument_result = asyncio.run(module._run_sample("toolArgDeltas10k", 13))
 
     assert module._BENCHMARK_REPETITIONS == {
+        "sameSession25": 8,
         "toolBatch100": 16,
         "toolArgDeltas10k": 8,
+    }
+    assert same_session_seeds == list(range(13, 21))
+    assert same_session_result == {
+        "durationMs": float(sum(range(13, 21))),
+        "peakMiB": 20.0,
+        "turns": 25,
+        "maxActive": 1,
+        "coordinatorEntries": 0,
+        "coordinatorWaiters": 0,
+        "benchmarkRepetitions": 8,
     }
     assert tool_batch_seeds == list(range(13, 29))
     assert tool_batch_result == {

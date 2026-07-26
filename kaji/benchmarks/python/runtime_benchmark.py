@@ -65,6 +65,7 @@ CASES = (
     "toolArgDeltas10k",
 )
 _BENCHMARK_REPETITIONS = {
+    "sameSession25": 8,
     "toolBatch100": 16,
     "toolArgDeltas10k": 8,
 }
@@ -804,7 +805,14 @@ async def _run_sample(
     if case == "crossSession100":
         return await _runtime_concurrency(sessions=100, same_session=False, seed=seed)
     if case == "sameSession25":
-        return await _runtime_concurrency(sessions=25, same_session=True, seed=seed)
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda repetition: _runtime_concurrency(
+                sessions=25,
+                same_session=True,
+                seed=seed + repetition,
+            ),
+        )
     if case == "toolBatch100":
         return await _repeat_benchmark(
             _BENCHMARK_REPETITIONS[case],
