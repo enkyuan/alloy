@@ -22,19 +22,6 @@ const tocLabels: Record<string, string> = {
   "when-to-use-the-reference-service": "When to use",
 };
 const tocLabel = (heading: Heading) => tocLabels[heading.slug] ?? heading.text;
-const navStartMs = 800;
-const navStepMs = 30;
-let navAnimationIndex = 0;
-const animatedNavigation = navigation.map((section) => {
-  const labelAnimationIndex = section.label ? navAnimationIndex++ : undefined;
-  const items = section.items.map((item) => ({
-    ...item,
-    animationIndex: navAnimationIndex++,
-  }));
-
-  return { ...section, items, labelAnimationIndex };
-});
-const navMetaDelay = `${navStartMs + navAnimationIndex * navStepMs}ms`;
 const githubIcon = Github.toSvg({
   size: 12,
   className: "nav-github-icon",
@@ -46,24 +33,14 @@ const githubIcon = Github.toSvg({
 
   <div class="nav-links">
     {
-      animatedNavigation.map((section) => (
+      navigation.map((section) => (
         <>
-          {section.label && (
-            <div
-              class="nav-section"
-              style={`--nav-delay: ${navStartMs + (section.labelAnimationIndex ?? 0) * navStepMs}ms`}
-            >
-              {section.label}
-            </div>
-          )}
+          {section.label && <div class="nav-section">{section.label}</div>}
           {section.items.map((item) => {
             const isActive = currentHref === item.href;
 
             return (
-              <div
-                class="nav-item-wrapper"
-                style={`--nav-delay: ${navStartMs + item.animationIndex * navStepMs}ms`}
-              >
+              <div class="nav-item-wrapper">
                 {isActive ? (
                   <span class="nav-link active" aria-current="page">
                     {item.label}
@@ -103,7 +80,7 @@ const githubIcon = Github.toSvg({
     }
   </div>
 
-  <div class="nav-meta" style={`--nav-delay: ${navMetaDelay}`}>
+  <div class="nav-meta">
     <span class="nav-version">v0.2 beta candidate</span>
     <span class="nav-dot" aria-hidden="true">·</span>
     <a

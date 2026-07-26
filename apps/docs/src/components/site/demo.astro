@@ -248,10 +248,12 @@ const runtimeMarkup = [
   @keyframes runtime-rail-reveal {
     from {
       opacity: 0;
+      clip-path: inset(0 0 100% 0);
     }
 
     to {
       opacity: 1;
+      clip-path: inset(0);
     }
   }
 
