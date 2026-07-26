@@ -64,6 +64,10 @@ CASES = (
     "streamDeltas10k",
     "toolArgDeltas10k",
 )
+_BENCHMARK_REPETITIONS = {
+    "toolBatch100": 16,
+    "toolArgDeltas10k": 8,
+}
 _SAMPLE_FAILURE_MARKER = "KAJI_BENCHMARK_SAMPLE_FAILURE"
 
 
@@ -779,6 +783,19 @@ async def _tool_batch100(seed: int) -> dict[str, Any]:
     }
 
 
+async def _repeat_benchmark(repetitions: int, workload: Any) -> dict[str, Any]:
+    duration_ms = 0.0
+    last_result: dict[str, Any] = {}
+    for repetition in range(repetitions):
+        last_result = await workload(repetition)
+        duration_ms += float(last_result["durationMs"])
+    return {
+        **last_result,
+        "durationMs": duration_ms,
+        "benchmarkRepetitions": repetitions,
+    }
+
+
 async def _run_sample(
     case: str, seed: int, context_variant: str | None = None
 ) -> dict[str, Any]:
@@ -789,7 +806,10 @@ async def _run_sample(
     if case == "sameSession25":
         return await _runtime_concurrency(sessions=25, same_session=True, seed=seed)
     if case == "toolBatch100":
-        return await _tool_batch100(seed)
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda repetition: _tool_batch100(seed + repetition),
+        )
     if case == "context10kIterations5":
         if context_variant == "replay":
             return await _context_replay_baseline(seed)
@@ -799,7 +819,10 @@ async def _run_sample(
     if case == "streamDeltas10k":
         return await _stream_deltas10k(seed)
     if case == "toolArgDeltas10k":
-        return await _tool_arg_deltas10k()
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda _repetition: _tool_arg_deltas10k(),
+        )
     raise ValueError(f"unknown benchmark case: {case}")
 
 

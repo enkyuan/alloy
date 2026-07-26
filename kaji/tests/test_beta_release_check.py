@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ast
 from contextlib import contextmanager
 import hashlib
@@ -1437,6 +1438,16 @@ def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
     )
 
 
+_BENCHMARK_REPETITIONS = {
+    ("python", "toolBatch100"): 16,
+    ("python", "toolArgDeltas10k"): 8,
+    ("typescript", "sameSession25"): 8,
+    ("typescript", "crossSessionCommit100"): 32,
+    ("typescript", "streamDeltas10k"): 16,
+    ("typescript", "toolArgDeltas10k"): 32,
+}
+
+
 def _valid_worst_case_sample(case: str, runtime: str = "python") -> dict[str, object]:
     common: dict[str, object] = {"durationMs": 1.0, "peakMiB": 32.0}
     cases: dict[str, dict[str, object]] = {
@@ -1506,12 +1517,15 @@ def _valid_worst_case_sample(case: str, runtime: str = "python") -> dict[str, ob
         },
     }
     sample = {**common, **cases[case]}
+    benchmark_repetitions = _BENCHMARK_REPETITIONS.get((runtime, case))
+    if benchmark_repetitions is not None:
+        sample["benchmarkRepetitions"] = benchmark_repetitions
     if case == "toolBatch100" and runtime == "typescript":
         sample.update(
             {
-                "batchRepetitions": 64,
-                "calls": 6_400,
-                "completed": 6_400,
+                "batchRepetitions": 512,
+                "calls": 51_200,
+                "completed": 51_200,
             }
         )
     return sample
@@ -1545,17 +1559,20 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "maxProviderTaskLeaks": 0,
     }
     assert budgets["crossSessionCommit100"] == {
+        "benchmarkRepetitions": {"typescript": 32},
         "minOverlappingSessions": 2,
         "maxLaneEntriesAfter": 0,
         "maxReservationEntriesAfter": 0,
     }
     assert budgets["toolBatch100"] == {
-        "batchRepetitions": 64,
-        "calls": 6_400,
+        "benchmarkRepetitions": {"python": 16},
+        "batchRepetitions": 512,
+        "calls": 51_200,
         "maxActive": 4,
         "stuckCalls": 0,
     }
     assert budgets["streamDeltas10k"] == {
+        "benchmarkRepetitions": {"typescript": 16},
         "maxDeltaEvents": 16,
         "expectedCharacters": 10_000,
         "maxProviderTextBytes": 262_144,
@@ -1564,6 +1581,7 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "maxProviderTaskLeaks": 0,
     }
     assert budgets["toolArgDeltas10k"] == {
+        "benchmarkRepetitions": {"python": 8, "typescript": 32},
         "maxArgumentBytes": 65_536,
         "maxResponseBytes": 524_288,
         "maxFragmentJoins": 1,
@@ -1571,6 +1589,67 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "maxParserLeaks": 0,
         "maxProviderTaskLeaks": 0,
     }
+    assert budgets["sameSession25"] == {
+        "benchmarkRepetitions": {"typescript": 8},
+        "maxActive": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("runtime", "case", "expected"),
+    [
+        (runtime, case, expected)
+        for (runtime, case), expected in _BENCHMARK_REPETITIONS.items()
+    ],
+)
+@pytest.mark.parametrize("mutation", ["missing", "wrong"])
+def test_beta_benchmark_gate_requires_exact_benchmark_repetitions(
+    runtime: str, case: str, expected: int, mutation: str
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+    sample = _valid_worst_case_sample(case, runtime)
+    if mutation == "missing":
+        sample.pop("benchmarkRepetitions")
+    else:
+        sample["benchmarkRepetitions"] = expected + 1
+
+    failures = module._sample_failures(runtime, case, sample, budgets[case])
+
+    assert any("benchmarkRepetitions" in failure for failure in failures)
+
+
+@pytest.mark.parametrize(
+    ("runtime", "case"),
+    [
+        (runtime, case)
+        for runtime in ("python", "typescript")
+        for case in (
+            "replay10k",
+            "crossSession100",
+            "sameSession25",
+            "toolBatch100",
+            "context10kIterations5",
+            "crossSessionCommit100",
+            "streamDeltas10k",
+            "toolArgDeltas10k",
+        )
+        if (runtime, case) not in _BENCHMARK_REPETITIONS
+    ],
+)
+def test_beta_benchmark_gate_rejects_unexpected_benchmark_repetitions(
+    runtime: str, case: str
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    budgets = json.loads(module.BUDGETS_PATH.read_text())
+    sample = {
+        **_valid_worst_case_sample(case, runtime),
+        "benchmarkRepetitions": 1,
+    }
+
+    failures = module._sample_failures(runtime, case, sample, budgets[case])
+
+    assert any("benchmarkRepetitions" in failure for failure in failures)
 
 
 def test_beta_benchmark_gate_rejects_missing_counter_in_each_sample() -> None:
@@ -1646,7 +1725,7 @@ def test_beta_benchmark_gate_rejects_typescript_tool_batch_evidence_for_python()
     assert any(
         "completed is TypeScript-only evidence" in failure for failure in failures
     )
-    assert any("calls 6400 != 100" in failure for failure in failures)
+    assert any("calls 51200 != 100" in failure for failure in failures)
 
 
 def test_beta_benchmark_gate_accepts_typescript_tool_batch_contract() -> None:
@@ -1666,7 +1745,7 @@ def test_beta_benchmark_gate_accepts_typescript_tool_batch_contract() -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("batchRepetitions", 63), ("calls", 6_399), ("completed", 6_399)],
+    [("batchRepetitions", 511), ("calls", 51_199), ("completed", 51_199)],
 )
 def test_beta_benchmark_gate_rejects_corrupt_typescript_tool_batch_counters(
     field: str, value: int
@@ -1689,8 +1768,8 @@ def test_beta_benchmark_gate_rejects_corrupt_typescript_tool_batch_counters(
         ("python", "replay10k", "eventsApplied", 9_999),
         ("python", "crossSession100", "turns", 99),
         ("python", "sameSession25", "turns", 24),
-        ("typescript", "toolBatch100", "batchRepetitions", 63),
-        ("typescript", "toolBatch100", "completed", 6_399),
+        ("typescript", "toolBatch100", "batchRepetitions", 511),
+        ("typescript", "toolBatch100", "completed", 51_199),
         ("python", "context10kIterations5", "providerIterations", 4),
         ("python", "crossSessionCommit100", "sessions", 99),
         ("python", "streamDeltas10k", "characters", 9_999),
@@ -2783,6 +2862,89 @@ def test_python_benchmark_runs_warmups_inside_each_measured_child(
         ("toolArgDeltas10k", 15, None),
     ]
     assert result == {"durationMs": 15.0, "peakMiB": 1.0, "warmupRuns": 2}
+
+
+def test_python_benchmark_batches_only_short_workloads_and_preserves_counters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_sdk_benchmark("runtime_benchmark.py")
+    tool_batch_seeds: list[int] = []
+    tool_argument_runs = 0
+
+    async def tool_batch(seed: int) -> dict[str, float | int]:
+        tool_batch_seeds.append(seed)
+        return {
+            "durationMs": float(seed),
+            "peakMiB": float(seed),
+            "calls": seed,
+            "stuckCalls": 0,
+        }
+
+    async def tool_arguments() -> dict[str, float | int]:
+        nonlocal tool_argument_runs
+        tool_argument_runs += 1
+        return {
+            "durationMs": float(tool_argument_runs),
+            "peakMiB": float(tool_argument_runs),
+            "argumentFragments": 10_000 + tool_argument_runs,
+            "providerTaskLeaks": tool_argument_runs - 1,
+        }
+
+    monkeypatch.setattr(module, "_tool_batch100", tool_batch)
+    monkeypatch.setattr(module, "_tool_arg_deltas10k", tool_arguments)
+
+    tool_batch_result = asyncio.run(module._run_sample("toolBatch100", 13))
+    tool_argument_result = asyncio.run(module._run_sample("toolArgDeltas10k", 13))
+
+    assert module._BENCHMARK_REPETITIONS == {
+        "toolBatch100": 16,
+        "toolArgDeltas10k": 8,
+    }
+    assert tool_batch_seeds == list(range(13, 29))
+    assert tool_batch_result == {
+        "durationMs": float(sum(range(13, 29))),
+        "peakMiB": 28.0,
+        "calls": 28,
+        "stuckCalls": 0,
+        "benchmarkRepetitions": 16,
+    }
+    assert tool_argument_runs == 8
+    assert tool_argument_result == {
+        "durationMs": 36.0,
+        "peakMiB": 8.0,
+        "argumentFragments": 10_008,
+        "providerTaskLeaks": 7,
+        "benchmarkRepetitions": 8,
+    }
+
+
+def test_typescript_benchmark_batches_short_workloads_with_deterministic_seeds() -> (
+    None
+):
+    source = (
+        REPO_ROOT / "kaji" / "ts" / "benchmarks" / "runtime-benchmark.ts"
+    ).read_text()
+
+    for entry in (
+        "sameSession25: 8",
+        "crossSessionCommit100: 32",
+        "streamDeltas10k: 16",
+        "toolArgDeltas10k: 32",
+    ):
+        assert entry in source
+    for call in (
+        "sameSession25(seed + repetition)",
+        "crossSessionCommit100(seed + repetition)",
+        "streamDeltas10k(seed + repetition)",
+    ):
+        assert call in source
+    assert "async function repeatBenchmark" in source
+    assert "durationMs += result.durationMs" in source
+    assert re.search(
+        r"return \{\s*\.\.\.lastResult,\s*durationMs,\s*benchmarkRepetitions: repetitions",
+        source,
+    )
+    assert "const batchRepetitions = 512" in source
 
 
 def test_python_benchmark_parent_assigns_warmups_to_measured_children(

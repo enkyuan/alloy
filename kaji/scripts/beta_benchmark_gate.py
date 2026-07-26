@@ -432,6 +432,27 @@ def _sample_failures(
 
     number("durationMs")
     number("peakMiB")
+    benchmark_repetitions = budget.get("benchmarkRepetitions")
+    if benchmark_repetitions is not None and (
+        type(benchmark_repetitions) is not dict
+        or not set(benchmark_repetitions) <= {"python", "typescript"}
+        or any(
+            type(value) is not int or value < 1
+            for value in benchmark_repetitions.values()
+        )
+    ):
+        failures.append(f"{label} benchmarkRepetitions budget is invalid")
+    else:
+        expected_repetitions = (
+            None
+            if benchmark_repetitions is None
+            else benchmark_repetitions.get(runtime)
+        )
+        if expected_repetitions is None:
+            if "benchmarkRepetitions" in sample:
+                failures.append(f"{label} benchmarkRepetitions is unexpected evidence")
+        else:
+            exact("benchmarkRepetitions", expected_repetitions)
     if case == "replay10k":
         expected = budget["expectedEvents"]
         exact("eventsApplied", expected)
