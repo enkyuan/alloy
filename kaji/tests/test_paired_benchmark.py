@@ -16,14 +16,19 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "kaji" / "scripts"
 _BENCHMARK_REPETITIONS = {
-    ("python", "sameSession25"): 8,
-    ("python", "toolBatch100"): 16,
-    ("python", "toolArgDeltas10k"): 8,
-    ("typescript", "crossSession100"): 8,
-    ("typescript", "sameSession25"): 8,
-    ("typescript", "crossSessionCommit100"): 32,
-    ("typescript", "streamDeltas10k"): 16,
-    ("typescript", "toolArgDeltas10k"): 32,
+    ("python", "crossSession100"): 2,
+    ("python", "sameSession25"): 16,
+    ("python", "toolBatch100"): 64,
+    ("python", "crossSessionCommit100"): 16,
+    ("python", "streamDeltas10k"): 2,
+    ("python", "toolArgDeltas10k"): 64,
+    ("typescript", "replay10k"): 8,
+    ("typescript", "crossSession100"): 16,
+    ("typescript", "sameSession25"): 128,
+    ("typescript", "context10kIterations5"): 4,
+    ("typescript", "crossSessionCommit100"): 128,
+    ("typescript", "streamDeltas10k"): 128,
+    ("typescript", "toolArgDeltas10k"): 256,
 }
 
 
@@ -145,9 +150,9 @@ def _sample(
     if case == "toolBatch100" and runtime == "typescript":
         sample.update(
             {
-                "batchRepetitions": 512,
-                "calls": 51_200,
-                "completed": 51_200,
+                "batchRepetitions": 2_048,
+                "calls": 204_800,
+                "completed": 204_800,
             }
         )
     return sample
@@ -564,7 +569,7 @@ def test_case_evidence_rejects_incomplete_tool_batch_repetitions() -> None:
         }
         for index in range(1, 6)
     ]
-    pairs[0]["candidate"]["completed"] = 51_199
+    pairs[0]["candidate"]["completed"] = 204_799
 
     _, reference_failures, candidate_failures = pair._case_evidence(
         "typescript", "toolBatch100", pairs
