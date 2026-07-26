@@ -323,9 +323,9 @@ describe("npm contract artifact", () => {
         {
           commit: "a".repeat(40),
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-sdk-0.2.0-beta.5.tgz": "c".repeat(64) },
+          artifactSha256: { "kaji-sdk-0.2.0-beta.6.tgz": "c".repeat(64) },
         },
-        "/artifacts/kaji-sdk-0.2.0-beta.5.tgz",
+        "/artifacts/kaji-sdk-0.2.0-beta.6.tgz",
         "/tmp/node_modules/kaji-sdk",
         "v24.4.0",
         "11.4.2",
@@ -363,9 +363,9 @@ describe("npm contract artifact", () => {
           {
             commit: "a".repeat(40),
             manifestSha256: "b".repeat(64),
-            artifactSha256: { "kaji-sdk-0.2.0-beta.5.tgz": "c".repeat(64) },
+            artifactSha256: { "kaji-sdk-0.2.0-beta.6.tgz": "c".repeat(64) },
           },
-          "/artifacts/kaji-sdk-0.2.0-beta.5.tgz",
+          "/artifacts/kaji-sdk-0.2.0-beta.6.tgz",
           "/tmp/node_modules/kaji-sdk",
           "v24.4.0",
           "11.4.2",
@@ -390,9 +390,9 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.5.tgz");
-    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.5");
-    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.5.tgz");
+    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.6.tgz");
+    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.6");
+    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.6.tgz");
     expect(manifest.dependencies["kaji-sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
@@ -956,7 +956,7 @@ describe("npm contract artifact", () => {
       identity: {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-sdk-0.2.0-beta.5.tgz": "c".repeat(64) },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.6.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
       installedPackagePath: "/private/secret/sk-package-canary/node_modules/kaji-sdk",
@@ -1017,7 +1017,7 @@ describe("npm contract artifact", () => {
         manifestSha256: unsafeCanary,
         artifactSha256: {
           [`${unsafeCanary}.tgz`]: "c".repeat(64),
-          "kaji-sdk-0.2.0-beta.5.tgz": unsafeCanary,
+          "kaji-sdk-0.2.0-beta.6.tgz": unsafeCanary,
         },
       },
       `v24.0.0\n${unsafeCanary}`,
@@ -1123,7 +1123,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.5.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.6.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1183,7 +1183,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.5.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.6.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -2398,7 +2398,7 @@ console.log(JSON.stringify({
 
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
-      expect(manifest.version).toBe("0.2.0-beta.5");
+      expect(manifest.version).toBe("0.2.0-beta.6");
       expect(packed[0]!.filename).toBe(`kaji-sdk-${manifest.version}.tgz`);
       expect(packed[0]!.filename).not.toBe("kaji-sdk-0.2.0-beta.2.tgz");
       expect(manifest.license).toBe("FSL-1.1-ALv2");

@@ -113,7 +113,7 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
     checks.push({
       name: "kaji-sdk installed",
       ok: hasDependency(all, "kaji-sdk"),
-      hint: "Run `bun add kaji-sdk@0.2.0-beta.5` or regenerate with `kaji init --lang ts`.",
+      hint: "Run `bun add kaji-sdk@0.2.0-beta.6` or regenerate with `kaji init --lang ts`.",
       severity: "hard",
     });
     checks.push({

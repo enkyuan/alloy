@@ -5,13 +5,19 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.6] - 2026-07-26
+
+- Advanced the npm candidate onto the settled benchmark measurement-floor
+  protocol while keeping Python publication deferred.
+- Bound release, installed-runtime, evidence, provenance, and registry-byte
+  verification to the new beta.6 identity.
+
 ## [0.2.0-beta.5] - 2026-07-26
 
-- Recovered the npm candidate after the immutable beta.4 attempt failed
-  protected TTHW validation and the paired benchmark aggregate before
-  publisher preflight or publication.
-- Delayed protected TTHW validation until performance evidence succeeds and
-  rechecked the approved npm identity in the publication step.
+- Signed, unpublished attempt superseded before registry publication because
+  its tag predated the settled benchmark measurement-floor protocol.
+- The npm registry remained untouched; its tag, artifacts, and evidence are
+  incident history rather than release proof.
 
 ## [0.2.0-beta.4] - 2026-07-26
 
