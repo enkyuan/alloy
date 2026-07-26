@@ -225,5 +225,5 @@ ships `mcp` only as a status command; MCP server registration is deferred until
 a real server command exists.
 
 - TS: `bun add -D @kaji/cli` -> `npx kaji init --lang ts|python --provider openai|anthropic|kimi|gemini`
-- Python: `pip install 'kaji-sdk==0.2.0b1'` -> `kaji init --provider openai`
+- Python source checkout: `uv sync --project kaji --extra openai` -> `uv run --project kaji kaji init --provider openai`
 - Landing-page CLI tab: safe to show both `kaji init` flows, but not MCP setup commands.

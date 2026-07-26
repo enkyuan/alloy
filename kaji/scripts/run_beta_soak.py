@@ -65,7 +65,7 @@ FAILURE_CODES = frozenset(
 )
 EXPECTED_ARTIFACTS = {
     "python": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "typescript": "kaji-sdk-0.2.0-beta.3.tgz",
+    "typescript": "kaji-sdk-0.2.0-beta.4.tgz",
 }
 
 

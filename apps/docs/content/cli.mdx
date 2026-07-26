@@ -3,10 +3,10 @@ title: CLI
 description: Use the CLI embedded in the TypeScript SDK to scaffold projects, copy integrations, and replay event logs.
 ---
 
-The TypeScript package declares a `kaji` binary, but its npm package is not
-available as of July 25, 2026. Run it from the source checkout. The Python SDK
-and WIP standalone package use the same binary name, but their command sets
-differ.
+The TypeScript package declares a `kaji` binary, but its npm package remains
+unavailable until protected registry-byte verification succeeds. Run it from
+the source checkout. The Python SDK and WIP standalone package use the same
+binary name, but their command sets differ.
 
 ## Command surfaces
 
@@ -46,9 +46,10 @@ bun kaji/ts/src/cli/bin.ts replay ./session.jsonl --format summary
 `--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
 destination.
 
-Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.3`. Install their
-dependencies through npm or Bun. Experimental-registry integrations require
-`--allow-experimental`.
+Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.4`. Until protected
+publication completes, scaffold inspection is source-only; installing that
+dependency through npm or Bun will return `404`. Experimental-registry
+integrations require `--allow-experimental`.
 
 `connect` and `disconnect` are available for integrations whose manifest
 declares OAuth. No such integration ships in the 0.2 catalog. `replay`
@@ -73,7 +74,7 @@ runtime failures. Replay output is a closed, redaction-safe projection.
 
 ## Python SDK CLI
 
-The Python distribution is not available from PyPI as of July 25, 2026. From a
+The Python distribution is not available from PyPI for this release. From a
 source checkout, its `kaji` CLI scaffolds Python projects, generates Python or
 TypeScript OpenAPI handlers, and manages the Python registry:
 
@@ -92,9 +93,8 @@ Its `init` writes `agent.py` and `.env.example`. The `gen`, `info`, `secret`,
 
 ## Standalone cross-language CLI
 
-`@kaji/cli` is not available from npm as of July 25, 2026. Contributors can run
-its WIP source when evaluating a single scaffold and diagnostic tool for both
-languages:
+`@kaji/cli` is not available from npm. Contributors can run its WIP source when
+evaluating a single scaffold and diagnostic tool for both languages:
 
 ```bash
 bun apps/cli/src/index.ts --help

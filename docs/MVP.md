@@ -14,7 +14,9 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Install the package** (`pip install 'kaji-sdk==0.2.0b1'` or `npm install kaji-sdk@0.2.0-beta.3 zod`)
+1. **Prepare an SDK** (`uv sync --project kaji --extra openai` from the source
+   checkout for Python, or `npm install kaji-sdk@0.2.0-beta.4 zod` for
+   TypeScript after protected npm publication)
 2. **Install the OpenAI provider SDK** for the beta-supported live path
 3. **Set `OPENAI_API_KEY`** for live OpenAI runs. The installed-package mock
    quickstart needs no key.
@@ -138,17 +140,19 @@ gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 **Python**
 
 ```bash
-pip install 'kaji-sdk[openai]==0.2.0b1'     # OpenAI
+uv sync --project kaji --extra openai       # OpenAI
 # or
-pip install 'kaji-sdk[anthropic]==0.2.0b1'  # Anthropic (experimental/WIP)
+uv sync --project kaji --extra anthropic    # Anthropic (experimental/WIP)
 ```
+
+The Python distribution is not published to PyPI for this release.
 
 **TypeScript**
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.3 zod openai        # OpenAI
+npm install kaji-sdk@0.2.0-beta.4 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.3 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+npm install kaji-sdk@0.2.0-beta.4 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 ```
 
 ### Step 2 - Configure provider

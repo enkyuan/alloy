@@ -401,6 +401,20 @@ def test_npm_lock_uses_patched_fast_uri() -> None:
         }
 
 
+def test_publish_tag_guard_matches_typescript_package_version() -> None:
+    version = json.loads(_read("kaji/ts/package.json"))["version"]
+    publish = _read(".github/workflows/kaji.publish.yml")
+    guard = re.search(
+        r'const tagName = context\.ref\.replace\("refs/tags/", ""\);\s+'
+        r"if \(!/(?P<pattern>[^/]+)/\.test\(tagName\)\) \{",
+        publish,
+    )
+
+    assert guard is not None
+    expected = re.escape(f"kaji-v{version}").replace(r"\-", "-")
+    assert guard["pattern"] == rf"^{expected}$"
+
+
 def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None:
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
@@ -417,9 +431,8 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "needs.python-compat.result == 'success'" in rehearsal
     assert "needs.node-compat.result == 'success'" in rehearsal
     assert "needs.performance.result == 'success'" in rehearsal
-    assert "group: kaji-beta-rehearsal-0.2.0-beta.3" in rehearsal
+    assert "group: kaji-beta-rehearsal-0.2.0-beta.4" in rehearsal
     assert "0.2.0-beta.2" not in rehearsal
-    assert "0.2.0-beta.2" not in publish
     assert "offline-gate-summary.json" in rehearsal
     assert "if: ${{ always() }}" in rehearsal
     rehearsal_keyed_steps = rehearsal.split("  keyed-proof:", 1)[1].split(
@@ -436,7 +449,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "verification.verified",
         "environment: kaji-beta",
         "environment: kaji-beta-publish",
-        "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
+        "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
         "--provenance",
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
@@ -1550,7 +1563,7 @@ def test_registry_verifier_retains_machine_failure_before_exiting(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.3"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.4"},
                 "artifacts": [],
             }
         )
@@ -1594,7 +1607,7 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.3"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.4"},
                 "artifacts": [],
             }
         )
@@ -1650,7 +1663,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.3"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.4"},
                 "artifacts": [
                     {
                         "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
@@ -1659,7 +1672,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
                         "size": 1,
                     },
                     {
-                        "file": "kaji-sdk-0.2.0-beta.3.tgz",
+                        "file": "kaji-sdk-0.2.0-beta.4.tgz",
                         "package": "typescript",
                         "sha256": "1" * 64,
                         "size": 1,
@@ -1706,7 +1719,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
     assert retained["npm"] == {"byteVerified": True}
     assert retained["packages"] == {
         "python": "0.2.0b1",
-        "typescript": "0.2.0-beta.3",
+        "typescript": "0.2.0-beta.4",
     }
 
 
@@ -1762,7 +1775,7 @@ def test_malformed_registry_json_is_retained_as_typed_machine_failure(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.3"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.4"},
                 "artifacts": [
                     {
                         "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
@@ -2127,11 +2140,11 @@ def test_npm_missing_target_is_retryable_propagation(
     ("audit", "expected_error"),
     [
         (
-            {"missing": [{"name": "kaji-sdk", "version": "0.2.0-beta.3"}]},
+            {"missing": [{"name": "kaji-sdk", "version": "0.2.0-beta.4"}]},
             "VerificationUnavailable",
         ),
         (
-            {"invalid": [{"name": "kaji-sdk", "version": "0.2.0-beta.3"}]},
+            {"invalid": [{"name": "kaji-sdk", "version": "0.2.0-beta.4"}]},
             "VerificationMismatch",
         ),
     ],
@@ -2167,7 +2180,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
     payload = b"npm-tarball"
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(payload).digest()).decode()
     entry = {
-        "file": "kaji-sdk-0.2.0-beta.3.tgz",
+        "file": "kaji-sdk-0.2.0-beta.4.tgz",
         "package": "typescript",
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size": len(payload),
@@ -2190,7 +2203,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
                     "verified": [
                         {
                             "name": "kaji-sdk",
-                            "version": "0.2.0-beta.3",
+                            "version": "0.2.0-beta.4",
                             "attestations": [{}],
                         }
                     ]
@@ -2212,7 +2225,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
 
     assert evidence["byteVerified"] is True
     assert evidence["signatureAudit"]["packageVerified"] is True
-    assert (tmp_path / "registry-kaji-sdk-0.2.0-beta.3.tgz").read_bytes() == payload
+    assert (tmp_path / "registry-kaji-sdk-0.2.0-beta.4.tgz").read_bytes() == payload
     assert (tmp_path / "npm-signature-audit.json").is_file()
     assert (
         "npm",
@@ -2241,7 +2254,7 @@ def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
             stdout = json.dumps(
                 {
                     "verified": [
-                        {"name": "kaji-sdk", "version": "0.2.0-beta.3"},
+                        {"name": "kaji-sdk", "version": "0.2.0-beta.4"},
                         {
                             "name": "transitive-dependency",
                             "version": "1.0.0",
@@ -2281,10 +2294,12 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
     )[0]
 
     assert (
-        'git tag -s -a kaji-v0.2.0-beta.3 <approved-commit> -m "Kaji 0.2.0 beta 3"'
+        'git tag -s -a kaji-v0.2.0-beta.4 <approved-commit> -m "Kaji 0.2.0 beta 4"'
         in protected_release
     )
     assert "kaji-v0.2.0-beta.2" not in protected_release
+    assert "burned, immutable pre-build attempt" in runbook
+    assert "run `30190948860`" in runbook
 
     for expected in (
         "signed beta tag",
@@ -2358,13 +2373,13 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     payloads = {
         "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
         "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
-        "kaji-sdk-0.2.0-beta.3.tgz": b"npm",
+        "kaji-sdk-0.2.0-beta.4.tgz": b"npm",
     }
     entries = []
     for name, payload in payloads.items():
         (artifacts / name).write_bytes(payload)
         package = "typescript" if name.endswith(".tgz") else "python"
-        version = "0.2.0-beta.3" if package == "typescript" else "0.2.0b1"
+        version = "0.2.0-beta.4" if package == "typescript" else "0.2.0b1"
         entries.append(
             {
                 "commit": commit,
@@ -2396,7 +2411,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         "packages": {
             "contract": "1.0.0",
             "python": "0.2.0b1",
-            "typescript": "0.2.0-beta.3",
+            "typescript": "0.2.0-beta.4",
         },
         "artifacts": entries,
     }
@@ -2426,20 +2441,20 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         == (artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl").resolve()
     )
     assert verified.python_sdist == (artifacts / "kaji_sdk-0.2.0b1.tar.gz").resolve()
-    assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.3.tgz").resolve()
+    assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.4.tgz").resolve()
     with pytest.raises(TypeError):
         cast(MutableMapping[str, str], verified.artifact_sha256)["extra"] = (
             "not immutable"
         )
 
     assert subprocess.run(command, check=False).returncode == 0
-    (artifacts / "kaji-sdk-0.2.0-beta.3.tgz").write_bytes(b"tampered")
+    (artifacts / "kaji-sdk-0.2.0-beta.4.tgz").write_bytes(b"tampered")
     result = subprocess.run(command, capture_output=True, check=False, text=True)
     assert result.returncode != 0
     assert "size/hash mismatch" in result.stderr
 
-    (artifacts / "kaji-sdk-0.2.0-beta.3.tgz").write_bytes(
-        payloads["kaji-sdk-0.2.0-beta.3.tgz"]
+    (artifacts / "kaji-sdk-0.2.0-beta.4.tgz").write_bytes(
+        payloads["kaji-sdk-0.2.0-beta.4.tgz"]
     )
     unexpected = artifacts / "unexpected.whl"
     unexpected.write_bytes(b"extra")
@@ -2455,7 +2470,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     assert "artifact file set mismatch" in result.stderr
     wheel.write_bytes(payloads[wheel.name])
 
-    npm = artifacts / "kaji-sdk-0.2.0-beta.3.tgz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.4.tgz"
     npm.unlink()
     npm.symlink_to(wheel)
     result = subprocess.run(command, capture_output=True, check=False, text=True)
@@ -2466,7 +2481,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("selector", "expected_contract_name"),
     [
-        ((), "BETA3_RELEASE_CONTRACT"),
+        ((), "BETA4_RELEASE_CONTRACT"),
         (
             ("--artifact-contract", "beta2-reference"),
             "BETA2_REFERENCE_RELEASE_CONTRACT",
@@ -2692,10 +2707,10 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
         "schemaVersion": 1,
         "commit": commit,
         "releaseManifestSha256": "b" * 64,
-        "artifactSha256": {"kaji-sdk-0.2.0-beta.3.tgz": "c" * 64},
+        "artifactSha256": {"kaji-sdk-0.2.0-beta.4.tgz": "c" * 64},
         "runtime": {"version": "v22.1.0"},
         "artifacts": {
-            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.3.tgz",
+            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.4.tgz",
             "package": "/tmp/node_modules/kaji-sdk",
         },
         "githubPackageProofs": {
@@ -2913,10 +2928,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         passed = {
             **identity_free_passed,
             "releaseManifestSha256": "b" * 64,
-            "artifactSha256": {"kaji-sdk-0.2.0-beta.3.tgz": "c" * 64},
+            "artifactSha256": {"kaji-sdk-0.2.0-beta.4.tgz": "c" * 64},
             "runtime": {"version": f"v{runtime_version}.1.0"},
             "artifacts": {
-                "tarball": "/artifacts/kaji-sdk-0.2.0-beta.3.tgz",
+                "tarball": "/artifacts/kaji-sdk-0.2.0-beta.4.tgz",
                 "package": "/tmp/node_modules/kaji-sdk",
             },
             "githubPackageProofs": {
@@ -3218,7 +3233,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
     payloads = {
         "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
         "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
-        "kaji-sdk-0.2.0-beta.3.tgz": b"npm",
+        "kaji-sdk-0.2.0-beta.4.tgz": b"npm",
     }
     entries: list[dict[str, object]] = []
     for name, payload in payloads.items():
@@ -3232,7 +3247,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "package": package,
                 "sha256": hashlib.sha256(payload).hexdigest(),
                 "size": len(payload),
-                "version": ("0.2.0-beta.3" if package == "typescript" else "0.2.0b1"),
+                "version": ("0.2.0-beta.4" if package == "typescript" else "0.2.0b1"),
             }
         )
     manifest = {
@@ -3255,7 +3270,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "packages": {
             "contract": "1.0.0",
             "python": "0.2.0b1",
-            "typescript": "0.2.0-beta.3",
+            "typescript": "0.2.0-beta.4",
         },
         "artifacts": entries,
     }
@@ -3273,8 +3288,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
             "sha256": artifact_hashes["kaji_sdk-0.2.0b1-py3-none-any.whl"],
         },
         "typescript": {
-            "file": "kaji-sdk-0.2.0-beta.3.tgz",
-            "sha256": artifact_hashes["kaji-sdk-0.2.0-beta.3.tgz"],
+            "file": "kaji-sdk-0.2.0-beta.4.tgz",
+            "sha256": artifact_hashes["kaji-sdk-0.2.0-beta.4.tgz"],
         },
     }
     workspace = tmp_path / "workspace"
@@ -3377,13 +3392,13 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "commit": commit,
                 "releaseManifestSha256": manifest_hash,
                 "artifactSha256": {
-                    "kaji-sdk-0.2.0-beta.3.tgz": artifact_hashes[
-                        "kaji-sdk-0.2.0-beta.3.tgz"
+                    "kaji-sdk-0.2.0-beta.4.tgz": artifact_hashes[
+                        "kaji-sdk-0.2.0-beta.4.tgz"
                     ]
                 },
                 "runtime": {"version": f"v{version}.14.0"},
                 "artifacts": {
-                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.3.tgz",
+                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.4.tgz",
                     "package": f"/opt/kaji-node-{version}/node_modules/kaji-sdk",
                 },
                 "githubPackageProofs": {
@@ -3610,10 +3625,10 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         artifact_file = (
             "kaji_sdk-0.2.0b1-py3-none-any.whl"
             if path_name == "python"
-            else "kaji-sdk-0.2.0-beta.3.tgz"
+            else "kaji-sdk-0.2.0-beta.4.tgz"
         )
         artifact_package = "python" if path_name == "python" else "typescript"
-        artifact_version = "0.2.0b1" if path_name == "python" else "0.2.0-beta.3"
+        artifact_version = "0.2.0b1" if path_name == "python" else "0.2.0-beta.4"
         tthw_runs.append(
             {
                 "participantId": f"user-{index:03d}",
@@ -4142,7 +4157,7 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
                 }
             )
         elif hostile_case == "mixed_tthw_status":
-            document["artifactSha256"]["kaji-sdk-0.2.0-beta.3.tgz"] = "0" * 64
+            document["artifactSha256"]["kaji-sdk-0.2.0-beta.4.tgz"] = "0" * 64
         elif hostile_case == "manual_tthw_timing":
             document["automatedTimings"]["python"]["warmRunMs"] += 1
         elif hostile_case == "canonical_extra_top_level":

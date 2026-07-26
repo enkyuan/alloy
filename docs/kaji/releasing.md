@@ -105,7 +105,7 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm npm `kaji-sdk@0.2.0-beta.3` is unused. Confirm PyPI
+1. Confirm npm `kaji-sdk@0.2.0-beta.4` is unused. Confirm PyPI
    `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
    create it.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
@@ -116,8 +116,8 @@ later run is not acceptable evidence.
    directly:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.3 <approved-commit> -m "Kaji 0.2.0 beta 3"
-   git push origin refs/tags/kaji-v0.2.0-beta.3
+   git tag -s -a kaji-v0.2.0-beta.4 <approved-commit> -m "Kaji 0.2.0 beta 4"
+   git push origin refs/tags/kaji-v0.2.0-beta.4
    ```
 
 4. Wait for the exact tag-triggered workflow run to upload
@@ -250,7 +250,7 @@ is failure. Therefore:
     curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
       https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
   )" = 404
-  npm view kaji-sdk@0.2.0-beta.3 version --json --registry=https://registry.npmjs.org/
+  npm view kaji-sdk@0.2.0-beta.4 version --json --registry=https://registry.npmjs.org/
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and the npm publisher
@@ -261,6 +261,10 @@ is failure. Therefore:
 - If Python `0.2.0b1` exists, stop: an out-of-band publication violated this
   release target. Preserve the evidence and remediate it separately before
   recommending either SDK.
+- Treat `kaji-v0.2.0-beta.3` as a burned, immutable pre-build attempt. Protected
+  run `30190948860` rejected it before artifact build or publication, so it is
+  history, not release evidence. Never move or retry it; recovery requires the
+  new beta.4 attempt.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:

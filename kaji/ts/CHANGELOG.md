@@ -5,6 +5,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.4] - 2026-07-26
+
+- Recovered the npm candidate after the immutable beta.3 tag was rejected
+  before artifact build or publication.
+
 ## [0.2.0-beta.3] - 2026-07-25
 
 - Advanced the current npm candidate, artifact, release, installed-runtime,

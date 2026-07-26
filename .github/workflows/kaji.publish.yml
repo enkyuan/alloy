@@ -41,7 +41,7 @@ jobs:
               );
             }
             const tagName = context.ref.replace("refs/tags/", "");
-            if (!/^kaji-v0\.2\.0-beta\.2$/.test(tagName)) {
+            if (!/^kaji-v0\.2\.0-beta\.4$/.test(tagName)) {
               throw new Error(`unexpected beta tag: ${tagName}`);
             }
             const ref = await github.rest.git.getRef({
@@ -444,7 +444,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.3.tgz"] and
+                    keys == ["kaji-sdk-0.2.0-beta.4.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -609,7 +609,7 @@ jobs:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
           bun kaji/ts/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
           --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
@@ -816,7 +816,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.3.tgz"] and
+                    keys == ["kaji-sdk-0.2.0-beta.4.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1353,7 +1353,7 @@ jobs:
         run: |
           bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz
           python3 kaji/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Validate one canonical current-run evidence set
@@ -1395,7 +1395,7 @@ jobs:
           subject-path: |
             .artifacts/kaji-release/kaji_sdk-0.2.0b1-py3-none-any.whl
             .artifacts/kaji-release/kaji_sdk-0.2.0b1.tar.gz
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz
             .artifacts/kaji-release/manifest.json
             .artifacts/kaji-release/SHA256SUMS
             .artifacts/kaji-evidence/offline-gates.log
@@ -1475,11 +1475,11 @@ jobs:
             *) echo "PyPI absence check failed with HTTP $PYPI_STATUS; aborting npm publication" >&2; exit 1 ;;
           esac
           set +e
-          NPM_OUTPUT="$(npm view kaji-sdk@0.2.0-beta.3 version --json --registry=https://registry.npmjs.org/ 2>&1)"
+          NPM_OUTPUT="$(npm view kaji-sdk@0.2.0-beta.4 version --json --registry=https://registry.npmjs.org/ 2>&1)"
           NPM_STATUS=$?
           set -e
           if [ "$NPM_STATUS" -eq 0 ]; then
-            echo "npm beta 0.2.0-beta.3 already exists; aborting publication" >&2
+            echo "npm beta 0.2.0-beta.4 already exists; aborting publication" >&2
             exit 1
           fi
           if ! printf '%s' "$NPM_OUTPUT" | grep -q E404; then
@@ -1579,7 +1579,7 @@ jobs:
         run: |
           bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz
       - name: Reverify signed tag immediately before npm publication
         uses: ./.github/actions/verify-kaji-beta-tag
         with:
@@ -1591,7 +1591,7 @@ jobs:
       - name: Publish exact npm beta with provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
+        run: npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -1744,7 +1744,7 @@ jobs:
             404) PYPI_STATE=absent ;;
             *) PYPI_STATE=unknown ;;
           esac
-          NPM_OUTPUT="$(timeout 30s npm view kaji-sdk@0.2.0-beta.3 version --json --registry=https://registry.npmjs.org/ 2>&1)"
+          NPM_OUTPUT="$(timeout 30s npm view kaji-sdk@0.2.0-beta.4 version --json --registry=https://registry.npmjs.org/ 2>&1)"
           NPM_STATUS=$?
           if [ "$NPM_STATUS" -eq 0 ]; then
             NPM_STATE=present
@@ -1957,7 +1957,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --tag "$EXPECTED_TAG"
           --title "Kaji $EXPECTED_TAG"
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.3.tgz
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.4.tgz
           .artifacts/kaji-release/manifest.json
           .artifacts/kaji-release/SHA256SUMS
           .artifacts/kaji-evidence/offline-gates.log
@@ -1981,6 +1981,6 @@ jobs:
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.3.tgz
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.3.tgz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.4.tgz
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.4.tgz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

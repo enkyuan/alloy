@@ -438,7 +438,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert ".reicon path" in styles
 
 
-def test_public_onboarding_uses_npm_and_defers_python_registry() -> None:
+def test_public_onboarding_is_source_only_before_registry_verification() -> None:
     docs_root = REPO_ROOT / "apps" / "docs"
     paths = (
         docs_root / "content" / "getting-started.mdx",
@@ -447,13 +447,19 @@ def test_public_onboarding_uses_npm_and_defers_python_registry() -> None:
         docs_root / "src" / "pages" / "index.astro",
     )
     combined = "\n".join(path.read_text() for path in paths)
+    combined_compact = " ".join(combined.split())
 
-    assert 'bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"' in combined
+    assert "0.2.0-beta.4" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
+    assert "kaji-sdk@0.2.0-beta.3" not in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
     assert "bun install --frozen-lockfile" in combined
+    assert "Source checkout required" in combined
+    assert "not publicly available yet" in combined
+    assert "registry-byte verification" in combined_compact
     assert "PyPI" in combined
     assert "deferred" in combined
+    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", combined) is None
     assert 'pip install "kaji-sdk==0.2.0b1"' not in combined
     assert 'pip install "kaji-sdk[openai]==0.2.0b1"' not in combined
 
@@ -674,8 +680,9 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
         assert stale not in combined
 
     getting_started = paths[0].read_text()
-    assert 'bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"' in getting_started
-    assert "peer dependency" in getting_started
+    assert "0.2.0-beta.4" in getting_started
+    assert "bun install --frozen-lockfile" in getting_started
+    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", getting_started) is None
     assert 'risk="read"' in getting_started
     assert 'risk: "read"' in getting_started
     assert "principal_id=" in getting_started
@@ -697,7 +704,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
     assert re.search(r"\|\s*`add`\s*\|\s*Yes\s*\|\s*Yes\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`replay`\s*\|\s*Yes\s*\|\s*No\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`mcp`\s*\|\s*No\s*\|\s*No\s*\|\s*WIP;", cli)
-    assert "not available from PyPI as of July 25, 2026" in cli
+    assert "not available from PyPI for this release" in cli
     assert "pip install" not in cli
     for code in range(7):
         assert re.search(rf"\|\s*`{code}`\s*\|", cli)
@@ -766,7 +773,7 @@ def test_typescript_readme_quick_start_uses_an_esm_filename() -> None:
     assert "quickstart.ts`" not in readme
 
 
-def test_public_beta_install_paths_select_the_prerelease_artifacts() -> None:
+def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
     documents = {
         path: path.read_text()
         for path in (
@@ -782,25 +789,33 @@ def test_public_beta_install_paths_select_the_prerelease_artifacts() -> None:
     }
     combined = "\n".join(documents.values())
     assert "kaji-sdk==0.2.0b1" in combined
-    assert "kaji-sdk[openai]==0.2.0b1" in combined
-    assert "kaji-sdk@0.2.0-beta.3" in combined
+    assert "kaji-sdk@0.2.0-beta.4" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
+    assert "kaji-sdk@0.2.0-beta.3" not in combined
 
-    unpinned_python = re.compile(
-        r"pip install [^\n`]*kaji-sdk(?:\[[^\]]+\])?(?!==0\.2\.0b1)(?:['\"]|\s|$)"
-    )
     unpinned_typescript = re.compile(
-        r"(?:npm install|bun add)\s+kaji-sdk(?!@0\.2\.0-beta\.3)(?:\s|$)"
+        r"(?:npm install|bun add)\s+kaji-sdk(?!@0\.2\.0-beta\.4)(?:\s|$)"
     )
-    assert unpinned_python.search(combined) is None
+    assert re.search(r"pip install [^\n`]*kaji-sdk", combined) is None
     assert unpinned_typescript.search(combined) is None
+    assert (
+        "uv sync --project kaji --extra openai"
+        in documents[REPO_ROOT / "docs" / "MVP.md"]
+    )
+    assert (
+        "uv run --project kaji kaji init --provider openai"
+        in documents[REPO_ROOT / "docs" / "ROADMAP.md"]
+    )
     public_docs = "\n".join(
         documents[path]
         for path in documents
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
-    assert 'bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"' in public_docs
+    assert "0.2.0-beta.4" in public_docs
+    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", public_docs) is None
     assert re.search(r"pip install [^\n`]*kaji-sdk", public_docs) is None
+    typescript_readme = documents[REPO_ROOT / "kaji" / "ts" / "README.md"]
+    assert "npm install kaji-sdk@0.2.0-beta.4" in typescript_readme
 
 
 def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:
