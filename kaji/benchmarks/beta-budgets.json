@@ -1,31 +1,38 @@
 {
   "replay10k": {
+    "benchmarkRepetitions": {
+      "typescript": 8
+    },
     "expectedEvents": 10000
   },
   "crossSession100": {
     "benchmarkRepetitions": {
-      "typescript": 8
+      "python": 2,
+      "typescript": 16
     },
     "minOverlappingSessions": 2,
     "maxOverlappingSessions": 100
   },
   "sameSession25": {
     "benchmarkRepetitions": {
-      "python": 8,
-      "typescript": 8
+      "python": 16,
+      "typescript": 128
     },
     "maxActive": 1
   },
   "toolBatch100": {
     "benchmarkRepetitions": {
-      "python": 16
+      "python": 64
     },
-    "batchRepetitions": 512,
-    "calls": 51200,
+    "batchRepetitions": 2048,
+    "calls": 204800,
     "maxActive": 4,
     "stuckCalls": 0
   },
   "context10kIterations5": {
+    "benchmarkRepetitions": {
+      "typescript": 4
+    },
     "maxFullHistoryScans": 1,
     "maxProviderIterations": 5,
     "maxCopiedPayloadBytes": 0,
@@ -38,7 +45,8 @@
   },
   "crossSessionCommit100": {
     "benchmarkRepetitions": {
-      "typescript": 32
+      "python": 16,
+      "typescript": 128
     },
     "minOverlappingSessions": 2,
     "maxLaneEntriesAfter": 0,
@@ -46,7 +54,8 @@
   },
   "streamDeltas10k": {
     "benchmarkRepetitions": {
-      "typescript": 16
+      "python": 2,
+      "typescript": 128
     },
     "maxDeltaEvents": 16,
     "expectedCharacters": 10000,
@@ -57,8 +66,8 @@
   },
   "toolArgDeltas10k": {
     "benchmarkRepetitions": {
-      "python": 8,
-      "typescript": 32
+      "python": 64,
+      "typescript": 256
     },
     "maxArgumentBytes": 65536,
     "maxResponseBytes": 524288,

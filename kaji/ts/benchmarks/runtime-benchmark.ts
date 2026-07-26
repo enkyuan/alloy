@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import type OpenAI from "openai";
 
 import {
@@ -52,11 +53,13 @@ const CASES = [
 ] as const;
 type CaseName = (typeof CASES)[number];
 const BENCHMARK_REPETITIONS = {
-  crossSession100: 8,
-  sameSession25: 8,
-  crossSessionCommit100: 32,
-  streamDeltas10k: 16,
-  toolArgDeltas10k: 32,
+  replay10k: 8,
+  crossSession100: 16,
+  sameSession25: 128,
+  context10kIterations5: 4,
+  crossSessionCommit100: 128,
+  streamDeltas10k: 128,
+  toolArgDeltas10k: 256,
 } as const;
 type RssProbeMode = "baseline" | "indexed";
 
@@ -641,7 +644,7 @@ interface ToolBatchResult {
 }
 
 async function toolBatch100(): Promise<Omit<WorkerSample, "case" | "peakMiB">> {
-  const batchRepetitions = 512;
+  const batchRepetitions = 2048;
   let completed = 0;
   let maxActive = 0;
   let calls = 0;
@@ -1054,18 +1057,69 @@ async function toolArgDeltas10k(): Promise<Omit<WorkerSample, "case" | "peakMiB"
   };
 }
 
-async function repeatBenchmark<T extends { readonly durationMs: number }>(
+function benchmarkSemantics(
+  result: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const semantics = { ...result };
+  delete semantics.durationMs;
+  delete semantics.peakMiB;
+  delete semantics.incrementalRssBytes;
+  return semantics;
+}
+
+async function repeatBenchmark<
+  T extends {
+    readonly durationMs: number;
+    readonly incrementalRssBytes?: number;
+  },
+>(
   repetitions: number,
   workload: (repetition: number) => Promise<T>,
-): Promise<T & { readonly benchmarkRepetitions: number }> {
-  let lastResult = await workload(0);
+  measurePeakMiB: () => number = peakMiB,
+): Promise<T & { readonly peakMiB: number; readonly benchmarkRepetitions: number }> {
+  let lastResult = { ...(await workload(0)), peakMiB: measurePeakMiB() };
   let durationMs = lastResult.durationMs;
+  let maxPeakMiB = lastResult.peakMiB;
+  let maxIncrementalRssBytes = lastResult.incrementalRssBytes;
+  const expectedSemantics = benchmarkSemantics(lastResult);
   for (let repetition = 1; repetition < repetitions; repetition++) {
-    const result = await workload(repetition);
+    const result = { ...(await workload(repetition)), peakMiB: measurePeakMiB() };
+    if (!isDeepStrictEqual(benchmarkSemantics(result), expectedSemantics)) {
+      throw new Error("benchmark semantics changed across repetitions");
+    }
     durationMs += result.durationMs;
+    maxPeakMiB = Math.max(maxPeakMiB, result.peakMiB);
+    if (result.incrementalRssBytes !== undefined) {
+      maxIncrementalRssBytes = Math.max(
+        maxIncrementalRssBytes ?? result.incrementalRssBytes,
+        result.incrementalRssBytes,
+      );
+    }
     lastResult = result;
   }
-  return { ...lastResult, durationMs, benchmarkRepetitions: repetitions };
+  return {
+    ...lastResult,
+    durationMs,
+    peakMiB: maxPeakMiB,
+    ...(maxIncrementalRssBytes === undefined
+      ? {}
+      : { incrementalRssBytes: maxIncrementalRssBytes }),
+    benchmarkRepetitions: repetitions,
+  };
+}
+
+function repeatSeededBenchmark<
+  T extends {
+    readonly durationMs: number;
+    readonly incrementalRssBytes?: number;
+  },
+>(
+  repetitions: number,
+  seed: number,
+  workload: (seed: number) => Promise<T>,
+  measurePeakMiB: () => number = peakMiB,
+): Promise<T & { readonly peakMiB: number; readonly benchmarkRepetitions: number }> {
+  return repeatBenchmark(repetitions, (repetition) => workload(seed + repetition), measurePeakMiB);
 }
 
 async function runWorkload(
@@ -1073,26 +1127,30 @@ async function runWorkload(
   seed: number,
 ): Promise<Omit<WorkerSample, "case" | "peakMiB" | "warmupRuns">> {
   return caseName === "replay10k"
-    ? await replay10k(seed)
+    ? await repeatSeededBenchmark(BENCHMARK_REPETITIONS.replay10k, seed, replay10k)
     : caseName === "crossSession100"
-      ? await repeatBenchmark(BENCHMARK_REPETITIONS.crossSession100, (repetition) =>
-          crossSession100(seed + repetition),
-        )
+      ? await repeatSeededBenchmark(BENCHMARK_REPETITIONS.crossSession100, seed, crossSession100)
       : caseName === "sameSession25"
-        ? await repeatBenchmark(BENCHMARK_REPETITIONS.sameSession25, (repetition) =>
-            sameSession25(seed + repetition),
-          )
+        ? await repeatSeededBenchmark(BENCHMARK_REPETITIONS.sameSession25, seed, sameSession25)
         : caseName === "toolBatch100"
           ? await toolBatch100()
           : caseName === "context10kIterations5"
-            ? await context10kIterations5(seed)
+            ? await repeatSeededBenchmark(
+                BENCHMARK_REPETITIONS.context10kIterations5,
+                seed,
+                context10kIterations5,
+              )
             : caseName === "crossSessionCommit100"
-              ? await repeatBenchmark(BENCHMARK_REPETITIONS.crossSessionCommit100, (repetition) =>
-                  crossSessionCommit100(seed + repetition),
+              ? await repeatSeededBenchmark(
+                  BENCHMARK_REPETITIONS.crossSessionCommit100,
+                  seed,
+                  crossSessionCommit100,
                 )
               : caseName === "streamDeltas10k"
-                ? await repeatBenchmark(BENCHMARK_REPETITIONS.streamDeltas10k, (repetition) =>
-                    streamDeltas10k(seed + repetition),
+                ? await repeatSeededBenchmark(
+                    BENCHMARK_REPETITIONS.streamDeltas10k,
+                    seed,
+                    streamDeltas10k,
                   )
                 : await repeatBenchmark(BENCHMARK_REPETITIONS.toolArgDeltas10k, toolArgDeltas10k);
 }
@@ -1143,8 +1201,75 @@ function median(values: readonly number[]): number {
   return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
 }
 
+async function repeatReducerProbe(
+  mode: "aggregate" | "semantic-drift",
+): Promise<Readonly<Record<string, unknown>>> {
+  const seeds: number[] = [];
+  if (mode === "aggregate") {
+    const durations = [1.25, 2.75, 3];
+    const incrementalRssBytes = [5, 12, 7];
+    const peakMeasurements = [4, 9, 6];
+    const result = await repeatSeededBenchmark(
+      3,
+      13,
+      async (seed) => {
+        seeds.push(seed);
+        const index = seed - 13;
+        return {
+          durationMs: durations[index]!,
+          incrementalRssBytes: incrementalRssBytes[index]!,
+          completed: 100,
+          turns: 25,
+        };
+      },
+      () => {
+        const measurement = peakMeasurements.shift();
+        if (measurement === undefined) throw new Error("missing reducer probe peak measurement");
+        return measurement;
+      },
+    );
+    return { seeds, result };
+  }
+
+  const completed = [100, 99, 100];
+  try {
+    await repeatSeededBenchmark(
+      3,
+      21,
+      async (seed) => {
+        seeds.push(seed);
+        return {
+          durationMs: 1,
+          incrementalRssBytes: 1,
+          completed: completed[seed - 21]!,
+        };
+      },
+      () => 1,
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === "benchmark semantics changed across repetitions"
+    ) {
+      return { seeds, rejected: true };
+    }
+    throw error;
+  }
+  throw new Error("semantic drift reducer probe was accepted");
+}
+
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  if (args[0] === "--internal-test-repeat-reducer") {
+    const mode = args[1];
+    if ((mode !== "aggregate" && mode !== "semantic-drift") || args.length !== 2) {
+      throw new Error("--internal-test-repeat-reducer requires aggregate or semantic-drift");
+    }
+    process.stdout.write(`${JSON.stringify(await repeatReducerProbe(mode))}\n`);
+    return;
+  }
+
+  const options = parseArgs(args);
   if (options.rssProbe !== undefined) {
     process.stdout.write(`${JSON.stringify(runRssProbe(options.rssProbe, options.seed))}\n`);
     return;

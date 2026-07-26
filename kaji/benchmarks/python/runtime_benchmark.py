@@ -65,9 +65,12 @@ CASES = (
     "toolArgDeltas10k",
 )
 _BENCHMARK_REPETITIONS = {
-    "sameSession25": 8,
-    "toolBatch100": 16,
-    "toolArgDeltas10k": 8,
+    "crossSession100": 2,
+    "sameSession25": 16,
+    "toolBatch100": 64,
+    "crossSessionCommit100": 16,
+    "streamDeltas10k": 2,
+    "toolArgDeltas10k": 64,
 }
 _SAMPLE_FAILURE_MARKER = "KAJI_BENCHMARK_SAMPLE_FAILURE"
 
@@ -786,13 +789,26 @@ async def _tool_batch100(seed: int) -> dict[str, Any]:
 
 async def _repeat_benchmark(repetitions: int, workload: Any) -> dict[str, Any]:
     duration_ms = 0.0
+    peak_mib = 0.0
+    expected_semantics: dict[str, Any] | None = None
     last_result: dict[str, Any] = {}
     for repetition in range(repetitions):
         last_result = await workload(repetition)
+        semantics = {
+            key: value
+            for key, value in last_result.items()
+            if key not in {"durationMs", "peakMiB"}
+        }
+        if expected_semantics is None:
+            expected_semantics = semantics
+        elif semantics != expected_semantics:
+            raise RuntimeError("benchmark semantics changed across repetitions")
         duration_ms += float(last_result["durationMs"])
+        peak_mib = max(peak_mib, float(last_result["peakMiB"]))
     return {
         **last_result,
         "durationMs": duration_ms,
+        "peakMiB": peak_mib,
         "benchmarkRepetitions": repetitions,
     }
 
@@ -803,7 +819,14 @@ async def _run_sample(
     if case == "replay10k":
         return await _replay10k()
     if case == "crossSession100":
-        return await _runtime_concurrency(sessions=100, same_session=False, seed=seed)
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda repetition: _runtime_concurrency(
+                sessions=100,
+                same_session=False,
+                seed=seed + repetition,
+            ),
+        )
     if case == "sameSession25":
         return await _repeat_benchmark(
             _BENCHMARK_REPETITIONS[case],
@@ -823,9 +846,15 @@ async def _run_sample(
             return await _context_replay_baseline(seed)
         return await _context10k_iterations5(seed)
     if case == "crossSessionCommit100":
-        return await _cross_session_commit100(seed)
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda repetition: _cross_session_commit100(seed + repetition),
+        )
     if case == "streamDeltas10k":
-        return await _stream_deltas10k(seed)
+        return await _repeat_benchmark(
+            _BENCHMARK_REPETITIONS[case],
+            lambda repetition: _stream_deltas10k(seed + repetition),
+        )
     if case == "toolArgDeltas10k":
         return await _repeat_benchmark(
             _BENCHMARK_REPETITIONS[case],
