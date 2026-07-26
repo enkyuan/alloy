@@ -484,7 +484,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "Rebuild and verify exact package contents against the clean checkout",
         "Rebuild and verify npm archive contents against the clean checkout",
         "verify_published_packages.py",
-        "--attempts 8 --initial-delay 2 --max-delay 20",
+        "--attempts 45 --initial-delay 2 --max-delay 20",
         "attach_release_assets.py",
         "registry-verification.json",
         "Initialize fail-closed publication status before setup",
@@ -891,9 +891,21 @@ def test_publication_reruns_are_guarded_before_queries_and_release_mutation() ->
     assert "github.run_attempt != 1" in status_job
     assert status_job.count("github.run_attempt == 1") >= 7
     assert "--previous-state unpublished" in status_job
-    assert "timeout --signal=TERM --kill-after=10s 15m" in status_job
+    assert "timeout --signal=TERM --kill-after=10s 20m" in status_job
     assert "timeout-minutes: 45" in status_job
-    assert status_job.index("timeout --signal=TERM --kill-after=10s 15m") < (
+    retry = re.search(
+        r"--attempts (\d+) --initial-delay (\d+) --max-delay (\d+)", status_job
+    )
+    assert retry is not None
+    attempts, initial_delay, max_delay = map(int, retry.groups())
+    backoff_seconds = sum(
+        min(initial_delay * 2**retry_number, max_delay)
+        for retry_number in range(attempts - 1)
+    )
+    assert backoff_seconds >= 780
+    assert backoff_seconds + 300 <= 1200
+    assert backoff_seconds < 900
+    assert status_job.index("timeout --signal=TERM --kill-after=10s 20m") < (
         status_job.index("Reduce monotonic publication state")
     )
     assert status_job.index("Reduce monotonic publication state") < status_job.index(
