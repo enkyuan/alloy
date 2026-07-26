@@ -1601,8 +1601,8 @@ jobs:
       state: ${{ steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state }}
       incident: ${{ steps.classify.outputs.incident || steps.initial-status.outputs.incident }}
     runs-on: ubuntu-latest
-    # Registry polling is capped at 15 minutes, leaving ample time to classify
-    # and upload evidence after either convergence or timeout.
+    # Registry polling is capped at 20 minutes, preserving the full propagation
+    # window and two bounded verification paths before classification and upload.
     timeout-minutes: 45
     permissions:
       contents: read
@@ -1721,14 +1721,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          timeout --signal=TERM --kill-after=10s 15m \
+          timeout --signal=TERM --kill-after=10s 20m \
             python3 kaji/scripts/verify_published_packages.py \
             --target npm \
             --artifacts-dir .artifacts/kaji-release \
             --output .artifacts/kaji-publication-status/registry-verification.json \
             --downloads-dir .artifacts/kaji-publication-status/downloaded \
             --repository "$GITHUB_REPOSITORY" \
-            --attempts 8 --initial-delay 2 --max-delay 20
+            --attempts 45 --initial-delay 2 --max-delay 20
       - name: Reduce monotonic publication state
         id: classify
         if: ${{ always() && github.run_attempt == 1 }}
