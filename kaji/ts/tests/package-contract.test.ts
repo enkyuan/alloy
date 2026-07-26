@@ -474,7 +474,7 @@ describe("npm contract artifact", () => {
           [
             "benchmarks/runtime-benchmark.ts",
             "--case",
-            "toolArgDeltas10k",
+            "crossSession100",
             "--samples",
             "1",
             "--warmups",
