@@ -1442,6 +1442,7 @@ _BENCHMARK_REPETITIONS = {
     ("python", "sameSession25"): 8,
     ("python", "toolBatch100"): 16,
     ("python", "toolArgDeltas10k"): 8,
+    ("typescript", "crossSession100"): 8,
     ("typescript", "sameSession25"): 8,
     ("typescript", "crossSessionCommit100"): 32,
     ("typescript", "streamDeltas10k"): 16,
@@ -2956,6 +2957,7 @@ def test_typescript_benchmark_batches_short_workloads_with_deterministic_seeds()
     ).read_text()
 
     for entry in (
+        "crossSession100: 8",
         "sameSession25: 8",
         "crossSessionCommit100: 32",
         "streamDeltas10k: 16",
@@ -2963,6 +2965,7 @@ def test_typescript_benchmark_batches_short_workloads_with_deterministic_seeds()
     ):
         assert entry in source
     for call in (
+        "crossSession100(seed + repetition)",
         "sameSession25(seed + repetition)",
         "crossSessionCommit100(seed + repetition)",
         "streamDeltas10k(seed + repetition)",

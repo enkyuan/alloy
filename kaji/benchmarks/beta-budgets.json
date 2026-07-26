@@ -3,6 +3,9 @@
     "expectedEvents": 10000
   },
   "crossSession100": {
+    "benchmarkRepetitions": {
+      "typescript": 8
+    },
     "minOverlappingSessions": 2,
     "maxOverlappingSessions": 100
   },
