@@ -634,9 +634,7 @@ def test_clean_checkout_rebuilds_use_supported_bun_cwd_syntax() -> None:
     )
 
     for name in rebuild_steps:
-        step = publish.split(f"      - name: {name}", 1)[1].split(
-            "      - ", 1
-        )[0]
+        step = publish.split(f"      - name: {name}", 1)[1].split("      - ", 1)[0]
         assert "bun run --cwd kaji/ts build" in step
     assert "bun --cwd kaji/ts run build" not in publish
 
