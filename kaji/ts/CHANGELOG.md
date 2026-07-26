@@ -5,6 +5,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.3] - 2026-07-25
+
+- Advanced the current npm candidate, artifact, release, installed-runtime,
+  and evidence identities to beta.3 while leaving the Python candidate deferred.
+
 ## [0.2.0-beta.2] - 2026-07-23
 
 - Adopted `FSL-1.1-ALv2`, with Apache-2.0 becoming available for each version

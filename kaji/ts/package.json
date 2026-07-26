@@ -1,6 +1,6 @@
 {
   "name": "kaji-sdk",
-  "version": "0.2.0-beta.2",
+  "version": "0.2.0-beta.3",
   "description": "Embeddable SDK for building agents in TypeScript: event-sourced runtime, tool registry, session replay. Infra-free core.",
   "homepage": "https://github.com/enkyuan/alloy/blob/main/docs/kaji/README.md",
   "bugs": {

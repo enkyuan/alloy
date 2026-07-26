@@ -1583,7 +1583,7 @@ describe("Kaji workflow contracts", () => {
     );
   });
 
-  it("binds the current TypeScript candidate to the beta.2 package and tarball identity", () => {
+  it("binds the current TypeScript candidate to the beta.3 package and tarball identity", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;
       version: string;
@@ -1601,16 +1601,16 @@ describe("Kaji workflow contracts", () => {
     );
 
     expect(packageManifest.name).toBe("kaji-sdk");
-    expect(packageManifest.version).toBe("0.2.0-beta.2");
-    expect(packageManifest.version).not.toBe("0.2.0-beta.1");
+    expect(packageManifest.version).toBe("0.2.0-beta.3");
+    expect(packageManifest.version).not.toBe("0.2.0-beta.2");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);
     expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
     expect(tarball).toBe(`kaji-sdk-${packageManifest.version}.tgz`);
-    expect(tarball).toBe("kaji-sdk-0.2.0-beta.2.tgz");
+    expect(tarball).toBe("kaji-sdk-0.2.0-beta.3.tgz");
     for (const name of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const { source } = readWorkflow(name);
       expect(source).toContain(tarball);
-      expect(source).not.toContain("0.2.0-beta.1");
+      expect(source).not.toContain("0.2.0-beta.2");
     }
   });
 
@@ -2062,7 +2062,7 @@ describe("Kaji workflow contracts", () => {
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     )?.run;
-    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.2.tgz");
+    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.3.tgz");
     for (const forbidden of [
       "kaji_sdk-0.2.0b1-py3-none-any.whl",
       "kaji_sdk-0.2.0b1.tar.gz",

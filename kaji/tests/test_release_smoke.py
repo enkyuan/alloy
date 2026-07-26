@@ -330,7 +330,7 @@ def test_release_smoke_consumes_verified_archives_without_building(
     artifacts.mkdir()
     wheel = artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
-    npm = artifacts / "kaji-sdk-0.2.0-beta.2.tgz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.3.tgz"
     for path in (wheel, sdist, npm):
         path.write_bytes(path.name.encode())
     commit = "a" * 40
@@ -415,7 +415,7 @@ def test_python_compatibility_identity_excludes_unconsumed_npm_hash(
     module = _load_script("release_smoke.py")
     wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     sdist = tmp_path / "kaji_sdk-0.2.0b1.tar.gz"
-    npm = tmp_path / "kaji-sdk-0.2.0-beta.2.tgz"
+    npm = tmp_path / "kaji-sdk-0.2.0-beta.3.tgz"
     hashes = MappingProxyType(
         {
             wheel.name: "a" * 64,
@@ -482,7 +482,7 @@ def test_release_smoke_failure_overwrites_partial_timings(
     artifacts.mkdir()
     wheel = artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     sdist = artifacts / "kaji_sdk-0.2.0b1.tar.gz"
-    npm = artifacts / "kaji-sdk-0.2.0-beta.2.tgz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.3.tgz"
     for path in (wheel, sdist, npm):
         path.touch()
     identity = SimpleNamespace(

@@ -21,6 +21,7 @@ from benchmark_platform import (
 )
 from paired_benchmark import (
     CASES,
+    REFERENCE_IDENTITY_FILES,
     REFERENCE_PATH,
     RUNTIMES,
     THRESHOLD,
@@ -56,7 +57,7 @@ SEMVER = re.compile(
 )
 PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
 PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.2.tgz"
+TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.3.tgz"
 TYPESCRIPT_GITHUB_TOOLS = (
     "add_comment",
     "create_issue",
@@ -537,7 +538,9 @@ def validate_paired_benchmark(
     try:
         _validate_utc_timestamp(document.get("generatedAt"), "aggregate generatedAt")
         reference_record = _load_reference()
-        reference = _validate_identity(document.get("reference"), "reference")
+        reference = _validate_identity(
+            document.get("reference"), "reference", REFERENCE_IDENTITY_FILES
+        )
         candidate = _validate_identity(document.get("candidate"), "candidate")
     except RuntimeError:
         reject("paired_benchmark_identity_invalid")

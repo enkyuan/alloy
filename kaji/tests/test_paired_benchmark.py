@@ -153,7 +153,7 @@ def _identity(commit: str, prefix: str) -> dict[str, Any]:
                 "sha256": chr(ord(prefix) + 2) * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.2.tgz",
+                "file": "kaji-sdk-0.2.0-beta.3.tgz",
                 "sha256": chr(ord(prefix) + 3) * 64,
             },
         },
@@ -214,7 +214,7 @@ def _complete_report(
                 "node": "v22.14.0",
                 "bun": "1.3.11",
             },
-            "dependencyLockHash": anchor["dependencyLockHash"],
+            "dependencyLockHash": pair._lock_hash(),
             "invocation": _invocation(replica),
         },
         "referenceRecordSha256": pair._file_sha256(pair.REFERENCE_PATH),
@@ -268,8 +268,8 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
     assert (
         anchor["dependencyLockHash"]
         == "1bed0911da7da85aa527a059eec2d6c560d80f3cff699ec98468eb560168dabc"
-        == pair._lock_hash()
     )
+    assert pair._lock_hash() != anchor["dependencyLockHash"]
     assert anchor["githubArtifact"] == {
         "runId": 30081423771,
         "artifactId": 8592160276,
@@ -299,6 +299,8 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
             ),
         },
     }
+    assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.2.tgz"
+    assert pair.IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.3.tgz"
     assert "resolved" not in json.dumps(anchor).lower()
 
 
@@ -490,12 +492,13 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
     monkeypatch.setattr(
         pair,
         "_installed_identity",
-        lambda runtime: (
+        lambda runtime, *_args: (
             reference_identity if runtime is reference_runtime else candidate_identity
         ),
     )
     monkeypatch.setattr(pair, "_run_case", run_case)
-    monkeypatch.setattr(pair, "_lock_hash", lambda: anchor["dependencyLockHash"])
+    driver_lock_hash = "9" * 64
+    monkeypatch.setattr(pair, "_lock_hash", lambda: driver_lock_hash)
     monkeypatch.setattr(
         pair,
         "_runner_evidence",
@@ -506,7 +509,7 @@ def test_replica_measurement_uses_two_isolated_artifacts_and_adjacent_order(
                 "node": "v22.14.0",
                 "bun": "1.3.11",
             },
-            "dependencyLockHash": anchor["dependencyLockHash"],
+            "dependencyLockHash": driver_lock_hash,
             "invocation": _invocation(1),
         },
     )
@@ -549,10 +552,10 @@ def test_replica_measurement_rejects_dependency_lock_drift(
     monkeypatch.setattr(
         pair,
         "_runner_evidence",
-        lambda **_kwargs: pytest.fail("runner measured after lock mismatch"),
+        lambda **_kwargs: {"dependencyLockHash": "1" * 64},
     )
 
-    with pytest.raises(RuntimeError, match="dependency lock differs"):
+    with pytest.raises(RuntimeError, match="measured dependency lock differs"):
         pair._measure_replica(
             reference_artifacts=tmp_path / "reference",
             candidate_artifacts=tmp_path / "candidate",

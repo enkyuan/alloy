@@ -65,6 +65,11 @@ PROTOCOL_INPUTS = (
 IDENTITY_FILES = {
     "pythonWheel": "kaji_sdk-0.2.0b1-py3-none-any.whl",
     "pythonSdist": "kaji_sdk-0.2.0b1.tar.gz",
+    "typescript": "kaji-sdk-0.2.0-beta.3.tgz",
+}
+REFERENCE_IDENTITY_FILES = {
+    "pythonWheel": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+    "pythonSdist": "kaji_sdk-0.2.0b1.tar.gz",
     "typescript": "kaji-sdk-0.2.0-beta.2.tgz",
 }
 REPORT_KEYS = {
@@ -160,7 +165,11 @@ def _validate_utc_timestamp(value: Any, label: str) -> str:
     return value
 
 
-def _validate_identity(value: Any, label: str) -> dict[str, Any]:
+def _validate_identity(
+    value: Any,
+    label: str,
+    expected_files: dict[str, str] = IDENTITY_FILES,
+) -> dict[str, Any]:
     if type(value) is not dict or set(value) != {
         "commit",
         "releaseManifestSha256",
@@ -174,10 +183,10 @@ def _validate_identity(value: Any, label: str) -> dict[str, Any]:
         value["releaseManifestSha256"], f"{label} manifest hash"
     )
     artifacts = value["artifacts"]
-    if type(artifacts) is not dict or set(artifacts) != set(IDENTITY_FILES):
+    if type(artifacts) is not dict or set(artifacts) != set(expected_files):
         raise RuntimeError(f"{label} artifacts have the wrong shape")
     validated: dict[str, dict[str, str]] = {}
-    for artifact, expected_file in IDENTITY_FILES.items():
+    for artifact, expected_file in expected_files.items():
         entry = artifacts[artifact]
         if (
             type(entry) is not dict
@@ -216,6 +225,7 @@ def _load_reference(path: Path = REFERENCE_PATH) -> dict[str, Any]:
             "artifacts": value["artifacts"],
         },
         "reference",
+        REFERENCE_IDENTITY_FILES,
     )
     _validate_hash(value["dependencyLockHash"], "reference dependency lock hash")
     github = value["githubArtifact"]
@@ -244,7 +254,10 @@ def _reference_identity(reference: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _installed_identity(installed: InstalledReleaseRuntime) -> dict[str, Any]:
+def _installed_identity(
+    installed: InstalledReleaseRuntime,
+    expected_files: dict[str, str] = IDENTITY_FILES,
+) -> dict[str, Any]:
     release = installed.release
     return _validate_identity(
         {
@@ -266,6 +279,7 @@ def _installed_identity(installed: InstalledReleaseRuntime) -> dict[str, Any]:
             },
         },
         "installed",
+        expected_files,
     )
 
 
@@ -553,14 +567,13 @@ def _measure_replica(
         raise RuntimeError("candidate commit must be 40 lowercase hexadecimal chars")
     reference_record = _load_reference()
     reference_identity = _reference_identity(reference_record)
-    if _lock_hash() != reference_record["dependencyLockHash"]:
-        raise RuntimeError("installed driver dependency lock differs from reference")
+    driver_lock_hash = _lock_hash()
     runner_evidence = _runner_evidence(
         protected=protected,
         image_data_path=image_data_path,
     )
-    if runner_evidence["dependencyLockHash"] != reference_record["dependencyLockHash"]:
-        raise RuntimeError("measured dependency lock differs from reference")
+    if runner_evidence["dependencyLockHash"] != driver_lock_hash:
+        raise RuntimeError("measured dependency lock differs from checkout")
     with ExitStack() as stack:
         reference_runtime = stack.enter_context(
             installed_release_runtime(
@@ -574,7 +587,10 @@ def _measure_replica(
                 expected_commit=candidate_commit,
             )
         )
-        if _installed_identity(reference_runtime) != reference_identity:
+        if (
+            _installed_identity(reference_runtime, REFERENCE_IDENTITY_FILES)
+            != reference_identity
+        ):
             raise RuntimeError("installed reference artifacts differ from the anchor")
         candidate_identity = _installed_identity(candidate_runtime)
         if candidate_identity["commit"] != candidate_commit:
@@ -620,7 +636,7 @@ def _measure_replica(
                 cases[runtime][case] = evidence
                 reference_failures.extend(invalid_reference)
                 candidate_failures.extend(invalid_candidate)
-        if _lock_hash() != reference_record["dependencyLockHash"]:
+        if _lock_hash() != driver_lock_hash:
             raise RuntimeError("installed driver dependency lock changed during run")
 
     outcome = (
@@ -679,11 +695,13 @@ def _validate_replica_report(value: Any) -> dict[str, Any]:
     _validate_utc_timestamp(value["generatedAt"], "report generatedAt")
     reference_record = _load_reference()
     runner_evidence = _validate_runner_evidence(value["runnerEvidence"])
-    if runner_evidence["dependencyLockHash"] != reference_record["dependencyLockHash"]:
-        raise RuntimeError("paired benchmark dependency lock differs from reference")
+    if runner_evidence["dependencyLockHash"] != _lock_hash():
+        raise RuntimeError("paired benchmark dependency lock differs from checkout")
     if value["referenceRecordSha256"] != _file_sha256(REFERENCE_PATH):
         raise RuntimeError("paired benchmark reference record receipt differs")
-    reference_identity = _validate_identity(value["reference"], "reference")
+    reference_identity = _validate_identity(
+        value["reference"], "reference", REFERENCE_IDENTITY_FILES
+    )
     if reference_identity != _reference_identity(reference_record):
         raise RuntimeError("paired benchmark reference identity differs")
     candidate_identity = _validate_identity(value["candidate"], "candidate")

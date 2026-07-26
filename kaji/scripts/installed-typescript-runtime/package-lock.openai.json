@@ -6,7 +6,7 @@
     "": {
       "name": "kaji-installed-release-runtime",
       "dependencies": {
-        "kaji-sdk": "file:kaji-sdk-0.2.0-beta.2.tgz",
+        "kaji-sdk": "file:kaji-sdk-0.2.0-beta.3.tgz",
         "openai": "6.45.0",
         "zod": "4.4.3"
       }
@@ -111,8 +111,8 @@
       "license": "MIT"
     },
     "node_modules/kaji-sdk": {
-      "version": "0.2.0-beta.2",
-      "resolved": "file:kaji-sdk-0.2.0-beta.2.tgz",
+      "version": "0.2.0-beta.3",
+      "resolved": "file:kaji-sdk-0.2.0-beta.3.tgz",
       "integrity": "sha512-KAJI_RELEASE_TARBALL",
       "license": "FSL-1.1-ALv2",
       "dependencies": {
