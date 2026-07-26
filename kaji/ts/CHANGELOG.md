@@ -5,6 +5,12 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.5] - 2026-07-26
+
+- Recovered the npm candidate after the immutable beta.4 tag failed closed at
+  protected TTHW proof before its evidence secret existed. The Python candidate
+  remains deferred at `0.2.0b1`.
+
 ## [0.2.0-beta.4] - 2026-07-26
 
 - Recovered the npm candidate after the immutable beta.3 tag was rejected

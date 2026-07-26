@@ -11,7 +11,7 @@
  * not re-exported here; reach into the submodule path when you need them.
  */
 
-export const VERSION = "0.2.0-beta.4";
+export const VERSION = "0.2.0-beta.5";
 
 // Events
 export { EventType } from "@/events/types";

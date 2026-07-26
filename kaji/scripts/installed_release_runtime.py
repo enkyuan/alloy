@@ -347,9 +347,9 @@ def _render_typescript_consumer(
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest.get("dependencies")
-        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.4.tgz"
-        or sdk_package.get("version") != "0.2.0-beta.4"
-        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.4.tgz"
+        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.5.tgz"
+        or sdk_package.get("version") != "0.2.0-beta.5"
+        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.5.tgz"
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
@@ -371,11 +371,11 @@ def _render_typescript_consumer(
 
     comparison = copy.deepcopy(rendered)
     comparison["packages"][""]["dependencies"]["kaji-sdk"] = (
-        "file:kaji-sdk-0.2.0-beta.4.tgz"
+        "file:kaji-sdk-0.2.0-beta.5.tgz"
     )
     comparison_sdk = comparison["packages"]["node_modules/kaji-sdk"]
-    comparison_sdk["version"] = "0.2.0-beta.4"
-    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.4.tgz"
+    comparison_sdk["version"] = "0.2.0-beta.5"
+    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.5.tgz"
     comparison_sdk["integrity"] = sdk_package["integrity"]
     if comparison != template:
         raise RuntimeError("rendered consumer lock changed frozen registry packages")

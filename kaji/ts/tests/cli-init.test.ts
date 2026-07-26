@@ -139,7 +139,7 @@ describe("kaji init", () => {
       readFileSync(join(import.meta.dirname, "../package.json"), "utf8"),
     );
     expect(pkg.dependencies).toEqual({
-      "kaji-sdk": "0.2.0-beta.4",
+      "kaji-sdk": "0.2.0-beta.5",
       zod: ">=4.3 <5",
     });
     expect(pkg.devDependencies["@types/node"]).toBe(installed.devDependencies["@types/node"]);
@@ -387,7 +387,7 @@ describe("kaji init", () => {
 
     expect(code).toBe(0);
     expect(pkg.dependencies).toEqual({
-      "kaji-sdk": "0.2.0-beta.4",
+      "kaji-sdk": "0.2.0-beta.5",
       zod: ">=4.3 <5",
       [peer]: range,
     });
