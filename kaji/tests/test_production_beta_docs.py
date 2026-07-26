@@ -340,7 +340,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert '<span class="nav-link active" aria-current="page">' in sidebar
     assert '<span class="mobile-nav-link active" aria-current="page">' in mobile
     assert '<span class="kaji-wordmark" aria-current="page">' in wordmark
-    assert '<a href={markdownHref} data-astro-reload>Markdown</a>' in docs_layout
+    assert "<a href={markdownHref} data-astro-reload>Markdown</a>" in docs_layout
     assert "window.innerHeight * 0.7" not in scripts
     assert "atPageEnd" not in scripts
     for toc_label in (
