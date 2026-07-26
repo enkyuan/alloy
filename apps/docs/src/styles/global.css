@@ -1088,8 +1088,6 @@ a.nav-link:hover {
 }
 
 .error-return > span:last-child {
-  position: relative;
-  inset-block-start: 2px;
   transition: transform 160ms var(--ease-out);
 }
 
