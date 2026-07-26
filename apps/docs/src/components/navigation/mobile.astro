@@ -44,22 +44,29 @@ const closeIcon = X.toSvg({
         navigation.map((section) => (
           <>
             {section.label && <span class="mobile-nav-section">{section.label}</span>}
-            {section.items.map((item) => (
-              <a
-                class:list={["mobile-nav-link", { active: currentHref === item.href }]}
-                href={item.href}
-                aria-current={currentHref === item.href ? "page" : undefined}
-              >
-                {item.label}
-                {
-                  item.status === "wip" && (
+            {section.items.map((item) => {
+              const isActive = currentHref === item.href;
+
+              return isActive ? (
+                <span class="mobile-nav-link active" aria-current="page">
+                  {item.label}
+                  {item.status === "wip" && (
                     <sup class="nav-wip" aria-label="work in progress">
                       WIP
                     </sup>
-                  )
-                }
-              </a>
-            ))}
+                  )}
+                </span>
+              ) : (
+                <a class="mobile-nav-link" href={item.href}>
+                  {item.label}
+                  {item.status === "wip" && (
+                    <sup class="nav-wip" aria-label="work in progress">
+                      WIP
+                    </sup>
+                  )}
+                </a>
+              );
+            })}
           </>
         ))
       }

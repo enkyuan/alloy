@@ -13,19 +13,36 @@ const agentation = () => ({
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
+// Agentation portals into document.body and injects styles into document.head.
+// Astro replaces both during a client-side swap, so bridge only those two surfaces.
 let agentationRoot;
+const agentationStyleSelector = 'style[id^="feedback-"], style#agentation-color-tokens';
+
+const unmountAgentation = () => {
+  agentationRoot?.unmount();
+  agentationRoot = undefined;
+};
+
+const prepareAgentationSwap = (event) => {
+  document.querySelectorAll(agentationStyleSelector).forEach((style) => {
+    event.newDocument.head.append(style.cloneNode(true));
+  });
+  unmountAgentation();
+};
 
 const mountAgentation = () => {
   if (agentationRoot) return;
 
-  const agentationContainer = document.createElement("div");
-  agentationContainer.dataset.agentationMount = "";
-  document.body.append(agentationContainer);
+  const agentationContainer = document.querySelector("[data-agentation-mount]");
+  if (!agentationContainer) return;
+
   agentationRoot = createRoot(agentationContainer);
   agentationRoot.render(createElement(Agentation));
 };
 
-mountAgentation();`,
+mountAgentation();
+document.addEventListener("astro:before-swap", prepareAgentationSwap);
+document.addEventListener("astro:page-load", mountAgentation);`,
       );
     },
   },
@@ -43,6 +60,7 @@ export default defineConfig({
   vite: {
     optimizeDeps: {
       include: ["agentation", "react", "react-dom/client"],
+      noDiscovery: true,
     },
   },
 });

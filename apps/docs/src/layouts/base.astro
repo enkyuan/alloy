@@ -23,16 +23,10 @@ interface Props {
 const { title, description, activeHref, headings = [], shell = "docs" } = Astro.props;
 const pageTitle = title === "Kaji" ? "Kaji" : `${title} · Kaji`;
 const standalone = shell === "standalone";
-const clientRouting = import.meta.env.PROD;
 ---
 
 <!doctype html>
-<html
-  lang="en"
-  data-shell={shell}
-  data-kaji-motion={standalone ? undefined : ""}
-  transition:animate="none"
->
+<html lang="en" data-shell={shell} transition:animate="none">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width" />
@@ -40,7 +34,7 @@ const clientRouting = import.meta.env.PROD;
     <meta name="description" content={description} />
     <meta name="theme-color" content="oklch(0.985 0.008 81.557)" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <script is:inline>
+    <script is:inline data-astro-rerun>
       (() => {
         const root = document.documentElement;
         if (root.dataset.shell !== "docs") return;
@@ -48,7 +42,12 @@ const clientRouting = import.meta.env.PROD;
         const visitKey = "kaji:visited";
 
         try {
-          if (window.sessionStorage.getItem(visitKey)) return;
+          if (window.sessionStorage.getItem(visitKey)) {
+            root.removeAttribute("data-kaji-motion");
+            root.removeAttribute("data-kaji-first-visit");
+            return;
+          }
+          root.dataset.kajiMotion = "";
           root.dataset.kajiFirstVisit = "";
           window.sessionStorage.setItem(visitKey, "true");
         } catch {
@@ -70,7 +69,7 @@ const clientRouting = import.meta.env.PROD;
       href="https://fonts.googleapis.com/css2?family=M+PLUS+1+Code:wght@400;500;600&family=Noto+Sans+JP:wght@100..900&family=Noto+Serif+JP:wght@400;500;600&family=Yuji+Syuku&display=swap"
       rel="stylesheet"
     />
-    {clientRouting && <ClientRouter fallback="swap" />}
+    <ClientRouter fallback="swap" />
     <title>{pageTitle}</title>
   </head>
   <body class:list={{ "standalone-shell": standalone }}>
@@ -86,6 +85,7 @@ const clientRouting = import.meta.env.PROD;
     <main class:list={["main-content", { "standalone-content": standalone }]} id="main-content">
       <slot />
     </main>
+    {import.meta.env.DEV && <div data-agentation-mount />}
     {!standalone && <SiteScripts />}
     <script>
       import { setupDiagramMotion } from "@/lib/diagram";

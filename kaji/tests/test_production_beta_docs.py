@@ -153,6 +153,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     astro_config = (docs_root / "astro.config.mjs").read_text()
     agentation_patch_path = REPO_ROOT / "patches" / "agentation@3.0.2.patch"
     base = (docs_root / "src" / "layouts" / "base.astro").read_text()
+    docs_layout = (docs_root / "src" / "layouts" / "docs.astro").read_text()
     styles = (docs_root / "src" / "styles" / "global.css").read_text()
     architecture = (docs_root / "content" / "architecture.mdx").read_text()
     error_page = (docs_root / "src" / "pages" / "404.astro").read_text()
@@ -246,10 +247,16 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert 'const visitKey = "kaji:visited"' in base
     assert "window.sessionStorage.getItem(visitKey)" in base
     assert 'import { ClientRouter } from "astro:transitions";' in base
-    assert "const clientRouting = import.meta.env.PROD;" in base
-    assert "{clientRouting && <ClientRouter fallback=\"swap\" />}" in base
+    assert "const clientRouting = import.meta.env.PROD;" not in base
+    assert '<ClientRouter fallback="swap" />' in base
+    assert "<script is:inline data-astro-rerun>" in base
     assert 'transition:animate="none"' in base
-    assert 'data-kaji-motion={standalone ? undefined : ""}' in base
+    assert 'data-kaji-motion={standalone ? undefined : ""}' not in base
+    assert "window.sessionStorage.getItem(visitKey)) {" in base
+    assert 'root.dataset.kajiMotion = ""' in base
+    assert base.index('root.dataset.kajiMotion = ""') < base.index(
+        'root.dataset.kajiFirstVisit = ""'
+    )
     assert 'root.removeAttribute("data-kaji-first-visit")' in base
     assert "Without it, render the shell and diagrams statically." in base
     first_visit_fallback = base.split(
@@ -267,15 +274,13 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert 'target.getAttribute("data-kaji-first-duration")' in diagram_lib
     assert '"pagehide"' in base
     assert "observer?.disconnect()" in diagram_lib
-    reveal = diagram_lib.split(
-        'const key = `kaji:motion:${id}`;', maxsplit=1
-    )[1]
+    reveal = diagram_lib.split("const key = `kaji:motion:${id}`;", maxsplit=1)[1]
     before_animation, scheduled_reveal = reveal.split(
         'target.dataset.kajiAnimate = "";', maxsplit=1
     )
-    completion = scheduled_reveal.split(
-        "const timer = window.setTimeout", maxsplit=1
-    )[1].split("timers.add(timer)", maxsplit=1)[0]
+    completion = scheduled_reveal.split("const timer = window.setTimeout", maxsplit=1)[
+        1
+    ].split("timers.add(timer)", maxsplit=1)[0]
     assert before_animation.count('storage.setItem(key, "true")') == 1
     assert completion.count('storage.setItem(key, "true")') == 1
     assert 'target.removeAttribute("data-kaji-ready")' in diagram_lib
@@ -326,9 +331,16 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert "if (main === pageDocument) return;" in scripts
     assert "setupCurrentPage();" in scripts
     assert "const controller = new AbortController()" in scripts
-    assert 'a[aria-current="page"]' in scripts
-    assert "event.preventDefault()" in scripts
+    assert 'import { navigate } from "astro:transitions/client";' not in base
+    assert "const navigateDocument = (event: MouseEvent) => {" not in base
+    assert "void navigate(destination.href)" not in base
+    assert 'document.addEventListener("click", navigateDocument)' not in base
     assert "wordmark.dataset.pressFeedback" in scripts
+    assert 'querySelector<HTMLAnchorElement>("a.kaji-wordmark")' in scripts
+    assert '<span class="nav-link active" aria-current="page">' in sidebar
+    assert '<span class="mobile-nav-link active" aria-current="page">' in mobile
+    assert '<span class="kaji-wordmark" aria-current="page">' in wordmark
+    assert '<a href={markdownHref} data-astro-reload>Markdown</a>' in docs_layout
     assert "window.innerHeight * 0.7" not in scripts
     assert "atPageEnd" not in scripts
     for toc_label in (
@@ -340,19 +352,40 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert '"astro:before-swap"' not in base
     assert '"astro:after-swap"' not in base
     assert 'style[id^="feedback-"]' not in base
-    assert 'include: ["agentation", "react", "react-dom/client"]' in astro_config
+    assert re.search(
+        r"""vite:\s*\{\s*
+        optimizeDeps:\s*\{\s*
+        include:\s*\["agentation",\s*"react",\s*"react-dom/client"\],\s*
+        noDiscovery:\s*true,\s*
+        \},\s*
+        \},""",
+        astro_config,
+        re.VERBOSE,
+    )
+    assert "<div data-agentation-mount />" in base
+    assert 'transition:persist="agentation"' not in base
     assert agentation_patch_path.is_file()
     agentation_patch = agentation_patch_path.read_text()
     assert '"aria-label": "Agentation"' in agentation_patch
     assert '"aria-hidden": "true"' in agentation_patch
     assert "MutationObserver" not in astro_config
     assert 'a[href="https://agentation.com"]' not in astro_config
+    assert 'document.querySelector("[data-agentation-mount]")' in astro_config
+    assert 'document.createElement("div")' not in astro_config
+    assert "document.body.append" not in astro_config
     assert "let agentationRoot;" in astro_config
     assert "const mountAgentation = () => {" in astro_config
-    assert "const unmountAgentation = () => {" not in astro_config
-    assert "agentationRoot.unmount();" not in astro_config
-    assert '"astro:before-swap"' not in astro_config
-    assert '"astro:page-load"' not in astro_config
+    assert "const unmountAgentation = () => {" in astro_config
+    assert "agentationRoot?.unmount();" in astro_config
+    assert 'style[id^="feedback-"], style#agentation-color-tokens' in astro_config
+    assert "event.newDocument.head.append(style.cloneNode(true))" in astro_config
+    assert (
+        'document.addEventListener("astro:before-swap", prepareAgentationSwap)'
+        in astro_config
+    )
+    assert (
+        'document.addEventListener("astro:page-load", mountAgentation)' in astro_config
+    )
     assert "mountAgentation();" in astro_config
     assert 'import { activeTocIndex } from "@/lib/toc";' in scripts
     assert "new ResizeObserver(scheduleTocUpdate)" in scripts
@@ -373,9 +406,10 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert "align-items: center" in styles
     assert "vertical-align: -0.15em" in styles
     assert "inset-block-start: 2px" in styles
-    assert "display: inline-block" not in styles.split(".error-return {", maxsplit=1)[1].split(
-        "}", maxsplit=1
-    )[0]
+    assert (
+        "display: inline-block"
+        not in styles.split(".error-return {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    )
     assert "transform: translateY(0.04em)" not in styles
     assert 'class="error-return"' in error_page
 

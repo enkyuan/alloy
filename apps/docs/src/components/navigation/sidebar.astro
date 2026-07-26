@@ -64,20 +64,25 @@ const githubIcon = Github.toSvg({
                 class="nav-item-wrapper"
                 style={`--nav-delay: ${navStartMs + item.animationIndex * navStepMs}ms`}
               >
-                <a
-                  class:list={["nav-link", { active: isActive }]}
-                  href={item.href}
-                  aria-current={isActive ? "page" : undefined}
-                >
-                  {item.label}
-                  {
-                    item.status === "wip" && (
+                {isActive ? (
+                  <span class="nav-link active" aria-current="page">
+                    {item.label}
+                    {item.status === "wip" && (
                       <sup class="nav-wip" aria-label="work in progress">
                         WIP
                       </sup>
-                    )
-                  }
-                </a>
+                    )}
+                  </span>
+                ) : (
+                  <a class="nav-link" href={item.href}>
+                    {item.label}
+                    {item.status === "wip" && (
+                      <sup class="nav-wip" aria-label="work in progress">
+                        WIP
+                      </sup>
+                    )}
+                  </a>
+                )}
 
                 {isActive && tableOfContents.length > 0 && (
                   <ol class="nav-toc" data-toc-list>
