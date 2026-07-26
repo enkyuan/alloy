@@ -52,6 +52,7 @@ const CASES = [
 ] as const;
 type CaseName = (typeof CASES)[number];
 const BENCHMARK_REPETITIONS = {
+  crossSession100: 8,
   sameSession25: 8,
   crossSessionCommit100: 32,
   streamDeltas10k: 16,
@@ -1074,7 +1075,9 @@ async function runWorkload(
   return caseName === "replay10k"
     ? await replay10k(seed)
     : caseName === "crossSession100"
-      ? await crossSession100(seed)
+      ? await repeatBenchmark(BENCHMARK_REPETITIONS.crossSession100, (repetition) =>
+          crossSession100(seed + repetition),
+        )
       : caseName === "sameSession25"
         ? await repeatBenchmark(BENCHMARK_REPETITIONS.sameSession25, (repetition) =>
             sameSession25(seed + repetition),

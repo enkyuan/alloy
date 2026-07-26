@@ -19,6 +19,7 @@ _BENCHMARK_REPETITIONS = {
     ("python", "sameSession25"): 8,
     ("python", "toolBatch100"): 16,
     ("python", "toolArgDeltas10k"): 8,
+    ("typescript", "crossSession100"): 8,
     ("typescript", "sameSession25"): 8,
     ("typescript", "crossSessionCommit100"): 32,
     ("typescript", "streamDeltas10k"): 16,
