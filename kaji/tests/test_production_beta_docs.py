@@ -235,15 +235,23 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert "wordmark-write" in styles
     assert ".kaji-wordmark[data-press-feedback]" in styles
     assert "transform: scale(0.96)" in styles
-    assert "transform: scale(0.92)" in styles
-    assert "transform: scale(0.25)" not in styles
+    assert "transform: scale(0.25)" in styles
+    assert "transform: scale(0.92)" not in styles
     assert "clip-path: inset(0 100% 100% 0)" in styles
-    assert "nav-enter 260ms var(--nav-delay) var(--ease-out) both" in styles
-    assert "--nav-delay:" in sidebar
-    assert "navStartMs = 800" in sidebar
-    assert "navStepMs = 30" in sidebar
-    assert "doc-article > .doc-content" in styles
+    assert "@keyframes nav-enter" not in styles
+    assert "--nav-delay:" not in sidebar
+    assert "navStartMs" not in sidebar
+    assert "navStepMs" not in sidebar
+    assert "html[data-kaji-first-visit] .doc-article" not in styles
+    assert "html[data-kaji-first-visit] .overview-article > section" not in styles
     assert "animation-delay: 0ms !important" in styles
+    assert "--focus-color: var(--konjo-iro)" in styles
+    assert "color-scheme: only light" in styles
+    assert "scroll-behavior: smooth" not in styles
+    skip_link_styles = styles.split(".skip-link {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "transition:" not in skip_link_styles
     assert 'const visitKey = "kaji:visited"' in base
     assert "window.sessionStorage.getItem(visitKey)" in base
     assert 'import { ClientRouter } from "astro:transitions";' in base
@@ -339,7 +347,54 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert 'querySelector<HTMLAnchorElement>("a.kaji-wordmark")' in scripts
     assert '<span class="nav-link active" aria-current="page">' in sidebar
     assert '<span class="mobile-nav-link active" aria-current="page">' in mobile
+    mobile_links_markup = mobile.split(
+        '<div\n    class="mobile-nav-links"', maxsplit=1
+    )[1].split(">", maxsplit=1)[0]
+    assert 'aria-hidden="true"' in mobile_links_markup
+    assert "\n    inert" in mobile_links_markup
+    assert "mobileLinks.inert = !nextOpen;" in scripts
+    assert 'mobileLinks.setAttribute("aria-hidden", String(!nextOpen));' in scripts
     assert '<span class="kaji-wordmark" aria-current="page">' in wordmark
+    install_snippet = overview.split('class="install-snippet"', maxsplit=1)[1].split(
+        "</a>", maxsplit=1
+    )[0]
+    assert "<code>Source checkout required</code>" in install_snippet
+    assert "aria-label=" not in install_snippet
+    assert (
+        '<p class="sr-only" role="status" aria-live="polite" data-copy-announcer></p>'
+        in scripts
+    )
+    assert "XCircle" in scripts
+    assert "copy-status-icon-error" in scripts
+    assert "copy-status-icon-error" in styles
+    assert '[data-copy-failed="true"]' in styles
+    copy_hit_area = styles.split(".code-copy::before {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "inset: -6px" in copy_hit_area
+    mobile_link_styles = styles.split(".mobile-nav-link {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "min-height: 2.5rem" in mobile_link_styles
+    github_target_styles = styles.split(".nav-github {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "width: 2.5rem" in github_target_styles
+    assert "height: 2.5rem" in github_target_styles
+    copy_failure_styles = styles.rsplit(
+        '.code-copy[data-copy-failed="true"] {', maxsplit=1
+    )[1].split("}", maxsplit=1)[0]
+    assert "color: var(--sango-iro-ink)" in copy_failure_styles
+    assert "text-wrap: pretty" in styles.split(".article li {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    assert "var(--shiro-nezumi) transparent" in diagram
+    assert "--shironezumi-iro" not in diagram
+    runtime_rail_keyframes = runtime.split(
+        "@keyframes runtime-rail-reveal", maxsplit=1
+    )[1].split("@keyframes", maxsplit=1)[0]
+    assert "clip-path: inset(0 0 100% 0)" in runtime_rail_keyframes
+    assert "clip-path: inset(0)" in runtime_rail_keyframes
     assert "<a href={markdownHref} data-astro-reload>Markdown</a>" in docs_layout
     assert "window.innerHeight * 0.7" not in scripts
     assert "atPageEnd" not in scripts
@@ -413,7 +468,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert "transform: translateY(0.04em)" not in styles
     assert 'class="error-return"' in error_page
 
-    assert 'import { CheckCircle, Copy } from "reicon";' in scripts
+    assert 'import { CheckCircle, Copy, XCircle } from "reicon";' in scripts
     assert 'setCopyState(button, "copied", "Copied")' in scripts
     for color in (
         "--kuro-iro: oklch(0.194 0.006 55.987)",

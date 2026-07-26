@@ -1,5 +1,5 @@
 ---
-import { CheckCircle, Copy } from "reicon";
+import { CheckCircle, Copy, XCircle } from "reicon";
 
 const copyIconMarkup = Copy.toSvg({
   size: 14,
@@ -10,10 +10,17 @@ const checkIconMarkup = CheckCircle.toSvg({
   color: "currentColor",
   className: "copy-status-icon copy-status-icon-check",
 });
+const errorIconMarkup = XCircle.toSvg({
+  size: 14,
+  color: "currentColor",
+  className: "copy-status-icon copy-status-icon-error",
+});
 ---
 
 <template data-copy-icon><Fragment set:html={copyIconMarkup} /></template>
 <template data-check-icon><Fragment set:html={checkIconMarkup} /></template>
+<template data-error-icon><Fragment set:html={errorIconMarkup} /></template>
+<p class="sr-only" role="status" aria-live="polite" data-copy-announcer></p>
 
 <script>
   import { activeTocIndex } from "@/lib/toc";
@@ -23,6 +30,8 @@ const checkIconMarkup = CheckCircle.toSvg({
     document.querySelector<HTMLTemplateElement>("[data-copy-icon]")?.innerHTML ?? "";
   const checkIconMarkup =
     document.querySelector<HTMLTemplateElement>("[data-check-icon]")?.innerHTML ?? "";
+  const errorIconMarkup =
+    document.querySelector<HTMLTemplateElement>("[data-error-icon]")?.innerHTML ?? "";
 
   function enhanceCopyButton(button: HTMLButtonElement) {
     if (button.querySelector(".copy-status")) return;
@@ -37,6 +46,7 @@ const checkIconMarkup = CheckCircle.toSvg({
     copyIcon.before(status);
     status.append(copyIcon);
     status.insertAdjacentHTML("beforeend", checkIconMarkup);
+    status.insertAdjacentHTML("beforeend", errorIconMarkup);
   }
 
   function setCopyState(button: HTMLButtonElement, state: "copied" | "copyFailed", label: string) {
@@ -50,6 +60,8 @@ const checkIconMarkup = CheckCircle.toSvg({
     delete button.dataset.copyFailed;
     button.dataset[state] = "true";
     button.setAttribute("aria-label", label);
+    const announcer = document.querySelector<HTMLElement>("[data-copy-announcer]");
+    if (announcer) announcer.textContent = label;
 
     copyResetTimers.set(
       button,
@@ -57,6 +69,9 @@ const checkIconMarkup = CheckCircle.toSvg({
         delete button.dataset.copied;
         delete button.dataset.copyFailed;
         button.setAttribute("aria-label", originalLabel);
+        const currentAnnouncer =
+          document.querySelector<HTMLElement>("[data-copy-announcer]");
+        if (currentAnnouncer?.textContent === label) currentAnnouncer.textContent = "";
         copyResetTimers.delete(button);
       }, 1600),
     );
@@ -91,9 +106,14 @@ const checkIconMarkup = CheckCircle.toSvg({
       "click",
       () => {
         const isOpen = mobileToggle.getAttribute("aria-expanded") === "true";
-        mobileToggle.setAttribute("aria-expanded", String(!isOpen));
-        mobileToggle.classList.toggle("open", !isOpen);
-        mobileLinks?.classList.toggle("open", !isOpen);
+        const nextOpen = !isOpen;
+        mobileToggle.setAttribute("aria-expanded", String(nextOpen));
+        mobileToggle.classList.toggle("open", nextOpen);
+        mobileLinks?.classList.toggle("open", nextOpen);
+        if (mobileLinks) {
+          mobileLinks.inert = !nextOpen;
+          mobileLinks.setAttribute("aria-hidden", String(!nextOpen));
+        }
       },
       { signal },
     );

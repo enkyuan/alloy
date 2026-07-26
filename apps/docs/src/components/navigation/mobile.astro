@@ -38,7 +38,13 @@ const closeIcon = X.toSvg({
     </button>
   </div>
 
-  <div class="mobile-nav-links" id="mobile-navigation-links" data-mobile-nav-links>
+  <div
+    class="mobile-nav-links"
+    id="mobile-navigation-links"
+    aria-hidden="true"
+    inert
+    data-mobile-nav-links
+  >
     <div class="mobile-nav-links-inner">
       {
         navigation.map((section) => (
