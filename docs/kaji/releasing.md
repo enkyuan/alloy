@@ -206,12 +206,15 @@ later run is not acceptable evidence.
    same signed tag object/direct commit immediately before the registry write.
    There is no Python publisher job.
 10. The workflow records a final npm publication status. After the publisher
-    reports success it polls at most eight times with delays capped at 20
-    seconds (a 90-second total backoff window), requires PyPI to remain absent,
-    downloads and hashes the npm tarball, and verifies npm integrity,
-    signature, provenance, and GitHub attestation metadata. Only the explicit
-    `npm_byte_verified` terminal is success; `npm_only` remains an incident in
-    the default dual-registry state model.
+    reports success, the npm registry byte verifier makes at most 45 attempts
+    with exponential delays starting at 2 seconds and capped at 20 seconds (830
+    seconds of total scheduled backoff). The npm registry polling subprocess
+    has a 20-minute outer cap that includes those delays and its bounded
+    verification work. It requires PyPI to remain absent, downloads and hashes
+    the npm tarball, and verifies npm integrity, signature, provenance, and
+    GitHub attestation metadata. Only the explicit `npm_byte_verified` terminal
+    is success; `npm_only` remains an incident in the default dual-registry
+    state model.
     It attaches the exact npm tarball, manifest, checksums, offline test
     evidence, provider/performance evidence, SPDX SBOM, provenance bundle,
     attestation ID and URL, and publication status to the GitHub prerelease.
