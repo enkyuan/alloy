@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install the Kaji TypeScript beta, define a typed tool, and inspect an agent turn end to end.
+description: Prepare the Kaji TypeScript beta from source, define a typed tool, and inspect an agent turn end to end.
 ---
 
 This tutorial builds one TypeScript agent in six steps. You will first verify
@@ -9,15 +9,18 @@ tool.
 
 <Steps>
   <Step>
-    ### Install
+    ### Prepare the source checkout
 
     ```bash
-    bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"
+    git clone https://github.com/enkyuan/alloy.git
+    cd alloy
+    bun install --frozen-lockfile
     ```
 
-    npm/TypeScript is the public beta path. Zod `>=4.3 <5` is a required peer dependency.
-    Python wheel and PyPI publication are deferred for this
-    release. You do not need a provider key for the first run.
+    TypeScript `0.2.0-beta.4` is the protected npm release candidate, but the
+    public registry command remains unavailable until registry-byte
+    verification succeeds. Python wheel and PyPI publication are deferred for
+    this release. You do not need a provider key for the first run.
 
   </Step>
 
@@ -50,11 +53,6 @@ tool.
     [source checkout](/docs/install#source-checkout), the same no-key proof
     keeps risk and caller identity explicit. `AgentBuilder` wires a provider
     and tools to the runtime's event journal:
-
-    ```bash
-    git clone https://github.com/enkyuan/alloy.git
-    cd alloy
-    ```
 
     {/* getting-started:no-key:python:start */}
     ```python
@@ -212,5 +210,5 @@ tool.
 
 The Python SDK implements the shared event and tool contracts, but it is not
 the primary path in this tutorial. The distribution is not available from
-PyPI as of July 25, 2026. See the
-[Python source setup](/docs/install#python-sdk) for Python-specific commands.
+PyPI for this release. See the [Python source setup](/docs/install#python-sdk)
+for Python-specific commands.

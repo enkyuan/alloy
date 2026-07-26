@@ -174,7 +174,7 @@ is installed.
 
 ```bash
 export KAJI_ARTIFACTS=/absolute/path/to/kaji-release
-export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.3.tgz"
+export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.4.tgz"
 mkdir "$HOME/kaji-tthw-npm"
 cd "$HOME/kaji-tthw-npm"
 npm init --yes
@@ -198,7 +198,7 @@ local tarball.
 
 ```bash
 export KAJI_ARTIFACTS=/absolute/path/to/kaji-release
-export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.3.tgz"
+export KAJI_TARBALL="$KAJI_ARTIFACTS/kaji-sdk-0.2.0-beta.4.tgz"
 mkdir "$HOME/kaji-tthw-bun"
 cd "$HOME/kaji-tthw-bun"
 bun init --yes

@@ -1,30 +1,25 @@
 ---
 title: Install
-description: Install the TypeScript beta from npm, prepare Python from source, and review the pre-1.0 compatibility boundary.
+description: Prepare the TypeScript beta from source while protected npm publication is pending, and review the pre-1.0 compatibility boundary.
 ---
 
-Kaji's public beta path is npm/TypeScript. The TypeScript SDK version is
-`0.2.0-beta.3`; install it with its required Zod peer. Python wheel and PyPI
-publication are deferred for this release; use the source checkout for Python
-examples. Both SDKs share the stable-core wire format. All `0.x` releases are
-pre-1.0, so pin exact versions in production.
+Kaji's protected npm release candidate is TypeScript `0.2.0-beta.4`. It is not
+available from the public registry until protected publication and exact-byte
+verification succeed, so use the source checkout for now. Python wheel and
+PyPI publication are deferred for this release. Both SDKs share the
+stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
+in production.
 
 ## TypeScript
 
-```bash
-bun add kaji-sdk@0.2.0-beta.3 "zod@>=4.3 <5"
-```
-
-Add `openai` only when you are ready to use the beta-supported live provider:
-
-```bash
-bun add "openai@>=4 <8"
-```
+The candidate declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
+as an optional peer. The public registry command will be documented after the
+npm artifact passes exact-byte verification.
 
 ## Source checkout
 
-Clone the repository for Python development or to run the full workspace
-checks:
+Clone the repository to run the TypeScript quickstart, develop against either
+SDK, or run the full workspace checks:
 
 ```bash
 git clone https://github.com/enkyuan/alloy.git
