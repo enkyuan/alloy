@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from datetime import date
 import hashlib
 import json
 import os
@@ -59,6 +61,18 @@ STEP_ORDER = (
     "echo-setup",
     "echo-run",
 )
+EXPECTED_PATH_COUNTS = Counter({"python": 2, "npm": 2, "bun": 1})
+MAX_REVIEW_AGE_DAYS = 7
+PLACEHOLDER_MARKERS = (
+    "replace-with",
+    "replace-me",
+    "placeholder",
+    "unknown",
+    "not-used",
+    "unset",
+    "todo",
+    "tbd",
+)
 SENSITIVE_TEXT = re.compile(
     r"(?:sk-[A-Za-z0-9_-]{8,}|api[_-]?key\s*[:=]|authorization\s*[:=]|bearer\s+[A-Za-z0-9._-]{8,})",
     re.IGNORECASE,
@@ -102,6 +116,11 @@ def load_json(path: Path, label: str) -> dict[str, Any]:
     except OSError:
         fail("/", f"invalid {label}")
     return _json_object(encoded, label)
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = value.casefold()
+    return any(marker in normalized for marker in PLACEHOLDER_MARKERS)
 
 
 def _same_file(before: os.stat_result, after: os.stat_result) -> bool:
@@ -514,7 +533,12 @@ def validate_document(document: dict[str, Any]) -> dict[str, int]:
         key=lambda error: (list(error.absolute_path), list(error.absolute_schema_path)),
     )
     if errors:
-        fail(pointer(errors[0].absolute_path), "schema validation failed")
+        first_error = errors[0]
+        if list(first_error.absolute_path) == ["humanRuns"] and "allOf" in list(
+            first_error.absolute_schema_path
+        ):
+            fail("/humanRuns", "exactly 2 Python, 2 npm, and 1 Bun runs are required")
+        fail(pointer(first_error.absolute_path), "schema validation failed")
 
     artifacts = document["artifacts"]
     by_name = {entry["name"]: entry for entry in artifacts}
@@ -533,13 +557,24 @@ def validate_document(document: dict[str, Any]) -> dict[str, int]:
         fail("/humanRuns", "participant pseudonyms must be distinct")
     if any(run["os"] != "macos" or run["architecture"] != "arm64" for run in runs):
         fail("/humanRuns", "every beta TTHW run must use arm64 macOS")
-    if {run["path"] for run in runs} != {"python", "npm", "bun"}:
-        fail("/humanRuns", "Python, npm, and Bun coverage is required")
+    if Counter(run["path"] for run in runs) != EXPECTED_PATH_COUNTS:
+        fail("/humanRuns", "exactly 2 Python, 2 npm, and 1 Bun runs are required")
 
     artifacts_by_name = {entry["name"]: entry for entry in artifacts}
+    collected_date = date.fromisoformat(document["collectedDate"])
     no_key_totals: list[int] = []
     echo_totals: list[int] = []
     for index, run in enumerate(runs):
+        if _is_placeholder(run["participantId"]):
+            fail(f"/humanRuns/{index}/participantId", "placeholder is not allowed")
+        if _is_placeholder(run["owner"]):
+            fail(f"/humanRuns/{index}/owner", "placeholder is not allowed")
+        for field, value in run["toolchain"].items():
+            if _is_placeholder(value):
+                fail(
+                    f"/humanRuns/{index}/toolchain/{field}",
+                    "placeholder is not allowed",
+                )
         if run["commit"] != document["commit"]:
             fail(f"/humanRuns/{index}/commit", "participant commit differs")
         if run["releaseManifestSha256"] != document["releaseManifestSha256"]:
@@ -562,7 +597,16 @@ def validate_document(document: dict[str, Any]) -> dict[str, int]:
             fail(f"/humanRuns/{index}/noKeyTotalMs", "total differs from steps")
         if run["echoTotalMs"] != sum(durations):
             fail(f"/humanRuns/{index}/echoTotalMs", "total differs from steps")
-        if run["followUpDate"] < run["reviewDate"]:
+        review_date = date.fromisoformat(run["reviewDate"])
+        follow_up_date = date.fromisoformat(run["followUpDate"])
+        if review_date > collected_date:
+            fail(f"/humanRuns/{index}/reviewDate", "must not follow collectedDate")
+        if (collected_date - review_date).days > MAX_REVIEW_AGE_DAYS:
+            fail(
+                f"/humanRuns/{index}/reviewDate",
+                f"must be within {MAX_REVIEW_AGE_DAYS} days of collectedDate",
+            )
+        if follow_up_date < review_date:
             fail(f"/humanRuns/{index}/followUpDate", "must not precede review date")
         for item in run["confusion"]:
             if SENSITIVE_TEXT.search(item["summary"]) or SENSITIVE_TEXT.search(
@@ -589,6 +633,20 @@ def validate_document(document: dict[str, Any]) -> dict[str, int]:
     if computed["echoMaxMs"] >= 1_200_000:
         fail("/summary/echoMaxMs", "every run must be under 1200000")
     return computed
+
+
+def validate_release_freshness(
+    document: dict[str, Any], *, today: date | None = None
+) -> None:
+    validation_date = today or date.today()
+    collected_date = date.fromisoformat(document["collectedDate"])
+    if collected_date > validation_date:
+        fail("/collectedDate", "must not be in the future")
+    if (validation_date - collected_date).days > MAX_REVIEW_AGE_DAYS:
+        fail(
+            "/collectedDate",
+            f"must be at most {MAX_REVIEW_AGE_DAYS} days old",
+        )
 
 
 def validate_bindings(
@@ -634,6 +692,7 @@ def main() -> int:
     try:
         document = load_json(args.evidence, "TTHW evidence")
         summary = validate_document(document)
+        validate_release_freshness(document)
         validate_bindings(document, args.release_manifest, args.artifacts_dir)
         validate_compatibility_receipts(
             document,

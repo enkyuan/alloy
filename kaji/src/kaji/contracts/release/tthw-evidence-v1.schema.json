@@ -6,6 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "collectedDate",
     "commit",
     "releaseManifestSha256",
     "artifacts",
@@ -15,6 +16,7 @@
   ],
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
+    "collectedDate": { "type": "string", "format": "date" },
     "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "releaseManifestSha256": {
       "type": "string",
@@ -41,6 +43,35 @@
       "type": "array",
       "minItems": 5,
       "maxItems": 5,
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["path"],
+            "properties": { "path": { "const": "python" } }
+          },
+          "minContains": 2,
+          "maxContains": 2
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["path"],
+            "properties": { "path": { "const": "npm" } }
+          },
+          "minContains": 2,
+          "maxContains": 2
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["path"],
+            "properties": { "path": { "const": "bun" } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        }
+      ],
       "items": { "$ref": "#/$defs/humanRun" }
     },
     "summary": {
@@ -197,7 +228,9 @@
             "echoToolRequested",
             "echoToolStarted",
             "echoToolCompleted",
-            "echoResultObserved"
+            "echoResultObserved",
+            "noUnexpectedTerminalEvents",
+            "monotonicDurations"
           ],
           "properties": {
             "deterministicText": { "const": true },
@@ -206,7 +239,9 @@
             "echoToolRequested": { "const": true },
             "echoToolStarted": { "const": true },
             "echoToolCompleted": { "const": true },
-            "echoResultObserved": { "const": true }
+            "echoResultObserved": { "const": true },
+            "noUnexpectedTerminalEvents": { "const": true },
+            "monotonicDurations": { "const": true }
           }
         },
         "confusion": {

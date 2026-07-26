@@ -12,8 +12,8 @@
   "architecture": "arm64",
   "platformVersion": "replace-with-sw-vers-product-version",
   "path": "python",
-  "cleanEnvironment": true,
-  "noSourceCheckout": true,
+  "cleanEnvironment": false,
+  "noSourceCheckout": false,
   "toolchain": {
     "python": "replace-with-version",
     "uv": "replace-with-version",
@@ -30,16 +30,18 @@
     { "name": "echo-run", "durationMs": -1 }
   ],
   "assertions": {
-    "deterministicText": true,
-    "nonEmptyTurnId": true,
-    "positiveSequence": true,
-    "echoToolRequested": true,
-    "echoToolStarted": true,
-    "echoToolCompleted": true,
-    "echoResultObserved": true
+    "deterministicText": false,
+    "nonEmptyTurnId": false,
+    "positiveSequence": false,
+    "echoToolRequested": false,
+    "echoToolStarted": false,
+    "echoToolCompleted": false,
+    "echoResultObserved": false,
+    "noUnexpectedTerminalEvents": false,
+    "monotonicDurations": false
   },
   "confusion": [],
-  "redacted": true,
+  "redacted": false,
   "owner": "replace-with-owner",
   "reviewDate": "2000-01-01",
   "followUpDate": "2000-01-01"

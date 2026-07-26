@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import date, timedelta
 from email.message import Message
 import importlib.util
 import re
@@ -3468,6 +3469,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "typescript": "5.7.3",
     }
     tthw_runs = []
+    review_date = date.today()
     for index, path_name in enumerate(("python", "npm", "bun", "python", "npm"), 1):
         artifact_file = (
             "kaji_sdk-0.2.0b1-py3-none-any.whl"
@@ -3514,16 +3516,19 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                     "echoToolStarted": True,
                     "echoToolCompleted": True,
                     "echoResultObserved": True,
+                    "noUnexpectedTerminalEvents": True,
+                    "monotonicDurations": True,
                 },
                 "confusion": [],
                 "redacted": True,
                 "owner": "kaji-maintainer",
-                "reviewDate": "2026-07-13",
-                "followUpDate": "2026-08-13",
+                "reviewDate": review_date.isoformat(),
+                "followUpDate": (review_date + timedelta(days=30)).isoformat(),
             }
         )
     tthw = {
         "schemaVersion": "1.0.0",
+        "collectedDate": review_date.isoformat(),
         "commit": commit,
         "releaseManifestSha256": manifest_hash,
         "artifacts": [
