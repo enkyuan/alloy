@@ -15,6 +15,14 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "kaji" / "scripts"
+_BENCHMARK_REPETITIONS = {
+    ("python", "toolBatch100"): 16,
+    ("python", "toolArgDeltas10k"): 8,
+    ("typescript", "sameSession25"): 8,
+    ("typescript", "crossSessionCommit100"): 32,
+    ("typescript", "streamDeltas10k"): 16,
+    ("typescript", "toolArgDeltas10k"): 32,
+}
 
 
 def _load_script(name: str):
@@ -129,12 +137,15 @@ def _sample(
         },
     }
     sample = {**common, **values[case]}
+    benchmark_repetitions = _BENCHMARK_REPETITIONS.get((runtime, case))
+    if benchmark_repetitions is not None:
+        sample["benchmarkRepetitions"] = benchmark_repetitions
     if case == "toolBatch100" and runtime == "typescript":
         sample.update(
             {
-                "batchRepetitions": 64,
-                "calls": 6_400,
-                "completed": 6_400,
+                "batchRepetitions": 512,
+                "calls": 51_200,
+                "completed": 51_200,
             }
         )
     return sample
@@ -501,6 +512,45 @@ def test_case_evidence_keeps_raw_pairs_and_exact_threshold_passes() -> None:
     assert len(evidence["pairs"]) == 5
 
 
+def test_cumulative_batching_dilutes_fixed_overhead_but_keeps_real_slowdowns() -> None:
+    pair = _load_script("paired_benchmark.py")
+    repetitions = _BENCHMARK_REPETITIONS[("python", "toolBatch100")]
+
+    def evidence(
+        reference_duration: float, candidate_duration: float
+    ) -> dict[str, Any]:
+        pairs = [
+            {
+                "sample": index,
+                "order": list(pair._subject_order(1, "toolBatch100", index)),
+                "reference": _sample("toolBatch100", reference_duration, 10.0),
+                "candidate": _sample("toolBatch100", candidate_duration, 10.0),
+            }
+            for index in range(1, 6)
+        ]
+        result, reference_failures, candidate_failures = pair._case_evidence(
+            "python", "toolBatch100", pairs
+        )
+        assert reference_failures == []
+        assert candidate_failures == []
+        return result
+
+    single_reference = 5.0 + 2.0
+    single_candidate = 10.0 + 2.0
+    batched_reference = 5.0 + repetitions * 2.0
+    batched_candidate = 10.0 + repetitions * 2.0
+    slowed_candidate = 5.0 + repetitions * 2.5
+
+    stable = evidence(batched_reference, batched_candidate)
+    slowed = evidence(batched_reference, slowed_candidate)
+
+    assert single_candidate / single_reference > pair.THRESHOLD
+    assert stable["durationRatio"] < pair.THRESHOLD
+    assert stable["durationCrossed"] is False
+    assert slowed["durationRatio"] > pair.THRESHOLD
+    assert slowed["durationCrossed"] is True
+
+
 def test_case_evidence_rejects_incomplete_tool_batch_repetitions() -> None:
     pair = _load_script("paired_benchmark.py")
     pairs: list[dict[str, Any]] = [
@@ -512,7 +562,7 @@ def test_case_evidence_rejects_incomplete_tool_batch_repetitions() -> None:
         }
         for index in range(1, 6)
     ]
-    pairs[0]["candidate"]["completed"] = 6_399
+    pairs[0]["candidate"]["completed"] = 51_199
 
     _, reference_failures, candidate_failures = pair._case_evidence(
         "typescript", "toolBatch100", pairs

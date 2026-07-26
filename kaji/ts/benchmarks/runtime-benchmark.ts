@@ -51,6 +51,12 @@ const CASES = [
   "toolArgDeltas10k",
 ] as const;
 type CaseName = (typeof CASES)[number];
+const BENCHMARK_REPETITIONS = {
+  sameSession25: 8,
+  crossSessionCommit100: 32,
+  streamDeltas10k: 16,
+  toolArgDeltas10k: 32,
+} as const;
 type RssProbeMode = "baseline" | "indexed";
 
 interface Options {
@@ -74,6 +80,7 @@ interface WorkerSample {
   readonly cursor?: number;
   readonly coordinatorEntries?: number;
   readonly coordinatorWaiters?: number;
+  readonly benchmarkRepetitions?: number;
   readonly batchRepetitions?: number;
   readonly calls?: number;
   readonly turns?: number;
@@ -633,7 +640,7 @@ interface ToolBatchResult {
 }
 
 async function toolBatch100(): Promise<Omit<WorkerSample, "case" | "peakMiB">> {
-  const batchRepetitions = 64;
+  const batchRepetitions = 512;
   let completed = 0;
   let maxActive = 0;
   let calls = 0;
@@ -1046,6 +1053,20 @@ async function toolArgDeltas10k(): Promise<Omit<WorkerSample, "case" | "peakMiB"
   };
 }
 
+async function repeatBenchmark<T extends { readonly durationMs: number }>(
+  repetitions: number,
+  workload: (repetition: number) => Promise<T>,
+): Promise<T & { readonly benchmarkRepetitions: number }> {
+  let lastResult = await workload(0);
+  let durationMs = lastResult.durationMs;
+  for (let repetition = 1; repetition < repetitions; repetition++) {
+    const result = await workload(repetition);
+    durationMs += result.durationMs;
+    lastResult = result;
+  }
+  return { ...lastResult, durationMs, benchmarkRepetitions: repetitions };
+}
+
 async function runWorkload(
   caseName: CaseName,
   seed: number,
@@ -1055,16 +1076,22 @@ async function runWorkload(
     : caseName === "crossSession100"
       ? await crossSession100(seed)
       : caseName === "sameSession25"
-        ? await sameSession25(seed)
+        ? await repeatBenchmark(BENCHMARK_REPETITIONS.sameSession25, (repetition) =>
+            sameSession25(seed + repetition),
+          )
         : caseName === "toolBatch100"
           ? await toolBatch100()
           : caseName === "context10kIterations5"
             ? await context10kIterations5(seed)
             : caseName === "crossSessionCommit100"
-              ? await crossSessionCommit100(seed)
+              ? await repeatBenchmark(BENCHMARK_REPETITIONS.crossSessionCommit100, (repetition) =>
+                  crossSessionCommit100(seed + repetition),
+                )
               : caseName === "streamDeltas10k"
-                ? await streamDeltas10k(seed)
-                : await toolArgDeltas10k();
+                ? await repeatBenchmark(BENCHMARK_REPETITIONS.streamDeltas10k, (repetition) =>
+                    streamDeltas10k(seed + repetition),
+                  )
+                : await repeatBenchmark(BENCHMARK_REPETITIONS.toolArgDeltas10k, toolArgDeltas10k);
 }
 
 async function runWorker(caseName: CaseName, seed: number, warmups: number): Promise<WorkerSample> {

@@ -7,11 +7,17 @@
     "maxOverlappingSessions": 100
   },
   "sameSession25": {
+    "benchmarkRepetitions": {
+      "typescript": 8
+    },
     "maxActive": 1
   },
   "toolBatch100": {
-    "batchRepetitions": 64,
-    "calls": 6400,
+    "benchmarkRepetitions": {
+      "python": 16
+    },
+    "batchRepetitions": 512,
+    "calls": 51200,
     "maxActive": 4,
     "stuckCalls": 0
   },
@@ -27,11 +33,17 @@
     "maxProviderTaskLeaks": 0
   },
   "crossSessionCommit100": {
+    "benchmarkRepetitions": {
+      "typescript": 32
+    },
     "minOverlappingSessions": 2,
     "maxLaneEntriesAfter": 0,
     "maxReservationEntriesAfter": 0
   },
   "streamDeltas10k": {
+    "benchmarkRepetitions": {
+      "typescript": 16
+    },
     "maxDeltaEvents": 16,
     "expectedCharacters": 10000,
     "maxProviderTextBytes": 262144,
@@ -40,6 +52,10 @@
     "maxProviderTaskLeaks": 0
   },
   "toolArgDeltas10k": {
+    "benchmarkRepetitions": {
+      "python": 8,
+      "typescript": 32
+    },
     "maxArgumentBytes": 65536,
     "maxResponseBytes": 524288,
     "maxFragmentJoins": 1,
