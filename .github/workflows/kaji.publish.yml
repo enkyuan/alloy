@@ -1351,7 +1351,7 @@ jobs:
           --expected-commit "$EXPECTED_COMMIT"
       - name: Rebuild and verify exact package contents against the clean checkout
         run: |
-          bun --cwd kaji/ts run build
+          bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
             .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz
           python3 kaji/scripts/verify_archives.py \
@@ -1577,7 +1577,7 @@ jobs:
           --expected-commit "$EXPECTED_COMMIT"
       - name: Rebuild and verify npm archive contents against the clean checkout
         run: |
-          bun --cwd kaji/ts run build
+          bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
             .artifacts/kaji-release/kaji-sdk-0.2.0-beta.2.tgz
       - name: Reverify signed tag immediately before npm publication

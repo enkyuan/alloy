@@ -624,6 +624,21 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         assert evidence_field in registry
 
 
+def test_clean_checkout_rebuilds_use_supported_bun_cwd_syntax() -> None:
+    publish = _read(".github/workflows/kaji.publish.yml")
+    rebuild_steps = (
+        "Rebuild and verify exact package contents against the clean checkout",
+        "Rebuild and verify npm archive contents against the clean checkout",
+    )
+
+    for name in rebuild_steps:
+        step = publish.split(f"      - name: {name}", 1)[1].split(
+            "      - ", 1
+        )[0]
+        assert "bun run --cwd kaji/ts build" in step
+    assert "bun --cwd kaji/ts run build" not in publish
+
+
 @pytest.mark.parametrize(
     ("workflow_name", "expected_commit"),
     [

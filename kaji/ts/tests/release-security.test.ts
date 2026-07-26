@@ -2073,6 +2073,26 @@ describe("Kaji workflow contracts", () => {
     }
   });
 
+  it("uses Bun's supported cwd syntax when rebuilding clean-checkout packages", () => {
+    const { source, workflow } = readWorkflow("kaji.publish.yml");
+
+    for (const [jobId, stepName] of [
+      [
+        "supply-chain",
+        "Rebuild and verify exact package contents against the clean checkout",
+      ],
+      [
+        "publish-npm",
+        "Rebuild and verify npm archive contents against the clean checkout",
+      ],
+    ] as const) {
+      expect(workflowStep(workflow.jobs?.[jobId]!, stepName).run).toContain(
+        "bun run --cwd kaji/ts build",
+      );
+    }
+    expect(source).not.toContain("bun --cwd kaji/ts run build");
+  });
+
   it("fans every release-byte consumer out from one same-run artifact producer", () => {
     const cases = [
       {
