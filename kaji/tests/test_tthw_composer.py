@@ -333,6 +333,7 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     module = _load_script(COMPOSER)
     receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
 
+    first_date_window = {date.today().isoformat()}
     document = module.compose(
         participant_receipts=list(reversed(receipts)),
         python_compatibility_receipt=python_compat,
@@ -342,6 +343,8 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
+    first_date_window.add(date.today().isoformat())
+    second_date_window = {date.today().isoformat()}
     repeated = module.compose(
         participant_receipts=receipts,
         python_compatibility_receipt=python_compat,
@@ -351,9 +354,11 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
+    second_date_window.add(date.today().isoformat())
 
-    assert document == repeated
-    assert document["collectedDate"] == TODAY.isoformat()
+    assert document | {"collectedDate": None} == repeated | {"collectedDate": None}
+    assert document["collectedDate"] in first_date_window
+    assert repeated["collectedDate"] in second_date_window
     assert document["commit"] == "a" * 40
     assert document["releaseManifestSha256"] == _sha(manifest)
     assert [run["participantId"] for run in document["humanRuns"]] == [
