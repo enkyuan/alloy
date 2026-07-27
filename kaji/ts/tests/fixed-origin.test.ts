@@ -181,6 +181,34 @@ describe("fixed-origin response boundaries", () => {
     ).rejects.toMatchObject({ name: "TimeoutError" });
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("closes a response that arrives after the smaller context deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const late = Promise.withResolvers<FixedOriginTestResponse>();
+      const close = vi.fn();
+      const direct = transport(async () => late.promise);
+      const requester = fixedOriginForTest("https://api.github.com", direct, {
+        timeoutMs: 10_000,
+      });
+      const pending = requester.request(
+        "/x",
+        { method: "GET", headers: {} },
+        context({ deadlineMonotonicMs: performance.now() + 1 }),
+      );
+      const rejected = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+      expect(close).not.toHaveBeenCalled();
+
+      late.resolve(response([], { close }));
+      await direct.request.mock.results[0]!.value;
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("provider-fixed production factories", () => {
