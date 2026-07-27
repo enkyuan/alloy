@@ -17,7 +17,7 @@ SCRIPTS = REPO_ROOT / "kaji" / "scripts"
 APPROVER = SCRIPTS / "approve_tthw_gate.py"
 RUN_ID = 123
 COMMIT = "a" * 40
-TAG = "kaji-v0.2.0-beta.7"
+TAG = "kaji-v0.2.0-beta.8"
 ENVIRONMENT_ID = 777
 EVIDENCE_BYTES = b'{"opaque":"exact evidence bytes"}'
 
@@ -188,7 +188,7 @@ def _stub_local_validation(module: ModuleType, monkeypatch: pytest.MonkeyPatch) 
         "validate_evidence",
         lambda _args, _encoded: module.Candidate(
             commit=COMMIT,
-            typescript_version="0.2.0-beta.7",
+            typescript_version="0.2.0-beta.8",
             tag=TAG,
         ),
     )
@@ -280,7 +280,7 @@ def test_local_validation_reuses_the_protected_tthw_contract(tmp_path: Path) -> 
 
     assert candidate == module.Candidate(
         commit=COMMIT,
-        typescript_version="0.2.0-beta.7",
+        typescript_version="0.2.0-beta.8",
         tag=TAG,
     )
 

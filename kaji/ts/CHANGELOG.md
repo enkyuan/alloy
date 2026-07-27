@@ -5,14 +5,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
-## [0.2.0-beta.7] - 2026-07-26
+## [0.2.0-beta.8] - 2026-07-27
 
-- Advanced the npm candidate after beta.6 failed closed on an inconclusive
-  protected timing replica while keeping Python publication deferred.
+- Advanced the npm candidate after beta.7 failed closed on an inconclusive
+  protected Python timing aggregate while keeping Python publication deferred.
 - Kept the `1.20` threshold, five paired samples, three-replica unanimity,
   artifact binding, and every protected approval gate unchanged.
 - Bound release, installed-runtime, evidence, provenance, and registry-byte
-  verification to the new beta.7 identity.
+  verification to the new beta.8 identity. Python `0.2.0b1` remains
+  evidence-only and absent from PyPI.
+
+## [0.2.0-beta.7] - 2026-07-26
+
+- Signed protected run `30265105639` at
+  `45bde8630154c61a97986f220a0df08d5ba6240b` passed all three raw paired
+  replicas and the 30-minute soak.
+- It failed closed when Python `toolBatch100` produced replica duration ratios
+  `0.9805314383`, `0.9756823917`, and `1.2290586651`; the mixed aggregate was
+  inconclusive.
+- TTHW, provider proof, publisher preflight, and npm publication were skipped.
+  npm and PyPI remained absent; the tag, artifacts, and receipts are immutable
+  incident history and cannot be reused for beta.8.
 
 ## [0.2.0-beta.6] - 2026-07-26
 

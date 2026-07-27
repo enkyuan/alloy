@@ -105,7 +105,7 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm npm `kaji-sdk@0.2.0-beta.7` is unused. Confirm PyPI
+1. Confirm npm `kaji-sdk@0.2.0-beta.8` is unused. Confirm PyPI
    `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
    create it.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
@@ -116,8 +116,8 @@ later run is not acceptable evidence.
    directly:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.7 <approved-commit> -m "Kaji 0.2.0 beta 7"
-   git push origin refs/tags/kaji-v0.2.0-beta.7
+   git tag -s -a kaji-v0.2.0-beta.8 <approved-commit> -m "Kaji 0.2.0 beta 8"
+   git push origin refs/tags/kaji-v0.2.0-beta.8
    ```
 
 4. Wait for the exact tag-triggered workflow run to upload
@@ -281,7 +281,7 @@ is failure. Therefore:
     curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
       https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
   )" = 404
-  npm view kaji-sdk@0.2.0-beta.7 version --json --registry=https://registry.npmjs.org/
+  npm view kaji-sdk@0.2.0-beta.8 version --json --registry=https://registry.npmjs.org/
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and the npm publisher
@@ -320,6 +320,16 @@ is failure. Therefore:
   npm publication were skipped; npm and PyPI remained absent. Never move,
   retry, approve, or add evidence to it, and never reuse its artifacts or
   participant receipts; recovery requires the new beta.7 attempt.
+- Treat `kaji-v0.2.0-beta.7` as a burned, immutable performance attempt.
+  Protected run `30265105639` at
+  `45bde8630154c61a97986f220a0df08d5ba6240b` passed all three raw paired
+  replicas and the 30-minute soak, then failed closed because Python
+  `toolBatch100` replica duration ratios were `0.9805314383`, `0.9756823917`,
+  and `1.2290586651`. The mixed aggregate was inconclusive. TTHW, provider
+  proof, publisher preflight, and npm publication were skipped; npm and PyPI
+  remained absent. Never move, retry, approve, or add evidence to it, and
+  never reuse its artifacts or
+  participant receipts; recovery requires the new beta.8 attempt.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:
