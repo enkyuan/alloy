@@ -67,7 +67,7 @@ CASES = (
 _BENCHMARK_REPETITIONS = {
     "crossSession100": 2,
     "sameSession25": 16,
-    "toolBatch100": 64,
+    "toolBatch100": 256,
     "crossSessionCommit100": 16,
     "streamDeltas10k": 2,
     "toolArgDeltas10k": 64,

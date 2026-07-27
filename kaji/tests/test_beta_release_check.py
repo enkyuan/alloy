@@ -1441,7 +1441,7 @@ def test_benchmark_child_and_orchestrator_budgets_are_distinct() -> None:
 _BENCHMARK_REPETITIONS = {
     ("python", "crossSession100"): 2,
     ("python", "sameSession25"): 16,
-    ("python", "toolBatch100"): 64,
+    ("python", "toolBatch100"): 256,
     ("python", "crossSessionCommit100"): 16,
     ("python", "streamDeltas10k"): 2,
     ("python", "toolArgDeltas10k"): 64,
@@ -1573,7 +1573,7 @@ def test_beta_benchmark_gate_defines_all_eight_cases_and_semantic_budgets() -> N
         "maxReservationEntriesAfter": 0,
     }
     assert budgets["toolBatch100"] == {
-        "benchmarkRepetitions": {"python": 64},
+        "benchmarkRepetitions": {"python": 256},
         "batchRepetitions": 2_048,
         "calls": 204_800,
         "maxActive": 4,
@@ -2963,7 +2963,7 @@ def test_python_benchmark_repeats_every_short_workload_with_deterministic_seeds(
     assert module._BENCHMARK_REPETITIONS == {
         "crossSession100": 2,
         "sameSession25": 16,
-        "toolBatch100": 64,
+        "toolBatch100": 256,
         "crossSessionCommit100": 16,
         "streamDeltas10k": 2,
         "toolArgDeltas10k": 64,
@@ -2972,7 +2972,7 @@ def test_python_benchmark_repeats_every_short_workload_with_deterministic_seeds(
         *(zip([100] * 2, [False] * 2, range(13, 15), strict=True)),
         *(zip([25] * 16, [True] * 16, range(13, 29), strict=True)),
     ]
-    assert tool_batch_seeds == list(range(13, 77))
+    assert tool_batch_seeds == list(range(13, 269))
     assert commit_seeds == list(range(13, 29))
     assert stream_seeds == list(range(13, 15))
     assert tool_argument_runs == 64
@@ -2982,8 +2982,8 @@ def test_python_benchmark_repeats_every_short_workload_with_deterministic_seeds(
     assert results["crossSession100"]["peakMiB"] == 14.0
     assert results["sameSession25"]["durationMs"] == float(sum(range(13, 29)))
     assert results["sameSession25"]["peakMiB"] == 28.0
-    assert results["toolBatch100"]["durationMs"] == float(sum(range(13, 77)))
-    assert results["toolBatch100"]["peakMiB"] == 76.0
+    assert results["toolBatch100"]["durationMs"] == float(sum(range(13, 269)))
+    assert results["toolBatch100"]["peakMiB"] == 268.0
     assert results["crossSessionCommit100"]["durationMs"] == float(sum(range(13, 29)))
     assert results["streamDeltas10k"]["durationMs"] == 27.0
     assert results["toolArgDeltas10k"]["durationMs"] == float(sum(range(1, 65)))

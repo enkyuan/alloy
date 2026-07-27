@@ -18,7 +18,7 @@ SCRIPTS = ROOT / "kaji" / "scripts"
 _BENCHMARK_REPETITIONS = {
     ("python", "crossSession100"): 2,
     ("python", "sameSession25"): 16,
-    ("python", "toolBatch100"): 64,
+    ("python", "toolBatch100"): 256,
     ("python", "crossSessionCommit100"): 16,
     ("python", "streamDeltas10k"): 2,
     ("python", "toolArgDeltas10k"): 64,
