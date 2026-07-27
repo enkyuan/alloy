@@ -1466,6 +1466,19 @@ describe("Kaji workflow contracts", () => {
       );
       expect(secretSteps[0]?.run).toContain("--expected-workflow-run-attempt");
       expect(secretSteps[0]?.run).toContain('if [ "$status" -eq 0 ]; then');
+      const nonemptyGuard =
+        ': "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON before approving tthw-evidence}"';
+      const validation = secretSteps[0]?.run ?? "";
+      expect(validation.split(nonemptyGuard)).toHaveLength(2);
+      expect(validation.indexOf(nonemptyGuard)).toBeLessThan(
+        validation.indexOf('raw_evidence="$RUNNER_TEMP/'),
+      );
+      expect(validation.indexOf('raw_evidence="$RUNNER_TEMP/')).toBeLessThan(
+        validation.indexOf("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\""),
+      );
+      expect(validation.indexOf("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\"")).toBeLessThan(
+        validation.indexOf("validate_tthw_evidence.py"),
+      );
 
       const compatibilityDownloads = (job?.steps ?? []).filter((step) =>
         ["kaji-python-compat-3.14", "kaji-node-compat-24"].includes(String(step.with?.name ?? "")),
@@ -1532,8 +1545,10 @@ describe("Kaji workflow contracts", () => {
       "Wait for the exact tag-triggered workflow run",
       "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
       "Generate five candidate-bound participant skeletons",
-      "Set `KAJI_TTHW_EVIDENCE_JSON`",
-      "Only then approve the waiting `tthw-evidence` job",
+      "Use the approval helper for the exact validate",
+      "kaji/scripts/approve_tthw_gate.py",
+      "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately",
+      "do not approve `tthw-evidence` manually",
     ];
     const positions = orderedSteps.map((step) => runbook.indexOf(step));
 
@@ -1541,6 +1556,35 @@ describe("Kaji workflow contracts", () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
     expect(runbook).toContain("`kaji-beta` approval is the safe pause");
     expect(runbook).toContain("Do not remove the approval requirement");
+    expect(runbook).toContain(
+      "validate → attempt-1 remote preflight → secret metadata snapshot → secret set-time/freshness check → repeated identical remote preflight → unchanged-secret metadata recheck → exact-deployment approval/response transaction",
+    );
+    for (const invariant of [
+      "exact attempt-1 TTHW job is the sole waiting job in the run",
+      "complete protected reviewer/custom branch-policy configuration",
+      "complete post-set secret metadata snapshot is still unchanged",
+      "exactly one deployment for the candidate commit, tag, and `kaji-beta`",
+    ]) {
+      expect(runbook).toContain(invariant);
+    }
+    const helper = runbookSource
+      .split("uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py", 2)[1]!
+      .split("```", 1)[0]!;
+    for (const argument of [
+      '--run-id "$RUN_ID"',
+      '--evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"',
+      '--release-manifest "$ARTIFACTS_DIR/manifest.json"',
+      '--artifacts-dir "$ARTIFACTS_DIR"',
+      "--python-compatibility-receipt",
+      "--node-compatibility-receipt",
+      "--approve",
+    ]) {
+      expect(helper).toContain(argument);
+    }
+    expect(runbookSource).not.toContain("gh secret set");
+    expect(runbook).toContain("Do not set `KAJI_TTHW_EVIDENCE_JSON` separately");
+    expect(runbook).toContain("do not approve `tthw-evidence` manually or in the Actions UI");
+    expect(runbook).toContain("rejects terminal CR/LF bytes that GitHub CLI would remove");
     for (const exactBinding of [
       "set -euo pipefail",
       "umask 077",
@@ -1569,16 +1613,17 @@ describe("Kaji workflow contracts", () => {
     );
     expect(runbook).toContain("`kaji-beta-publish` remains a separate");
 
-    const guide = readFileSync(
-      resolve(repositoryRoot, "docs/kaji/tthw-evidence.md"),
-      "utf8",
-    ).replace(/\s+/gu, " ");
+    const guideSource = readFileSync(resolve(repositoryRoot, "docs/kaji/tthw-evidence.md"), "utf8");
+    const guide = guideSource.replace(/\s+/gu, " ");
     expect(guide).toContain("exact `kaji-beta-artifacts` upload from the current tag-triggered");
     expect(guide).toContain("workflow run ID and artifact ID");
     expect(guide).toContain(': "${EVIDENCE_ROOT:?follow the release runbook first}"');
     expect(guide).toContain(': "${ARTIFACTS_DIR:?follow the release runbook first}"');
     expect(guide).toContain('TTHW_DIR="$EVIDENCE_ROOT/tthw"');
     expect(guide).not.toContain("/secure/");
+    expect(guide).toContain("Do not copy it into `KAJI_TTHW_EVIDENCE_JSON`");
+    expect(guide).toContain("kaji/scripts/approve_tthw_gate.py");
+    expect(guideSource).not.toContain("Copy the file bytes");
     expect(guide).toContain("never rerun only the TTHW job");
     expect(guide).toContain("Mixed-attempt receipts are intentionally rejected");
     expect(guide).toContain(
@@ -1623,6 +1668,13 @@ describe("Kaji workflow contracts", () => {
     expect(changelog).toContain("## [0.2.0-beta.6] - 2026-07-26");
     expect(changelog).toMatch(
       /## \[0\.2\.0-beta\.5\][\s\S]*signed,[\s\S]*unpublished[\s\S]*superseded before registry publication/i,
+    );
+    const runbook = readFileSync(resolve(repositoryRoot, "docs/kaji/releasing.md"), "utf8");
+    expect(runbook).toContain("run `30215694650`");
+    expect(runbook).toContain("`KAJI_TTHW_EVIDENCE_JSON` was unset");
+    expect(runbook).toContain("the job received zero bytes");
+    expect(runbook.replace(/\s+/g, " ")).toContain(
+      "never reached provider proof, publisher preflight",
     );
   });
 

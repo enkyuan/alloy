@@ -174,8 +174,8 @@ def write_atomic(
     path: Path, document: dict[str, Any], *, max_bytes: int | None = None
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = json.dumps(document, indent=2, sort_keys=True) + "\n"
-    if max_bytes is not None and len(encoded.encode("utf-8")) > max_bytes:
+    encoded = json.dumps(document, indent=2, sort_keys=True).encode("utf-8")
+    if max_bytes is not None and len(encoded) > max_bytes:
         validation.fail(
             "/",
             f"serialized evidence exceeds the {max_bytes}-byte environment-secret limit",
@@ -184,11 +184,10 @@ def write_atomic(
         dir=path.parent,
         prefix=f".{path.name}.",
         suffix=".tmp",
-        text=True,
     )
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+        with os.fdopen(descriptor, "wb") as stream:
             stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())

@@ -364,10 +364,14 @@ uv run --project kaji python kaji/scripts/compose_tthw_evidence.py \
   --output "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"
 ```
 
-The output is written atomically with owner-only permissions after
-`validate_tthw_evidence.py`'s deterministic document checks pass. Copy the file
-bytes, without shell quoting or a trailing explanation, into the protected
-`KAJI_TTHW_EVIDENCE_JSON` secret. At release time, that validator also rejects
+The output is newline-free canonical JSON written atomically with owner-only
+permissions after `validate_tthw_evidence.py`'s deterministic document checks
+pass. Do not copy it into `KAJI_TTHW_EVIDENCE_JSON` or approve the environment
+separately. Hand this file only to `kaji/scripts/approve_tthw_gate.py` through
+the protected-release command in [the release runbook](releasing.md); the helper
+rejects terminal CR/LF bytes that GitHub CLI would otherwise remove, validates
+the exact bytes, sets the environment secret, repeats the remote preflight, and
+then approves the sole waiting job. At release time, the validator also rejects
 a `collectedDate` in the future or more than seven days old. The serialized
 document must be at most 49,152 bytes; the composer refuses to replace its
 output above that exact environment-secret limit. No-key median must be under

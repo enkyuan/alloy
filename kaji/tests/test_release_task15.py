@@ -745,6 +745,17 @@ def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
     assert "--python-compatibility-receipt" in validation
     assert "--node-compatibility-receipt" in validation
     assert "--expected-workflow-run-attempt" in validation
+    nonempty_guard = (
+        ': "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON '
+        'before approving tthw-evidence}"'
+    )
+    assert validation.count(nonempty_guard) == 1
+    assert (
+        validation.index(nonempty_guard)
+        < validation.index('raw_evidence="$RUNNER_TEMP/')
+        < validation.index("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\"")
+        < validation.index("validate_tthw_evidence.py")
+    )
     assert (
         'if [ "$status" -eq 0 ]; then\n'
         '            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"'
@@ -784,8 +795,10 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
         "Wait for the exact tag-triggered workflow run",
         "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
         "Generate five candidate-bound participant skeletons",
-        "Set `KAJI_TTHW_EVIDENCE_JSON`",
-        "Only then approve the waiting `tthw-evidence` job",
+        "Use the approval helper for the exact validate",
+        "kaji/scripts/approve_tthw_gate.py",
+        "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately",
+        "do not approve `tthw-evidence` manually",
     )
     missing_steps = [step for step in ordered_steps if step not in runbook]
     assert not missing_steps, f"missing release runbook steps: {missing_steps}"
@@ -794,6 +807,37 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
     assert positions == sorted(positions)
     assert "`kaji-beta` approval is the safe pause" in runbook
     assert "Do not remove the approval requirement" in runbook
+    assert (
+        "validate → attempt-1 remote preflight → secret metadata snapshot → "
+        "secret set-time/freshness check → repeated identical remote preflight → "
+        "unchanged-secret metadata recheck → exact-deployment approval/response "
+        "transaction"
+    ) in runbook
+    for invariant in (
+        "exact attempt-1 TTHW job is the sole waiting job in the run",
+        "complete protected reviewer/custom branch-policy configuration",
+        "complete post-set secret metadata snapshot is still unchanged",
+        "exactly one deployment for the candidate commit, tag, and `kaji-beta`",
+    ):
+        assert invariant in runbook
+    helper = runbook_source.split(
+        "uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py",
+        1,
+    )[1].split("```", 1)[0]
+    for argument in (
+        '--run-id "$RUN_ID"',
+        '--evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"',
+        '--release-manifest "$ARTIFACTS_DIR/manifest.json"',
+        '--artifacts-dir "$ARTIFACTS_DIR"',
+        "--python-compatibility-receipt",
+        "--node-compatibility-receipt",
+        "--approve",
+    ):
+        assert argument in helper
+    assert "gh secret set" not in runbook_source
+    assert "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately" in runbook
+    assert "do not approve `tthw-evidence` manually or in the Actions UI" in runbook
+    assert "rejects terminal CR/LF bytes that GitHub CLI would remove" in runbook
     for exact_binding in (
         "set -euo pipefail",
         "umask 077",
@@ -835,6 +879,9 @@ def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approva
     assert ': "${ARTIFACTS_DIR:?follow the release runbook first}"' in guide
     assert 'TTHW_DIR="$EVIDENCE_ROOT/tthw"' in guide
     assert "/secure/" not in guide
+    assert "Do not copy it into `KAJI_TTHW_EVIDENCE_JSON`" in guide
+    assert "kaji/scripts/approve_tthw_gate.py" in guide
+    assert "Copy the file bytes" not in guide_source
     assert (
         "Prior release, rehearsal, and performance artifacts are invalid substitutes."
         in guide
@@ -2308,6 +2355,13 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
     assert "burned, immutable TTHW attempt" in runbook
     assert "run `30206052570`" in runbook
     assert "paired benchmark aggregate" in runbook
+    assert "burned, immutable signed attempt" in runbook
+    assert "run `30215694650`" in runbook
+    assert "`KAJI_TTHW_EVIDENCE_JSON` was unset" in runbook
+    assert "the job received zero bytes" in runbook
+    assert "never reached provider proof, publisher preflight" in " ".join(
+        runbook.split()
+    )
 
     for expected in (
         "signed beta tag",

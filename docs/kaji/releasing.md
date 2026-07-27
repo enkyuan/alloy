@@ -182,15 +182,45 @@ later run is not acceptable evidence.
    and the Python sdist timing remain secondary compatibility evidence. Prior
    release, rehearsal, and performance artifacts are invalid substitutes;
    rehearsal evidence is never publication proof.
-7. Set `KAJI_TTHW_EVIDENCE_JSON` to the exact composed document bytes. Only then
-   approve the waiting `tthw-evidence` job. Protected environment secrets are
-   read when that job starts, so it validates the value just set against the
-   current run's downloaded manifest, wheel, sdist, and npm tarball. After it
-   passes, approve the downstream provider proof under `kaji-beta` if prompted;
-   `OPENAI_API_KEY` must complete a normalized tool loop in Python and
-   TypeScript. Missing-key hygiene is not release evidence. Anthropic and other
-   experimental/WIP provider credentials are neither required nor accepted as
-   substitutes for this proof.
+7. Use the approval helper for the exact validate → attempt-1 remote preflight
+   → secret metadata snapshot → secret set-time/freshness check → repeated
+   identical remote preflight → unchanged-secret metadata recheck →
+   exact-deployment approval/response transaction:
+
+   ```bash
+   uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py \
+     --run-id "$RUN_ID" \
+     --evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json" \
+     --release-manifest "$ARTIFACTS_DIR/manifest.json" \
+     --artifacts-dir "$ARTIFACTS_DIR" \
+     --python-compatibility-receipt \
+       "$PYTHON_COMPAT_DIR/compatibility-receipt.json" \
+     --node-compatibility-receipt \
+       "$NODE_COMPAT_DIR/compatibility-receipt.json" \
+     --approve
+   ```
+
+   Do not set `KAJI_TTHW_EVIDENCE_JSON` separately and do not approve
+   `tthw-evidence` manually or in the Actions UI. The helper sends the exact
+   newline-free validated file bytes to the environment secret through stdin
+   and rejects terminal CR/LF bytes that GitHub CLI would remove. It requires
+   the secret timestamp to change and be fresh for this set operation at the
+   GitHub API's second precision. It then rechecks that the exact attempt-1 TTHW
+   job is the sole waiting job in the run, the complete protected
+   reviewer/custom branch-policy configuration and exact tag-policy identity,
+   and the sole pending `kaji-beta` deployment snapshot. Immediately before
+   approving, it confirms the complete post-set secret metadata snapshot is
+   still unchanged; the approval response must contain exactly one deployment
+   for the candidate commit, tag, and `kaji-beta`. Omitting `--approve`
+   performs the complete local and remote preflight without changing state.
+   Protected environment secrets are read when the job starts, so it validates
+   the value just set against the current run's downloaded manifest, wheel,
+   sdist, and npm tarball. After it passes, approve the downstream provider
+   proof under
+   `kaji-beta` if prompted; `OPENAI_API_KEY` must complete a normalized tool
+   loop in Python and TypeScript. Missing-key hygiene is not release evidence.
+   Anthropic and other experimental/WIP provider credentials are neither
+   required nor accepted as substitutes for this proof.
    `kaji-beta-publish` remains a separate approval boundary and is not approved
    at this stage.
 8. Review the exact manifest, checksums, offline summary, provider status,
@@ -272,11 +302,15 @@ is failure. Therefore:
   `toolBatch100` as inconclusive. It never reached publisher preflight or a
   registry transition. Never move or retry it, and never reuse its artifacts
   or evidence; recovery requires the new beta.5 attempt.
-- Treat `kaji-v0.2.0-beta.5` as a burned, immutable signed attempt. Its tag
-  targets a commit that predates the settled benchmark measurement-floor
-  protocol. It was unpublished and superseded before registry publication.
-  Never move, retry, approve, or add evidence to it, and never reuse its
-  artifacts or evidence; recovery requires the new beta.6 attempt.
+- Treat `kaji-v0.2.0-beta.5` as a burned, immutable signed attempt. Protected
+  run `30215694650` built the exact candidate artifacts and passed the ungated
+  release, compatibility, paired benchmark, and soak gates, then failed closed
+  at `tthw-evidence`: `KAJI_TTHW_EVIDENCE_JSON` was unset, so
+  the job received zero bytes. It never reached provider proof, publisher
+  preflight, or a registry transition; its tag also predates the settled benchmark
+  measurement-floor protocol. Never move, retry, approve, or add evidence to
+  it, and never reuse its artifacts or evidence; recovery requires the new
+  beta.6 attempt.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:

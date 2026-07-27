@@ -889,6 +889,7 @@ jobs:
           KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
           KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}
         run: |
+          : "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON before approving tthw-evidence}"
           raw_evidence="$RUNNER_TEMP/kaji-tthw-evidence.raw.json"
           trap 'rm -f "$raw_evidence"' EXIT
           printf '%s' "$KAJI_TTHW_EVIDENCE_JSON" >"$raw_evidence"
