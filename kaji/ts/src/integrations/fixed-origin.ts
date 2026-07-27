@@ -320,15 +320,19 @@ class FixedOriginRequesterImpl implements FixedOriginRequester {
       const url = validatedPath(this.origin, pathAndQuery);
       const headers = validatedRequestHeaders(init.headers);
       scope = requestSignal(context, this.timeoutMs);
-      response = await withAbort(
-        this.transport.request(url, {
-          method: init.method,
-          headers,
-          ...(init.body === undefined ? {} : { body: init.body }),
-          signal: scope.signal,
-        }),
-        scope.signal,
-      );
+      const signal = scope.signal;
+      const pendingResponse = this.transport.request(url, {
+        method: init.method,
+        headers,
+        ...(init.body === undefined ? {} : { body: init.body }),
+        signal,
+      });
+      void pendingResponse
+        .then((lateResponse) => {
+          if (signal.aborted && response === undefined) lateResponse.close();
+        })
+        .catch(() => undefined);
+      response = await withAbort(pendingResponse, signal);
       const boundedHeaders = boundedResponseHeaders(response.headers);
       if (response.status >= 300 && response.status < 400) {
         throw new IntegrationTransportError("INTEGRATION_REDIRECT_REJECTED", "redirect_rejected");
