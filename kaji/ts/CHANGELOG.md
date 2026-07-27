@@ -11,6 +11,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   protected Python timing aggregate while keeping Python publication deferred.
 - Kept the `1.20` threshold, five paired samples, three-replica unanimity,
   artifact binding, and every protected approval gate unchanged.
+- Raised only Python `toolBatch100` from 64 to 256 cumulative repetitions so
+  each matched sample has a longer measurement window against runner variance.
 - Bound release, installed-runtime, evidence, provenance, and registry-byte
   verification to the new beta.8 identity. Python `0.2.0b1` remains
   evidence-only and absent from PyPI.

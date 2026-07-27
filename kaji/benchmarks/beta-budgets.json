@@ -22,7 +22,7 @@
   },
   "toolBatch100": {
     "benchmarkRepetitions": {
-      "python": 64
+      "python": 256
     },
     "batchRepetitions": 2048,
     "calls": 204800,
