@@ -6,8 +6,10 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import threading
 import time
 from types import ModuleType, SimpleNamespace
+from typing import Any, Iterable, cast
 
 import pytest
 
@@ -99,7 +101,9 @@ def test_none_uses_devnull_but_empty_input_uses_a_pipe(
     observed_stdin: list[int] = []
 
     def popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
-        observed_stdin.append(int(kwargs["stdin"]))
+        stdin = kwargs["stdin"]
+        assert isinstance(stdin, int)
+        observed_stdin.append(stdin)
         return real_popen(*args, **kwargs)
 
     monkeypatch.setattr(runner.subprocess, "Popen", popen)
@@ -230,7 +234,7 @@ def test_terminal_state_is_revalidated_after_residual_cleanup(
 
     def cleanup_with_late_failure(items: object) -> None:
         real_cleanup(items)
-        item = tuple(items)[0]
+        item = tuple(cast(Iterable[Any], items))[0]
         if failure == "capture-error":
             item.captures[0].error = RuntimeError("late capture failure")
         elif failure == "capture-overflow":
@@ -607,8 +611,8 @@ def test_post_popen_setup_failure_closes_pipes_and_reaps_process_group(
     real_capture = runner._Capture
     real_thread_start = runner.threading.Thread.start
     spawned: list[subprocess.Popen[bytes]] = []
-    writers: list[object] = []
-    captures: list[object] = []
+    writers: list[Any] = []
+    captures: list[Any] = []
     capture_starts = 0
 
     def popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
@@ -630,7 +634,7 @@ def test_post_popen_setup_failure_closes_pipes_and_reaps_process_group(
             super().__init__(*args, **kwargs)
             captures.append(self)
 
-    def start(thread: object) -> None:
+    def start(thread: threading.Thread) -> None:
         nonlocal capture_starts
         if failure == "input-start" and thread.name == "kaji-process-input-writer":
             raise RuntimeError("sensitive input start detail")

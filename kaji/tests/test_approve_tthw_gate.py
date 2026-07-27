@@ -560,7 +560,9 @@ def test_success_uses_exact_order_identical_secret_bytes_and_one_environment(
     secret_call = next(call for call in github.calls if call[0] == "set_secret")
     assert secret_call[2] == EVIDENCE_BYTES
     approval_call = github.calls[-1]
-    assert json.loads(approval_call[2]) == {
+    approval_body = approval_call[2]
+    assert approval_body is not None
+    assert json.loads(approval_body) == {
         "environment_ids": [ENVIRONMENT_ID],
         "state": "approved",
         "comment": "Approve exact-run TTHW evidence.",
