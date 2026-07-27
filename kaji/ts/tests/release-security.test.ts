@@ -1631,7 +1631,7 @@ describe("Kaji workflow contracts", () => {
     );
   });
 
-  it("binds the current TypeScript candidate to beta.7 and preserves beta.6 as unpublished history", () => {
+  it("binds the current TypeScript candidate to beta.8 and preserves beta.7 as unpublished history", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;
       version: string;
@@ -1649,13 +1649,13 @@ describe("Kaji workflow contracts", () => {
     );
 
     expect(packageManifest.name).toBe("kaji-sdk");
-    expect(packageManifest.version).toBe("0.2.0-beta.7");
+    expect(packageManifest.version).toBe("0.2.0-beta.8");
     expect(packageManifest.version).not.toBe("0.2.0-beta.2");
     expect(packageManifest.version).not.toBe("0.2.0-beta.4");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);
     expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
     expect(tarball).toBe(`kaji-sdk-${packageManifest.version}.tgz`);
-    expect(tarball).toBe("kaji-sdk-0.2.0-beta.7.tgz");
+    expect(tarball).toBe("kaji-sdk-0.2.0-beta.8.tgz");
     for (const name of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const { source } = readWorkflow(name);
       expect(source).toContain(tarball);
@@ -1663,10 +1663,14 @@ describe("Kaji workflow contracts", () => {
       expect(source).not.toContain("0.2.0-beta.4");
       expect(source).not.toContain("0.2.0-beta.5");
       expect(source).not.toContain("0.2.0-beta.6");
+      expect(source).not.toContain("0.2.0-beta.7");
     }
 
     const changelog = readFileSync(resolve("CHANGELOG.md"), "utf8");
-    expect(changelog).toContain("## [0.2.0-beta.7] - 2026-07-26");
+    expect(changelog).toContain("## [0.2.0-beta.8] - 2026-07-27");
+    expect(changelog).toMatch(
+      /## \[0\.2\.0-beta\.7\][\s\S]*protected run `30265105639`[\s\S]*inconclusive[\s\S]*npm and PyPI remained absent/i,
+    );
     expect(changelog).toMatch(
       /## \[0\.2\.0-beta\.6\][\s\S]*protected run `30230234051`[\s\S]*inconclusive[\s\S]*registry remained untouched/i,
     );
@@ -1676,6 +1680,10 @@ describe("Kaji workflow contracts", () => {
     expect(runbook.replace(/\s+/g, " ")).toContain(
       "TTHW, provider proof, publisher preflight, and npm publication were skipped",
     );
+    expect(runbook).toContain("run `30265105639`");
+    expect(runbook).toContain("`0.9805314383`, `0.9756823917`,");
+    expect(runbook).toContain("and `1.2290586651`");
+    expect(runbook.replace(/\s+/g, " ")).toContain("recovery requires the new beta.8 attempt");
   });
 
   it("smokes compatibility matrices only from verified producer artifacts", () => {
@@ -2134,7 +2142,7 @@ describe("Kaji workflow contracts", () => {
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     )?.run;
-    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.7.tgz");
+    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.8.tgz");
     for (const forbidden of [
       "kaji_sdk-0.2.0b1-py3-none-any.whl",
       "kaji_sdk-0.2.0b1.tar.gz",
