@@ -28,7 +28,7 @@ PARTICIPANT_TEMPLATE = (
 ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.5.tgz": ("typescript", "0.2.0-beta.5"),
+    "kaji-sdk-0.2.0-beta.6.tgz": ("typescript", "0.2.0-beta.6"),
 }
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 TODAY = date.today()
@@ -159,7 +159,7 @@ def _fixture(
         artifact_name = (
             "kaji_sdk-0.2.0b1-py3-none-any.whl"
             if path_name == "python"
-            else "kaji-sdk-0.2.0-beta.5.tgz"
+            else "kaji-sdk-0.2.0-beta.6.tgz"
         )
         artifact = artifacts_by_name[artifact_name]
         receipt = {
@@ -268,13 +268,13 @@ def _fixture(
                 "commit": commit,
                 "releaseManifestSha256": manifest_hash,
                 "artifactSha256": {
-                    "kaji-sdk-0.2.0-beta.5.tgz": artifacts_by_name[
-                        "kaji-sdk-0.2.0-beta.5.tgz"
+                    "kaji-sdk-0.2.0-beta.6.tgz": artifacts_by_name[
+                        "kaji-sdk-0.2.0-beta.6.tgz"
                     ]["sha256"]
                 },
                 "runtime": {"version": "v24.4.1"},
                 "artifacts": {
-                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.5.tgz",
+                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.6.tgz",
                     "package": "/opt/node/24/node_modules/kaji-sdk",
                 },
                 "githubPackageProofs": {
@@ -333,6 +333,7 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
     module = _load_script(COMPOSER)
     receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
 
+    first_date_window = {date.today().isoformat()}
     document = module.compose(
         participant_receipts=list(reversed(receipts)),
         python_compatibility_receipt=python_compat,
@@ -342,6 +343,8 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
+    first_date_window.add(date.today().isoformat())
+    second_date_window = {date.today().isoformat()}
     repeated = module.compose(
         participant_receipts=receipts,
         python_compatibility_receipt=python_compat,
@@ -351,9 +354,11 @@ def test_composer_derives_identity_totals_summary_and_deterministic_order(
         release_manifest=manifest,
         artifacts_dir=artifacts,
     )
+    second_date_window.add(date.today().isoformat())
 
-    assert document == repeated
-    assert document["collectedDate"] == TODAY.isoformat()
+    assert document | {"collectedDate": None} == repeated | {"collectedDate": None}
+    assert document["collectedDate"] in first_date_window
+    assert repeated["collectedDate"] in second_date_window
     assert document["commit"] == "a" * 40
     assert document["releaseManifestSha256"] == _sha(manifest)
     assert [run["participantId"] for run in document["humanRuns"]] == [
@@ -370,12 +375,12 @@ def test_composer_rejects_wrong_participant_path_distribution(tmp_path: Path) ->
     module = _load_script(COMPOSER)
     receipts, python_compat, node_compat, manifest, artifacts = _fixture(tmp_path)
     receipt = json.loads(receipts[0].read_text())
-    npm_artifact = artifacts / "kaji-sdk-0.2.0-beta.5.tgz"
+    npm_artifact = artifacts / "kaji-sdk-0.2.0-beta.6.tgz"
     receipt["path"] = "npm"
     receipt["artifact"] = {
         "name": npm_artifact.name,
         "package": "typescript",
-        "version": "0.2.0-beta.5",
+        "version": "0.2.0-beta.6",
         "sha256": _sha(npm_artifact),
     }
     receipts[0].write_text(json.dumps(receipt))
@@ -633,8 +638,8 @@ def test_composer_rejects_oversized_secret_before_replacing_output(
     ("path_name", "artifact_name"),
     [
         ("python", "kaji_sdk-0.2.0b1-py3-none-any.whl"),
-        ("npm", "kaji-sdk-0.2.0-beta.5.tgz"),
-        ("bun", "kaji-sdk-0.2.0-beta.5.tgz"),
+        ("npm", "kaji-sdk-0.2.0-beta.6.tgz"),
+        ("bun", "kaji-sdk-0.2.0-beta.6.tgz"),
     ],
 )
 def test_template_generation_binds_selected_candidate_artifact(
@@ -752,7 +757,7 @@ def test_composer_rechecks_retained_artifacts_after_participant_collection(
     def mutate_then_read(*args: Any, **kwargs: Any) -> dict[str, Any]:
         nonlocal mutated
         if not mutated:
-            (artifacts / "kaji-sdk-0.2.0-beta.5.tgz").write_bytes(b"mutated")
+            (artifacts / "kaji-sdk-0.2.0-beta.6.tgz").write_bytes(b"mutated")
             mutated = True
         return original(*args, **kwargs)
 

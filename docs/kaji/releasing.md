@@ -105,7 +105,7 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm npm `kaji-sdk@0.2.0-beta.5` is unused. Confirm PyPI
+1. Confirm npm `kaji-sdk@0.2.0-beta.6` is unused. Confirm PyPI
    `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
    create it.
 2. Before creating the tag, configure the required `kaji-beta` reviewer and
@@ -116,8 +116,8 @@ later run is not acceptable evidence.
    directly:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.5 <approved-commit> -m "Kaji 0.2.0 beta 5"
-   git push origin refs/tags/kaji-v0.2.0-beta.5
+   git tag -s -a kaji-v0.2.0-beta.6 <approved-commit> -m "Kaji 0.2.0 beta 6"
+   git push origin refs/tags/kaji-v0.2.0-beta.6
    ```
 
 4. Wait for the exact tag-triggered workflow run to upload
@@ -251,7 +251,7 @@ is failure. Therefore:
     curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
       https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
   )" = 404
-  npm view kaji-sdk@0.2.0-beta.5 version --json --registry=https://registry.npmjs.org/
+  npm view kaji-sdk@0.2.0-beta.6 version --json --registry=https://registry.npmjs.org/
   ```
 
 - If `registry-preflight` or `publisher-preflight` failed and the npm publisher
@@ -272,6 +272,11 @@ is failure. Therefore:
   `toolBatch100` as inconclusive. It never reached publisher preflight or a
   registry transition. Never move or retry it, and never reuse its artifacts
   or evidence; recovery requires the new beta.5 attempt.
+- Treat `kaji-v0.2.0-beta.5` as a burned, immutable signed attempt. Its tag
+  targets a commit that predates the settled benchmark measurement-floor
+  protocol. It was unpublished and superseded before registry publication.
+  Never move, retry, approve, or add evidence to it, and never reuse its
+  artifacts or evidence; recovery requires the new beta.6 attempt.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:

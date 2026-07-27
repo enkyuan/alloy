@@ -17,12 +17,12 @@ from typing import Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.5.tgz": ("typescript", "0.2.0-beta.5"),
+    "kaji-sdk-0.2.0-beta.6.tgz": ("typescript", "0.2.0-beta.6"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
     "python": "0.2.0b1",
-    "typescript": "0.2.0-beta.5",
+    "typescript": "0.2.0-beta.6",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
@@ -70,7 +70,7 @@ class ReleaseArtifactContract:
     packages: Mapping[str, str]
 
 
-BETA5_RELEASE_CONTRACT = ReleaseArtifactContract(
+BETA6_RELEASE_CONTRACT = ReleaseArtifactContract(
     artifacts=MappingProxyType(EXPECTED_ARTIFACTS),
     packages=MappingProxyType(EXPECTED_PACKAGES),
 )
@@ -80,7 +80,7 @@ BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
 )
 RELEASE_ARTIFACT_CONTRACTS = MappingProxyType(
     {
-        "beta5": BETA5_RELEASE_CONTRACT,
+        "beta6": BETA6_RELEASE_CONTRACT,
         "beta2-reference": BETA2_REFERENCE_RELEASE_CONTRACT,
     }
 )
@@ -102,10 +102,10 @@ def verify(
     artifacts: Path,
     expected_commit: str,
     *,
-    artifact_contract: ReleaseArtifactContract = BETA5_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA6_RELEASE_CONTRACT,
 ) -> VerifiedReleaseArtifacts:
     if artifact_contract not in (
-        BETA5_RELEASE_CONTRACT,
+        BETA6_RELEASE_CONTRACT,
         BETA2_REFERENCE_RELEASE_CONTRACT,
     ):
         fail("unsupported release artifact contract")
@@ -235,7 +235,7 @@ def main() -> None:
     parser.add_argument(
         "--artifact-contract",
         choices=tuple(RELEASE_ARTIFACT_CONTRACTS),
-        default="beta5",
+        default="beta6",
     )
     args = parser.parse_args()
     if args.expected_commit is None:

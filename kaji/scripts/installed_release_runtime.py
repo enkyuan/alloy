@@ -20,7 +20,7 @@ from typing import Any
 
 from process_runner import PACKAGE_COMMAND_BUDGET, run_checked
 from verify_release_artifacts import (
-    BETA5_RELEASE_CONTRACT,
+    BETA6_RELEASE_CONTRACT,
     ReleaseArtifactContract,
     VerifiedReleaseArtifacts,
     verify,
@@ -244,7 +244,7 @@ def _install_typescript(
     release: VerifiedReleaseArtifacts,
     environment: Mapping[str, str],
     *,
-    artifact_contract: ReleaseArtifactContract = BETA5_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA6_RELEASE_CONTRACT,
     include_openai: bool,
 ) -> tuple[Path, Path, Path, Path, str, str]:
     npm = shutil.which("npm", path=environment["PATH"])
@@ -316,7 +316,7 @@ def _render_typescript_consumer(
     consumer: Path,
     tarball: Path,
     *,
-    artifact_contract: ReleaseArtifactContract = BETA5_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA6_RELEASE_CONTRACT,
     include_openai: bool = False,
 ) -> tuple[str, str]:
     typescript_version = artifact_contract.packages["typescript"]
@@ -347,9 +347,9 @@ def _render_typescript_consumer(
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest.get("dependencies")
-        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.5.tgz"
-        or sdk_package.get("version") != "0.2.0-beta.5"
-        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.5.tgz"
+        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.6.tgz"
+        or sdk_package.get("version") != "0.2.0-beta.6"
+        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.6.tgz"
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
@@ -371,11 +371,11 @@ def _render_typescript_consumer(
 
     comparison = copy.deepcopy(rendered)
     comparison["packages"][""]["dependencies"]["kaji-sdk"] = (
-        "file:kaji-sdk-0.2.0-beta.5.tgz"
+        "file:kaji-sdk-0.2.0-beta.6.tgz"
     )
     comparison_sdk = comparison["packages"]["node_modules/kaji-sdk"]
-    comparison_sdk["version"] = "0.2.0-beta.5"
-    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.5.tgz"
+    comparison_sdk["version"] = "0.2.0-beta.6"
+    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.6.tgz"
     comparison_sdk["integrity"] = sdk_package["integrity"]
     if comparison != template:
         raise RuntimeError("rendered consumer lock changed frozen registry packages")
@@ -392,12 +392,12 @@ def installed_release_runtime(
     artifacts_dir: Path,
     *,
     expected_commit: str,
-    artifact_contract: ReleaseArtifactContract = BETA5_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA6_RELEASE_CONTRACT,
     include_openai: bool = False,
 ) -> Iterator[InstalledReleaseRuntime]:
     verify_arguments = (
         {}
-        if artifact_contract == BETA5_RELEASE_CONTRACT
+        if artifact_contract == BETA6_RELEASE_CONTRACT
         else {"artifact_contract": artifact_contract}
     )
     release = verify(artifacts_dir, expected_commit, **verify_arguments)

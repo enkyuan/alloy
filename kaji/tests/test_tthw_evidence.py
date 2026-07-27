@@ -21,7 +21,7 @@ VALIDATOR = REPO_ROOT / "kaji/scripts/validate_tthw_evidence.py"
 ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.5.tgz": ("typescript", "0.2.0-beta.5"),
+    "kaji-sdk-0.2.0-beta.6.tgz": ("typescript", "0.2.0-beta.6"),
 }
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 TODAY = date.today()
@@ -93,7 +93,7 @@ def _fixture(tmp_path: Path) -> tuple[dict, Path, Path]:
         artifact_name = (
             "kaji_sdk-0.2.0b1-py3-none-any.whl"
             if path == "python"
-            else "kaji-sdk-0.2.0-beta.5.tgz"
+            else "kaji-sdk-0.2.0-beta.6.tgz"
         )
         artifact = artifacts_by_name[artifact_name]
         runs.append(
@@ -244,11 +244,11 @@ def _compatibility_receipts(document: dict, artifacts_dir: Path) -> tuple[dict, 
         "commit": document["commit"],
         "releaseManifestSha256": document["releaseManifestSha256"],
         "artifactSha256": {
-            "kaji-sdk-0.2.0-beta.5.tgz": by_name["kaji-sdk-0.2.0-beta.5.tgz"]["sha256"]
+            "kaji-sdk-0.2.0-beta.6.tgz": by_name["kaji-sdk-0.2.0-beta.6.tgz"]["sha256"]
         },
         "runtime": {"version": "v24.4.1"},
         "artifacts": {
-            "tarball": str(artifacts_dir / "kaji-sdk-0.2.0-beta.5.tgz"),
+            "tarball": str(artifacts_dir / "kaji-sdk-0.2.0-beta.6.tgz"),
             "package": "/opt/node/24/node_modules/kaji-sdk",
         },
         "githubPackageProofs": {
@@ -510,7 +510,7 @@ def test_validator_requires_measured_macos_platform_identity(
     [
         ("name", "kaji_sdk-0.2.0b1.tar.gz"),
         ("package", "typescript"),
-        ("version", "0.2.0-beta.5"),
+        ("version", "0.2.0-beta.6"),
         ("sha256", "f" * 64),
     ],
 )
@@ -579,7 +579,7 @@ def test_validator_rejects_sensitive_confusion_text(tmp_path: Path) -> None:
 def test_validator_recomputes_retained_artifact_hashes(tmp_path: Path) -> None:
     module = _module()
     document, manifest, artifacts = _fixture(tmp_path)
-    (artifacts / "kaji-sdk-0.2.0-beta.5.tgz").write_bytes(b"tampered")
+    (artifacts / "kaji-sdk-0.2.0-beta.6.tgz").write_bytes(b"tampered")
 
     with pytest.raises(module.EvidenceError, match="retained artifact size/hash"):
         module.validate_bindings(document, manifest, artifacts)
