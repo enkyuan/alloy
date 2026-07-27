@@ -23,12 +23,12 @@ SCHEMA = ROOT / "kaji" / "contracts" / "release" / "tthw-evidence-v1.schema.json
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.6.tgz": ("typescript", "0.2.0-beta.6"),
+    "kaji-sdk-0.2.0-beta.7.tgz": ("typescript", "0.2.0-beta.7"),
 }
 PATH_ARTIFACTS = {
     "python": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "npm": "kaji-sdk-0.2.0-beta.6.tgz",
-    "bun": "kaji-sdk-0.2.0-beta.6.tgz",
+    "npm": "kaji-sdk-0.2.0-beta.7.tgz",
+    "bun": "kaji-sdk-0.2.0-beta.7.tgz",
 }
 COMPATIBILITY_RECEIPT_FIELDS = {
     "artifactSha256",
@@ -375,7 +375,7 @@ def validate_closed_compatibility_receipt(
             for name in ("wheel", "sdist")
         }
     else:
-        expected_names = ("kaji-sdk-0.2.0-beta.6.tgz",)
+        expected_names = ("kaji-sdk-0.2.0-beta.7.tgz",)
         if (
             not isinstance(runtime_value, dict)
             or set(runtime_value) != {"version"}

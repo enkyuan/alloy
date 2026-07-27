@@ -261,7 +261,7 @@ describe("kaji connect and disconnect", () => {
     const code = await runCli(["--help"], options());
 
     expect(code).toBe(0);
-    expect(stdout[0]).toBe("kaji (kaji-sdk) 0.2.0-beta.6");
+    expect(stdout[0]).toBe("kaji (kaji-sdk) 0.2.0-beta.7");
     expect(output()).toContain("connect");
     expect(output()).toContain("disconnect");
     expect(envReads).toEqual([]);
