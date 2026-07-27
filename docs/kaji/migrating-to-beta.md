@@ -424,7 +424,7 @@ if (jsonSchema.type !== "object") throw new Error("Zod 4 schema export failed");
 <!-- docs-test:typescript-zod-after:end -->
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.6 'zod@>=4.3 <5'
+npm install kaji-sdk@0.2.0-beta.7 'zod@>=4.3 <5'
 ```
 
 ## Manifest and index schema

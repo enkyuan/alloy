@@ -5,12 +5,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.7] - 2026-07-26
+
+- Advanced the npm candidate after beta.6 failed closed on an inconclusive
+  protected timing replica while keeping Python publication deferred.
+- Kept the `1.20` threshold, five paired samples, three-replica unanimity,
+  artifact binding, and every protected approval gate unchanged.
+- Bound release, installed-runtime, evidence, provenance, and registry-byte
+  verification to the new beta.7 identity.
+
 ## [0.2.0-beta.6] - 2026-07-26
 
 - Advanced the npm candidate onto the settled benchmark measurement-floor
   protocol while keeping Python publication deferred.
-- Bound release, installed-runtime, evidence, provenance, and registry-byte
-  verification to the new beta.6 identity.
+- Protected run `30230234051` failed closed when TypeScript
+  `crossSessionCommit100` produced one above-threshold and two passing replica
+  medians. The mixed result was inconclusive, not release evidence.
+- The npm registry remained untouched; the tag, artifacts, and receipts are
+  immutable incident history and cannot be reused for beta.7.
 
 ## [0.2.0-beta.5] - 2026-07-26
 
