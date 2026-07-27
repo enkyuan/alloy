@@ -536,10 +536,16 @@ def test_atomic_writer_replaces_with_owner_only_secret_file(tmp_path: Path) -> N
     module = _load_script(COMPOSER)
     output = tmp_path / "tthw.json"
     output.write_text("old")
+    document = {"secretReady": True}
 
-    module.write_atomic(output, {"secretReady": True})
+    module.write_atomic(output, document)
 
-    assert json.loads(output.read_text()) == {"secretReady": True}
+    assert output.read_bytes() == json.dumps(
+        document,
+        indent=2,
+        sort_keys=True,
+    ).encode("utf-8")
+    assert not output.read_bytes().endswith((b"\r", b"\n"))
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
     assert list(tmp_path.glob(".tthw.json.*.tmp")) == []
 
@@ -551,9 +557,7 @@ def test_atomic_writer_enforces_exact_environment_secret_byte_limit(
     limit = module.GITHUB_ENVIRONMENT_SECRET_MAX_BYTES
     assert limit == 49_152
 
-    overhead = len(
-        (json.dumps({"payload": ""}, indent=2, sort_keys=True) + "\n").encode()
-    )
+    overhead = len(json.dumps({"payload": ""}, indent=2, sort_keys=True).encode())
     exact_document = {"payload": "x" * (limit - overhead)}
     exact_output = tmp_path / "exact.json"
     module.write_atomic(exact_output, exact_document, max_bytes=limit)

@@ -8,7 +8,7 @@ group before returning control.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import os
 from pathlib import Path
@@ -119,9 +119,14 @@ class CommandCaptureError(CommandError):
         super().__init__(f"release command {stream} capture failed")
 
 
+class CommandInputError(CommandError):
+    def __init__(self) -> None:
+        super().__init__("release command input delivery failed")
+
+
 class CommandCleanupError(CommandError):
     def __init__(self) -> None:
-        super().__init__("release command output cleanup did not settle")
+        super().__init__("release command cleanup did not settle")
 
 
 class CommandInterruptedError(CommandError):
@@ -143,6 +148,7 @@ class CommandSpec:
     capture: bool = False
     env: Mapping[str, str] | None = None
     check: bool = True
+    input_bytes: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.command, (str, bytes)):
@@ -154,6 +160,8 @@ class CommandSpec:
             raise ValueError("command must contain non-empty strings")
         if any("\0" in part for part in command):
             raise CommandStartError
+        if self.input_bytes is not None and not isinstance(self.input_bytes, bytes):
+            raise ValueError("input_bytes must be bytes or None")
         object.__setattr__(self, "command", command)
         object.__setattr__(self, "cwd", Path(self.cwd))
 
@@ -184,18 +192,81 @@ class _Capture:
             self.pipe.close()
 
 
+class _InputWriter:
+    def __init__(self, pipe: BinaryIO, input_bytes: bytes) -> None:
+        self.pipe = pipe
+        self._input_bytes: bytes | None = input_bytes
+        self.expected_bytes = len(input_bytes)
+        self.written_bytes = 0
+        self.abort_requested = threading.Event()
+        self.failed = threading.Event()
+        self.finished = threading.Event()
+        self.thread = threading.Thread(
+            target=self._write,
+            name="kaji-process-input-writer",
+            daemon=True,
+        )
+
+    def _write(self) -> None:
+        input_bytes = self._input_bytes
+        assert input_bytes is not None
+        view = memoryview(input_bytes)
+        try:
+            while self.written_bytes < self.expected_bytes:
+                if self.abort_requested.is_set():
+                    break
+                try:
+                    written = os.write(
+                        self.pipe.fileno(),
+                        view[self.written_bytes : self.written_bytes + 65_536],
+                    )
+                except BlockingIOError:
+                    self.abort_requested.wait(0.005)
+                    continue
+                except InterruptedError:
+                    continue
+                except BaseException:
+                    self.failed.set()
+                    break
+                if written <= 0:
+                    self.failed.set()
+                    break
+                self.written_bytes += written
+            if self.written_bytes != self.expected_bytes:
+                self.failed.set()
+        finally:
+            view.release()
+            self._input_bytes = None
+            try:
+                self.pipe.close()
+            except OSError:
+                self.failed.set()
+            self.finished.set()
+
+    def abort(self) -> None:
+        self.abort_requested.set()
+
+
 @dataclass(slots=True)
 class _RunningCommand:
     spec: CommandSpec
     process: subprocess.Popen[bytes]
     deadline: float
     captures: tuple[_Capture, ...]
+    input_writer: _InputWriter | None
 
-    def pipes_closed(self) -> bool:
-        return all(not capture.thread.is_alive() for capture in self.captures)
+    def streams_closed(self) -> bool:
+        captures_closed = all(
+            not capture.thread.is_alive() for capture in self.captures
+        )
+        input_closed = self.input_writer is None or (
+            self.input_writer.finished.is_set()
+            and not self.input_writer.thread.is_alive()
+        )
+        return captures_closed and input_closed
 
     def completed(self) -> bool:
-        return self.process.poll() is not None and self.pipes_closed()
+        return self.process.poll() is not None and self.streams_closed()
 
     def result(self) -> CompletedCommand:
         stdout = next(
@@ -217,6 +288,92 @@ def _supported_release_host() -> bool:
     return os.name == "posix" and sys.platform in {"darwin", "linux"}
 
 
+def _thread_started(thread: threading.Thread) -> bool:
+    return thread.ident is not None
+
+
+def _close_pipe(pipe: BinaryIO | None) -> bool:
+    if pipe is None:
+        return True
+    try:
+        pipe.close()
+    except BaseException:
+        return False
+    return True
+
+
+def _cleanup_failed_spawn(
+    process: subprocess.Popen[bytes],
+    *,
+    input_writer: _InputWriter | None,
+    captures: Sequence[_Capture],
+) -> None:
+    """Tear down a process whose post-Popen setup did not complete."""
+    cleanup_failed = False
+    if input_writer is not None:
+        input_writer.abort()
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except BaseException:
+        cleanup_failed = True
+        try:
+            process.kill()
+        except BaseException:
+            pass
+
+    deadline = time.monotonic() + CLEANUP_SETTLE_SECONDS
+    try:
+        process.wait(timeout=max(0, deadline - time.monotonic()))
+    except BaseException:
+        cleanup_failed = True
+
+    threads = [
+        capture.thread for capture in captures if _thread_started(capture.thread)
+    ]
+    if input_writer is not None and _thread_started(input_writer.thread):
+        threads.append(input_writer.thread)
+    for thread in threads:
+        try:
+            thread.join(timeout=max(0, deadline - time.monotonic()))
+        except BaseException:
+            cleanup_failed = True
+
+    pipes = [process.stdin, process.stdout, process.stderr]
+    for pipe in pipes:
+        if not _close_pipe(pipe):
+            cleanup_failed = True
+
+    for thread in threads:
+        if thread.is_alive():
+            try:
+                thread.join(timeout=max(0, deadline - time.monotonic()))
+            except BaseException:
+                cleanup_failed = True
+        if thread.is_alive():
+            cleanup_failed = True
+
+    while True:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            break
+        except BaseException:
+            cleanup_failed = True
+            break
+        if time.monotonic() >= deadline:
+            cleanup_failed = True
+            break
+        time.sleep(0.005)
+
+    if process.poll() is None:
+        cleanup_failed = True
+    if cleanup_failed:
+        raise CommandCleanupError
+
+
 def _spawn(spec: CommandSpec) -> _RunningCommand:
     if not _supported_release_host():
         raise UnsupportedReleaseHostError
@@ -225,29 +382,49 @@ def _spawn(spec: CommandSpec) -> _RunningCommand:
             spec.command,
             cwd=spec.cwd,
             env=None if spec.env is None else dict(spec.env),
-            stdin=subprocess.DEVNULL,
+            stdin=(
+                subprocess.PIPE if spec.input_bytes is not None else subprocess.DEVNULL
+            ),
             stdout=subprocess.PIPE if spec.capture else None,
             stderr=subprocess.PIPE if spec.capture else None,
             start_new_session=True,
         )
-    except (OSError, ValueError) as error:
-        raise CommandStartError from error
+    except (OSError, ValueError):
+        raise CommandStartError from None
 
     captures: list[_Capture] = []
-    if spec.capture:
-        assert process.stdout is not None and process.stderr is not None
-        captures = [
-            _Capture("stdout", process.stdout, spec.budget.max_output_bytes),
-            _Capture("stderr", process.stderr, spec.budget.max_output_bytes),
-        ]
-        for capture in captures:
-            capture.thread.start()
-    return _RunningCommand(
-        spec=spec,
-        process=process,
-        deadline=time.monotonic() + spec.budget.timeout_seconds,
-        captures=tuple(captures),
-    )
+    input_writer: _InputWriter | None = None
+    try:
+        if spec.input_bytes is not None:
+            assert process.stdin is not None
+            os.set_blocking(process.stdin.fileno(), False)
+            input_writer = _InputWriter(process.stdin, spec.input_bytes)
+            input_writer.thread.start()
+        if spec.capture:
+            assert process.stdout is not None and process.stderr is not None
+            captures = [
+                _Capture("stdout", process.stdout, spec.budget.max_output_bytes),
+                _Capture("stderr", process.stderr, spec.budget.max_output_bytes),
+            ]
+            for capture in captures:
+                capture.thread.start()
+        return _RunningCommand(
+            spec=spec,
+            process=process,
+            deadline=time.monotonic() + spec.budget.timeout_seconds,
+            captures=tuple(captures),
+            input_writer=input_writer,
+        )
+    except BaseException:
+        try:
+            _cleanup_failed_spawn(
+                process,
+                input_writer=input_writer,
+                captures=captures,
+            )
+        except BaseException:
+            raise CommandCleanupError from None
+        raise CommandStartError from None
 
 
 def _signal_group(running: _RunningCommand, signum: signal.Signals) -> None:
@@ -284,6 +461,9 @@ def _cleanup(running: Sequence[_RunningCommand]) -> None:
     if not running:
         return
     cleanup_failed = False
+    for item in running:
+        if item.input_writer is not None:
+            item.input_writer.abort()
     try:
         for item in running:
             item.process.poll()
@@ -340,8 +520,47 @@ def _cleanup(running: Sequence[_RunningCommand]) -> None:
         capture.thread.join(timeout=max(0, pipe_deadline - time.monotonic()))
         if capture.thread.is_alive():
             cleanup_failed = True
+    input_deadline = time.monotonic() + CLEANUP_SETTLE_SECONDS
+    input_writers = [
+        item.input_writer for item in running if item.input_writer is not None
+    ]
+    for writer in input_writers:
+        writer.thread.join(timeout=max(0, input_deadline - time.monotonic()))
+        if writer.thread.is_alive() or not writer.finished.is_set():
+            cleanup_failed = True
     if cleanup_failed:
         raise CommandCleanupError
+
+
+def _validate_io_state(item: _RunningCommand, *, terminal: bool = False) -> None:
+    capture_error = next(
+        (capture for capture in item.captures if capture.error is not None),
+        None,
+    )
+    if capture_error is not None:
+        raise CommandCaptureError(capture_error.stream) from capture_error.error
+    overflow = next(
+        (capture for capture in item.captures if capture.overflowed.is_set()),
+        None,
+    )
+    if overflow is not None:
+        raise CommandOutputLimitError(
+            stream=overflow.stream,
+            captured_bytes=len(overflow.buffer),
+        )
+
+    writer = item.input_writer
+    if writer is not None and writer.failed.is_set():
+        raise CommandInputError
+    if not terminal:
+        return
+    if any(capture.thread.is_alive() for capture in item.captures):
+        raise CommandCleanupError
+    if writer is not None:
+        if not writer.finished.is_set() or writer.thread.is_alive():
+            raise CommandCleanupError
+        if writer.written_bytes != writer.expected_bytes:
+            raise CommandInputError
 
 
 @dataclass(slots=True)
@@ -397,27 +616,7 @@ def _run_specs(specs: Sequence[CommandSpec]) -> tuple[CompletedCommand, ...]:
             now = time.monotonic()
             for index in tuple(pending):
                 item = running[index]
-                overflow = next(
-                    (
-                        capture
-                        for capture in item.captures
-                        if capture.overflowed.is_set()
-                    ),
-                    None,
-                )
-                capture_error = next(
-                    (capture for capture in item.captures if capture.error is not None),
-                    None,
-                )
-                if capture_error is not None:
-                    raise CommandCaptureError(
-                        capture_error.stream
-                    ) from capture_error.error
-                if overflow is not None:
-                    raise CommandOutputLimitError(
-                        stream=overflow.stream,
-                        captured_bytes=len(overflow.buffer),
-                    )
+                _validate_io_state(item)
                 if now >= item.deadline:
                     raise CommandTimeoutError(item.spec.budget.timeout_seconds)
                 returncode = item.process.poll()
@@ -431,8 +630,9 @@ def _run_specs(specs: Sequence[CommandSpec]) -> tuple[CompletedCommand, ...]:
                         signal_state.cleaning = False
                     if signal_state.pending is not None:
                         raise CommandInterruptedError(signal_state.pending)
-                if not item.pipes_closed():
+                if not item.streams_closed():
                     continue
+                _validate_io_state(item, terminal=True)
                 result = item.result()
                 if item.spec.check and result.returncode != 0:
                     raise CommandExitError(
@@ -461,6 +661,7 @@ def run_checked(
     capture: bool = False,
     env: Mapping[str, str] | None = None,
     check: bool = True,
+    input_bytes: bytes | None = None,
 ) -> CompletedCommand:
     """Run one bounded command without retaining or echoing its arguments."""
 
@@ -473,6 +674,7 @@ def run_checked(
                 capture=capture,
                 env=env,
                 check=check,
+                input_bytes=input_bytes,
             ),
         )
     )[0]
