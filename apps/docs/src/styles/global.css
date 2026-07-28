@@ -1189,29 +1189,29 @@ a.nav-link:hover {
   }
 }
 
-html[data-kaji-first-visit] .kaji-wordmark .wordmark-glyph {
+html[data-kaji-first-visit] span.kaji-wordmark .wordmark-glyph {
   animation: wordmark-write 620ms var(--ease-out) both;
 }
 
-html[data-kaji-first-visit] .kaji-wordmark .wordmark-glyph:first-child {
+html[data-kaji-first-visit] span.kaji-wordmark .wordmark-glyph:first-child {
   animation-delay: 60ms;
 }
 
-html[data-kaji-first-visit] .kaji-wordmark .wordmark-glyph:last-child {
-  animation-delay: 180ms;
+html[data-kaji-first-visit] span.kaji-wordmark .wordmark-glyph:last-child {
+  animation-delay: 140ms;
 }
 
-html[data-kaji-first-visit] .overview-article .heading-container,
+html[data-kaji-first-visit] .overview-article .hero-title,
 html[data-kaji-first-visit] .overview-article > header .tagline {
   animation: home-enter 360ms var(--ease-out) both;
 }
 
-html[data-kaji-first-visit] .overview-article .heading-container {
+html[data-kaji-first-visit] .overview-article .hero-title {
   animation-delay: 120ms;
 }
 
 html[data-kaji-first-visit] .overview-article > header .tagline {
-  animation-delay: 220ms;
+  animation-delay: 200ms;
 }
 
 html[data-kaji-first-visit] .forged-underline::after {
@@ -1413,9 +1413,9 @@ html[data-kaji-first-visit] .forged-underline::before {
     transition-duration: 80ms !important;
   }
 
-  html[data-kaji-first-visit] .overview-article .heading-container,
+  html[data-kaji-first-visit] .overview-article .hero-title,
   html[data-kaji-first-visit] .overview-article > header .tagline,
-  html[data-kaji-first-visit] .kaji-wordmark .wordmark-glyph {
+  html[data-kaji-first-visit] span.kaji-wordmark .wordmark-glyph {
     animation-name: home-fade !important;
     animation-delay: 0ms !important;
     clip-path: none !important;
