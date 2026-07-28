@@ -32,6 +32,7 @@ const [
   recovery,
   pythonProject,
   typescriptPackage,
+  bunLock,
   featureTiers,
   pythonRegistry,
   typescriptRegistry,
@@ -55,6 +56,7 @@ const [
   read("apps/docs/content/integrations/recovery-v1.mdx"),
   read("kaji/pyproject.toml"),
   readJson("kaji/ts/package.json"),
+  read("bun.lock"),
   readJson("kaji/contracts/feature-tiers-v1.json"),
   readJson("kaji/src/kaji/integrations/registry/index.json"),
   readJson("kaji/ts/registry/index.json"),
@@ -240,12 +242,23 @@ for (const [path, source] of [
 }
 
 const nodeMajors = typescriptPackage.engines.node.match(/\d+/gu) ?? [];
-requireText(install, `Node.js ${nodeMajors.join(" or ")}`, "install runtime matrix");
-const typescriptCurrent = typescriptPackage.devDependencies.typescript.replace(/^[^\d]*/u, "");
+const normalizedInstall = install.replace(/\s+/gu, " ");
+for (const nodeMajor of nodeMajors) {
+  const runner = `ubuntu-${nodeMajor}.04`;
+  requireText(
+    normalizedInstall,
+    `| Node ${nodeMajor} | GitHub-hosted \`${runner}\`, Linux/x64, npm and Bun |`,
+    `install Node ${nodeMajor} ${runner} evidence cell`,
+  );
+}
+const typescriptLocked = bunLock.match(/^ {4}"typescript": \["typescript@([^"]+)"/mu)?.[1];
+if (typescriptLocked === undefined) {
+  fail("locked TypeScript compatibility version could not be read");
+}
 const typescript57 = typescriptPackage.devDependencies.typescript57.match(/@(.+)$/u)?.[1];
 if (typescript57 === undefined) fail("TypeScript 5.7 compatibility version could not be read");
 requireText(install, typescript57, "install compiler matrix");
-requireText(install, typescriptCurrent, "install compiler matrix");
+requireText(install, typescriptLocked, "install compiler matrix");
 for (const [name, range] of Object.entries(typescriptPackage.peerDependencies)) {
   if (name === "@anthropic-ai/sdk") continue;
   requireText(install, `${name} ${range}`, `install peer contract for ${name}`);
