@@ -7,20 +7,30 @@ npm may be written. This release publishes the TypeScript package only. The
 Python wheel and sdist remain protected build and compatibility evidence; PyPI
 publication is deferred.
 
-Only a signed beta tag accepted by the protected `kaji-beta` environment can
-advance to provider proof; registry authorization remains separate.
+Three protected environments have intentionally different authority:
 
-The two protected environments have intentionally different authority:
+- `kaji-beta-onboarding` protects only the deterministic TypeScript onboarding
+  aggregate. It receives no provider or registry secret. Its single deployment
+  is `typescript-onboarding-evidence`, after the unprotected archive calibration
+  has validated the same three current-run raw REST ZIP bodies.
+- `kaji-beta` protects mandatory keyed OpenAI proof in Python and TypeScript.
+  Configure `OPENAI_API_KEY` here only. It has no registry publisher authority.
+- `kaji-beta-publish` protects the sole final npm write. Its single deployment
+  is `publish-npm`, and only credentialed steps in that job receive
+  `NPM_TOKEN`. It must not contain a provider key.
 
-- `kaji-beta` permits mandatory keyed OpenAI proof in Python and TypeScript,
-  plus validation of the exact-commit five-user TTHW document. Configure
-  `OPENAI_API_KEY` and the raw redacted JSON document as
-  `KAJI_TTHW_EVIDENCE_JSON`; missing or invalid evidence blocks release. This
-  environment has no registry publisher authority.
-- `kaji-beta-publish` permits npm publication only. Its required reviewers
-  approve that registry write only after all preceding evidence is green. It
-  must not contain `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any other provider
-  key.
+Approve these environments separately and in that order. An onboarding
+approval cannot authorize provider proof or registry publication.
+
+The automated onboarding claim is deliberately narrow: the exact current-run
+tarball passed npm and Bun install, scaffold, no-key, deterministic Echo
+lifecycle, cold-run, and warm-run proofs on GitHub-hosted Linux/x64, with Node
+22 on `ubuntu-22.04` and Node 24 on `ubuntu-24.04`. It does not claim five
+human participants, macOS or arm64 onboarding, Windows onboarding, or fully
+offline dependency installation. The separate paired benchmark and soak
+receipts retain their own reviewed runner claims. The closed fields, exact
+archive bindings, and canonical executable snippets are documented in the
+[TypeScript onboarding evidence guide](typescript-onboarding-evidence.md).
 
 Protect `kaji-v*-beta.*` tags against update and deletion. Each tag must be an
 annotated Git tag with a verified signature and must target a commit directly.
@@ -52,22 +62,37 @@ Complete these once before creating the release tag:
    `Copyright 2026 Enkang Yuan`. Record each version's first-public-availability
    date in its changelog and release notes: that version becomes available
    under Apache-2.0 on the second anniversary of that date.
-4. Confirm `npm view kaji-sdk name --json --registry=https://registry.npmjs.org/`
-   returns `E404` immediately before tagging, then confirm
-   `npm whoami --registry=https://registry.npmjs.org/` returns the approved
-   `KAJI_NPM_PUBLISHER`. The first unscoped publication requires a short-lived
-   npm token authorized to create public packages, with 2FA bypass enabled when
-   the account policy requires it. Store it only as `NPM_TOKEN` in
-   `kaji-beta-publish`; after the first release, configure npm trusted publishing
-   for `kaji-sdk` and revoke the bootstrap token. npm exposes no non-mutating
-   check that proves a token may create a new unscoped package, so the protected
-   publisher remains the fail-closed authorization check.
-5. Configure `kaji-beta` with required reviewers and `OPENAI_API_KEY` as its
-   only provider key. Leave the final
-   `KAJI_TTHW_EVIDENCE_JSON` value unset until the tag-triggered workflow has
-   built the exact artifacts used by the five participants. Configure
-   `kaji-beta-publish` with separate required reviewers, `NPM_TOKEN`, and
-   `KAJI_NPM_PUBLISHER`; do not copy provider keys into it.
+4. Configure all three environments with required reviewer `enkyuan`,
+   `prevent_self_review=false`, and `can_admins_bypass=false`.
+   `kaji-beta-onboarding` and `kaji-beta` permit only `main` and
+   `kaji-v0.2.0-beta.9`; `kaji-beta-publish` permits only
+   `kaji-v0.2.0-beta.9`. Configure `OPENAI_API_KEY` only in `kaji-beta`, and
+   configure `KAJI_NPM_PUBLISHER` only for the final publisher boundary. Audit
+   the complete reviewer and custom branch-policy state without reading any
+   secret:
+
+   ```bash
+   uv run --project kaji --no-sync python \
+     kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
+   ```
+
+5. Confirm the exact first-publication registry state. The protected workflow
+   fails closed unless the stable `tiny-tarball@1.0.0` npm control is an exact
+   200 JSON document, the `kaji-sdk` packument is an exact 404 JSON object
+   `{"error":"Not found"}`, and the exact beta.9 endpoint is an exact 404 JSON
+   string `"Not Found"`. It binds every response to its original HTTPS URL,
+   forbids redirects, bounds the body, and requires a JSON content type. Do not
+   infer absence from npm CLI error text or a substring match. The PyPI beta
+   endpoint must independently return HTTP 404; that invariant is not
+   permission to publish Python.
+
+   The existing granular npm token has expired:
+   do not inspect, copy, test, or use it. Tag creation is blocked until the
+   operator explicitly confirms that a fresh `NPM_TOKEN` is stored only in
+   `kaji-beta-publish`. Do not run a local credential preflight. The protected
+   `publish-npm` job performs exact `npm whoami` equality with
+   `KAJI_NPM_PUBLISHER` as its first credentialed action and fails closed
+   before publication.
 6. Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL`. Performance jobs
    run on GitHub-hosted `macos-15` ARM64 and fail closed unless GitHub's runner
    classification, the actual host, and the image's `imagedata.json` agree.
@@ -105,152 +130,322 @@ later run is not acceptable evidence.
 
 ## Protected release
 
-1. Confirm npm `kaji-sdk@0.2.0-beta.8` is unused. Confirm PyPI
-   `kaji-sdk==0.2.0b1` is absent as a negative invariant; this workflow must not
-   create it.
-2. Before creating the tag, configure the required `kaji-beta` reviewer and
-   `OPENAI_API_KEY`. Leave `KAJI_TTHW_EVIDENCE_JSON` unset; remove any value from
-   a prior run because it cannot bind the artifact bytes that this run will
-   build. Keep the environment approval requirement enabled.
-3. Create and push the signed, annotated tag targeting the approved commit
-   directly:
+### Rehearse the exact reviewed `main`
+
+1. Set `REVIEWED_COMMIT` to the exact reviewed 40-lowercase-hex commit. Require
+   remote `main` to equal it, recheck npm beta.9 and PyPI absence, and audit all
+   three protected environments:
 
    ```bash
-   git tag -s -a kaji-v0.2.0-beta.8 <approved-commit> -m "Kaji 0.2.0 beta 8"
-   git push origin refs/tags/kaji-v0.2.0-beta.8
+   test "$(gh api repos/enkyuan/alloy/commits/main --jq .sha)" \
+     = "$REVIEWED_COMMIT"
+   uv run --project kaji --no-sync python \
+     kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
    ```
 
-4. Wait for the exact tag-triggered workflow run to upload
-   `kaji-beta-artifacts` and for every ungated job to pass: offline gates,
-   Python and Node compatibility, all three paired benchmark replicas and
-   their aggregate, and the separate 30-minute soak. Do not approve the waiting
-   `tthw-evidence` job yet. The `kaji-beta` approval is the safe pause that
-   permits the final secret to be created from the current run. Do not remove
-   the approval requirement.
-5. Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID,
-   not by a mutable branch or a same-named artifact from another run. In the
-   operator shell, set `RUN_ID` to that numeric tag-triggered workflow run ID,
-   then run:
+2. Dispatch the rehearsal at ref `main`; never dispatch a raw SHA:
 
    ```bash
-   set -euo pipefail
+   gh workflow run .github/workflows/kaji.rehearsal.yml \
+     --ref main \
+     --field expected-commit="$REVIEWED_COMMIT"
+   ```
+
+   Record the exact run ID, run attempt, `head_sha`, workflow path, workflow
+   SHA, and producer artifact ID/digest. Attempt must be 1, and every commit
+   value must equal `REVIEWED_COMMIT`.
+
+3. Wait for offline gates, Python and Node compatibility, all three paired
+   benchmark replicas and their aggregate, the 30-minute soak, and
+   `typescript-onboarding-archive-calibration`. The calibration must be
+   terminal success before `typescript-onboarding-evidence` becomes the sole
+   waiting deployment under `kaji-beta-onboarding`. Do not approve a run with
+   a failed calibration, a rerun, a mixed attempt, or any other waiting job.
+
+4. Query the complete current-run artifact collection. Resolve exactly one
+   unexpired `kaji-beta-artifacts`, `kaji-node-compat-22`, and
+   `kaji-node-compat-24`. Record each exact artifact ID and canonical
+   `sha256:<64 lowercase hex>` REST digest, then raw-download each ZIP by its
+   exact ID:
+
+   ```bash
    umask 077
-
-   : "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"
-   case "$RUN_ID" in
-     "" | *[!0-9]*)
-       echo "RUN_ID must be one numeric workflow run ID" >&2
-       exit 1
-       ;;
-   esac
-
-   ARTIFACT_ID="$(
-     gh api "repos/enkyuan/alloy/actions/runs/$RUN_ID/artifacts?per_page=100" \
-       --jq '.artifacts[] | select(.name == "kaji-beta-artifacts" and .expired == false) | .id'
-   )"
-   case "$ARTIFACT_ID" in
-     "" | *[!0-9]*)
-       echo "expected exactly one numeric kaji-beta-artifacts ID" >&2
-       exit 1
-       ;;
-   esac
-
-   EVIDENCE_ROOT="$(mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX")"
-   ARTIFACTS_DIR="$EVIDENCE_ROOT/artifacts"
-   ARCHIVE="$EVIDENCE_ROOT/kaji-beta-artifacts.zip"
-   mkdir -m 700 "$ARTIFACTS_DIR"
-   gh api "repos/enkyuan/alloy/actions/artifacts/$ARTIFACT_ID/zip" \
-     >"$ARCHIVE"
-   unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"
+   EVIDENCE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kaji-beta9.XXXXXX")"
+   gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+     "repos/enkyuan/alloy/actions/runs/$REHEARSAL_RUN_ID/artifacts?per_page=100" \
+     >"$EVIDENCE_ROOT/artifacts.json"
+   gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+     "repos/enkyuan/alloy/actions/artifacts/$PRODUCER_ARTIFACT_ID/zip" \
+     >"$EVIDENCE_ROOT/producer.zip"
+   gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+     "repos/enkyuan/alloy/actions/artifacts/$NODE22_ARTIFACT_ID/zip" \
+     >"$EVIDENCE_ROOT/node22.zip"
+   gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+     "repos/enkyuan/alloy/actions/artifacts/$NODE24_ARTIFACT_ID/zip" \
+     >"$EVIDENCE_ROOT/node24.zip"
    ```
 
-   Confirm the query returned one ID and record both IDs with the private
-   operator evidence. Keep the fresh owner-only directory until release
-   evidence is complete; verify its downloaded manifest and all three artifacts
-   before distributing them.
+   Resolve the IDs and digests from the complete collection and three by-ID
+   responses; do not use name-only downloads. Do not extract and re-zip these
+   inputs. The helper authenticates the exact raw ZIP bytes against their REST
+   digests and recomputes the two-cell aggregate.
 
-6. After the Python and Node compatibility jobs finish, download the exact
-   final `kaji-python-compat-3.14` and `kaji-node-compat-24` artifacts by their
-   artifact IDs from this same `RUN_ID`. Extract them into distinct owner-only
-   directories, set `RUN_ATTEMPT` to this run's current attempt, and verify both
-   receipts contain the exact run URL and attempt. Do not download an
-   `*-initial` artifact. Generate five candidate-bound participant skeletons
-   from the manifest and artifact directory, collect the five real arm64 macOS
-   runs, and let the composer derive Python-wheel and Node npm/Bun timings from
-   those two closed receipts by following
-   [the TTHW evidence operator guide](tthw-evidence.md). Python 3.11, Node 22,
-   and the Python sdist timing remain secondary compatibility evidence. Prior
-   release, rehearsal, and performance artifacts are invalid substitutes;
-   rehearsal evidence is never publication proof.
-7. Use the approval helper for the exact validate → attempt-1 remote preflight
-   → secret metadata snapshot → secret set-time/freshness check → repeated
-   identical remote preflight → unchanged-secret metadata recheck →
-   exact-deployment approval/response transaction:
+5. Run the approved helper first without `--approve`. This is the complete
+   read-only rehearsal audit and dry run:
 
    ```bash
-   uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py \
-     --run-id "$RUN_ID" \
-     --evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json" \
-     --release-manifest "$ARTIFACTS_DIR/manifest.json" \
-     --artifacts-dir "$ARTIFACTS_DIR" \
-     --python-compatibility-receipt \
-       "$PYTHON_COMPAT_DIR/compatibility-receipt.json" \
-     --node-compatibility-receipt \
-       "$NODE_COMPAT_DIR/compatibility-receipt.json" \
-     --approve
+   uv run --project kaji --no-sync python \
+     kaji/scripts/approve_typescript_onboarding_gate.py gate \
+     --mode rehearsal \
+     --run-id "$REHEARSAL_RUN_ID" \
+     --expected-commit "$REVIEWED_COMMIT" \
+     --producer-archive "$EVIDENCE_ROOT/producer.zip" \
+     --producer-artifact-id "$PRODUCER_ARTIFACT_ID" \
+     --producer-artifact-digest "$PRODUCER_ARTIFACT_DIGEST" \
+     --node22-archive "$EVIDENCE_ROOT/node22.zip" \
+     --node22-artifact-id "$NODE22_ARTIFACT_ID" \
+     --node22-artifact-digest "$NODE22_ARTIFACT_DIGEST" \
+     --node24-archive "$EVIDENCE_ROOT/node24.zip" \
+     --node24-artifact-id "$NODE24_ARTIFACT_ID" \
+     --node24-artifact-digest "$NODE24_ARTIFACT_DIGEST"
    ```
 
-   Do not set `KAJI_TTHW_EVIDENCE_JSON` separately and do not approve
-   `tthw-evidence` manually or in the Actions UI. The helper sends the exact
-   newline-free validated file bytes to the environment secret through stdin
-   and rejects terminal CR/LF bytes that GitHub CLI would remove. It requires
-   the secret timestamp to change and be fresh for this set operation at the
-   GitHub API's second precision. It then rechecks that the exact attempt-1 TTHW
-   job is the sole waiting job in the run, the complete protected
-   reviewer/custom branch-policy configuration and exact tag-policy identity,
-   and the sole pending `kaji-beta` deployment snapshot. Immediately before
-   approving, it confirms the complete post-set secret metadata snapshot is
-   still unchanged; the approval response must contain exactly one deployment
-   for the candidate commit, tag, and `kaji-beta`. Omitting `--approve`
-   performs the complete local and remote preflight without changing state.
-   Protected environment secrets are read when the job starts, so it validates
-   the value just set against the current run's downloaded manifest, wheel,
-   sdist, and npm tarball. After it passes, approve the downstream provider
-   proof under
-   `kaji-beta` if prompted; `OPENAI_API_KEY` must complete a normalized tool
-   loop in Python and TypeScript. Missing-key hygiene is not release evidence.
-   Anthropic and other experimental/WIP provider credentials are neither
-   required nor accepted as substitutes for this proof.
-   `kaji-beta-publish` remains a separate approval boundary and is not approved
-   at this stage.
-8. Review the exact manifest, checksums, offline summary, provider status,
-   paired benchmark, soak, SBOM, and provenance evidence. The first
-   `kaji-beta-publish` approval runs a non-mutating publisher preflight. It
-   requires `NPM_TOKEN`, requires `KAJI_NPM_PUBLISHER` to match `npm whoami`,
-   and verifies existing `kaji-sdk` write access when the package already
-   exists. For the first publication it instead requires an unambiguous `E404`
-   for the unscoped package name and records that npm cannot prove new-package
-   write authorization without performing the protected publication.
-9. After publisher preflight passes, approve the npm publisher under
-   `kaji-beta-publish`. It revalidates the artifact manifest, reverifies the
-   same signed tag object/direct commit, and rechecks that `npm whoami` still
-   matches `KAJI_NPM_PUBLISHER` in the publication step immediately before the
-   registry write. There is no Python publisher job.
-10. The workflow records a final npm publication status. After the publisher
-    reports success, the npm registry byte verifier makes at most 45 attempts
-    with exponential delays starting at 2 seconds and capped at 20 seconds (830
-    seconds of total scheduled backoff). The npm registry polling subprocess
-    has a 20-minute outer cap that includes those delays and its bounded
-    verification work. It requires PyPI to remain absent, downloads and hashes
-    the npm tarball, and verifies npm integrity, signature, provenance, and
-    GitHub attestation metadata. Only the explicit `npm_byte_verified` terminal
-    is success; `npm_only` remains an incident in the default dual-registry
-    state model.
-    It attaches the exact npm tarball, manifest, checksums, offline test
-    evidence, provider/performance evidence, SPDX SBOM, provenance bundle,
-    attestation ID and URL, and publication status to the GitHub prerelease.
-    The Python wheel and sdist remain retained Actions evidence and are not
-    public release assets.
+   Only after that command succeeds, rerun the identical command with
+   `--approve` appended. The helper stable-reads the archives, repeats the
+   complete local and 13-GET remote snapshot, requires unchanged state, and
+   approves exactly the sole `kaji-beta-onboarding` deployment. Do not approve
+   onboarding manually in the Actions UI. A failure after the approval POST is
+   ambiguous; do not retry it or rerun the workflow.
+
+6. Require the protected onboarding aggregate and its retained
+   `status.json`, `validation.log`, and
+   `typescript-onboarding-evidence.json` to pass. Approve the later, distinct
+   `kaji-beta` deployment separately. The keyed provider proof must complete a
+   normalized OpenAI tool loop in Python and TypeScript; missing-key hygiene is
+   not provider evidence.
+
+7. Wait for terminal-green candidate evidence and independently select the
+   exact `kaji-beta-artifacts` and `kaji-release-candidate-evidence` IDs,
+   names, canonical REST digests, manifest hash, and npm tarball hash. Download
+   and verify both artifacts by exact ID. These immutable rehearsal identities,
+   not a later rebuild or same-named artifact, form the tag authorization.
+
+### Bind the signed beta.9 tag to the rehearsal
+
+The authorization object has no optional or extra fields. Serialize it with
+recursively lexicographically sorted keys, compact `,`/`:` separators, ASCII
+JSON, and exactly one terminal LF:
+
+```json
+{"candidateArtifact":{"digest":"sha256:<64 lowercase hex>","id":456,"name":"kaji-beta-artifacts"},"commit":"<40 lowercase hex>","evidenceArtifact":{"digest":"sha256:<64 lowercase hex>","id":789,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.9.tgz","sha256":"<64 lowercase hex>"},"rehearsal":{"runAttempt":1,"runId":123,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<same commit>"},"releaseManifestSha256":"<64 lowercase hex>","schemaVersion":"1.0.0"}
+```
+
+The exact message is that one compact line plus one LF, with no CR, BOM,
+leading/trailing space, second LF, or signature text. Hash those exact message
+bytes, including the LF, as the authorization SHA-256. Require the commit and
+workflow SHA to equal `REVIEWED_COMMIT`, run attempt 1, distinct positive-safe
+artifact IDs, fixed artifact names, and the exact beta.9 tarball name.
+
+Stop here until the operator explicitly confirms a fresh `NPM_TOKEN` is stored
+only in `kaji-beta-publish`. Do not inspect or test the secret. After that
+confirmation and one final registry/tag/main/environment recheck, write the
+exact authorization bytes to `AUTHORIZATION_FILE`.
+
+Validate the file before signing. This rejects CR, BOM, NUL, tabs, non-ASCII,
+multiple lines, a missing or second terminal LF, non-JSON input, and any
+serialization other than recursively sorted compact JSON:
+
+```bash
+set -euo pipefail
+: "${AUTHORIZATION_FILE:?set the exact authorization-message path}"
+: "${REVIEWED_COMMIT:?set the exact rehearsed commit}"
+
+AUTHORIZATION_SHA256="$(
+  uv run --project kaji --no-sync python - "$AUTHORIZATION_FILE" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+raw = Path(sys.argv[1]).read_bytes()
+if not raw or len(raw) > 2_048:
+    raise SystemExit("authorization must contain 1..2048 bytes")
+if raw.count(b"\n") != 1 or not raw.endswith(b"\n"):
+    raise SystemExit("authorization must be one line with exactly one terminal LF")
+if b"\r" in raw or b"\0" in raw or b"\t" in raw or raw.startswith(b"\xef\xbb\xbf"):
+    raise SystemExit("authorization contains a forbidden byte")
+try:
+    text = raw.decode("ascii")
+except UnicodeDecodeError as error:
+    raise SystemExit("authorization must be ASCII") from error
+
+def reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number: {value}")
+
+try:
+    value = json.loads(text[:-1], parse_constant=reject_constant)
+except (json.JSONDecodeError, ValueError) as error:
+    raise SystemExit("authorization is not strict JSON") from error
+if type(value) is not dict:
+    raise SystemExit("authorization root must be an object")
+canonical = (
+    json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    + "\n"
+).encode("ascii")
+if canonical != raw:
+    raise SystemExit("authorization bytes are not canonical compact JSON plus LF")
+print(hashlib.sha256(raw).hexdigest())
+PY
+)"
+
+TAG=kaji-v0.2.0-beta.9
+git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE" \
+  "$TAG" "$REVIEWED_COMMIT"
+```
+
+The local tag is not yet authorized for push. Read its raw annotated-tag
+object, require the frozen four-header/direct-commit shape and exactly one
+supported GPG or SSH signature-begin marker, and compare the signature-bound
+message bytes before that marker byte-for-byte with the unchanged
+`AUTHORIZATION_FILE`:
+
+```bash
+set -euo pipefail
+: "${TAG:?create the local beta.9 tag first}"
+: "${AUTHORIZATION_FILE:?retain the exact authorization-message path}"
+: "${AUTHORIZATION_SHA256:?retain the validated authorization digest}"
+
+uv run --project kaji --no-sync python - \
+  "$TAG" "$REVIEWED_COMMIT" "$AUTHORIZATION_FILE" \
+  "$AUTHORIZATION_SHA256" <<'PY'
+import hashlib
+from pathlib import Path
+import subprocess
+import sys
+
+tag, commit, authorization_path, expected_sha256 = sys.argv[1:]
+authorization = Path(authorization_path).read_bytes()
+if hashlib.sha256(authorization).hexdigest() != expected_sha256:
+    raise SystemExit("authorization file changed after canonical validation")
+
+tag_object = subprocess.run(
+    ["git", "cat-file", "tag", tag],
+    check=True,
+    stdout=subprocess.PIPE,
+).stdout
+headers, separator, body_and_signature = tag_object.partition(b"\n\n")
+if separator != b"\n\n":
+    raise SystemExit("annotated tag lacks one header/body separator")
+header_lines = headers.split(b"\n")
+expected_prefix = [
+    f"object {commit}".encode("ascii"),
+    b"type commit",
+    f"tag {tag}".encode("ascii"),
+]
+if (
+    len(header_lines) != 4
+    or header_lines[:3] != expected_prefix
+    or not header_lines[3].startswith(b"tagger ")
+):
+    raise SystemExit("annotated tag headers do not bind the direct commit")
+
+formats = (
+    (
+        b"-----BEGIN PGP SIGNATURE-----\n",
+        b"-----END PGP SIGNATURE-----\n",
+    ),
+    (
+        b"-----BEGIN SSH SIGNATURE-----\n",
+        b"-----END SSH SIGNATURE-----\n",
+    ),
+)
+marker_count = sum(body_and_signature.count(begin) for begin, _ in formats)
+matches = [(begin, end) for begin, end in formats if begin in body_and_signature]
+if marker_count != 1 or len(matches) != 1:
+    raise SystemExit("tag must contain exactly one supported GPG/SSH signature")
+begin, end = matches[0]
+marker_offset = body_and_signature.index(begin)
+signed_message = body_and_signature[:marker_offset]
+signature = body_and_signature[marker_offset:]
+if signed_message != authorization:
+    raise SystemExit("signed tag message differs from AUTHORIZATION_FILE")
+if signature.count(begin) != 1 or signature.count(end) != 1 or not signature.endswith(end):
+    raise SystemExit("tag signature armor is malformed or has trailing bytes")
+PY
+
+git verify-tag "$TAG"
+git push origin "refs/tags/$TAG"
+```
+
+This mirrors the publish verifier's use of GitHub's signature-bound
+`verification.payload`: the local raw tag object before its signature armor is
+the four headers, one blank separator, and the exact authorization message.
+Never use a broad free-form `-m` tag message. Never move, delete, recreate, or
+reuse this tag after it is pushed.
+
+### Approve the tag-triggered publish gates
+
+1. Require the publish run to be attempt 1 and bound to the exact tag object,
+   peeled commit, signed authorization digest, rehearsal run, and signed
+   candidate/evidence IDs and digests. The workflow parses only GitHub's
+   verified, valid `verification.payload`, never the tag API's message field.
+   Its offline gate rebuild must byte-match the signed rehearsal npm tarball;
+   only signed rehearsal bytes may populate the current carrier.
+
+2. Wait for the current publish run's producer and Node 22/24 artifacts and
+   successful unprotected archive calibration. Raw-download all three exact
+   current-run ZIP bodies by artifact ID and record their canonical REST
+   digests exactly as in the rehearsal.
+
+3. Run the same helper without `--approve`, now with `--mode publish` and the
+   publish run's exact IDs, digests, and raw ZIPs:
+
+   ```bash
+   uv run --project kaji --no-sync python \
+     kaji/scripts/approve_typescript_onboarding_gate.py gate \
+     --mode publish \
+     --run-id "$PUBLISH_RUN_ID" \
+     --expected-commit "$REVIEWED_COMMIT" \
+     --producer-archive "$PUBLISH_EVIDENCE_ROOT/producer.zip" \
+     --producer-artifact-id "$PUBLISH_PRODUCER_ARTIFACT_ID" \
+     --producer-artifact-digest "$PUBLISH_PRODUCER_ARTIFACT_DIGEST" \
+     --node22-archive "$PUBLISH_EVIDENCE_ROOT/node22.zip" \
+     --node22-artifact-id "$PUBLISH_NODE22_ARTIFACT_ID" \
+     --node22-artifact-digest "$PUBLISH_NODE22_ARTIFACT_DIGEST" \
+     --node24-archive "$PUBLISH_EVIDENCE_ROOT/node24.zip" \
+     --node24-artifact-id "$PUBLISH_NODE24_ARTIFACT_ID" \
+     --node24-artifact-digest "$PUBLISH_NODE24_ARTIFACT_DIGEST"
+   ```
+
+   After the dry run succeeds, rerun the identical command with `--approve`
+   appended. Require the protected onboarding aggregate to finish terminal
+   green, then approve the later `kaji-beta` keyed-provider deployment
+   separately.
+
+4. Review the exact manifest, checksums, offline summary, compatibility,
+   onboarding, provider, paired benchmark, soak, SBOM, provenance,
+   attestation, signed-source/rebuild/carrier, and registry-absence evidence.
+   Keep `kaji-beta-publish` unapproved until every upstream gate is terminal
+   green and fresh-token storage has already been explicitly confirmed.
+
+5. Approve the sole `kaji-beta-publish` deployment, `publish-npm`, exactly
+   once. There is no separate publisher deployment and no Python publisher.
+   Inside this job, exact `npm whoami` equality with `KAJI_NPM_PUBLISHER` is
+   the first credentialed action. The job then reverifies the signed tag,
+   authorization, rehearsal source artifacts, and current carrier immediately
+   before `npm publish --provenance`.
+
+6. Require the final status `npm_byte_verified`. The registry verifier
+   downloads the authoritative tarball by exact version and requires its raw
+   bytes, SHA-256, SRI, npm signature, provenance, and GitHub attestation to
+   match the frozen candidate. It also requires PyPI to remain absent. Only
+   then may the exact ordered 27 assets be attached to the GitHub prerelease;
+   Python wheel and sdist remain private Actions evidence.
 
 The GitHub prerelease step is safe to retry only after the npm publisher has
 succeeded: it reuses the existing prerelease, compares every existing asset's
@@ -274,20 +469,15 @@ is failure. Therefore:
   lookup as `partial_or_ambiguous`; preserve `kaji-beta-artifacts`,
   `kaji-offline-evidence`, `kaji-supply-chain-evidence`, and
   `kaji-publication-status` from that run before remediation.
-- Check the target npm version and the PyPI absence invariant exactly:
+- Check the exact npm version through its HTTPS registry endpoint and preserve
+  the bounded status, content type, effective URL, redirect count, and parsed
+  JSON body. Never classify a version from npm CLI error text. Independently
+  preserve the PyPI beta endpoint's HTTP status.
 
-  ```bash
-  test "$(
-    curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-      https://pypi.org/pypi/kaji-sdk/0.2.0b1/json
-  )" = 404
-  npm view kaji-sdk@0.2.0-beta.8 version --json --registry=https://registry.npmjs.org/
-  ```
-
-- If `registry-preflight` or `publisher-preflight` failed and the npm publisher
-  was skipped, the workflow records a no-publication status. Do not yank
-  or deprecate a pre-existing collision based on that run; investigate its
-  ownership and still choose a new npm beta version.
+- If `registry-preflight` failed and the npm publisher was skipped, the
+  workflow records a no-publication status. Do not yank or deprecate a
+  pre-existing collision based on that run; investigate its ownership and
+  still choose a new npm beta version.
 
 - If Python `0.2.0b1` exists, stop: an out-of-band publication violated this
   release target. Preserve the evidence and remediate it separately before
@@ -330,6 +520,18 @@ is failure. Therefore:
   remained absent. Never move, retry, approve, or add evidence to it, and
   never reuse its artifacts or
   participant receipts; recovery requires the new beta.8 attempt.
+- Treat `kaji-v0.2.0-beta.8` as a burned, immutable TTHW-input attempt.
+  Protected run `30296132900` at
+  `4dd04a1cf74927c4b3de31a1bd1db54a7b7c7a4e` passed exact tag and artifact
+  verification, Python and Node compatibility, all three raw paired replicas
+  and their aggregate, and the 30-minute soak. It then failed closed because
+  `KAJI_TTHW_EVIDENCE_JSON` was empty when the protected environment was
+  approved, so the required five-user TTHW validation did not start. Provider
+  proof, registry and publisher preflight, and npm publication were skipped;
+  npm and PyPI remained absent. Never move, retry, approve, or add evidence to
+  it, and never reuse its artifacts or participant receipts;
+  recovery requires the new beta.9 attempt. Obsolete same-commit rehearsal `30291287818` is
+  terminal cancelled and cannot be reused as beta.9 evidence.
 - Preserve the existing beta.2 signed tag and its history. Its original
   creation command is retained here only as a historical record; do not rerun
   it or move the tag:
@@ -367,45 +569,44 @@ asset digest, uploads only missing assets, and requires the final remote asset-
 name set to equal the desired set. Never delete, overwrite, or auto-replace a
 mismatch.
 
-## Human TTHW evidence
+## Automated TypeScript onboarding evidence
 
-Create the redacted evidence document only from the current tag-triggered
-release artifacts, then store it in the protected `kaji-beta` environment as
-`KAJI_TTHW_EVIDENCE_JSON` while the `tthw-evidence` job is waiting for approval.
-Both protected release workflows validate it with
-`kaji/scripts/validate_tthw_evidence.py` and retain `kaji-tthw-evidence`; they
-do not retain the document when validation fails. It must bind one 40-hex commit
-and release-manifest hash to exact wheel, sdist, and npm artifact names, sizes,
-versions, and SHA-256 values; automated Python/npm/Bun cold/warm timings; and
-exactly five distinct pseudonymous fresh-user runs on arm64 macOS split as two
-Python, two npm, and one Bun. Each participant receipt repeats the exact commit,
-manifest hash, measured macOS version, and artifact it installed: Python uses
-the wheel, while npm and Bun use the npm tarball.
-Configuration alone does not claim that the cohort passed; until that real
-evidence exists, TTHW is **unmeasured**.
-Prior release, rehearsal, and performance artifacts are invalid substitutes.
+Both protected workflows derive onboarding evidence only from the exact
+current-run `kaji-beta-artifacts`, `kaji-node-compat-22`, and
+`kaji-node-compat-24` raw REST ZIP bodies. Each archive is selected from the
+complete run collection, requeried by exact ID, checked for canonical name,
+digest, producer run, head commit, attempt 1, and non-expiration, then hashed
+before any member is read.
 
-Collect and compose it only through the
-[TTHW evidence operator guide](tthw-evidence.md). The guide provides the
-candidate-bound participant-template command, exact no-source Python/npm/Bun
-commands, required Echo tool-loop observations, canonical Python 3.14 and
-Node 24 compatibility-receipt derivation, and the atomic
-`compose_tthw_evidence.py` command. The composer rejects stale participant and
-workflow-attempt identity, derives timings, totals, and summary, and calls the
-same protected validator before writing owner-only output.
+The unprotected `typescript-onboarding-archive-calibration` job and the
+protected `typescript-onboarding-evidence` job independently repeat that
+lookup, byte authentication, validation, and aggregate recomputation.
+Calibration success is only a prerequisite and Actions diagnostic; the
+protected job does not trust calibration output.
 
-The validator recomputes median and maximum totals. No-key median must be under
-5 minutes and every run under 10; Echo median must be under 10 minutes and
-every run under 20. Retain clean/no-source attestations, toolchain versions,
-ordered step milliseconds, deterministic lifecycle assertions, redacted
-confusion/remediation, owner, review date, and follow-up date. Human
-attestations start false; final receipts must prove clean/no-source execution,
-monotonic timing, and the absence of failed, exhausted, or cancelled terminal
-events. Placeholder values are rejected. Each review must fall on or within
-seven days before the composer-owned `collectedDate`; the protected release
-validator rejects a collection date in the future or more than seven days old.
-The composed secret must not exceed 49,152 bytes.
-Repeat the protocol 30 days after publication.
+The aggregate has exactly two ordered cells:
+
+- Node 22 on GitHub-hosted Linux/x64 `ubuntu-22.04`;
+- Node 24 on GitHub-hosted Linux/x64 `ubuntu-24.04`.
+
+Each cell proves npm and Bun installation from the frozen npm tarball,
+scaffold initialization, a deterministic no-key run, the ordered Echo
+`requested` → `started` → `completed` lifecycle with exact result identity,
+and equal cold/warm terminal behavior. A failed, incomplete, mismatched,
+wrong-runner, wrong-runtime, byte-different, or cross-attempt receipt fails
+closed.
+
+The protected job retains exactly `status.json`, `validation.log`, and
+`typescript-onboarding-evidence.json` in
+`kaji-typescript-onboarding-evidence`. The same three files replace the prior
+onboarding assets one-for-one in provenance and in the 27-asset release
+contract. Calibration diagnostics remain Actions-only. No human receipt,
+environment secret, extracted-receipt input, or later same-named archive can
+substitute for these exact raw current-run sources.
+
+See the [TypeScript onboarding evidence guide](typescript-onboarding-evidence.md)
+for the exact two-cell claim boundary, retained fields, and unchanged
+installed-artifact Echo snippets.
 
 ## Immutable reference and paired candidate evidence
 

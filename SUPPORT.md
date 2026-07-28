@@ -19,4 +19,4 @@ The Kaji maintainer (`@enkyuan`) owns the 30-day post-publication DX review.
 The planning checkpoint is 2026-08-11, or exactly 30 days after publication if
 publication occurs later. During the beta window, the same owner runs a monthly
 friction audit on the first business day and records docs feedback, validated
-TTHW regressions, and follow-up dates in the issue tracker.
+automated-onboarding regressions, and follow-up dates in the issue tracker.

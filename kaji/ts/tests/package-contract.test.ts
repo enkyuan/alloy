@@ -22,14 +22,20 @@ import { describe, expect, it } from "vitest";
 
 import { assertCliListOutput } from "../scripts/cli_assertions";
 import {
+  assertClosedOrdinaryReceipt,
+  assertProtectedOrdinaryReceiptForWorkflow,
   elapsedMilliseconds,
   finalizeSmokeRun,
   ordinaryFailureReceipt,
   ordinarySuccessReceipt,
+  parseInstalledArtifactEchoEvidence,
+  protectedReceiptEnvironment,
   retainedSmokeToolVersion,
   safeGitHubProofFailureCode,
   SmokeCommandError,
+  type OrdinaryReceiptContext,
   type PendingSmokeReceipt,
+  type ScaffoldResult,
   type SmokeFinalizerDependencies,
 } from "../scripts/smoke_package.mts";
 
@@ -233,6 +239,81 @@ const GITHUB_PACKAGE_PROOF = {
 const typedGitHubPackageProof: Parameters<typeof ordinarySuccessReceipt>[6]["githubProof"] =
   GITHUB_PACKAGE_PROOF;
 
+function scaffoldResult(
+  manager: "npm" | "bun",
+  coldSetupToOutputMs: number,
+  warmRunMs: number,
+): ScaffoldResult {
+  return {
+    coldSetupToOutputMs,
+    warmRunMs,
+    githubProof: typedGitHubPackageProof,
+    onboardingProof: {
+      manager,
+      phases: {
+        artifactInstall: true,
+        scaffoldInit: true,
+        noKeyRun: true,
+        echoSetup: true,
+        echoRun: true,
+        coldRun: true,
+        warmRun: true,
+      },
+      assertions: {
+        noKeyText: "The mock provider has completed the tool loop.",
+        deterministicText: "The mock provider has completed the tool loop.",
+        turnIdPresent: true,
+        finalSequencePositive: true,
+        echoLifecycle: ["requested", "started", "completed"],
+        echoLifecycleCounts: { requested: 1, started: 1, completed: 1 },
+        echoToolCallIdentityCount: 1,
+        echoToolCallIdNonempty: true,
+        echoResult: { message: "hello" },
+        echoFinalText: "The mock provider has completed the tool loop.",
+        forbiddenTerminalEventsAbsent: true,
+        coldWarmEqual: true,
+      },
+    },
+  };
+}
+
+function localReceiptContext(commit: string | null): OrdinaryReceiptContext {
+  return {
+    executionMode: "local",
+    packageArtifact: {
+      name: "kaji-sdk-0.2.0-beta.9.tgz",
+      size: 4096,
+      sha256: "c".repeat(64),
+    },
+    producerArtifact: {
+      name: "local",
+      id: 0,
+      digest: "local",
+      runId: 0,
+      runAttempt: 0,
+      headSha: commit,
+    },
+    runner: {
+      configuredLabel: "local",
+      environment: "local",
+      runnerOS: "local",
+      runnerArch: "local",
+      platformOS: process.platform,
+      platformArch: process.arch,
+      imageOS: "local",
+      imageVersion: "local",
+    },
+    invocation: {
+      workflowRun: "local",
+      runId: 0,
+      runAttempt: 0,
+      workflowRef: "local",
+      workflowSha: commit,
+      job: "local",
+    },
+  };
+}
+
 const EXPECTED_PACKED_REGISTRY_FILES = [
   "registry/echo/index.ts",
   "registry/echo/manifest.json",
@@ -323,15 +404,16 @@ describe("npm contract artifact", () => {
         {
           commit: "a".repeat(40),
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-sdk-0.2.0-beta.8.tgz": "c".repeat(64) },
+          artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": "c".repeat(64) },
         },
-        "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+        "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
         "/tmp/node_modules/kaji-sdk",
         "v24.4.0",
         "11.4.2",
         "1.3.11",
-        { coldSetupToOutputMs: 11, warmRunMs: 2, githubProof: typedGitHubPackageProof },
-        { coldSetupToOutputMs: 13, warmRunMs: 3, githubProof: typedGitHubPackageProof },
+        scaffoldResult("npm", 11, 2),
+        scaffoldResult("bun", 13, 3),
+        localReceiptContext("a".repeat(40)),
       );
       finalizeSmokeRun("", { kind: "ordinary", output, receipt }, null);
 
@@ -363,9 +445,9 @@ describe("npm contract artifact", () => {
           {
             commit: "a".repeat(40),
             manifestSha256: "b".repeat(64),
-            artifactSha256: { "kaji-sdk-0.2.0-beta.8.tgz": "c".repeat(64) },
+            artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": "c".repeat(64) },
           },
-          "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+          "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
           "/tmp/node_modules/kaji-sdk",
           "v24.4.0",
           "11.4.2",
@@ -374,13 +456,504 @@ describe("npm contract artifact", () => {
             coldSetupToOutputMs: Number.MAX_SAFE_INTEGER + 1,
             warmRunMs: 2,
             githubProof: typedGitHubPackageProof,
+            onboardingProof: scaffoldResult("npm", 0, 0).onboardingProof,
           },
-          { coldSetupToOutputMs: 13, warmRunMs: 3, githubProof: typedGitHubPackageProof },
+          scaffoldResult("bun", 13, 3),
+          localReceiptContext("a".repeat(40)),
         ),
       ).toThrowError("retained scaffold timings must be nonnegative safe integers");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("closes protected Node receipts over runner, invocation, producer, and onboarding proof", () => {
+    const context: OrdinaryReceiptContext = {
+      executionMode: "protected",
+      packageArtifact: {
+        name: "kaji-sdk-0.2.0-beta.9.tgz",
+        size: 4096,
+        sha256: "c".repeat(64),
+      },
+      producerArtifact: {
+        name: "kaji-beta-artifacts",
+        id: 123,
+        digest: `sha256:${"d".repeat(64)}`,
+        runId: 456,
+        runAttempt: 1,
+        headSha: "a".repeat(40),
+      },
+      runner: {
+        configuredLabel: "ubuntu-24.04",
+        environment: "github-hosted",
+        runnerOS: "Linux",
+        runnerArch: "X64",
+        platformOS: "linux",
+        platformArch: "x64",
+        imageOS: "ubuntu24",
+        imageVersion: "20260720.1.0",
+      },
+      invocation: {
+        workflowRun: "https://github.com/enkyuan/alloy/actions/runs/456",
+        runId: 456,
+        runAttempt: 1,
+        workflowRef: "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+        workflowSha: "a".repeat(40),
+        job: "node-compat",
+      },
+    };
+    const receipt = ordinarySuccessReceipt(
+      {
+        commit: "a".repeat(40),
+        manifestSha256: "b".repeat(64),
+        artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": "c".repeat(64) },
+      },
+      "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
+      "/tmp/node_modules/kaji-sdk",
+      "v24.4.0",
+      "11.4.2",
+      "1.3.11",
+      scaffoldResult("npm", 11, 2),
+      scaffoldResult("bun", 13, 3),
+      context,
+    );
+
+    expect(receipt).toMatchObject({
+      schemaVersion: 2,
+      executionMode: "protected",
+      packageArtifact: {
+        name: "kaji-sdk-0.2.0-beta.9.tgz",
+        size: 4096,
+        sha256: "c".repeat(64),
+      },
+      producerArtifact: { id: 123, runId: 456, runAttempt: 1 },
+      runner: { configuredLabel: "ubuntu-24.04", imageOS: "ubuntu24" },
+      invocation: { runId: 456, workflowSha: "a".repeat(40) },
+      onboardingProofs: {
+        npm: { manager: "npm" },
+        bun: { manager: "bun" },
+      },
+    });
+    expect(() => assertClosedOrdinaryReceipt(receipt, "protected", context)).not.toThrow();
+
+    const rejectMutation = (mutate: (candidate: Record<string, any>) => void) => {
+      const candidate = structuredClone(receipt) as Record<string, any>;
+      mutate(candidate);
+      expect(() => assertClosedOrdinaryReceipt(candidate, "protected", context)).toThrow();
+    };
+    for (const key of Object.keys(receipt)) {
+      rejectMutation((candidate) => {
+        delete candidate[key];
+      });
+    }
+    rejectMutation((candidate) => {
+      candidate.extra = true;
+    });
+    for (const path of [
+      ["packageArtifact"],
+      ["producerArtifact"],
+      ["runner"],
+      ["invocation"],
+      ["runtime"],
+      ["artifacts"],
+      ["onboardingProofs"],
+      ["onboardingProofs", "npm"],
+      ["onboardingProofs", "bun"],
+      ["onboardingProofs", "npm", "phases"],
+      ["onboardingProofs", "bun", "phases"],
+      ["onboardingProofs", "npm", "assertions"],
+      ["onboardingProofs", "bun", "assertions"],
+      ["onboardingProofs", "npm", "assertions", "echoResult"],
+      ["onboardingProofs", "bun", "assertions", "echoResult"],
+      ["timings"],
+      ["timings", "npm"],
+      ["timings", "bun"],
+      ["toolchain"],
+    ] as const) {
+      const target = path.reduce<Record<string, any>>(
+        (current, key) => current[key] as Record<string, any>,
+        receipt as Record<string, any>,
+      );
+      for (const key of Object.keys(target)) {
+        rejectMutation((candidate) => {
+          const nested = path.reduce<Record<string, any>>(
+            (current, segment) => current[segment] as Record<string, any>,
+            candidate,
+          );
+          delete nested[key];
+        });
+      }
+      rejectMutation((candidate) => {
+        const nested = path.reduce<Record<string, any>>(
+          (current, segment) => current[segment] as Record<string, any>,
+          candidate,
+        );
+        nested.extra = true;
+      });
+    }
+
+    for (const mutate of [
+      (candidate: Record<string, any>) => (candidate.runner.environment = "self-hosted"),
+      (candidate: Record<string, any>) => (candidate.runner.configuredLabel = "ubuntu-22.04"),
+      (candidate: Record<string, any>) => (candidate.runner.runnerOS = "Windows"),
+      (candidate: Record<string, any>) => (candidate.runner.runnerArch = "ARM64"),
+      (candidate: Record<string, any>) => (candidate.runner.imageOS = "ubuntu22"),
+      (candidate: Record<string, any>) => (candidate.runner.imageVersion = ""),
+      (candidate: Record<string, any>) => (candidate.runtime.version = "v22.17.1"),
+      (candidate: Record<string, any>) => (candidate.toolchain.bun = "1.3.10"),
+      (candidate: Record<string, any>) => (candidate.invocation.workflowSha = "f".repeat(40)),
+      (candidate: Record<string, any>) => (candidate.invocation.workflowRun += "0"),
+      (candidate: Record<string, any>) => (candidate.invocation.runAttempt = 2),
+      (candidate: Record<string, any>) => (candidate.invocation.workflowRef = "wrong"),
+      (candidate: Record<string, any>) => (candidate.invocation.job = "other"),
+      (candidate: Record<string, any>) => (candidate.producerArtifact.id = 124),
+      (candidate: Record<string, any>) =>
+        (candidate.producerArtifact.digest = `sha256:${"e".repeat(64)}`),
+      (candidate: Record<string, any>) => (candidate.producerArtifact.runId = 457),
+      (candidate: Record<string, any>) => (candidate.producerArtifact.runAttempt = 2),
+      (candidate: Record<string, any>) => (candidate.producerArtifact.headSha = "f".repeat(40)),
+      (candidate: Record<string, any>) => (candidate.packageArtifact.size = 0),
+      (candidate: Record<string, any>) => (candidate.packageArtifact.sha256 = "f".repeat(64)),
+      (candidate: Record<string, any>) => (candidate.onboardingProofs.npm.phases.echoRun = false),
+      (candidate: Record<string, any>) =>
+        (candidate.onboardingProofs.bun.assertions.echoToolCallIdentityCount = 2),
+      (candidate: Record<string, any>) => {
+        candidate.githubPackageProofs = {
+          npm: { schemaVersion: 5 },
+          bun: { schemaVersion: 5 },
+        };
+      },
+      (candidate: Record<string, any>) => {
+        delete candidate.githubPackageProofs.npm.packageCatalog.tools;
+        delete candidate.githubPackageProofs.bun.packageCatalog.tools;
+      },
+      (candidate: Record<string, any>) => {
+        candidate.githubPackageProofs.npm.lifecycle.githubFailure.extra = true;
+        candidate.githubPackageProofs.bun.lifecycle.githubFailure.extra = true;
+      },
+      (candidate: Record<string, any>) =>
+        (candidate.onboardingProofs.npm.assertions.echoResult.message = "wrong"),
+      (candidate: Record<string, any>) =>
+        (candidate.onboardingProofs.bun.assertions.echoLifecycle = [
+          "requested",
+          "started",
+          "failed",
+        ]),
+      (candidate: Record<string, any>) =>
+        (candidate.onboardingProofs.npm.assertions.deterministicText = "wrong"),
+      (candidate: Record<string, any>) =>
+        (candidate.onboardingProofs.bun.assertions.coldWarmEqual = false),
+    ]) {
+      rejectMutation(mutate);
+    }
+
+    const failed = ordinaryFailureReceipt(
+      new SmokeCommandError("npm:cold-run", "exit"),
+      { protected: true, expectedCommit: "a".repeat(40) },
+      {
+        commit: "a".repeat(40),
+        manifestSha256: "b".repeat(64),
+        artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": "c".repeat(64) },
+      },
+      "v24.4.0",
+    );
+    expect(() => assertClosedOrdinaryReceipt(failed, "protected")).not.toThrow();
+    for (const conclusion of ["failed", "not_run"] as const) {
+      const workflowWritten = {
+        schemaVersion: 2,
+        executionMode: "protected",
+        commit: "a".repeat(40),
+        releaseManifestSha256: null,
+        artifactSha256: {},
+        runtime: { version: null },
+        artifacts: {},
+        githubPackageProofs: {},
+        onboardingProofs: {},
+        conclusion,
+        failureCode:
+          conclusion === "failed" ? "artifact_lookup_not_completed" : "compatibility_not_completed",
+        failedPhase: null,
+        failureKind: "unknown",
+      };
+      expect(() => assertClosedOrdinaryReceipt(workflowWritten, "protected")).not.toThrow();
+    }
+    for (const [key, claim] of [
+      ["onboardingProofs", { npm: scaffoldResult("npm", 1, 1).onboardingProof }],
+      ["githubPackageProofs", { npm: typedGitHubPackageProof }],
+      ["timings", { npm: { coldSetupToOutputMs: 1, warmRunMs: 1 } }],
+      ["toolchain", { node: "v24.4.0" }],
+      ["packageArtifact", { name: "kaji-sdk-0.2.0-beta.9.tgz" }],
+    ] as const) {
+      const candidate = structuredClone(failed) as Record<string, unknown>;
+      candidate[key] = claim;
+      expect(() => assertClosedOrdinaryReceipt(candidate, "protected")).toThrow();
+    }
+  });
+
+  it("requires every reviewed GitHub and runner variable in protected mode", () => {
+    const environment: NodeJS.ProcessEnv = {
+      GITHUB_ACTIONS: "true",
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_REPOSITORY: "enkyuan/alloy",
+      GITHUB_RUN_ID: "456",
+      GITHUB_RUN_ATTEMPT: "1",
+      GITHUB_JOB: "node-compat",
+      GITHUB_WORKFLOW_REF: "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+      GITHUB_WORKFLOW_SHA: "a".repeat(40),
+      GITHUB_SHA: "a".repeat(40),
+      RUNNER_ENVIRONMENT: "github-hosted",
+      RUNNER_OS: "Linux",
+      RUNNER_ARCH: "X64",
+      ImageOS: "ubuntu24",
+      ImageVersion: "20260720.1.0",
+    };
+    expect(protectedReceiptEnvironment(environment)).toEqual(environment);
+    for (const name of Object.keys(environment)) {
+      const missing = { ...environment };
+      delete missing[name];
+      expect(() => protectedReceiptEnvironment(missing), name).toThrowError(
+        `protected package smoke is missing ${name}`,
+      );
+    }
+    for (const mutate of [
+      (candidate: NodeJS.ProcessEnv) => (candidate.GITHUB_SERVER_URL = "https://example.invalid"),
+      (candidate: NodeJS.ProcessEnv) => (candidate.GITHUB_REPOSITORY = "other/repo"),
+      (candidate: NodeJS.ProcessEnv) => (candidate.GITHUB_RUN_ATTEMPT = "2"),
+      (candidate: NodeJS.ProcessEnv) =>
+        (candidate.GITHUB_WORKFLOW_REF =
+          "other/repo/.github/workflows/kaji.rehearsal.yml@refs/heads/main"),
+      (candidate: NodeJS.ProcessEnv) => (candidate.GITHUB_JOB = "other"),
+    ]) {
+      const hostile = { ...environment };
+      mutate(hostile);
+      expect(() => protectedReceiptEnvironment(hostile)).toThrow();
+    }
+  });
+
+  it("uses the production workflow finalizer path with exact trusted inputs and bytes", () => {
+    const root = mkdtempSync(join(tmpdir(), "kaji-protected-receipt-review-"));
+    const tarball = join(root, "kaji-sdk-0.2.0-beta.9.tgz");
+    const bytes = Buffer.from("reviewed candidate package bytes");
+    writeFileSync(tarball, bytes);
+    const packageSha256 = createHash("sha256").update(bytes).digest("hex");
+    const commit = "a".repeat(40);
+    const reviewInput = {
+      packageArtifactPath: tarball,
+      expectedCommit: commit,
+      expectedNodeMajor: "24",
+      configuredRunnerLabel: "ubuntu-24.04",
+      producerArtifactId: "123",
+      producerArtifactDigest: "d".repeat(64),
+      githubServerUrl: "https://github.com",
+      githubRepository: "enkyuan/alloy",
+      githubRunId: "456",
+      githubRunAttempt: "1",
+      githubWorkflowRef: "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+      githubWorkflowSha: commit,
+      githubJob: "node-compat",
+      runnerEnvironment: "github-hosted",
+      runnerOS: "Linux",
+      runnerArch: "X64",
+      platformOS: "linux",
+      platformArch: "x64",
+      imageOS: "ubuntu24",
+      imageVersion: "20260720.1.0",
+    };
+    const context: OrdinaryReceiptContext = {
+      executionMode: "protected",
+      packageArtifact: {
+        name: "kaji-sdk-0.2.0-beta.9.tgz",
+        size: bytes.length,
+        sha256: packageSha256,
+      },
+      producerArtifact: {
+        name: "kaji-beta-artifacts",
+        id: 123,
+        digest: `sha256:${"d".repeat(64)}`,
+        runId: 456,
+        runAttempt: 1,
+        headSha: commit,
+      },
+      runner: {
+        configuredLabel: "ubuntu-24.04",
+        environment: "github-hosted",
+        runnerOS: "Linux",
+        runnerArch: "X64",
+        platformOS: "linux",
+        platformArch: "x64",
+        imageOS: "ubuntu24",
+        imageVersion: "20260720.1.0",
+      },
+      invocation: {
+        workflowRun: "https://github.com/enkyuan/alloy/actions/runs/456",
+        runId: 456,
+        runAttempt: 1,
+        workflowRef: "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+        workflowSha: commit,
+        job: "node-compat",
+      },
+    };
+    try {
+      const receipt = ordinarySuccessReceipt(
+        {
+          commit,
+          manifestSha256: "b".repeat(64),
+          artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": packageSha256 },
+        },
+        tarball,
+        "/tmp/node_modules/kaji-sdk",
+        "v24.4.0",
+        "11.4.2",
+        "1.3.11",
+        scaffoldResult("npm", 11, 2),
+        scaffoldResult("bun", 13, 3),
+        context,
+      );
+      expect(() => assertProtectedOrdinaryReceiptForWorkflow(receipt, reviewInput)).not.toThrow();
+
+      for (const mutate of [
+        (candidate: Record<string, any>) => (candidate.packageArtifact.size = 1),
+        (candidate: Record<string, any>) => (candidate.packageArtifact.sha256 = "e".repeat(64)),
+        (candidate: Record<string, any>) => (candidate.producerArtifact.id = 999),
+        (candidate: Record<string, any>) =>
+          (candidate.producerArtifact.digest = `sha256:${"e".repeat(64)}`),
+        (candidate: Record<string, any>) => {
+          candidate.producerArtifact.runAttempt = 2;
+          candidate.invocation.runAttempt = 2;
+        },
+        (candidate: Record<string, any>) => {
+          candidate.invocation.workflowRun = "https://example.invalid/other/repo/actions/runs/456";
+          candidate.invocation.workflowRef =
+            "other/repo/.github/workflows/kaji.rehearsal.yml@refs/heads/main";
+        },
+      ]) {
+        const candidate = structuredClone(receipt) as Record<string, any>;
+        mutate(candidate);
+        expect(() => assertProtectedOrdinaryReceiptForWorkflow(candidate, reviewInput)).toThrow();
+      }
+
+      for (const mutate of [
+        (candidate: Record<string, any>) => (candidate.toolchain.npm = "latest"),
+        (candidate: Record<string, any>) => (candidate.toolchain.npm = "01.2.3"),
+        (candidate: Record<string, any>) => (candidate.toolchain.npm = "1.2.3\n"),
+        (candidate: Record<string, any>) => (candidate.toolchain.npm = `1.2.3+${"a".repeat(75)}`),
+        (candidate: Record<string, any>) => (candidate.toolchain.typescript = "5.7.3 and 9.9.9"),
+        (candidate: Record<string, any>) => {
+          candidate.githubPackageProofs.npm.typescriptDeclarationChecks.typescriptCurrent.version =
+            "01.2.3";
+          candidate.githubPackageProofs.bun.typescriptDeclarationChecks.typescriptCurrent.version =
+            "01.2.3";
+          candidate.toolchain.typescript = "5.7.3 and 01.2.3";
+        },
+        (candidate: Record<string, any>) => {
+          candidate.githubPackageProofs.npm.typescriptDeclarationChecks.typescriptCurrent.version =
+            "9.9.9";
+          candidate.githubPackageProofs.bun.typescriptDeclarationChecks.typescriptCurrent.version =
+            "9.9.9";
+        },
+      ]) {
+        const candidate = structuredClone(receipt) as Record<string, any>;
+        mutate(candidate);
+        expect
+          .soft(() => assertProtectedOrdinaryReceiptForWorkflow(candidate, reviewInput))
+          .toThrow();
+      }
+      for (const field of Object.keys(receipt.toolchain as Record<string, unknown>)) {
+        const candidate = structuredClone(receipt) as Record<string, any>;
+        candidate.toolchain[field] = "a".repeat(81);
+        expect
+          .soft(() => assertProtectedOrdinaryReceiptForWorkflow(candidate, reviewInput))
+          .toThrow();
+      }
+
+      writeFileSync(tarball, "substituted package bytes");
+      expect(() => assertProtectedOrdinaryReceiptForWorkflow(receipt, reviewInput)).toThrow();
+      writeFileSync(tarball, bytes);
+      for (const mutateInput of [
+        { githubServerUrl: "https://example.invalid" },
+        { githubRepository: "other/repo" },
+        { githubRunAttempt: "2" },
+        { producerArtifactDigest: `sha256:${"d".repeat(64)}` },
+        {
+          githubWorkflowRef: "other/repo/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+        },
+        { githubWorkflowSha: "f".repeat(40) },
+      ]) {
+        expect(() =>
+          assertProtectedOrdinaryReceiptForWorkflow(receipt, {
+            ...reviewInput,
+            ...mutateInput,
+          }),
+        ).toThrow();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("parses observed Echo evidence from the single installed-artifact execution", () => {
+    const evidence = {
+      schemaVersion: 1,
+      lifecycleEvents: [
+        { stage: "requested", toolCallId: "call-1", result: null },
+        { stage: "started", toolCallId: "call-1", result: null },
+        { stage: "completed", toolCallId: "call-1", result: { message: "hello" } },
+      ],
+      finalText: "The mock provider has completed the tool loop.",
+      turnId: "turn-1",
+      finalSequence: 4,
+      forbiddenTerminalEventCount: 0,
+    };
+    const output = (document: unknown) =>
+      "PASS: echo requested, started, completed, and observed\n" +
+      `KAJI_ECHO_EVIDENCE:${JSON.stringify(document)}`;
+    expect(parseInstalledArtifactEchoEvidence(output(evidence))).toEqual({
+      turnIdPresent: true,
+      finalSequencePositive: true,
+      echoLifecycle: ["requested", "started", "completed"],
+      echoLifecycleCounts: { requested: 1, started: 1, completed: 1 },
+      echoToolCallIdentityCount: 1,
+      echoToolCallIdNonempty: true,
+      echoResult: { message: "hello" },
+      echoFinalText: "The mock provider has completed the tool loop.",
+      forbiddenTerminalEventsAbsent: true,
+    });
+    for (const mutate of [
+      (candidate: Record<string, any>) =>
+        candidate.lifecycleEvents.push(candidate.lifecycleEvents[0]),
+      (candidate: Record<string, any>) => (candidate.lifecycleEvents[0].toolCallId = ""),
+      (candidate: Record<string, any>) => (candidate.lifecycleEvents[1].toolCallId = "call-2"),
+      (candidate: Record<string, any>) =>
+        (candidate.lifecycleEvents[2].result = { message: "wrong" }),
+      (candidate: Record<string, any>) => (candidate.finalText = "invented"),
+      (candidate: Record<string, any>) => (candidate.turnId = ""),
+      (candidate: Record<string, any>) => (candidate.finalSequence = 0),
+      (candidate: Record<string, any>) => (candidate.forbiddenTerminalEventCount = 1),
+    ]) {
+      const candidate = structuredClone(evidence) as Record<string, any>;
+      mutate(candidate);
+      expect(() => parseInstalledArtifactEchoEvidence(output(candidate))).toThrow();
+    }
+  });
+
+  it("rejects a reordered observed Echo lifecycle before claiming the exact tuple", () => {
+    const reordered = {
+      schemaVersion: 1,
+      lifecycleEvents: [
+        { stage: "completed", toolCallId: "call-1", result: { message: "hello" } },
+        { stage: "started", toolCallId: "call-1", result: null },
+        { stage: "requested", toolCallId: "call-1", result: null },
+      ],
+      finalText: "The mock provider has completed the tool loop.",
+      turnId: "turn-1",
+      finalSequence: 4,
+      forbiddenTerminalEventCount: 0,
+    };
+    const output =
+      "PASS: echo requested, started, completed, and observed\n" +
+      `KAJI_ECHO_EVIDENCE:${JSON.stringify(reordered)}`;
+
+    expect(() => parseInstalledArtifactEchoEvidence(output)).toThrow();
   });
 
   it("pins the installed-release consumer dependency closure", () => {
@@ -390,9 +963,9 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.8.tgz");
-    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.8");
-    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.8.tgz");
+    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.9.tgz");
+    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.9");
+    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.9.tgz");
     expect(manifest.dependencies["kaji-sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
@@ -658,7 +1231,7 @@ describe("npm contract artifact", () => {
       "warmRunMs",
       "const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint())",
       "const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint())",
-      "return { coldSetupToOutputMs, warmRunMs, githubProof };",
+      "onboardingProof: {",
       "JSON.stringify({ npm: npmTiming, bun: bunTiming })",
       "assertRootDeclarationsVendorNeutral",
       'generated.devDependencies["@types/node"]',
@@ -697,6 +1270,9 @@ describe("npm contract artifact", () => {
       'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
       'writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE)',
       "githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof }",
+      "parseInstalledArtifactEchoEvidence",
+      "echoLifecycleCounts",
+      "echoToolCallIdNonempty",
       "const typescriptDeclarationChecks = await compileInstalledGitHubTypes(manager, generated)",
       "assertCliListOutput(listOutput)",
       "assertCliReplayOutput(replayOutput)",
@@ -772,6 +1348,7 @@ describe("npm contract artifact", () => {
     expect(source).not.toContain(
       'const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));',
     );
+    expect(source).not.toContain('echoFinalText: "The echo tool returned hello."');
     expect(source).not.toContain("node_modules/kaji-sdk/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
     const expectedIntegrationExportList =
@@ -956,7 +1533,7 @@ describe("npm contract artifact", () => {
       identity: {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-sdk-0.2.0-beta.8.tgz": "c".repeat(64) },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
       installedPackagePath: "/private/secret/sk-package-canary/node_modules/kaji-sdk",
@@ -1017,19 +1594,21 @@ describe("npm contract artifact", () => {
         manifestSha256: unsafeCanary,
         artifactSha256: {
           [`${unsafeCanary}.tgz`]: "c".repeat(64),
-          "kaji-sdk-0.2.0-beta.8.tgz": unsafeCanary,
+          "kaji-sdk-0.2.0-beta.9.tgz": unsafeCanary,
         },
       },
       `v24.0.0\n${unsafeCanary}`,
     );
     expect(unsafeReceipt).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      executionMode: "local",
       commit: null,
       releaseManifestSha256: null,
       artifactSha256: {},
-      runtime: { version: process.version },
+      runtime: { version: null },
       artifacts: {},
       githubPackageProofs: {},
+      onboardingProofs: {},
       conclusion: "failed",
       failureCode: "node_smoke_failed",
       failedPhase: "npm:package-install",
@@ -1123,7 +1702,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.8.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1183,7 +1762,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.8.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.9.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -2398,7 +2977,7 @@ console.log(JSON.stringify({
 
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
-      expect(manifest.version).toBe("0.2.0-beta.8");
+      expect(manifest.version).toBe("0.2.0-beta.9");
       expect(packed[0]!.filename).toBe(`kaji-sdk-${manifest.version}.tgz`);
       expect(packed[0]!.filename).not.toBe("kaji-sdk-0.2.0-beta.2.tgz");
       expect(manifest.license).toBe("FSL-1.1-ALv2");

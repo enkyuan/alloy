@@ -21,16 +21,20 @@ the full five-step developer path and scope definition.
 ## Install
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.8 zod openai        # OpenAI
+npm install kaji-sdk@0.2.0-beta.9 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.8 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
-# or: bun add kaji-sdk@0.2.0-beta.8 zod openai
+npm install kaji-sdk@0.2.0-beta.9 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+# or: bun add kaji-sdk@0.2.0-beta.9 zod openai
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
 are optional peers -- install only the one you use. Anthropic is not in the
-beta support tier. Supported runtimes are Node 22 or 24 with npm or Bun.
-Supported compilers are TypeScript 5.7 and the current TypeScript 6 release.
+beta support tier. The package metadata declares Node `22.x || 24.x`, but the
+protected beta onboarding evidence is deliberately narrower: it proves npm and
+Bun on GitHub-hosted Linux/x64, with Node 22 on `ubuntu-22.04` and Node 24 on
+`ubuntu-24.04`. It makes no broader runtime or platform claim, including for
+macOS/arm64, Windows, or fully offline dependency installation. The protected
+compiler cells use TypeScript 5.7.3 and 6.0.3.
 
 ## Quick start
 
@@ -367,8 +371,12 @@ KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
 uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
-The protected `kaji-beta` workflow is authoritative release evidence; the
-single-provider command above is only a local paid smoke test.
+The protected rehearsal and publish workflows are authoritative release
+evidence. Their required-reviewer environments are purpose-specific:
+`kaji-beta-onboarding` protects deterministic TypeScript onboarding,
+`kaji-beta` protects keyed OpenAI proof, and `kaji-beta-publish` protects
+publisher identity and the sole npm write. The single-provider command above
+is only a local paid smoke test.
 
 ## Stability tiers
 

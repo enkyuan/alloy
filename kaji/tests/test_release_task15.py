@@ -1,25 +1,45 @@
 from __future__ import annotations
 
 import base64
-from datetime import date, timedelta
 from email.message import Message
 import importlib.util
+from io import BytesIO
 import re
+import struct
 import subprocess
 import sys
 import hashlib
 import json
 import os
 from pathlib import Path
+import tarfile
 from types import ModuleType, SimpleNamespace
-from typing import MutableMapping, cast
+from typing import Any, Callable, MutableMapping, NoReturn, cast
 import textwrap
 import urllib.request
+import zipfile
 
 import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+RELEASE_IDENTITY_ACTIVE_ROOTS = (".github", "apps", "docs", "kaji")
+RELEASE_IDENTITY_ROOT_FILES = ("package.json", "bun.lock")
+RELEASE_IDENTITY_IGNORED_DIRECTORIES = frozenset(
+    {
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".turbo",
+        ".venv",
+        "__pycache__",
+        "coverage",
+        "node_modules",
+    }
+)
+RELEASE_IDENTITY_ARCHIVED_PLANS = Path("docs/superpowers/plans")
+BETA8_IDENTITY_BYTES = re.compile(rb"(?:kaji-v)?0\.2\.0-beta\.8")
+BETA8_IDENTITY_TEXT = re.compile(r"(?:kaji-v)?0\.2\.0-beta\.8")
 TYPESCRIPT_GITHUB_TOOLS = [
     "add_comment",
     "create_issue",
@@ -193,6 +213,33 @@ def _read(relative: str) -> str:
     return (REPO_ROOT / relative).read_text()
 
 
+def _raw_beta8_identity_files(repo_root: Path) -> dict[Path, bytes]:
+    identity_paths = {repo_root / relative for relative in RELEASE_IDENTITY_ROOT_FILES}
+
+    for relative_root in RELEASE_IDENTITY_ACTIVE_ROOTS:
+        active_root = repo_root / relative_root
+        assert active_root.is_dir(), active_root
+        for path in active_root.rglob("*"):
+            relative = path.relative_to(repo_root)
+            if (
+                not path.is_file()
+                or RELEASE_IDENTITY_IGNORED_DIRECTORIES.intersection(
+                    relative.parent.parts
+                )
+                or relative.is_relative_to(RELEASE_IDENTITY_ARCHIVED_PLANS)
+            ):
+                continue
+            identity_paths.add(path)
+
+    matches: dict[Path, bytes] = {}
+    for path in sorted(identity_paths):
+        assert path.is_file(), path
+        source = path.read_bytes()
+        if BETA8_IDENTITY_BYTES.search(source) is not None:
+            matches[path.relative_to(repo_root)] = source
+    return matches
+
+
 def _normative_semver_pattern() -> str:
     schema = json.loads(
         _read("kaji/contracts/release/kaji-ts-consumer-handoff-v1.schema.json")
@@ -265,7 +312,7 @@ def test_release_workflows_bound_every_job() -> None:
     publish = _read(".github/workflows/kaji.publish.yml")
     performance = _read(".github/workflows/kaji.performance.yml")
 
-    assert rehearsal.count("timeout-minutes:") == 6
+    assert rehearsal.count("timeout-minutes:") == 7
     assert publish.count("timeout-minutes:") == 13
     assert performance.count("timeout-minutes:") == 5
     assert "timeout-minutes: 90" in performance
@@ -346,7 +393,7 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     assert "if python_project != PYTHON_PROJECT:" in metadata_verifier
 
     publish_workflow = _read(".github/workflows/kaji.publish.yml")
-    assert publish_workflow.count("https://pypi.org/pypi/kaji-sdk/0.2.0b1/json") == 2
+    assert publish_workflow.count("https://pypi.org/pypi/kaji-sdk/0.2.0b1/json") == 3
     assert "https://pypi.org/pypi/kaji/0.2.0b1/json" not in publish_workflow
 
     npm_verifier = _read("kaji/scripts/verify_npm_package.py")
@@ -404,15 +451,258 @@ def test_npm_lock_uses_patched_fast_uri() -> None:
 def test_publish_tag_guard_matches_typescript_package_version() -> None:
     version = json.loads(_read("kaji/ts/package.json"))["version"]
     publish = _read(".github/workflows/kaji.publish.yml")
-    guard = re.search(
-        r'const tagName = context\.ref\.replace\("refs/tags/", ""\);\s+'
-        r"if \(!/(?P<pattern>[^/]+)/\.test\(tagName\)\) \{",
-        publish,
+    expected_tag = f"kaji-v{version}"
+
+    assert f'context.ref !== "refs/tags/{expected_tag}"' in publish
+    assert f'const tagName = "{expected_tag}";' in publish
+
+
+def test_beta9_is_the_only_active_identity_and_beta8_is_exact_history() -> None:
+    allowed_beta8_sections = {
+        Path("docs/kaji/releasing.md"): (
+            "- Treat `kaji-v0.2.0-beta.8`",
+            "- Preserve the existing beta.2",
+            1,
+        ),
+        Path("kaji/ts/CHANGELOG.md"): (
+            "## [0.2.0-beta.8] - 2026-07-27",
+            "## [0.2.0-beta.7]",
+            2,
+        ),
+        Path("kaji/tests/test_release_task15.py"): (
+            "\ndef test_beta9_is_the_only_active_identity_and_beta8_is_exact_history() -> None:\n"
+            "    allowed_beta8_sections = {",
+            "\ndef test_protected_release_workflows_fail_closed_and_attach_provenance()"
+            " -> None:\n",
+            4,
+        ),
+        Path("kaji/tests/test_beta_contract.py"): (
+            "\ndef test_publisher_identity_schema_accepts_only_closed_fail_safe_states()"
+            " -> None:\n",
+            "\ndef test_typescript_handoff_policy_receipt_names_the_executed_regression()"
+            " -> None:\n",
+            1,
+        ),
+        Path("kaji/ts/tests/release-security.test.ts"): (
+            '  it("binds the current TypeScript candidate to beta.9 and preserves beta.8 as unpublished history"',
+            '  it("smokes compatibility matrices only from verified producer artifacts"',
+            4,
+        ),
+    }
+    beta8_identity_files = _raw_beta8_identity_files(REPO_ROOT)
+    assert set(beta8_identity_files) == set(allowed_beta8_sections)
+
+    for relative, raw_source in beta8_identity_files.items():
+        start_marker, end_marker, expected_occurrences = allowed_beta8_sections[
+            relative
+        ]
+        source = raw_source.decode("utf-8")
+        assert source.count(start_marker) == 1, relative
+        assert source.count(end_marker) == 1, relative
+        before, section_and_after = source.split(start_marker, 1)
+        section, after = section_and_after.split(end_marker, 1)
+        bounded_section = start_marker + section
+        assert (
+            len(BETA8_IDENTITY_TEXT.findall(bounded_section)) == expected_occurrences
+        ), relative
+        unbounded_source = before + end_marker + after
+        assert BETA8_IDENTITY_TEXT.search(unbounded_source) is None, relative
+
+    typescript_package = json.loads(_read("kaji/ts/package.json"))
+    assert typescript_package["version"] == "0.2.0-beta.9"
+    assert _read("kaji/pyproject.toml").splitlines()[2] == 'version = "0.2.0b1"'
+    assert '__version__ = "0.2.0b1"' in _read("kaji/src/kaji/__init__.py")
+    onboarding_contract_name = "typescript-onboarding-evidence-v1.schema.json"
+    legacy_contract_names = {
+        "tthw-evidence-v1.schema.json",
+        "tthw-participant.template.json",
+    }
+    release_contract_names = {
+        "github-proof-v1.schema.json",
+        "kaji-ts-consumer-handoff-v1.schema.json",
+        "publisher-identity-receipt-v1.schema.json",
+        onboarding_contract_name,
+    }
+    canonical_release_contract = (
+        REPO_ROOT / "kaji/contracts/release" / onboarding_contract_name
+    ).read_bytes()
+    for contract_directory in (
+        REPO_ROOT / "kaji/contracts/release",
+        REPO_ROOT / "kaji/src/kaji/contracts/release",
+        REPO_ROOT / "kaji/ts/contracts/release",
+    ):
+        assert {path.name for path in contract_directory.iterdir()} == (
+            release_contract_names
+        )
+        assert (
+            contract_directory / onboarding_contract_name
+        ).read_bytes() == canonical_release_contract
+        for legacy_contract_name in legacy_contract_names:
+            assert not (contract_directory / legacy_contract_name).exists()
+
+    typescript_dist = REPO_ROOT / "kaji/ts/dist"
+    if typescript_dist.exists():
+        exported_identity_paths = {
+            typescript_package["main"],
+            typescript_package["module"],
+            typescript_package["types"],
+            typescript_package["exports"]["."]["require"]["types"],
+        }
+        assert len(exported_identity_paths) == 4
+        for exported in exported_identity_paths:
+            output = REPO_ROOT / "kaji/ts" / exported
+            assert output.is_file(), output
+            version = re.search(
+                r'(?:var|declare const) VERSION = "([^"]+)"',
+                output.read_text(),
+            )
+            assert version is not None, output
+            assert version[1] == "0.2.0-beta.9", output
+
+    python_build = REPO_ROOT / "kaji/build"
+    if python_build.exists():
+        generated_init = python_build / "lib/kaji/__init__.py"
+        generated_contract_directory = python_build / "lib/kaji/contracts/release"
+        generated_contract = generated_contract_directory / onboarding_contract_name
+        assert generated_init.is_file()
+        assert '__version__ = "0.2.0b1"' in generated_init.read_text()
+        assert {
+            path.name for path in generated_contract_directory.iterdir()
+        } == release_contract_names
+        assert generated_contract.is_file()
+        assert generated_contract.read_bytes() == canonical_release_contract
+        for legacy_contract_name in legacy_contract_names:
+            assert not (generated_contract_directory / legacy_contract_name).exists()
+
+    python_dist = REPO_ROOT / "kaji/dist"
+    if python_dist.exists():
+        wheel_name = "kaji_sdk-0.2.0b1-py3-none-any.whl"
+        sdist_name = "kaji_sdk-0.2.0b1.tar.gz"
+        npm_name = "kaji-sdk-0.2.0-beta.9.tgz"
+        assert {path.name for path in python_dist.glob("*.whl")} <= {wheel_name}
+        assert {path.name for path in python_dist.glob("*.tar.gz")} <= {sdist_name}
+        assert {path.name for path in python_dist.glob("*.tgz")} <= {npm_name}
+
+        wheel = python_dist / wheel_name
+        if wheel.exists():
+            with zipfile.ZipFile(wheel) as archive:
+                release_prefix = "kaji/contracts/release/"
+                archive_names = set(archive.namelist())
+                assert {
+                    name.removeprefix(release_prefix)
+                    for name in archive_names
+                    if name.startswith(release_prefix)
+                } == release_contract_names
+                assert (
+                    archive.read(release_prefix + onboarding_contract_name)
+                    == canonical_release_contract
+                )
+                assert (
+                    not {
+                        release_prefix + legacy_contract_name
+                        for legacy_contract_name in legacy_contract_names
+                    }
+                    & archive_names
+                )
+                assert b"Version: 0.2.0b1" in archive.read(
+                    "kaji_sdk-0.2.0b1.dist-info/METADATA"
+                )
+
+        sdist = python_dist / sdist_name
+        if sdist.exists():
+            with tarfile.open(sdist, "r:gz") as archive:
+                release_prefix = "kaji_sdk-0.2.0b1/src/kaji/contracts/release/"
+                archive_names = set(archive.getnames())
+                assert {
+                    name.removeprefix(release_prefix)
+                    for name in archive_names
+                    if name.startswith(release_prefix) and name != release_prefix
+                } == release_contract_names
+                contract = archive.extractfile(
+                    release_prefix + onboarding_contract_name
+                )
+                metadata = archive.extractfile("kaji_sdk-0.2.0b1/PKG-INFO")
+                assert contract is not None
+                assert contract.read() == canonical_release_contract
+                assert (
+                    not {
+                        release_prefix + legacy_contract_name
+                        for legacy_contract_name in legacy_contract_names
+                    }
+                    & archive_names
+                )
+                assert metadata is not None
+                assert b"Version: 0.2.0b1" in metadata.read()
+
+        npm = python_dist / npm_name
+        if npm.exists():
+            with tarfile.open(npm, "r:gz") as archive:
+                release_prefix = "package/contracts/release/"
+                archive_names = set(archive.getnames())
+                assert {
+                    name.removeprefix(release_prefix)
+                    for name in archive_names
+                    if name.startswith(release_prefix) and name != release_prefix
+                } == release_contract_names
+                contract = archive.extractfile(
+                    release_prefix + onboarding_contract_name
+                )
+                assert contract is not None
+                assert contract.read() == canonical_release_contract
+                assert (
+                    not {
+                        release_prefix + legacy_contract_name
+                        for legacy_contract_name in legacy_contract_names
+                    }
+                    & archive_names
+                )
+
+    for workflow_name in ("kaji.rehearsal.yml", "kaji.publish.yml"):
+        workflow = _read(f".github/workflows/{workflow_name}")
+        assert "0.2.0-beta.9" in workflow
+        assert "0.2.0-beta.8" not in workflow
+
+    historical = " ".join(
+        _read("docs/kaji/releasing.md")
+        .split("- Treat `kaji-v0.2.0-beta.8`", 1)[1]
+        .split("- Preserve the existing beta.2", 1)[0]
+        .split()
+    )
+    for evidence in (
+        "as a burned, immutable TTHW-input attempt",
+        "Protected run `30296132900`",
+        "`4dd04a1cf74927c4b3de31a1bd1db54a7b7c7a4e`",
+        "`KAJI_TTHW_EVIDENCE_JSON` was empty",
+        "Provider proof, registry and publisher preflight, and npm publication were skipped",
+        "npm and PyPI remained absent",
+        "Never move, retry, approve, or add evidence",
+        "recovery requires the new beta.9 attempt",
+        "rehearsal `30291287818` is terminal cancelled",
+        "cannot be reused as beta.9 evidence",
+    ):
+        assert evidence in historical
+
+
+def test_beta8_identity_inventory_detects_a_hostile_mdx_temporary_copy(
+    tmp_path: Path,
+) -> None:
+    for relative_root in RELEASE_IDENTITY_ACTIVE_ROOTS:
+        (tmp_path / relative_root).mkdir()
+    for relative in RELEASE_IDENTITY_ROOT_FILES:
+        (tmp_path / relative).write_bytes((REPO_ROOT / relative).read_bytes())
+
+    hostile_relative = Path("apps/docs/content/install.mdx")
+    hostile_copy = tmp_path / hostile_relative
+    hostile_copy.parent.mkdir(parents=True)
+    hostile_copy.write_bytes(
+        (REPO_ROOT / hostile_relative).read_bytes()
+        + b"\nHostile stale identity: "
+        + b"0.2.0-beta."
+        + b"8\n"
     )
 
-    assert guard is not None
-    expected = re.escape(f"kaji-v{version}").replace(r"\-", "-")
-    assert guard["pattern"] == rf"^{expected}$"
+    matches = _raw_beta8_identity_files(tmp_path)
+    assert matches == {hostile_relative: hostile_copy.read_bytes()}
 
 
 def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None:
@@ -423,15 +713,21 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "OPENAI_API_KEY" in rehearsal
     assert "ANTHROPIC_API_KEY" not in rehearsal
     assert "live_provider_proof.py" in rehearsal
+    assert rehearsal.count("environment: kaji-beta-onboarding") == 1
+    assert rehearsal.count("environment: kaji-beta\n") == 1
+    assert "environment: kaji-beta-publish" not in rehearsal
+    assert publish.count("environment: kaji-beta-onboarding") == 1
+    assert publish.count("environment: kaji-beta\n") == 1
+    assert publish.count("environment: kaji-beta-publish") == 1
     assert (
-        "needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]"
-        in rehearsal
+        "needs: [offline-release, performance, typescript-onboarding-evidence, "
+        "python-compat, node-compat]" in rehearsal
     )
     assert "needs.offline-release.result == 'success'" in rehearsal
     assert "needs.python-compat.result == 'success'" in rehearsal
     assert "needs.node-compat.result == 'success'" in rehearsal
     assert "needs.performance.result == 'success'" in rehearsal
-    assert "group: kaji-beta-rehearsal-0.2.0-beta.8" in rehearsal
+    assert "group: kaji-beta-rehearsal-0.2.0-beta.9" in rehearsal
     assert "0.2.0-beta.5" not in rehearsal
     assert "0.2.0-beta.5" not in publish
     assert "0.2.0-beta.2" not in rehearsal
@@ -451,7 +747,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "verification.verified",
         "environment: kaji-beta",
         "environment: kaji-beta-publish",
-        "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.8.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
+        "npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.9.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
         "--provenance",
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
@@ -460,15 +756,13 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "group: kaji-beta-publish-${{ github.ref_name }}",
         "KAJI_RELEASE_SIGNER_EMAIL",
         "context.payload.repository?.private !== false",
-        "npm provenance requires the source repository to be public",
+        "npm provenance requires the source repository to remain public",
         "github.rest.repos.compareCommits",
         "comparison.data.merge_base_commit.sha !== releaseCommit",
-        "signed beta tag commit must already be contained in the default branch",
         'verification.reason !== "valid"',
         "tag.data.tag !== tagName",
-        "signed beta tagger is not repository-approved",
-        'core.setOutput("tag-object", tagObject)',
-        'core.setOutput("commit", releaseCommit)',
+        'scalarOutput("tag-object", tagObject',
+        'scalarOutput("commit", releaseCommit',
         "Revalidate downloaded filenames, sizes, hashes, and commit",
         "offline-gate-summary.json",
         "offline-gates.log",
@@ -478,9 +772,9 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "provenance.bundle.jsonl",
         "provenance.json",
         "provider-evidence.json",
-        "kaji-tthw-evidence",
-        "validate_tthw_evidence.py",
-        "tthw/tthw-evidence.json",
+        "kaji-typescript-onboarding-evidence",
+        "validate_typescript_onboarding_evidence.py",
+        "typescript-onboarding/typescript-onboarding-evidence.json",
         "npm@11.16.0",
         "--downloads-dir .artifacts/kaji-publication-status/downloaded",
         '--repository "$GITHUB_REPOSITORY"',
@@ -489,13 +783,10 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "needs.publication-status.outputs.state == 'npm_byte_verified'",
         "installation recommendations remain withheld",
         "github.run_attempt == 1",
-        "publisher-preflight:",
         "NPM_TOKEN is required",
-        "npm access list packages",
-        "npm view kaji-sdk name --json",
-        "npm identity lacks write access to the existing kaji-sdk package",
-        "Verified npm publisher identity for the first unscoped kaji-sdk publication.",
-        "npm package ownership preflight was ambiguous",
+        "npm whoami --registry=https://registry.npmjs.org/",
+        "npm identity does not match KAJI_NPM_PUBLISHER",
+        "KAJI_NPM_PUBLISHER must name the approved npm identity",
         "verify_release_artifacts.py",
         "verify_npm_package.py",
         "verify_archives.py",
@@ -554,52 +845,52 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         publish.count("Revalidate downloaded filenames, sizes, hashes, and commit") == 2
     )
     assert publish.count("uses: ./.github/actions/verify-kaji-beta-tag") == 2
-    assert publish.count("environment: kaji-beta-publish") == 2
+    assert publish.count("environment: kaji-beta-publish") == 1
+    assert publish.count("needs: [verify-tag, supply-chain, registry-preflight]") == 1
     assert (
-        publish.count(
-            "needs: [verify-tag, supply-chain, registry-preflight, publisher-preflight]"
-        )
-        == 1
-    )
-    assert (
-        "needs: [verify-tag, tthw-evidence, supply-chain, publication-status]"
-        in publish
+        "needs: [verify-tag, typescript-onboarding-evidence, supply-chain, "
+        "publication-status]" in publish
     )
     assert "if-no-files-found: error" in publish
     assert "--clobber" not in publish
-    for reverify, mutation in (
+    for reverify, mutation, required_intermediate_steps in (
         (
             "Reverify signed tag immediately before npm publication",
             "Publish exact npm beta with provenance",
+            ("Recheck exact registry absence immediately before npm publication",),
         ),
         (
             "Reverify signed tag immediately before release attachment",
             "Create or verify prerelease and attach only missing digest-matched assets",
+            (),
         ),
     ):
         between = publish.split(reverify, 1)[1].split(mutation, 1)[0]
         assert between.count("uses: ./.github/actions/verify-kaji-beta-tag") == 1
-        assert between.count("      - name:") == 1
+        assert between.count("      - name:") == 1 + len(required_intermediate_steps)
+        for required_intermediate_step in required_intermediate_steps:
+            assert required_intermediate_step in between
     assert (
-        "needs: [verify-tag, offline-gates, performance, tthw-evidence, python-compat, node-compat]"
-        in publish
+        "needs: [verify-tag, offline-gates, performance, "
+        "typescript-onboarding-evidence, python-compat, node-compat]" in publish
     )
     assert (
-        "needs: [verify-tag, offline-gates, performance, tthw-evidence, keyed-proof, python-compat, node-compat]"
+        "needs: [verify-tag, offline-gates, performance, "
+        "typescript-onboarding-evidence, keyed-proof, python-compat, node-compat]"
         in publish
     )
     for dependency in (
         "verify-tag",
         "offline-gates",
         "performance",
-        "tthw-evidence",
+        "typescript-onboarding-evidence",
         "python-compat",
         "node-compat",
     ):
         assert f"needs.{dependency}.result == 'success'" in publish
     assert (
-        "if: ${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}"
-        in publish
+        "if: ${{ always() && needs.verify-tag.result == 'success' && "
+        "needs.supply-chain.result == 'success' }}" in publish
     )
     assert "validate_release_evidence.py" in publish
     _assert_external_actions_are_sha_pinned(publish)
@@ -657,7 +948,7 @@ def test_clean_checkout_rebuilds_use_supported_bun_cwd_syntax() -> None:
 @pytest.mark.parametrize(
     ("workflow_name", "expected_commit"),
     [
-        (".github/workflows/kaji.rehearsal.yml", "${{ github.sha }}"),
+        (".github/workflows/kaji.rehearsal.yml", "${{ inputs.expected-commit }}"),
         (
             ".github/workflows/kaji.publish.yml",
             "${{ needs.verify-tag.outputs.commit }}",
@@ -709,193 +1000,142 @@ def test_performance_evidence_is_bound_before_retention(
     [
         (
             ".github/workflows/kaji.rehearsal.yml",
-            "[offline-release, python-compat, node-compat]",
-            "${{ github.sha }}",
+            "[offline-release, node-compat]",
+            "${{ inputs.expected-commit }}",
         ),
         (
             ".github/workflows/kaji.publish.yml",
-            "[verify-tag, offline-gates, performance, python-compat, node-compat]",
+            "[verify-tag, offline-gates, node-compat]",
             "${{ needs.verify-tag.outputs.commit }}",
         ),
     ],
 )
-def test_tthw_gate_is_exact_commit_step_scoped_and_retained(
+def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     workflow_name: str, upstream: str, expected_commit: str
 ) -> None:
     workflow = _read(workflow_name)
-    remainder = workflow.split("  tthw-evidence:", 1)[1]
-    next_job = re.search(r"\n  [a-z][a-z-]+:\n", remainder)
-    job = remainder[: next_job.start()] if next_job is not None else remainder
-    job_header, steps = job.split("    steps:", 1)
-    validation = steps.split(
-        "      - name: Validate protected exact-commit five-user TTHW evidence", 1
-    )[1].split("      - name: Retain exact-commit TTHW evidence and status", 1)[0]
+    calibration = workflow.split("  typescript-onboarding-archive-calibration:", 1)[
+        1
+    ].split("  typescript-onboarding-evidence:", 1)[0]
+    onboarding = workflow.split("  typescript-onboarding-evidence:", 1)[1].split(
+        "  keyed-proof:", 1
+    )[0]
 
-    assert f"needs: {upstream}" in job_header
-    assert "environment: kaji-beta" in job_header
-    assert f"KAJI_RELEASE_COMMIT: {expected_commit}" in job_header
-    assert "secrets.KAJI_TTHW_EVIDENCE_JSON" not in job_header
-    assert workflow.count("${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}") == 1
-    assert "KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}" in (
-        validation
-    )
-    assert "validate_tthw_evidence.py" in validation
-    assert "--release-manifest .artifacts/kaji-release/manifest.json" in validation
-    assert "--artifacts-dir .artifacts/kaji-release" in validation
-    assert "--python-compatibility-receipt" in validation
-    assert "--node-compatibility-receipt" in validation
-    assert "--expected-workflow-run-attempt" in validation
-    nonempty_guard = (
-        ': "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON '
-        'before approving tthw-evidence}"'
-    )
-    assert validation.count(nonempty_guard) == 1
+    assert f"needs: {upstream}" in calibration
+    assert "runs-on: ubuntu-24.04" in calibration
+    assert "environment:" not in calibration.split("    steps:", 1)[0]
+    assert f"EXPECTED_COMMIT: {expected_commit}" in calibration
+    assert "Resolve exact current-run onboarding archives" in calibration
     assert (
-        validation.index(nonempty_guard)
-        < validation.index('raw_evidence="$RUNNER_TEMP/')
-        < validation.index("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\"")
-        < validation.index("validate_tthw_evidence.py")
+        calibration.count("kaji/scripts/validate_typescript_onboarding_evidence.py")
+        == 1
     )
+    assert "Independently validate and recompute calibration aggregate" in calibration
+    assert "name: kaji-typescript-onboarding-archive-calibration" in calibration
+    assert "name: kaji-typescript-onboarding-archive-calibration-initial" in calibration
+
+    assert "environment: kaji-beta-onboarding" in onboarding
+    assert "runs-on: ubuntu-24.04" in onboarding
+    assert "needs.typescript-onboarding-archive-calibration.result == 'success'" in (
+        onboarding
+    )
+    assert f"EXPECTED_COMMIT: {expected_commit}" in onboarding
+    assert "Resolve exact current-run onboarding archives independently" in onboarding
     assert (
-        'if [ "$status" -eq 0 ]; then\n'
-        '            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"'
-        in validation
+        "Authenticate archives and compose protected onboarding evidence" in onboarding
     )
-    assert steps.index(
-        "Initialize exact-commit TTHW status before setup"
-    ) < steps.index("actions/checkout@")
-    assert "name: kaji-tthw-evidence-initial" in steps
-    assert "if: ${{ always() }}" in steps
-    assert "name: kaji-tthw-evidence" in steps
-    assert "status.json" in steps
-    assert "validation.log" in steps
+    assert "Independently validate and recompute protected onboarding evidence" in (
+        onboarding
+    )
+    assert "Normalize terminal onboarding evidence" in onboarding
+    assert "name: kaji-typescript-onboarding-evidence-initial" in onboarding
+    assert "name: kaji-typescript-onboarding-evidence" in onboarding
+    for binding in (
+        "--producer-archive",
+        "--producer-artifact-id",
+        "--producer-artifact-digest",
+        "--node22-archive",
+        "--node22-source-artifact-id",
+        "--node22-source-artifact-digest",
+        "--node24-archive",
+        "--node24-source-artifact-id",
+        "--node24-source-artifact-digest",
+        "--expected-run-id",
+        "--expected-workflow-run",
+        "--expected-workflow-ref",
+        "--expected-workflow-sha",
+    ):
+        assert binding in calibration
+        assert binding in onboarding
+    assert "KAJI_TTHW_EVIDENCE_JSON" not in workflow
+    assert "validate_tthw_evidence.py" not in workflow
 
-    if workflow_name.endswith("kaji.publish.yml"):
-        assert "github.run_attempt == 1" in job_header
-        assert "needs.performance.result == 'success'" in job_header
-        assert "name: kaji-tthw-evidence" in workflow
-        assert ".artifacts/kaji-evidence/tthw/status.json" in workflow
-        assert ".artifacts/kaji-evidence/tthw/validation.log" in workflow
-        assert ".artifacts/kaji-evidence/tthw/tthw-evidence.json" in workflow
 
-    docs = _read("docs/kaji/releasing.md")
-    assert "KAJI_TTHW_EVIDENCE_JSON" in docs
-    assert "Configuration alone does not claim that the cohort passed" in docs
-
-
-def test_release_runbook_collects_tthw_from_current_tag_artifacts_before_approval() -> (
+def test_release_runbook_orders_archive_onboarding_tag_and_publisher_approvals() -> (
     None
 ):
     runbook_source = _read("docs/kaji/releasing.md")
     runbook = " ".join(runbook_source.split())
     ordered_steps = (
-        "Before creating the tag, configure the required `kaji-beta` reviewer",
-        "Leave `KAJI_TTHW_EVIDENCE_JSON` unset",
-        "Create and push the signed, annotated tag",
-        "Wait for the exact tag-triggered workflow run",
-        "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
-        "Generate five candidate-bound participant skeletons",
-        "Use the approval helper for the exact validate",
-        "kaji/scripts/approve_tthw_gate.py",
-        "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately",
-        "do not approve `tthw-evidence` manually",
+        "audit all three protected environments",
+        "Dispatch the rehearsal at ref `main`; never dispatch a raw SHA",
+        "Resolve exactly one unexpired `kaji-beta-artifacts`",
+        "Run the approved helper first without `--approve`",
+        "Only after that command succeeds, rerun the identical command with "
+        "`--approve` appended",
+        "Wait for terminal-green candidate evidence",
+        "Stop here until the operator explicitly confirms a fresh `NPM_TOKEN`",
+        'git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE"',
+        'git verify-tag "$TAG"',
+        'git push origin "refs/tags/$TAG"',
+        "Run the same helper without `--approve`, now with `--mode publish`",
+        "Approve the sole `kaji-beta-publish` deployment",
     )
     missing_steps = [step for step in ordered_steps if step not in runbook]
     assert not missing_steps, f"missing release runbook steps: {missing_steps}"
     positions = [runbook.index(step) for step in ordered_steps]
 
     assert positions == sorted(positions)
-    assert "`kaji-beta` approval is the safe pause" in runbook
-    assert "Do not remove the approval requirement" in runbook
-    assert (
-        "validate → attempt-1 remote preflight → secret metadata snapshot → "
-        "secret set-time/freshness check → repeated identical remote preflight → "
-        "unchanged-secret metadata recheck → exact-deployment approval/response "
-        "transaction"
-    ) in runbook
-    for invariant in (
-        "exact attempt-1 TTHW job is the sole waiting job in the run",
-        "complete protected reviewer/custom branch-policy configuration",
-        "complete post-set secret metadata snapshot is still unchanged",
-        "exactly one deployment for the candidate commit, tag, and `kaji-beta`",
-    ):
-        assert invariant in runbook
-    helper = runbook_source.split(
-        "uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py",
-        1,
-    )[1].split("```", 1)[0]
-    for argument in (
-        '--run-id "$RUN_ID"',
-        '--evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"',
-        '--release-manifest "$ARTIFACTS_DIR/manifest.json"',
-        '--artifacts-dir "$ARTIFACTS_DIR"',
-        "--python-compatibility-receipt",
-        "--node-compatibility-receipt",
-        "--approve",
-    ):
-        assert argument in helper
-    assert "gh secret set" not in runbook_source
-    assert "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately" in runbook
-    assert "do not approve `tthw-evidence` manually or in the Actions UI" in runbook
-    assert "rejects terminal CR/LF bytes that GitHub CLI would remove" in runbook
-    for exact_binding in (
-        "set -euo pipefail",
-        "umask 077",
-        ': "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"',
-        "actions/runs/$RUN_ID/artifacts?per_page=100",
-        'select(.name == "kaji-beta-artifacts" and .expired == false)',
-        'case "$ARTIFACT_ID" in',
-        "*[!0-9]*",
-        'mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX"',
-        "actions/artifacts/$ARTIFACT_ID/zip",
-        'unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"',
-    ):
-        assert exact_binding in runbook
-    assert "RUN_ID=<tag-triggered-publish-run-id>" not in runbook
-    assert "/secure/" not in runbook
-    artifact_shell = (
-        "set -euo pipefail"
-        + runbook_source.split("set -euo pipefail", 1)[1].split("```", 1)[0]
-    )
-    syntax = subprocess.run(
-        ["/bin/bash", "-n"],
-        input=artifact_shell,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert syntax.returncode == 0, syntax.stderr
-    assert (
-        "Prior release, rehearsal, and performance artifacts are invalid substitutes."
-        in runbook
-    )
-    assert "`kaji-beta-publish` remains a separate" in runbook
+    protected_release = runbook_source.split("## Protected release", 1)[1].split(
+        "## Partial or ambiguous publication", 1
+    )[0]
+    assert "KAJI_TTHW_EVIDENCE_JSON" not in protected_release
+    assert "approve_tthw_gate.py" not in protected_release
+    assert "The existing granular npm token has expired" in runbook
+    assert "do not inspect, copy, test, or use it" in runbook
+    assert "Do not run a local credential preflight" in runbook
+    assert "Do not approve onboarding manually in the Actions UI" in runbook
+    assert "A failure after the approval POST is ambiguous" in runbook
+    assert "recursively lexicographically sorted keys" in runbook
+    assert "exactly one terminal LF" in runbook
+    assert "Never use a broad free-form `-m` tag message" in runbook
 
-    guide_source = _read("docs/kaji/tthw-evidence.md")
-    guide = " ".join(guide_source.split())
-    assert "exact `kaji-beta-artifacts` upload from the current tag-triggered" in guide
-    assert "workflow run ID and artifact ID" in guide
-    assert ': "${EVIDENCE_ROOT:?follow the release runbook first}"' in guide
-    assert ': "${ARTIFACTS_DIR:?follow the release runbook first}"' in guide
-    assert 'TTHW_DIR="$EVIDENCE_ROOT/tthw"' in guide
-    assert "/secure/" not in guide
-    assert "Do not copy it into `KAJI_TTHW_EVIDENCE_JSON`" in guide
-    assert "kaji/scripts/approve_tthw_gate.py" in guide
-    assert "Copy the file bytes" not in guide_source
-    assert (
-        "Prior release, rehearsal, and performance artifacts are invalid substitutes."
-        in guide
+    helper_prefix = (
+        "uv run --project kaji --no-sync python \\\n     "
+        "kaji/scripts/approve_typescript_onboarding_gate.py gate"
     )
-    timing_section = guide_source.split("## Automated timings and composition", 1)[1]
-    compatibility_shell = timing_section.split("```bash\n", 1)[1].split("\n```", 1)[0]
-    syntax = subprocess.run(
-        ["/bin/bash", "-n"],
-        input=compatibility_shell,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert syntax.returncode == 0, syntax.stderr
+    assert runbook_source.count(helper_prefix) == 2
+    for mode, run_id, root in (
+        ("rehearsal", "$REHEARSAL_RUN_ID", "$EVIDENCE_ROOT"),
+        ("publish", "$PUBLISH_RUN_ID", "$PUBLISH_EVIDENCE_ROOT"),
+    ):
+        helper = runbook_source.split(f"{helper_prefix} \\\n     --mode {mode}", 1)[
+            1
+        ].split("```", 1)[0]
+        for argument in (
+            f'--run-id "{run_id}"',
+            '--expected-commit "$REVIEWED_COMMIT"',
+            f'--producer-archive "{root}/producer.zip"',
+            "--producer-artifact-id",
+            "--producer-artifact-digest",
+            f'--node22-archive "{root}/node22.zip"',
+            "--node22-artifact-id",
+            "--node22-artifact-digest",
+            f'--node24-archive "{root}/node24.zip"',
+            "--node24-artifact-id",
+            "--node24-artifact-digest",
+        ):
+            assert argument in helper
 
 
 @pytest.mark.parametrize(
@@ -1004,15 +1244,17 @@ def test_publication_reruns_are_guarded_before_queries_and_release_mutation() ->
 
     tag_verifier = _read(".github/actions/verify-kaji-beta-tag/action.yml")
     assert "using: composite" in tag_verifier
-    assert ".verification.verified == true" in tag_verifier
-    assert '.verification.reason == "valid"' in tag_verifier
-    assert ".tag == $tag" in tag_verifier
-    assert ".tagger.email == $tagger" in tag_verifier
+    assert '"X-GitHub-Api-Version: 2026-03-10"' in tag_verifier
+    assert "verification.verified !== true" in tag_verifier
+    assert 'verification.reason !== "valid"' in tag_verifier
+    assert "tag.tag !== expectedTag" in tag_verifier
+    assert "tag.tagger?.email !== expectedTaggerEmail" in tag_verifier
     assert "EXPECTED_TAGGER_EMAIL" in tag_verifier
-    assert '.object.type == "commit" and .object.sha == $commit' in tag_verifier
+    assert 'tag.object?.type !== "commit"' in tag_verifier
+    assert "tag.object?.sha !== expectedCommit" in tag_verifier
 
 
-def test_release_runbook_matches_npm_propagation_budget() -> None:
+def test_npm_propagation_budget_is_bounded_within_job_timeout() -> None:
     publish = _read(".github/workflows/kaji.publish.yml")
     status_job = publish.split("  publication-status:", 1)[1].split(
         "  publication-incident:", 1
@@ -1028,15 +1270,11 @@ def test_release_runbook_matches_npm_propagation_budget() -> None:
         min(initial_delay * 2**retry_number, max_delay)
         for retry_number in range(attempts - 1)
     )
-    runbook = re.sub(r"\s+", " ", _read("docs/kaji/releasing.md"))
-
-    assert (
-        f"makes at most {attempts} attempts with exponential delays starting at "
-        f"{initial_delay} seconds and capped at {max_delay} seconds "
-        f"({backoff_seconds} seconds of total scheduled backoff). The npm registry "
-        f"polling subprocess has a {timeout.group(1)}-minute outer cap that includes "
-        "those delays and its bounded verification work."
-    ) in runbook
+    assert (attempts, initial_delay, max_delay) == (45, 2, 20)
+    assert backoff_seconds == 830
+    assert timeout.group(1) == "20"
+    assert backoff_seconds < int(timeout.group(1)) * 60
+    assert "timeout-minutes: 45" in status_job
 
 
 @pytest.mark.parametrize(
@@ -1558,6 +1796,40 @@ def test_publication_state_reducer_turns_unknown_or_mismatch_into_incident(
     assert decision.recovery == "fix_forward_next_beta"
 
 
+def _task7_publisher_receipt(
+    path: Path,
+    *,
+    conclusion: str = "passed",
+    failure_code: str | None = None,
+    expected_publisher: str | None = "enkyuan",
+    actual_publisher: str | None = "enkyuan",
+    exit_code: int | None = 0,
+    commit: str = "a" * 40,
+    tag: str = "kaji-v0.2.0-beta.9",
+    workflow_run: str = "https://github.com/enkyuan/alloy/actions/runs/123",
+    workflow_run_attempt: int = 1,
+    workflow_path: str = ".github/workflows/kaji.publish.yml",
+    workflow_sha: str = "a" * 40,
+) -> dict[str, object]:
+    receipt = {
+        "schemaVersion": "1.0.0",
+        "commit": commit,
+        "tag": tag,
+        "workflowRun": workflow_run,
+        "workflowRunAttempt": workflow_run_attempt,
+        "workflowPath": workflow_path,
+        "workflowSha": workflow_sha,
+        "expectedPublisher": expected_publisher,
+        "actualPublisher": actual_publisher,
+        "conclusion": conclusion,
+        "exitCode": exit_code,
+        "failureCode": failure_code,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    return receipt
+
+
 def test_publication_state_cli_withholds_installation_and_writes_machine_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1580,11 +1852,21 @@ def test_publication_state_cli_withholds_installation_and_writes_machine_evidenc
             "--pypi-publish-result",
             "success",
             "--npm-publish-result",
-            "failure",
+            "skipped",
             "--commit",
             "a" * 40,
+            "--tag",
+            "kaji-v0.2.0-beta.9",
             "--workflow-run",
-            "https://github.example/run/1",
+            "https://github.com/enkyuan/alloy/actions/runs/123",
+            "--workflow-run-attempt",
+            "1",
+            "--workflow-path",
+            ".github/workflows/kaji.publish.yml",
+            "--workflow-sha",
+            "a" * 40,
+            "--publisher-no-receipt-reason",
+            "publish_job_not_started",
             "--output",
             str(output),
             "--markdown",
@@ -1597,9 +1879,16 @@ def test_publication_state_cli_withholds_installation_and_writes_machine_evidenc
     assert retained["releaseReady"] is False
     assert retained["installRecommendation"] is False
     assert retained["incident"]["code"] == "registry_state_unknown"
-    assert retained["publishJobs"] == {"pypi": "success", "npm": "failure"}
+    assert retained["publishJobs"] == {"pypi": "success", "npm": "skipped"}
+    assert retained["publisherIdentity"] == {
+        "conclusion": "not_run",
+        "reason": "publish_job_not_started",
+        "artifact": None,
+        "receiptSha256": None,
+        "identity": None,
+    }
     assert "WITHHELD" in markdown.read_text()
-    assert "https://github.example/run/1" in markdown.read_text()
+    assert "https://github.com/enkyuan/alloy/actions/runs/123" in markdown.read_text()
     assert "publication-state=unpublished" in github_output.read_text()
 
 
@@ -1613,7 +1902,7 @@ def test_registry_verifier_retains_machine_failure_before_exiting(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.8"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.9"},
                 "artifacts": [],
             }
         )
@@ -1636,6 +1925,16 @@ def test_registry_verifier_retains_machine_failure_before_exiting(
                 str(output),
                 "--repository",
                 "alloy-org/alloy",
+                "--tag",
+                "kaji-v0.2.0-beta.9",
+                "--workflow-path",
+                ".github/workflows/kaji.publish.yml",
+                "--workflow-sha",
+                "a" * 40,
+                "--workflow-run-id",
+                "123",
+                "--workflow-run-attempt",
+                "1",
                 "--attempts",
                 "1",
             ]
@@ -1657,7 +1956,7 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.8"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.9"},
                 "artifacts": [],
             }
         )
@@ -1687,6 +1986,16 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
             str(output),
             "--repository",
             "alloy-org/alloy",
+            "--tag",
+            "kaji-v0.2.0-beta.9",
+            "--workflow-path",
+            ".github/workflows/kaji.publish.yml",
+            "--workflow-sha",
+            "a" * 40,
+            "--workflow-run-id",
+            "123",
+            "--workflow-run-attempt",
+            "1",
             "--attempts",
             "5",
             "--initial-delay",
@@ -1713,7 +2022,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.8"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.9"},
                 "artifacts": [
                     {
                         "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
@@ -1722,7 +2031,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
                         "size": 1,
                     },
                     {
-                        "file": "kaji-sdk-0.2.0-beta.8.tgz",
+                        "file": "kaji-sdk-0.2.0-beta.9.tgz",
                         "package": "typescript",
                         "sha256": "1" * 64,
                         "size": 1,
@@ -1754,6 +2063,16 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
             str(output),
             "--repository",
             "alloy-org/alloy",
+            "--tag",
+            "kaji-v0.2.0-beta.9",
+            "--workflow-path",
+            ".github/workflows/kaji.publish.yml",
+            "--workflow-sha",
+            "a" * 40,
+            "--workflow-run-id",
+            "123",
+            "--workflow-run-attempt",
+            "1",
             "--target",
             "npm",
             "--attempts",
@@ -1769,7 +2088,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
     assert retained["npm"] == {"byteVerified": True}
     assert retained["packages"] == {
         "python": "0.2.0b1",
-        "typescript": "0.2.0-beta.8",
+        "typescript": "0.2.0-beta.9",
     }
 
 
@@ -1779,6 +2098,8 @@ def test_npm_target_state_cli_persists_target_and_terminal(
     verifier = _load_root_script("verify_published_packages.py")
     output = tmp_path / "publication-status.json"
     markdown = tmp_path / "publication-status.md"
+    receipt_path = tmp_path / "publisher-identity-receipt.json"
+    receipt = _task7_publisher_receipt(receipt_path)
 
     verifier.state_main(
         [
@@ -1798,8 +2119,26 @@ def test_npm_target_state_cli_persists_target_and_terminal(
             "success",
             "--commit",
             "a" * 40,
+            "--tag",
+            "kaji-v0.2.0-beta.9",
             "--workflow-run",
-            "https://github.example/run/1",
+            "https://github.com/enkyuan/alloy/actions/runs/123",
+            "--workflow-run-attempt",
+            "1",
+            "--workflow-path",
+            ".github/workflows/kaji.publish.yml",
+            "--workflow-sha",
+            "a" * 40,
+            "--expected-publisher",
+            "enkyuan",
+            "--publisher-receipt",
+            str(receipt_path),
+            "--publisher-artifact-name",
+            "kaji-publisher-identity-123-1",
+            "--publisher-artifact-id",
+            "456",
+            "--publisher-artifact-digest",
+            "sha256:" + "b" * 64,
             "--output",
             str(output),
             "--markdown",
@@ -1812,7 +2151,527 @@ def test_npm_target_state_cli_persists_target_and_terminal(
     assert retained["state"] == "npm_byte_verified"
     assert retained["releaseReady"] is True
     assert retained["installRecommendation"] is True
+    assert retained["tag"] == "kaji-v0.2.0-beta.9"
+    assert retained["workflowRunAttempt"] == 1
+    assert retained["workflowPath"] == ".github/workflows/kaji.publish.yml"
+    assert retained["workflowSha"] == "a" * 40
+    assert retained["expectedPublisher"] == "enkyuan"
+    assert retained["publisherIdentity"] == {
+        "conclusion": "passed",
+        "reason": None,
+        "artifact": {
+            "name": "kaji-publisher-identity-123-1",
+            "id": 456,
+            "digest": "sha256:" + "b" * 64,
+        },
+        "receiptSha256": hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+        "identity": receipt,
+    }
     assert "- Target: `npm`" in markdown.read_text()
+
+
+def _task7_state_args(
+    tmp_path: Path,
+    *,
+    receipt: Path | None = None,
+    no_receipt_reason: str | None = None,
+    expected_publisher: str | None = "enkyuan",
+    npm_publish_result: str = "success",
+) -> list[str]:
+    command = [
+        "--target",
+        "npm",
+        "--previous-state",
+        "unpublished",
+        "--pypi",
+        "absent",
+        "--npm",
+        "present",
+        "--registry-verification",
+        "npm_byte_verified",
+        "--pypi-publish-result",
+        "skipped",
+        "--npm-publish-result",
+        npm_publish_result,
+        "--commit",
+        "a" * 40,
+        "--tag",
+        "kaji-v0.2.0-beta.9",
+        "--workflow-run",
+        "https://github.com/enkyuan/alloy/actions/runs/123",
+        "--workflow-run-attempt",
+        "1",
+        "--workflow-path",
+        ".github/workflows/kaji.publish.yml",
+        "--workflow-sha",
+        "a" * 40,
+        "--output",
+        str(tmp_path / "publication-status.json"),
+        "--markdown",
+        str(tmp_path / "publication-status.md"),
+    ]
+    if expected_publisher is not None:
+        command.extend(["--expected-publisher", expected_publisher])
+    if receipt is not None:
+        command.extend(
+            [
+                "--publisher-receipt",
+                str(receipt),
+                "--publisher-artifact-name",
+                "kaji-publisher-identity-123-1",
+                "--publisher-artifact-id",
+                "456",
+                "--publisher-artifact-digest",
+                "sha256:" + "b" * 64,
+            ]
+        )
+    if no_receipt_reason is not None:
+        command.extend(["--publisher-no-receipt-reason", no_receipt_reason])
+    return command
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("commit", "b" * 40),
+        ("tag", "kaji-v0.2.0-beta." + "8"),
+        ("workflowRun", "https://github.com/enkyuan/alloy/actions/runs/999"),
+        ("workflowRunAttempt", 2),
+        ("workflowPath", ".github/workflows/attacker.yml"),
+        ("workflowSha", "b" * 40),
+        ("expectedPublisher", "attacker"),
+        ("actualPublisher", "attacker"),
+    ],
+)
+def test_publisher_receipt_rejects_schema_or_semantic_tuple_drift(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    path = tmp_path / "publisher.json"
+    receipt = _task7_publisher_receipt(path)
+    receipt[field] = value
+    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
+    with pytest.raises(verifier.PublisherIdentityError):
+        verifier.validate_publisher_identity_receipt(
+            path,
+            expected_commit="a" * 40,
+            expected_tag="kaji-v0.2.0-beta.9",
+            expected_workflow_run="https://github.com/enkyuan/alloy/actions/runs/123",
+            expected_workflow_run_attempt=1,
+            expected_workflow_path=".github/workflows/kaji.publish.yml",
+            expected_workflow_sha="a" * 40,
+            expected_publisher="enkyuan",
+        )
+
+
+def test_publisher_mismatch_receipt_requires_distinct_identities(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    path = tmp_path / "publisher.json"
+    _task7_publisher_receipt(
+        path,
+        conclusion="failed",
+        failure_code="publisher_mismatch",
+        expected_publisher="enkyuan",
+        actual_publisher="enkyuan",
+        exit_code=1,
+    )
+
+    with pytest.raises(verifier.PublisherIdentityError):
+        verifier.validate_publisher_identity_receipt(
+            path,
+            expected_commit="a" * 40,
+            expected_tag="kaji-v0.2.0-beta.9",
+            expected_workflow_run="https://github.com/enkyuan/alloy/actions/runs/123",
+            expected_workflow_run_attempt=1,
+            expected_workflow_path=".github/workflows/kaji.publish.yml",
+            expected_workflow_sha="a" * 40,
+            expected_publisher="enkyuan",
+        )
+
+
+@pytest.mark.parametrize(
+    "kind", ["duplicate", "noncanonical", "oversize", "symlink", "hardlink"]
+)
+def test_publisher_receipt_loader_rejects_hostile_raw_files(
+    tmp_path: Path,
+    kind: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    path = tmp_path / "publisher.json"
+    receipt = _task7_publisher_receipt(path)
+    if kind == "duplicate":
+        encoded = path.read_text().replace(
+            '"schemaVersion": "1.0.0",',
+            '"schemaVersion": "1.0.0",\n  "schemaVersion": "1.0.0",',
+        )
+        path.write_text(encoded)
+    elif kind == "noncanonical":
+        path.write_text(json.dumps(receipt) + "\n")
+    elif kind == "oversize":
+        path.write_bytes(b" " * (64 * 1024 + 1))
+    elif kind == "symlink":
+        target = tmp_path / "target.json"
+        path.replace(target)
+        path.symlink_to(target)
+    else:
+        os.link(path, tmp_path / "publisher-hardlink.json")
+
+    with pytest.raises(verifier.PublisherIdentityError):
+        verifier.validate_publisher_identity_receipt(
+            path,
+            expected_commit="a" * 40,
+            expected_tag="kaji-v0.2.0-beta.9",
+            expected_workflow_run="https://github.com/enkyuan/alloy/actions/runs/123",
+            expected_workflow_run_attempt=1,
+            expected_workflow_path=".github/workflows/kaji.publish.yml",
+            expected_workflow_sha="a" * 40,
+            expected_publisher="enkyuan",
+        )
+
+
+def test_publisher_receipt_loader_rejects_stable_read_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    path = tmp_path / "publisher.json"
+    _task7_publisher_receipt(path)
+    original = verifier._file_identity
+    calls = 0
+
+    def drifting_identity(value: os.stat_result) -> tuple[int, ...]:
+        nonlocal calls
+        calls += 1
+        identity = original(value)
+        if calls >= 3:
+            return (*identity[:-1], identity[-1] + 1)
+        return identity
+
+    monkeypatch.setattr(verifier, "_file_identity", drifting_identity)
+    with pytest.raises(verifier.PublisherIdentityError):
+        verifier.validate_publisher_identity_receipt(
+            path,
+            expected_commit="a" * 40,
+            expected_tag="kaji-v0.2.0-beta.9",
+            expected_workflow_run="https://github.com/enkyuan/alloy/actions/runs/123",
+            expected_workflow_run_attempt=1,
+            expected_workflow_path=".github/workflows/kaji.publish.yml",
+            expected_workflow_sha="a" * 40,
+            expected_publisher="enkyuan",
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "expected_publisher", "actual_publisher", "exit_code"),
+    [
+        ("token_missing", "enkyuan", None, 1),
+        ("npm_whoami_failed", "enkyuan", None, 73),
+        ("publisher_mismatch", "enkyuan", "attacker", 1),
+        ("expected_publisher_missing", None, None, 1),
+    ],
+)
+def test_failed_publisher_identity_forces_a_nonterminal_incident(
+    tmp_path: Path,
+    failure_code: str,
+    expected_publisher: str | None,
+    actual_publisher: str | None,
+    exit_code: int,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    _task7_publisher_receipt(
+        receipt,
+        conclusion="failed",
+        failure_code=failure_code,
+        expected_publisher=expected_publisher,
+        actual_publisher=actual_publisher,
+        exit_code=exit_code,
+    )
+    verifier.state_main(
+        _task7_state_args(
+            tmp_path,
+            receipt=receipt,
+            expected_publisher=expected_publisher,
+        )
+    )
+
+    status = json.loads((tmp_path / "publication-status.json").read_text())
+    assert status["state"] == "npm_only"
+    assert status["releaseReady"] is False
+    assert status["incident"]["code"] == "publisher_identity_not_verified"
+    assert status["publisherIdentity"]["conclusion"] == "failed"
+    assert status["publisherIdentity"]["reason"] == "identity_check_failed"
+    assert status["publisherIdentity"]["identity"]["failureCode"] == failure_code
+    assert re.fullmatch(r"[0-9a-f]{64}", status["publisherIdentity"]["receiptSha256"])
+
+
+def test_malformed_publisher_receipt_is_retained_as_a_nonterminal_incident(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    receipt.write_text('{"schemaVersion":"1.0.0","token":"npm_secret"}\n')
+
+    verifier.state_main(_task7_state_args(tmp_path, receipt=receipt))
+
+    status = json.loads((tmp_path / "publication-status.json").read_text())
+    assert status["state"] == "npm_only"
+    assert status["publisherIdentity"]["conclusion"] == "failed"
+    assert status["publisherIdentity"]["reason"] == "receipt_invalid"
+    assert status["publisherIdentity"]["identity"] is None
+    assert re.fullmatch(r"[0-9a-f]{64}", status["publisherIdentity"]["receiptSha256"])
+    assert "npm_secret" not in json.dumps(status)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tag", "kaji-v0.2.0-beta." + "8"),
+        ("workflowSha", "b" * 40),
+        ("expectedPublisher", "attacker"),
+        ("actualPublisher", "attacker"),
+    ],
+)
+def test_tuple_invalid_publisher_receipt_is_redacted_but_hash_retained(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    document = _task7_publisher_receipt(receipt)
+    document[field] = value
+    receipt.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+
+    verifier.state_main(_task7_state_args(tmp_path, receipt=receipt))
+
+    status = json.loads((tmp_path / "publication-status.json").read_text())
+    assert status["state"] == "npm_only"
+    assert status["publisherIdentity"]["conclusion"] == "failed"
+    assert status["publisherIdentity"]["reason"] == "receipt_invalid"
+    assert status["publisherIdentity"]["identity"] is None
+    assert (
+        status["publisherIdentity"]["receiptSha256"]
+        == hashlib.sha256(receipt.read_bytes()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize(
+    "remove",
+    [
+        "--publisher-artifact-name",
+        "--publisher-artifact-id",
+        "--publisher-artifact-digest",
+    ],
+)
+def test_publisher_receipt_inputs_are_all_or_none(
+    tmp_path: Path,
+    remove: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    _task7_publisher_receipt(receipt)
+    command = _task7_state_args(tmp_path, receipt=receipt)
+    index = command.index(remove)
+    del command[index : index + 2]
+
+    with pytest.raises(SystemExit):
+        verifier.state_main(command)
+    assert not (tmp_path / "publication-status.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("--publisher-artifact-name", "kaji-publisher-identity-999-1"),
+        ("--publisher-artifact-id", "0"),
+        ("--publisher-artifact-id", "9007199254740992"),
+        ("--publisher-artifact-digest", "sha256:" + "A" * 64),
+    ],
+)
+def test_publisher_receipt_rejects_noncanonical_artifact_identity(
+    tmp_path: Path,
+    flag: str,
+    value: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    _task7_publisher_receipt(receipt)
+    command = _task7_state_args(tmp_path, receipt=receipt)
+    command[command.index(flag) + 1] = value
+
+    with pytest.raises(SystemExit):
+        verifier.state_main(command)
+    assert not (tmp_path / "publication-status.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("receipt_arm", "no_receipt_reason", "npm_publish_result"),
+    [
+        (False, "publish_job_not_started", "failure"),
+        (False, "publish_job_not_started", "cancelled"),
+        (False, "publish_job_not_started", "success"),
+        (False, "publish_job_not_started", "unknown"),
+        (False, "receipt_outputs_missing", "skipped"),
+        (False, "receipt_artifact_metadata_mismatch", "skipped"),
+        (False, "receipt_download_failed", "skipped"),
+        (True, None, "skipped"),
+    ],
+)
+def test_publisher_receipt_state_rejects_contradictory_job_outcomes(
+    tmp_path: Path,
+    receipt_arm: bool,
+    no_receipt_reason: str | None,
+    npm_publish_result: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    _task7_publisher_receipt(receipt)
+
+    with pytest.raises(SystemExit):
+        verifier.state_main(
+            _task7_state_args(
+                tmp_path,
+                receipt=receipt if receipt_arm else None,
+                no_receipt_reason=no_receipt_reason,
+                npm_publish_result=npm_publish_result,
+            )
+        )
+    assert not (tmp_path / "publication-status.json").exists()
+
+
+def _task7_terminal_publication_status(tmp_path: Path) -> Path:
+    verifier = _load_root_script("verify_published_packages.py")
+    receipt = tmp_path / "publisher.json"
+    _task7_publisher_receipt(receipt)
+    verifier.state_main(_task7_state_args(tmp_path, receipt=receipt))
+    return tmp_path / "publication-status.json"
+
+
+def test_release_evidence_status_only_cli_accepts_exact_terminal_identity(
+    tmp_path: Path,
+) -> None:
+    status = _task7_terminal_publication_status(tmp_path)
+    output = tmp_path / "publication-status-validation.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "kaji/scripts/validate_release_evidence.py"),
+            "publication-status",
+            "--publication-status",
+            str(status),
+            "--expected-commit",
+            "a" * 40,
+            "--workflow-run",
+            "https://github.com/enkyuan/alloy/actions/runs/123",
+            "--workflow-run-attempt",
+            "1",
+            "--expected-tag",
+            "kaji-v0.2.0-beta.9",
+            "--expected-workflow-path",
+            ".github/workflows/kaji.publish.yml",
+            "--expected-workflow-sha",
+            "a" * 40,
+            "--expected-publisher",
+            "enkyuan",
+            "--output",
+            str(output),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    summary = json.loads(output.read_text())
+    assert summary["conclusion"] == "passed"
+    assert summary["state"] == "npm_byte_verified"
+    assert summary["publisherIdentity"]["conclusion"] == "passed"
+    assert (
+        summary["publicationStatusSha256"]
+        == hashlib.sha256(status.read_bytes()).hexdigest()
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("target",), "dual"),
+        (("state",), "npm_only"),
+        (("previousState",), "npm_only"),
+        (("releaseReady",), False),
+        (("installRecommendation",), False),
+        (("registries", "pypi"), "present"),
+        (("publishJobs", "npm"), "failure"),
+        (("registryVerification",), "failed"),
+        (("incident",), {"code": "forged", "recovery": "forged"}),
+        (("commit",), "b" * 40),
+        (("tag",), "kaji-v0.2.0-beta." + "8"),
+        (("workflowRun",), "https://github.com/enkyuan/alloy/actions/runs/999"),
+        (("workflowRunAttempt",), 2),
+        (("workflowPath",), ".github/workflows/attacker.yml"),
+        (("workflowSha",), "b" * 40),
+        (("expectedPublisher",), "attacker"),
+        (("publisherIdentity", "conclusion"), "failed"),
+        (("publisherIdentity", "receiptSha256"), None),
+        (("publisherIdentity", "receiptSha256"), "0" * 64),
+        (("publisherIdentity", "artifact", "name"), "kaji-publisher-identity-999-1"),
+        (("publisherIdentity", "artifact", "id"), 0),
+        (("publisherIdentity", "artifact", "digest"), "sha256:" + "A" * 64),
+        (("publisherIdentity", "identity", "schemaVersion"), 1),
+        (("publisherIdentity", "identity", "commit"), "b" * 40),
+        (("publisherIdentity", "identity", "tag"), "kaji-v0.2.0-beta." + "8"),
+        (
+            ("publisherIdentity", "identity", "workflowRun"),
+            "https://github.com/enkyuan/alloy/actions/runs/999",
+        ),
+        (("publisherIdentity", "identity", "workflowRunAttempt"), 2),
+        (
+            ("publisherIdentity", "identity", "workflowPath"),
+            ".github/workflows/attacker.yml",
+        ),
+        (("publisherIdentity", "identity", "workflowSha"), "b" * 40),
+        (("publisherIdentity", "identity", "expectedPublisher"), "attacker"),
+        (
+            ("publisherIdentity", "identity", "actualPublisher"),
+            "attacker",
+        ),
+        (("publisherIdentity", "identity", "conclusion"), "failed"),
+        (("publisherIdentity", "identity", "exitCode"), 1),
+        (("publisherIdentity", "identity", "failureCode"), "publisher_mismatch"),
+    ],
+)
+def test_release_evidence_status_only_validation_rejects_hostile_mutations(
+    tmp_path: Path,
+    path: tuple[str, ...],
+    value: object,
+) -> None:
+    status = _task7_terminal_publication_status(tmp_path)
+    document = json.loads(status.read_text())
+    target = document
+    for component in path[:-1]:
+        target = target[component]
+    target[path[-1]] = value
+    status.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
+    validator = _load_root_script("validate_release_evidence.py")
+
+    with pytest.raises(validator.EvidenceValidationError):
+        validator.validate_publication_status(
+            status,
+            expected_commit="a" * 40,
+            workflow_run="https://github.com/enkyuan/alloy/actions/runs/123",
+            workflow_run_attempt=1,
+            expected_tag="kaji-v0.2.0-beta.9",
+            expected_workflow_path=".github/workflows/kaji.publish.yml",
+            expected_workflow_sha="a" * 40,
+            expected_publisher="enkyuan",
+        )
 
 
 def test_malformed_registry_json_is_retained_as_typed_machine_failure(
@@ -1825,7 +2684,7 @@ def test_malformed_registry_json_is_retained_as_typed_machine_failure(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.8"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.2.0-beta.9"},
                 "artifacts": [
                     {
                         "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
@@ -1849,6 +2708,16 @@ def test_malformed_registry_json_is_retained_as_typed_machine_failure(
                 str(output),
                 "--repository",
                 "alloy-org/alloy",
+                "--tag",
+                "kaji-v0.2.0-beta.9",
+                "--workflow-path",
+                ".github/workflows/kaji.publish.yml",
+                "--workflow-sha",
+                "a" * 40,
+                "--workflow-run-id",
+                "123",
+                "--workflow-run-attempt",
+                "1",
                 "--attempts",
                 "1",
             ]
@@ -1881,12 +2750,23 @@ def test_registry_shape_validation_rejects_empty_integrity_and_non_object_dist(
             downloads_dir=tmp_path,
             repository="alloy-org/alloy",
             commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
         )
 
 
 @pytest.mark.parametrize(
     "redirect",
-    ["https://attacker.example/package", "http://pypi.org/package"],
+    [
+        "https://attacker.example/package",
+        "http://pypi.org/package",
+        "https://pypi.org:444/package",
+        "https://user@pypi.org/package",
+        "https://pypi.org:invalid/package",
+    ],
 )
 def test_registry_redirect_handler_rejects_cross_origin_before_following(
     redirect: str,
@@ -1945,6 +2825,16 @@ def test_registry_verifier_retains_invalid_input_failure(
                 str(output),
                 "--repository",
                 "alloy-org/alloy",
+                "--tag",
+                "kaji-v0.2.0-beta.9",
+                "--workflow-path",
+                ".github/workflows/kaji.publish.yml",
+                "--workflow-sha",
+                "a" * 40,
+                "--workflow-run-id",
+                "123",
+                "--workflow-run-attempt",
+                "1",
             ]
         )
 
@@ -1978,6 +2868,16 @@ def test_registry_verifier_retains_invalid_encoding_failure(
                 str(output),
                 "--repository",
                 "alloy-org/alloy",
+                "--tag",
+                "kaji-v0.2.0-beta.9",
+                "--workflow-path",
+                ".github/workflows/kaji.publish.yml",
+                "--workflow-sha",
+                "a" * 40,
+                "--workflow-run-id",
+                "123",
+                "--workflow-run-attempt",
+                "1",
                 "--attempts",
                 "1",
             ]
@@ -2149,6 +3049,220 @@ def test_pypi_verifier_rejects_a_different_project_identity(
         )
 
 
+def _task7_provenance_statement(
+    payload: bytes,
+    *,
+    repository: str = "enkyuan/alloy",
+    commit: str = "a" * 40,
+    workflow_sha: str = "a" * 40,
+    tag: str = "kaji-v0.2.0-beta.9",
+    workflow_path: str = ".github/workflows/kaji.publish.yml",
+    run_id: int = 123,
+    run_attempt: int = 1,
+    subject_name: str = "pkg:npm/kaji-sdk@0.2.0-beta.9",
+    digest_algorithm: str = "sha512",
+) -> dict[str, object]:
+    del workflow_sha  # The signed statement binds it through the peeled commit.
+    ref = f"refs/tags/{tag}"
+    return {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [
+            {
+                "name": subject_name,
+                "digest": {
+                    digest_algorithm: hashlib.new(digest_algorithm, payload).hexdigest()
+                },
+            }
+        ],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "buildDefinition": {
+                "buildType": (
+                    "https://slsa-framework.github.io/"
+                    "github-actions-buildtypes/workflow/v1"
+                ),
+                "externalParameters": {
+                    "workflow": {
+                        "ref": ref,
+                        "repository": f"https://github.com/{repository}",
+                        "path": workflow_path,
+                    }
+                },
+                "internalParameters": {
+                    "github": {
+                        "event_name": "push",
+                        "repository_id": "1234",
+                        "repository_owner_id": "5678",
+                    }
+                },
+                "resolvedDependencies": [
+                    {
+                        "uri": f"git+https://github.com/{repository}@{ref}",
+                        "digest": {"gitCommit": commit},
+                    }
+                ],
+            },
+            "runDetails": {
+                "builder": {"id": "https://github.com/actions/runner/github-hosted"},
+                "metadata": {
+                    "invocationId": (
+                        f"https://github.com/{repository}/actions/runs/"
+                        f"{run_id}/attempts/{run_attempt}"
+                    )
+                },
+            },
+        },
+    }
+
+
+def _task7_sigstore_bundle(statement: dict[str, object]) -> dict[str, object]:
+    encoded = json.dumps(statement, separators=(",", ":"), sort_keys=True).encode()
+    return {
+        "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+        "dsseEnvelope": {
+            "payloadType": "application/vnd.in-toto+json",
+            "payload": base64.b64encode(encoded).decode(),
+            "signatures": [{"sig": base64.b64encode(b"signature").decode()}],
+        },
+        "verificationMaterial": {
+            "certificate": {"rawBytes": base64.b64encode(b"certificate").decode()},
+            "tlogEntries": [],
+        },
+    }
+
+
+def _task7_certificate(
+    *,
+    repository: str = "enkyuan/alloy",
+    commit: str = "a" * 40,
+    workflow_sha: str = "a" * 40,
+    tag: str = "kaji-v0.2.0-beta.9",
+    workflow_path: str = ".github/workflows/kaji.publish.yml",
+    run_id: int = 123,
+    run_attempt: int = 1,
+) -> dict[str, object]:
+    ref = f"refs/tags/{tag}"
+    workflow_uri = f"https://github.com/{repository}/{workflow_path}@{ref}"
+    return {
+        "subjectAlternativeName": workflow_uri,
+        "issuer": "https://token.actions.githubusercontent.com",
+        "githubWorkflowSHA": workflow_sha,
+        "githubWorkflowRepository": repository,
+        "githubWorkflowRef": ref,
+        "buildSignerURI": workflow_uri,
+        "buildSignerDigest": workflow_sha,
+        "runnerEnvironment": "github-hosted",
+        "sourceRepositoryURI": f"https://github.com/{repository}",
+        "sourceRepositoryDigest": commit,
+        "sourceRepositoryRef": ref,
+        "buildConfigURI": workflow_uri,
+        "buildConfigDigest": workflow_sha,
+        "runInvocationURI": (
+            f"https://github.com/{repository}/actions/runs/"
+            f"{run_id}/attempts/{run_attempt}"
+        ),
+        "sourceRepositoryVisibilityAtSigning": "public",
+    }
+
+
+def _task7_gh_output(
+    statement: dict[str, object],
+    *,
+    repository: str = "enkyuan/alloy",
+    commit: str = "a" * 40,
+    workflow_sha: str = "a" * 40,
+    tag: str = "kaji-v0.2.0-beta.9",
+    workflow_path: str = ".github/workflows/kaji.publish.yml",
+    run_id: int = 123,
+    run_attempt: int = 1,
+) -> bytes:
+    return json.dumps(
+        [
+            {
+                "attestation": {"bundle": "cryptographically-verified-by-gh"},
+                "verificationResult": {
+                    "statement": statement,
+                    "signature": {
+                        "certificate": _task7_certificate(
+                            repository=repository,
+                            commit=commit,
+                            workflow_sha=workflow_sha,
+                            tag=tag,
+                            workflow_path=workflow_path,
+                            run_id=run_id,
+                            run_attempt=run_attempt,
+                        )
+                    },
+                    "verifiedTimestamps": [{"type": "Tlog"}],
+                },
+            }
+        ]
+    ).encode()
+
+
+def _task7_npm_audit(
+    payload: bytes,
+    *,
+    repository: str = "enkyuan/alloy",
+    commit: str = "a" * 40,
+    workflow_sha: str = "a" * 40,
+    tag: str = "kaji-v0.2.0-beta.9",
+    workflow_path: str = ".github/workflows/kaji.publish.yml",
+    run_id: int = 123,
+    run_attempt: int = 1,
+) -> dict[str, Any]:
+    statement = _task7_provenance_statement(
+        payload,
+        repository=repository,
+        commit=commit,
+        workflow_sha=workflow_sha,
+        tag=tag,
+        workflow_path=workflow_path,
+        run_id=run_id,
+        run_attempt=run_attempt,
+    )
+    return {
+        "invalid": [],
+        "missing": [],
+        "verified": [
+            {
+                "name": "kaji-sdk",
+                "version": "0.2.0-beta.9",
+                "location": "node_modules/kaji-sdk",
+                "registry": "https://registry.npmjs.org/",
+                "attestations": {
+                    "url": (
+                        "https://registry.npmjs.org/-/npm/v1/attestations/"
+                        "kaji-sdk@0.2.0-beta.9"
+                    ),
+                    "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
+                },
+                "attestationBundles": [
+                    {
+                        "predicateType": "https://slsa.dev/provenance/v1",
+                        "bundle": _task7_sigstore_bundle(statement),
+                    },
+                    {
+                        "predicateType": (
+                            "https://github.com/npm/attestation/tree/main/"
+                            "specs/publish/v0.1"
+                        ),
+                        "bundle": _task7_sigstore_bundle(
+                            {
+                                **statement,
+                                "predicateType": (
+                                    "https://github.com/npm/attestation/tree/main/"
+                                    "specs/publish/v0.1"
+                                ),
+                            }
+                        ),
+                    },
+                ],
+            }
+        ],
+    }
+
+
 def test_npm_missing_target_is_retryable_propagation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -2160,13 +3274,23 @@ def test_npm_missing_target_is_retryable_propagation(
         output = (
             json.dumps(
                 {
+                    "invalid": [],
+                    "missing": [],
                     "verified": [
                         {
                             "name": "transitive-dependency",
                             "version": "1.0.0",
-                            "attestations": [{}],
+                            "location": "node_modules/transitive-dependency",
+                            "registry": "https://registry.npmjs.org/",
+                            "attestations": {
+                                "url": "https://registry.npmjs.org/a",
+                                "provenance": {
+                                    "predicateType": ("https://slsa.dev/provenance/v1")
+                                },
+                            },
+                            "attestationBundles": [],
                         }
-                    ]
+                    ],
                 }
             ).encode()
             if command[:3] == ["npm", "audit", "signatures"]
@@ -2183,6 +3307,15 @@ def test_npm_missing_target_is_retryable_propagation(
         verifier._verify_npm_audit(
             repository_dir=audit_dir,
             evidence_file=tmp_path / "npm-signature-audit.json",
+            bundle_file=tmp_path / "npm-provenance.sigstore.json",
+            payload=b"npm-tarball",
+            repository="enkyuan/alloy",
+            commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
         )
 
 
@@ -2190,11 +3323,11 @@ def test_npm_missing_target_is_retryable_propagation(
     ("audit", "expected_error"),
     [
         (
-            {"missing": [{"name": "kaji-sdk", "version": "0.2.0-beta.8"}]},
+            {"missing": [{"name": "kaji-sdk", "version": "0.2.0-beta.9"}]},
             "VerificationUnavailable",
         ),
         (
-            {"invalid": [{"name": "kaji-sdk", "version": "0.2.0-beta.8"}]},
+            {"invalid": [{"name": "kaji-sdk", "version": "0.2.0-beta.9"}]},
             "VerificationMismatch",
         ),
     ],
@@ -2230,7 +3363,7 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
     payload = b"npm-tarball"
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(payload).digest()).decode()
     entry = {
-        "file": "kaji-sdk-0.2.0-beta.8.tgz",
+        "file": "kaji-sdk-0.2.0-beta.9.tgz",
         "package": "typescript",
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size": len(payload),
@@ -2242,23 +3375,28 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
         if command[:2] == ["npm", "view"]:
             stdout = json.dumps(
                 {
-                    "tarball": "https://registry.npmjs.org/kaji-sdk/-/sdk.tgz",
+                    "tarball": (
+                        "https://registry.npmjs.org/kaji-sdk/-/"
+                        "kaji-sdk-0.2.0-beta.9.tgz"
+                    ),
                     "integrity": integrity,
                     "shasum": hashlib.sha1(payload).hexdigest(),  # noqa: S324
                 }
             ).encode()
         elif command[:3] == ["npm", "audit", "signatures"]:
-            stdout = json.dumps(
-                {
-                    "verified": [
-                        {
-                            "name": "kaji-sdk",
-                            "version": "0.2.0-beta.8",
-                            "attestations": [{}],
-                        }
-                    ]
-                }
-            ).encode()
+            stdout = json.dumps(_task7_npm_audit(payload)).encode()
+        elif command[:3] == ["gh", "attestation", "verify"]:
+            digest_algorithm = command[command.index("--digest-alg") + 1]
+            subject = (
+                _task7_provenance_statement(payload)
+                if digest_algorithm == "sha512"
+                else _task7_provenance_statement(
+                    payload,
+                    subject_name=cast(str, entry["file"]),
+                    digest_algorithm="sha256",
+                )
+            )
+            stdout = _task7_gh_output(subject)
         else:
             stdout = b"{}"
         return SimpleNamespace(returncode=0, stdout=stdout, stderr=b"")
@@ -2269,13 +3407,20 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
     evidence = verifier.verify_npm(
         {entry["file"]: entry},
         downloads_dir=tmp_path,
-        repository="alloy-org/alloy",
+        repository="enkyuan/alloy",
         commit="a" * 40,
+        tag="kaji-v0.2.0-beta.9",
+        workflow_path=".github/workflows/kaji.publish.yml",
+        workflow_sha="a" * 40,
+        workflow_run_id=123,
+        workflow_run_attempt=1,
     )
 
     assert evidence["byteVerified"] is True
+    assert evidence["integrity"] == integrity
+    assert evidence["shasum"] == hashlib.sha1(payload).hexdigest()  # noqa: S324
     assert evidence["signatureAudit"]["packageVerified"] is True
-    assert (tmp_path / "registry-kaji-sdk-0.2.0-beta.8.tgz").read_bytes() == payload
+    assert (tmp_path / "registry-kaji-sdk-0.2.0-beta.9.tgz").read_bytes() == payload
     assert (tmp_path / "npm-signature-audit.json").is_file()
     assert (
         "npm",
@@ -2284,12 +3429,22 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
         "--json",
         "--include-attestations",
     ) in commands
-    github_command = next(
+    github_commands = [
         command
         for command in commands
         if command[:3] == ("gh", "attestation", "verify")
+    ]
+    assert len(github_commands) == 2
+    assert {
+        command[command.index("--digest-alg") + 1] for command in github_commands
+    } == {"sha256", "sha512"}
+    assert all(
+        command[command.index("--source-digest") + 1] == "a" * 40
+        and command[command.index("--signer-digest") + 1] == "a" * 40
+        and command[command.index("--source-ref") + 1] == "refs/tags/kaji-v0.2.0-beta.9"
+        and "--deny-self-hosted-runners" in command
+        for command in github_commands
     )
-    assert github_command[github_command.index("--source-digest") + 1] == "a" * 40
 
 
 def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
@@ -2303,14 +3458,44 @@ def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
         if command[:3] == ["npm", "audit", "signatures"]:
             stdout = json.dumps(
                 {
+                    "invalid": [],
+                    "missing": [],
                     "verified": [
-                        {"name": "kaji-sdk", "version": "0.2.0-beta.8"},
+                        {
+                            "name": "kaji-sdk",
+                            "version": "0.2.0-beta.9",
+                            "location": "node_modules/kaji-sdk",
+                            "registry": "https://registry.npmjs.org/",
+                            "attestations": {
+                                "url": (
+                                    "https://registry.npmjs.org/-/npm/v1/"
+                                    "attestations/kaji-sdk@0.2.0-beta.9"
+                                ),
+                                "provenance": {
+                                    "predicateType": ("https://slsa.dev/provenance/v1")
+                                },
+                            },
+                            "attestationBundles": [],
+                        },
                         {
                             "name": "transitive-dependency",
                             "version": "1.0.0",
-                            "attestations": [{}],
+                            "location": "node_modules/transitive-dependency",
+                            "registry": "https://registry.npmjs.org/",
+                            "attestations": {
+                                "url": "https://registry.npmjs.org/a",
+                                "provenance": {
+                                    "predicateType": ("https://slsa.dev/provenance/v1")
+                                },
+                            },
+                            "attestationBundles": [
+                                {
+                                    "predicateType": ("https://slsa.dev/provenance/v1"),
+                                    "bundle": {},
+                                }
+                            ],
                         },
-                    ]
+                    ],
                 }
             ).encode()
         else:
@@ -2326,6 +3511,335 @@ def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
         verifier._verify_npm_audit(
             repository_dir=audit_dir,
             evidence_file=tmp_path / "npm-signature-audit.json",
+            bundle_file=tmp_path / "npm-provenance.sigstore.json",
+            payload=b"npm-tarball",
+            repository="enkyuan/alloy",
+            commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
+        )
+
+
+@pytest.mark.parametrize(
+    "integrity",
+    [
+        "",
+        "sha256-" + base64.b64encode(b"x" * 32).decode(),
+        "sha512-" + base64.b64encode(b"x" * 63).decode(),
+        "sha512-" + base64.b64encode(b"x" * 64).decode() + " extra",
+        "sha512-" + base64.b64encode(b"x" * 64).decode() + "\n",
+        "sha512-" + base64.b64encode(b"x" * 64).decode() + "=",
+    ],
+)
+def test_npm_integrity_is_exactly_one_canonical_sha512_token(
+    integrity: str,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    with pytest.raises(verifier.VerificationMismatch):
+        verifier.parse_integrity(integrity)
+
+
+@pytest.mark.parametrize(
+    "shasum",
+    [None, "", "A" * 40, "a" * 39, "a" * 41, "g" * 40, "a" * 40 + " "],
+)
+def test_npm_shasum_is_mandatory_canonical_sha1(shasum: object) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+
+    with pytest.raises(verifier.VerificationMismatch):
+        verifier.validate_shasum(shasum, b"npm-tarball")
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate"),
+    [
+        (
+            "subject-purl",
+            lambda audit: audit["verified"][0]["attestationBundles"][0]["bundle"][
+                "dsseEnvelope"
+            ].update(
+                {
+                    "payload": base64.b64encode(
+                        json.dumps(
+                            {
+                                **_task7_provenance_statement(b"npm-tarball"),
+                                "subject": [
+                                    {
+                                        "name": "pkg:npm/dependency@1.0.0",
+                                        "digest": {
+                                            "sha512": hashlib.sha512(
+                                                b"npm-tarball"
+                                            ).hexdigest()
+                                        },
+                                    }
+                                ],
+                            },
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ).encode()
+                    ).decode()
+                }
+            ),
+        ),
+        (
+            "duplicate-provenance",
+            lambda audit: audit["verified"][0]["attestationBundles"].append(
+                audit["verified"][0]["attestationBundles"][0]
+            ),
+        ),
+        (
+            "dependency-only",
+            lambda audit: audit["verified"][0].update(
+                {"name": "dependency", "version": "1.0.0"}
+            ),
+        ),
+        (
+            "wrong-location",
+            lambda audit: audit["verified"][0].update(
+                {"location": "node_modules/dependency"}
+            ),
+        ),
+        (
+            "wrong-registry",
+            lambda audit: audit["verified"][0].update(
+                {"registry": "https://attacker.example/"}
+            ),
+        ),
+        (
+            "attestation-url-attacker-prefix",
+            lambda audit: audit["verified"][0]["attestations"].update(
+                {
+                    "url": (
+                        "https://registry.npmjs.org/-/npm/v1/attestations/"
+                        "attacker-kaji-sdk@0.2.0-beta.9"
+                    )
+                }
+            ),
+        ),
+        (
+            "attestation-url-attacker-suffix",
+            lambda audit: audit["verified"][0]["attestations"].update(
+                {
+                    "url": (
+                        "https://registry.npmjs.org/-/npm/v1/attestations/"
+                        "kaji-sdk@0.2.0-beta.9.attacker"
+                    )
+                }
+            ),
+        ),
+        (
+            "attestation-provenance-missing",
+            lambda audit: audit["verified"][0]["attestations"].pop("provenance"),
+        ),
+        (
+            "attestation-provenance-extra-key",
+            lambda audit: audit["verified"][0]["attestations"]["provenance"].update(
+                {"unexpected": True}
+            ),
+        ),
+        (
+            "attestation-provenance-wrong-predicate",
+            lambda audit: audit["verified"][0]["attestations"]["provenance"].update(
+                {"predicateType": "https://attacker.example/provenance/v1"}
+            ),
+        ),
+        (
+            "attestation-root-extra-key",
+            lambda audit: audit["verified"][0]["attestations"].update(
+                {"unexpected": True}
+            ),
+        ),
+        (
+            "arbitrary-bundle",
+            lambda audit: audit["verified"][0]["attestationBundles"][0].update(
+                {"bundle": {"truthy": True}}
+            ),
+        ),
+    ],
+)
+def test_npm11_audit_contract_selects_only_the_exact_target_provenance(
+    label: str,
+    mutate: Callable[[dict[str, object]], None],
+) -> None:
+    del label
+    verifier = _load_root_script("verify_published_packages.py")
+    payload = b"npm-tarball"
+    audit = _task7_npm_audit(payload)
+    mutate(audit)
+
+    with pytest.raises(
+        (verifier.VerificationMismatch, verifier.VerificationUnavailable)
+    ):
+        verifier.parse_npm_audit_output(
+            json.dumps(audit).encode(),
+            payload=payload,
+            repository="enkyuan/alloy",
+            commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("subject", 0, "name"), "pkg:npm/dependency@1.0.0"),
+        (("subject", 0, "digest", "sha512"), "b" * 128),
+        (
+            ("predicate", "buildDefinition", "buildType"),
+            "https://attacker.example/workflow/v1",
+        ),
+        (
+            (
+                "predicate",
+                "buildDefinition",
+                "externalParameters",
+                "workflow",
+                "repository",
+            ),
+            "https://github.com/attacker/alloy",
+        ),
+        (
+            (
+                "predicate",
+                "buildDefinition",
+                "externalParameters",
+                "workflow",
+                "ref",
+            ),
+            "refs/tags/kaji-v0.2.0-beta." + "8",
+        ),
+        (
+            (
+                "predicate",
+                "buildDefinition",
+                "externalParameters",
+                "workflow",
+                "path",
+            ),
+            ".github/workflows/attacker.yml",
+        ),
+        (
+            (
+                "predicate",
+                "buildDefinition",
+                "resolvedDependencies",
+                0,
+                "digest",
+                "gitCommit",
+            ),
+            "b" * 40,
+        ),
+        (
+            ("predicate", "runDetails", "builder", "id"),
+            "https://github.com/actions/runner/self-hosted",
+        ),
+        (
+            ("predicate", "runDetails", "metadata", "invocationId"),
+            "https://github.com/enkyuan/alloy/actions/runs/999/attempts/1",
+        ),
+    ],
+)
+def test_npm_dsse_statement_rejects_every_release_identity_mutation(
+    path: tuple[object, ...],
+    value: object,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    payload = b"npm-tarball"
+    audit = _task7_npm_audit(payload)
+    bundle = audit["verified"][0]["attestationBundles"][0]["bundle"]  # type: ignore[index]
+    envelope = bundle["dsseEnvelope"]  # type: ignore[index]
+    statement = json.loads(base64.b64decode(envelope["payload"]))  # type: ignore[index]
+    target: Any = statement
+    for component in path[:-1]:
+        target = target[component]  # type: ignore[index]
+    target[path[-1]] = value  # type: ignore[index]
+    envelope["payload"] = base64.b64encode(  # type: ignore[index]
+        json.dumps(statement, separators=(",", ":"), sort_keys=True).encode()
+    ).decode()
+
+    with pytest.raises(verifier.VerificationMismatch):
+        verifier.parse_npm_audit_output(
+            json.dumps(audit).encode(),
+            payload=payload,
+            repository="enkyuan/alloy",
+            commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("statement", "subject", 0, "name"), "attacker.tgz"),
+        (("statement", "subject", 0, "digest", "sha256"), "b" * 64),
+        (
+            ("signature", "certificate", "sourceRepositoryURI"),
+            "https://github.com/attacker/alloy",
+        ),
+        (
+            ("signature", "certificate", "sourceRepositoryRef"),
+            "refs/tags/kaji-v0.2.0-beta." + "8",
+        ),
+        (("signature", "certificate", "sourceRepositoryDigest"), "b" * 40),
+        (("signature", "certificate", "githubWorkflowSHA"), "b" * 40),
+        (
+            ("signature", "certificate", "buildSignerURI"),
+            "https://github.com/attacker/alloy/.github/workflows/publish.yml@refs/tags/x",
+        ),
+        (
+            ("signature", "certificate", "runnerEnvironment"),
+            "self-hosted",
+        ),
+        (
+            ("signature", "certificate", "runInvocationURI"),
+            "https://github.com/enkyuan/alloy/actions/runs/123/attempts/2",
+        ),
+    ],
+)
+def test_zero_exit_gh_json_rejects_wrong_subject_or_certificate_identity(
+    path: tuple[object, ...],
+    value: object,
+) -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    payload = b"npm-tarball"
+    statement = _task7_provenance_statement(
+        payload,
+        subject_name="kaji-sdk-0.2.0-beta.9.tgz",
+        digest_algorithm="sha256",
+    )
+    output = json.loads(_task7_gh_output(statement))
+    result = output[0]["verificationResult"]
+    target: Any = result
+    for component in path[:-1]:
+        target = target[component]  # type: ignore[index]
+    target[path[-1]] = value  # type: ignore[index]
+
+    with pytest.raises(verifier.VerificationMismatch):
+        verifier.validate_gh_attestation_output(
+            json.dumps(output).encode(),
+            payload=payload,
+            subject_name="kaji-sdk-0.2.0-beta.9.tgz",
+            digest_algorithm="sha256",
+            repository="enkyuan/alloy",
+            commit="a" * 40,
+            tag="kaji-v0.2.0-beta.9",
+            workflow_path=".github/workflows/kaji.publish.yml",
+            workflow_sha="a" * 40,
+            workflow_run_id=123,
+            workflow_run_attempt=1,
+            require_npm_statement=False,
         )
 
 
@@ -2343,10 +3857,13 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "## Partial or ambiguous publication", 1
     )[0]
 
-    assert (
-        'git tag -s -a kaji-v0.2.0-beta.8 <approved-commit> -m "Kaji 0.2.0 beta 8"'
-        in protected_release
+    assert "TAG=kaji-v0.2.0-beta.9" in protected_release
+    assert 'git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE"' in (
+        protected_release
     )
+    assert '"$TAG" "$REVIEWED_COMMIT"' in protected_release
+    assert 'git verify-tag "$TAG"' in protected_release
+    assert 'git push origin "refs/tags/$TAG"' in protected_release
     assert "kaji-v0.2.0-beta.2" not in protected_release
     assert "kaji-v0.2.0-beta.4" not in protected_release
     assert "0.2.0-beta.4" not in _read(".github/workflows/kaji.rehearsal.yml")
@@ -2373,10 +3890,15 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
     assert "`0.9805314383`, `0.9756823917`," in runbook
     assert "and `1.2290586651`" in runbook
     assert "recovery requires the new beta.8 attempt" in runbook
+    assert "run `30296132900`" in runbook
+    assert "`4dd04a1cf74927c4b3de31a1bd1db54a7b7c7a4e`" in runbook
+    assert "`KAJI_TTHW_EVIDENCE_JSON` was empty" in runbook
+    assert "five-user TTHW validation did not start" in runbook
+    assert "recovery requires the new beta.9 attempt" in runbook
 
     for expected in (
-        "signed beta tag",
-        "protected `kaji-beta` environment",
+        "verified, signed, annotated beta tag",
+        "`kaji-beta` protects mandatory keyed OpenAI proof",
         "yank",
         "npm deprecate",
         "preserve",
@@ -2394,17 +3916,20 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "`KAJI_RELEASE_SIGNER_EMAIL`",
         "does not claim a separately",
         "publication is deferred",
-        "There is no Python publisher job",
+        "no Python publisher",
         "`npm_byte_verified`",
-        "public release assets",
+        "exact ordered 27 assets",
         "Land the approved release commit on the default branch",
         "Never tag a feature-branch-only commit",
-        "first unscoped publication requires a short-lived",
-        "after the first release, configure npm trusted publishing",
-        "npm exposes no non-mutating",
-        "requires `KAJI_NPM_PUBLISHER` to match `npm whoami`",
-        "verifies existing `kaji-sdk` write access",
-        "unambiguous `E404`",
+        "fresh `NPM_TOKEN` is stored only in",
+        "Do not run a local credential preflight",
+        "exact `npm whoami` equality with `KAJI_NPM_PUBLISHER`",
+        "stable `tiny-tarball@1.0.0` npm control",
+        "`kaji-sdk` packument is an exact 404 JSON object",
+        '`{"error":"Not found"}`',
+        "exact beta.9 endpoint is an exact 404 JSON",
+        'string `"Not Found"`',
+        "infer absence from npm CLI error text or a substring match",
     ):
         assert expected in runbook
 
@@ -2446,13 +3971,13 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     payloads = {
         "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
         "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
-        "kaji-sdk-0.2.0-beta.8.tgz": b"npm",
+        "kaji-sdk-0.2.0-beta.9.tgz": b"npm",
     }
     entries = []
     for name, payload in payloads.items():
         (artifacts / name).write_bytes(payload)
         package = "typescript" if name.endswith(".tgz") else "python"
-        version = "0.2.0-beta.8" if package == "typescript" else "0.2.0b1"
+        version = "0.2.0-beta.9" if package == "typescript" else "0.2.0b1"
         entries.append(
             {
                 "commit": commit,
@@ -2484,7 +4009,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         "packages": {
             "contract": "1.0.0",
             "python": "0.2.0b1",
-            "typescript": "0.2.0-beta.8",
+            "typescript": "0.2.0-beta.9",
         },
         "artifacts": entries,
     }
@@ -2514,20 +4039,41 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         == (artifacts / "kaji_sdk-0.2.0b1-py3-none-any.whl").resolve()
     )
     assert verified.python_sdist == (artifacts / "kaji_sdk-0.2.0b1.tar.gz").resolve()
-    assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.8.tgz").resolve()
+    assert verified.npm_tarball == (artifacts / "kaji-sdk-0.2.0-beta.9.tgz").resolve()
     with pytest.raises(TypeError):
         cast(MutableMapping[str, str], verified.artifact_sha256)["extra"] = (
             "not immutable"
         )
+    member_bytes = {path.name: path.read_bytes() for path in artifacts.iterdir()}
+    verified_bytes = module.verify_release_member_bytes(member_bytes, commit)
+    assert verified_bytes.commit == commit
+    assert verified_bytes.manifest_sha256 == verified.manifest_sha256
+    assert verified_bytes.members["kaji-sdk-0.2.0-beta.9.tgz"] == b"npm"
+    with pytest.raises(TypeError):
+        cast(MutableMapping[str, bytes], verified_bytes.members)["extra"] = b"x"
+    changed_members = {
+        **member_bytes,
+        "kaji-sdk-0.2.0-beta.9.tgz": b"tampered",
+    }
+    with pytest.raises(SystemExit, match="size/hash mismatch"):
+        module.verify_release_member_bytes(changed_members, commit)
+    boolean_schema_members = dict(member_bytes)
+    boolean_schema_manifest = json.loads(boolean_schema_members["manifest.json"])
+    boolean_schema_manifest["schemaVersion"] = True
+    boolean_schema_members["manifest.json"] = json.dumps(
+        boolean_schema_manifest
+    ).encode()
+    with pytest.raises(SystemExit, match="manifest schema or commit mismatch"):
+        module.verify_release_member_bytes(boolean_schema_members, commit)
 
     assert subprocess.run(command, check=False).returncode == 0
-    (artifacts / "kaji-sdk-0.2.0-beta.8.tgz").write_bytes(b"tampered")
+    (artifacts / "kaji-sdk-0.2.0-beta.9.tgz").write_bytes(b"tampered")
     result = subprocess.run(command, capture_output=True, check=False, text=True)
     assert result.returncode != 0
     assert "size/hash mismatch" in result.stderr
 
-    (artifacts / "kaji-sdk-0.2.0-beta.8.tgz").write_bytes(
-        payloads["kaji-sdk-0.2.0-beta.8.tgz"]
+    (artifacts / "kaji-sdk-0.2.0-beta.9.tgz").write_bytes(
+        payloads["kaji-sdk-0.2.0-beta.9.tgz"]
     )
     unexpected = artifacts / "unexpected.whl"
     unexpected.write_bytes(b"extra")
@@ -2543,7 +4089,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     assert "artifact file set mismatch" in result.stderr
     wheel.write_bytes(payloads[wheel.name])
 
-    npm = artifacts / "kaji-sdk-0.2.0-beta.8.tgz"
+    npm = artifacts / "kaji-sdk-0.2.0-beta.9.tgz"
     npm.unlink()
     npm.symlink_to(wheel)
     result = subprocess.run(command, capture_output=True, check=False, text=True)
@@ -2554,7 +4100,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("selector", "expected_contract_name"),
     [
-        ((), "BETA8_RELEASE_CONTRACT"),
+        ((), "BETA9_RELEASE_CONTRACT"),
         (
             ("--artifact-contract", "beta2-reference"),
             "BETA2_REFERENCE_RELEASE_CONTRACT",
@@ -2628,12 +4174,14 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         "  node-compat:", 1
     )[0]
     rehearsal_node = rehearsal.split("  node-compat:", 1)[1].split(
-        "  tthw-evidence:", 1
+        "  typescript-onboarding-archive-calibration:", 1
     )[0]
     publish_python = publish.split("  python-compat:", 1)[1].split("  node-compat:", 1)[
         0
     ]
-    publish_node = publish.split("  node-compat:", 1)[1].split("  tthw-evidence:", 1)[0]
+    publish_node = publish.split("  node-compat:", 1)[1].split(
+        "  typescript-onboarding-archive-calibration:", 1
+    )[0]
 
     assert "needs: offline-release" in rehearsal_python
     assert "needs: offline-release" in rehearsal_node
@@ -2649,52 +4197,67 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         initialize = job.index("Initialize compatibility receipt before setup")
         initial_upload = job.index("Retain initial not-run compatibility receipt")
         checkout = job.index("actions/checkout@")
-        normalize = job.index("Normalize compatibility receipt")
+        terminal_step_name = (
+            "Finalize closed protected Node receipt"
+            if smoke == "kaji/ts/scripts/smoke_package.mts"
+            else "Normalize compatibility receipt"
+        )
+        terminal = job.index(terminal_step_name)
         final_upload = job.index("Retain final compatibility receipt")
         assert initialize < initial_upload < checkout
         assert (
             job.index("actions/download-artifact@")
             < job.index("verify_release_artifacts.py")
             < job.index(smoke)
-            < normalize
+            < terminal
             < final_upload
         )
         job_environment = job.split("    strategy:", 1)[0]
         assert "${{ runner." not in job_environment
-        assert "name: kaji-beta-artifacts" in job
         assert "path: .artifacts/kaji-release" in job
         assert "--expected-commit" in job
         assert "--output" in job
-        assert job.count("if: ${{ always() }}") == 2
+        if smoke == "kaji/ts/scripts/smoke_package.mts":
+            assert "artifact-ids:" in job
+            assert "Resolve exact producer artifact by ID" in job
+            assert job.count("if: ${{ always() }}") == 2
+            assert "Normalize compatibility receipt" not in job
+            assert 'schemaVersion: 2, executionMode: "protected"' in job
+            assert "--protected" in job
+            assert "--expected-node-major" in job
+            assert "--configured-runner-label" in job
+            assert "--producer-artifact-id" in job
+            assert "--producer-artifact-digest" in job
+            assert "assertClosedOrdinaryReceipt" in job
+            assert "assertProtectedOrdinaryReceiptForWorkflow" in job
+            assert "node_smoke_failed" in job
+            assert "onboardingProofs" in job
+        else:
+            assert "name: kaji-beta-artifacts" in job
+            assert job.count("if: ${{ always() }}") == 2
+            assert "Normalize compatibility receipt" in job
+            assert (
+                '.conclusion == "passed" and (keys == passed_keys) and '
+                ".failureCode == null" in job
+            )
+            assert ".githubPackageProofs" in job
+            assert ".timings" in job
+            assert 'keys == ["sdist", "wheel"]' in job
+            assert "9007199254740991" in job
+            assert 'runtime: "python", network: "scripted"' in job
+            assert (
+                'schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke"' in job
+            )
+            assert "publicScenarioCount: 15" in job
+            assert 'reason_code: "github_token_missing"' in job
+            assert "githubObservabilitySinksVerified: true" in job
+            assert "unknownMutationPreserved: true, mutationRetries: 0" in job
+            assert ".releaseManifestSha256 | sha256" in job
+            assert "all(.[]; sha256)" in job
+            assert "compatibility_receipt_not_terminal" in job
         assert job.count("uses: actions/upload-artifact@") == 2
         assert "-initial" in job
         assert "compatibility-receipt.json" in job
-        assert (
-            '.conclusion == "passed" and (keys == passed_keys) and .failureCode == null'
-        ) in job
-        assert ".githubPackageProofs" in job
-        assert ".timings" in job
-        assert 'keys == ["sdist", "wheel"]' in job
-        assert 'keys == ["bun", "npm"]' in job
-        assert "9007199254740991" in job
-        assert 'runtime: "python", network: "scripted"' in job
-        assert 'schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke"' in job
-        assert "publicScenarioCount: 15" in job
-        assert 'reason_code: "github_token_missing"' in job
-        assert "githubObservabilitySinksVerified: true" in job
-        assert "unknownMutationPreserved: true, mutationRetries: 0" in job
-        assert 'runtime: "typescript", network: "blocked"' in job
-        assert "toolCount: 15" in job
-        assert "readToolCount: 13" in job
-        assert 'manifestVersion: "0.1.0", toolCount: 6, readToolCount: 4' in job
-        assert 'providerAlias: "github_get_file"' in job
-        assert 'catalogName: "synthetic.complete"' in job
-        assert 'testFile: "kaji/ts/tests/github-registry.test.ts"' in job
-        assert "tokenLookups: 0, requestAttempts: 0" in job
-        assert "(.bun == .npm) and" in job
-        assert ".releaseManifestSha256 | sha256" in job
-        assert "all(.[]; sha256)" in job
-        assert "compatibility_receipt_not_terminal" in job
         assert "uv build" not in job
         assert "npm pack" not in job
         assert "bun run package:smoke" not in job
@@ -2705,19 +4268,27 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert "--release-manifest .artifacts/kaji-release/manifest.json" in job
         assert '--expected-commit "$EXPECTED_COMMIT"' in job
 
-    timing_docs = _read("docs/kaji/tthw-evidence.md")
-    for path in (
-        "receipt.timings.wheel",
-        "receipt.timings.sdist",
-        "receipt.timings.npm",
-        "receipt.timings.bun",
+    onboarding_guide = _read("docs/kaji/typescript-onboarding-evidence.md")
+    node22_cell = "| Node 22 | `ubuntu-22.04` / `ubuntu22` | exact `v22.x.y` |"
+    node24_cell = "| Node 24 | `ubuntu-24.04` / `ubuntu24` | exact `v24.x.y` |"
+    assert onboarding_guide.index(node22_cell) < onboarding_guide.index(node24_cell)
+
+    normalized_onboarding_guide = " ".join(onboarding_guide.split())
+    for claim in (
+        "exactly these GitHub-hosted Linux/x64 cells:",
+        "two-cell aggregate recomputation",
+        "passed `artifactInstall`, `scaffoldInit`, `noKeyRun`, `echoSetup`, "
+        "`echoRun`, `coldRun`, and `warmRun` phases for npm and Bun;",
+        "nonnegative observed cold-setup-to-output and warm-run durations. "
+        "These are retained observations, not human timing thresholds or "
+        "performance gates.",
     ):
-        assert path in timing_docs
+        assert claim in normalized_onboarding_guide
 
 
 def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
     workflow = _read(f".github/workflows/{workflow_name}")
-    next_job = "node-compat" if job_name == "python-compat" else "tthw-evidence"
+    next_job = "node-compat"
     job = workflow.split(f"  {job_name}:", 1)[1].split(f"  {next_job}:", 1)[0]
     step = job.split("      - name: Normalize compatibility receipt", 1)[1].split(
         "\n      - name:", 1
@@ -2729,9 +4300,7 @@ def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
     ("workflow_name", "job_name"),
     (
         ("kaji.rehearsal.yml", "python-compat"),
-        ("kaji.rehearsal.yml", "node-compat"),
         ("kaji.publish.yml", "python-compat"),
-        ("kaji.publish.yml", "node-compat"),
     ),
 )
 def test_compatibility_normalizers_require_identical_typescript_installed_proofs(
@@ -2767,9 +4336,11 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
                 "CHECKOUT_OUTCOME": "success",
                 "RUNTIME_SETUP_OUTCOME": "success",
                 "DEPENDENCY_SETUP_OUTCOME": "success",
+                "LOOKUP_OUTCOME": "success",
                 "DOWNLOAD_OUTCOME": "success",
                 "VERIFICATION_OUTCOME": "success",
                 "SMOKE_OUTCOME": "success",
+                "STAGE_OUTCOME": "success",
             },
             text=True,
         )
@@ -2780,10 +4351,10 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
         "schemaVersion": 1,
         "commit": commit,
         "releaseManifestSha256": "b" * 64,
-        "artifactSha256": {"kaji-sdk-0.2.0-beta.8.tgz": "c" * 64},
+        "artifactSha256": {"kaji-sdk-0.2.0-beta.9.tgz": "c" * 64},
         "runtime": {"version": "v22.1.0"},
         "artifacts": {
-            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
             "package": "/tmp/node_modules/kaji-sdk",
         },
         "githubPackageProofs": {
@@ -2842,9 +4413,7 @@ def test_compatibility_normalizers_require_identical_typescript_installed_proofs
     ("workflow_name", "job_name", "runtime_kind", "runtime_version"),
     (
         ("kaji.rehearsal.yml", "python-compat", "python", "3.11"),
-        ("kaji.rehearsal.yml", "node-compat", "node", "22"),
         ("kaji.publish.yml", "python-compat", "python", "3.14"),
-        ("kaji.publish.yml", "node-compat", "node", "24"),
     ),
 )
 def test_compatibility_normalizer_fails_closed_across_hostile_states(
@@ -2865,6 +4434,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         "GITHUB_REPOSITORY": "example/alloy",
         "GITHUB_RUN_ID": "1234",
         "GITHUB_RUN_ATTEMPT": "1",
+        "LOOKUP_OUTCOME": "success",
+        "STAGE_OUTCOME": "success",
     }
 
     def run_case(
@@ -3001,10 +4572,10 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
         passed = {
             **identity_free_passed,
             "releaseManifestSha256": "b" * 64,
-            "artifactSha256": {"kaji-sdk-0.2.0-beta.8.tgz": "c" * 64},
+            "artifactSha256": {"kaji-sdk-0.2.0-beta.9.tgz": "c" * 64},
             "runtime": {"version": f"v{runtime_version}.1.0"},
             "artifacts": {
-                "tarball": "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+                "tarball": "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
                 "package": "/tmp/node_modules/kaji-sdk",
             },
             "githubPackageProofs": {
@@ -3295,18 +4866,23 @@ def _write_release_evidence_json(path: Path, document: object) -> None:
     path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
 
 
-def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
+def _release_evidence_fixture(
+    tmp_path: Path,
+    *,
+    workflow_run_id: int = 123,
+    release_artifact_id_value: int = 456,
+) -> SimpleNamespace:
     commit = "a" * 40
-    workflow_run = "https://github.com/kaji-dev/alloy/actions/runs/123"
+    workflow_run = f"https://github.com/enkyuan/alloy/actions/runs/{workflow_run_id}"
     workflow_run_attempt = 1
-    release_artifact_id = "456"
+    release_artifact_id = str(release_artifact_id_value)
     release_artifact_digest = "b" * 64
     artifacts_dir = tmp_path / "release"
     artifacts_dir.mkdir()
     payloads = {
         "kaji_sdk-0.2.0b1-py3-none-any.whl": b"wheel",
         "kaji_sdk-0.2.0b1.tar.gz": b"sdist",
-        "kaji-sdk-0.2.0-beta.8.tgz": b"npm",
+        "kaji-sdk-0.2.0-beta.9.tgz": b"npm",
     }
     entries: list[dict[str, object]] = []
     for name, payload in payloads.items():
@@ -3320,7 +4896,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
                 "package": package,
                 "sha256": hashlib.sha256(payload).hexdigest(),
                 "size": len(payload),
-                "version": ("0.2.0-beta.8" if package == "typescript" else "0.2.0b1"),
+                "version": ("0.2.0-beta.9" if package == "typescript" else "0.2.0b1"),
             }
         )
     manifest = {
@@ -3343,7 +4919,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "packages": {
             "contract": "1.0.0",
             "python": "0.2.0b1",
-            "typescript": "0.2.0-beta.8",
+            "typescript": "0.2.0-beta.9",
         },
         "artifacts": entries,
     }
@@ -3361,8 +4937,8 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
             "sha256": artifact_hashes["kaji_sdk-0.2.0b1-py3-none-any.whl"],
         },
         "typescript": {
-            "file": "kaji-sdk-0.2.0-beta.8.tgz",
-            "sha256": artifact_hashes["kaji-sdk-0.2.0-beta.8.tgz"],
+            "file": "kaji-sdk-0.2.0-beta.9.tgz",
+            "sha256": artifact_hashes["kaji-sdk-0.2.0-beta.9.tgz"],
         },
     }
     workspace = tmp_path / "workspace"
@@ -3391,8 +4967,6 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         "soak-results": evidence_dir / "soak-results.json",
         "performance-image-data": evidence_dir / "performance-imagedata.json",
         "provider-evidence": evidence_dir / "provider-evidence.json",
-        "tthw-status": evidence_dir / "tthw/status.json",
-        "tthw-evidence": evidence_dir / "tthw/tthw-evidence.json",
     }
     performance_image_data = (
         b'[{"detail":"macOS\\n15.7.7\\n24G720","group":"Operating System"},'
@@ -3458,42 +5032,25 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
             },
         )
     for version in ("22", "24"):
+        node_receipt = _load_test_support(
+            "test_compatibility_receipts.py"
+        ).node_v2_receipt(
+            int(version),
+            commit=commit,
+            manifest_sha256=manifest_hash,
+            tarball_sha256=artifact_hashes["kaji-sdk-0.2.0-beta.9.tgz"],
+            tarball_size=len(payloads["kaji-sdk-0.2.0-beta.9.tgz"]),
+            workflow_run=workflow_run,
+            workflow_run_attempt=workflow_run_attempt,
+            producer_artifact_id=int(release_artifact_id),
+            producer_artifact_digest=f"sha256:{release_artifact_digest}",
+        )
+        node_receipt["artifacts"]["package"] = (
+            f"/opt/kaji-node-{version}/node_modules/kaji-sdk"
+        )
         _write_release_evidence_json(
             paths[f"compat-node-{version}"],
-            {
-                "schemaVersion": 1,
-                "commit": commit,
-                "releaseManifestSha256": manifest_hash,
-                "artifactSha256": {
-                    "kaji-sdk-0.2.0-beta.8.tgz": artifact_hashes[
-                        "kaji-sdk-0.2.0-beta.8.tgz"
-                    ]
-                },
-                "runtime": {"version": f"v{version}.14.0"},
-                "artifacts": {
-                    "tarball": "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
-                    "package": f"/opt/kaji-node-{version}/node_modules/kaji-sdk",
-                },
-                "githubPackageProofs": {
-                    "npm": _github_package_proof("typescript"),
-                    "bun": _github_package_proof("typescript"),
-                },
-                "timings": {
-                    "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
-                    "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
-                },
-                "conclusion": "passed",
-                "failureCode": None,
-                "toolchain": {
-                    "python": "not-used",
-                    "uv": "not-used",
-                    "node": f"v{version}.14.0",
-                    "npm": "11.4.2",
-                    "bun": "1.3.11",
-                    "typescript": "5.7.3 and 6.0.2",
-                },
-                **run_identity,
-            },
+            node_receipt,
         )
 
     fingerprint = {
@@ -3543,7 +5100,7 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         raw_replica["runnerEvidence"] = {
             **runner_evidence,
             "invocation": {
-                "runId": 123,
+                "runId": workflow_run_id,
                 "runAttempt": workflow_run_attempt,
                 "job": "paired-replica",
                 "runnerName": "GitHub Actions",
@@ -3684,148 +5241,6 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         },
     )
 
-    toolchain = {
-        "python": "3.14.6",
-        "uv": "0.11.25",
-        "node": "24.4.1",
-        "npm": "11.4.2",
-        "bun": "1.3.11",
-        "typescript": "5.7.3",
-    }
-    tthw_runs = []
-    review_date = date.today()
-    for index, path_name in enumerate(("python", "npm", "bun", "python", "npm"), 1):
-        artifact_file = (
-            "kaji_sdk-0.2.0b1-py3-none-any.whl"
-            if path_name == "python"
-            else "kaji-sdk-0.2.0-beta.8.tgz"
-        )
-        artifact_package = "python" if path_name == "python" else "typescript"
-        artifact_version = "0.2.0b1" if path_name == "python" else "0.2.0-beta.8"
-        tthw_runs.append(
-            {
-                "participantId": f"user-{index:03d}",
-                "commit": commit,
-                "releaseManifestSha256": manifest_hash,
-                "artifact": {
-                    "name": artifact_file,
-                    "package": artifact_package,
-                    "version": artifact_version,
-                    "sha256": artifact_hashes[artifact_file],
-                },
-                "os": "macos",
-                "architecture": "arm64",
-                "platformVersion": "15.5",
-                "path": path_name,
-                "cleanEnvironment": True,
-                "noSourceCheckout": True,
-                "toolchain": toolchain,
-                "steps": [
-                    {"name": name, "durationMs": 10_000}
-                    for name in (
-                        "artifact-install",
-                        "scaffold-init",
-                        "no-key-run",
-                        "echo-setup",
-                        "echo-run",
-                    )
-                ],
-                "noKeyTotalMs": 30_000,
-                "echoTotalMs": 50_000,
-                "assertions": {
-                    "deterministicText": True,
-                    "nonEmptyTurnId": True,
-                    "positiveSequence": True,
-                    "echoToolRequested": True,
-                    "echoToolStarted": True,
-                    "echoToolCompleted": True,
-                    "echoResultObserved": True,
-                    "noUnexpectedTerminalEvents": True,
-                    "monotonicDurations": True,
-                },
-                "confusion": [],
-                "redacted": True,
-                "owner": "kaji-maintainer",
-                "reviewDate": review_date.isoformat(),
-                "followUpDate": (review_date + timedelta(days=30)).isoformat(),
-            }
-        )
-    tthw = {
-        "schemaVersion": "1.0.0",
-        "collectedDate": review_date.isoformat(),
-        "commit": commit,
-        "releaseManifestSha256": manifest_hash,
-        "artifacts": [
-            {
-                "name": entry["file"],
-                "package": entry["package"],
-                "version": entry["version"],
-                "size": entry["size"],
-                "sha256": entry["sha256"],
-            }
-            for entry in entries
-        ],
-        "automatedTimings": {
-            "python": {
-                "coldSetupToOutputMs": 11,
-                "warmRunMs": 2,
-                "toolchain": {
-                    "python": "3.14.9",
-                    "uv": "0.11.25",
-                    "node": "not-used",
-                    "npm": "not-used",
-                    "bun": "not-used",
-                    "typescript": "not-used",
-                },
-            },
-            "npm": {
-                "coldSetupToOutputMs": 11,
-                "warmRunMs": 2,
-                "toolchain": {
-                    "python": "not-used",
-                    "uv": "not-used",
-                    "node": "v24.14.0",
-                    "npm": "11.4.2",
-                    "bun": "1.3.11",
-                    "typescript": "5.7.3 and 6.0.2",
-                },
-            },
-            "bun": {
-                "coldSetupToOutputMs": 13,
-                "warmRunMs": 3,
-                "toolchain": {
-                    "python": "not-used",
-                    "uv": "not-used",
-                    "node": "v24.14.0",
-                    "npm": "11.4.2",
-                    "bun": "1.3.11",
-                    "typescript": "5.7.3 and 6.0.2",
-                },
-            },
-        },
-        "humanRuns": tthw_runs,
-        "summary": {
-            "noKeyMedianMs": 30_000,
-            "noKeyMaxMs": 30_000,
-            "echoMedianMs": 50_000,
-            "echoMaxMs": 50_000,
-        },
-    }
-    _write_release_evidence_json(paths["tthw-evidence"], tthw)
-    _write_release_evidence_json(
-        paths["tthw-status"],
-        {
-            "schemaVersion": 1,
-            "commit": commit,
-            "conclusion": "passed",
-            "failureCode": None,
-            "exitCode": 0,
-            "releaseManifestSha256": manifest_hash,
-            "artifactSha256": artifact_hashes,
-            **run_identity,
-        },
-    )
-
     output = evidence_dir / "release-evidence-validation.json"
     command = [
         sys.executable,
@@ -3860,10 +5275,6 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         str(paths["performance-image-data"]),
         "--provider-evidence",
         str(paths["provider-evidence"]),
-        "--tthw-status",
-        str(paths["tthw-status"]),
-        "--tthw-evidence",
-        str(paths["tthw-evidence"]),
         "--workspace",
         str(workspace),
         "--output",
@@ -3877,6 +5288,1536 @@ def _release_evidence_fixture(tmp_path: Path) -> SimpleNamespace:
         artifact_hashes=artifact_hashes,
         manifest_hash=manifest_hash,
     )
+
+
+def _command_argument(command: list[str], option: str) -> str:
+    return command[command.index(option) + 1]
+
+
+def _replace_command_argument(
+    command: list[str],
+    option: str,
+    value: str,
+) -> None:
+    command[command.index(option) + 1] = value
+
+
+def _remove_command_argument(command: list[str], option: str) -> None:
+    index = command.index(option)
+    del command[index : index + 2]
+
+
+def _archive_native_release_evidence_fixture(
+    tmp_path: Path,
+    *,
+    mode: str = "rehearsal",
+    workflow_run_id: int = 123,
+    producer_artifact_id: int = 456,
+    node_source_ids: dict[int, int] | None = None,
+) -> SimpleNamespace:
+    fixture = _release_evidence_fixture(
+        tmp_path,
+        workflow_run_id=workflow_run_id,
+        release_artifact_id_value=producer_artifact_id,
+    )
+    command = list(fixture.command)
+    commit = _command_argument(command, "--expected-commit")
+    workflow_run = _command_argument(command, "--workflow-run")
+    run_id = int(workflow_run.rsplit("/", 1)[1])
+    run_attempt = int(_command_argument(command, "--workflow-run-attempt"))
+    producer_id = int(_command_argument(command, "--release-artifact-id"))
+    artifacts_dir = Path(_command_argument(command, "--artifacts-dir"))
+    workflow_ref = {
+        "rehearsal": (
+            "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
+        ),
+        "publish": (
+            "enkyuan/alloy/.github/workflows/"
+            "kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.9"
+        ),
+    }[mode]
+
+    onboarding = _load_root_script("validate_typescript_onboarding_evidence.py")
+    onboarding_support = _load_test_support("test_typescript_onboarding_evidence.py")
+    producer_members = {
+        path.name: path.read_bytes()
+        for path in artifacts_dir.iterdir()
+        if path.is_file()
+    }
+    producer_bytes = onboarding_support._zip_bytes(producer_members)
+    producer_archive = tmp_path / "archives/kaji-beta-artifacts.zip"
+    producer_archive.parent.mkdir(parents=True)
+    producer_archive.write_bytes(producer_bytes)
+    producer_digest = "sha256:" + hashlib.sha256(producer_bytes).hexdigest()
+
+    source_ids = node_source_ids or {22: 2201, 24: 2401}
+    source_archives: dict[int, Path] = {}
+    source_digests: dict[int, str] = {}
+    for major in (22, 24):
+        receipt_path = fixture.paths[f"compat-node-{major}"]
+        receipt = json.loads(receipt_path.read_text())
+        receipt["producerArtifact"]["digest"] = producer_digest
+        receipt["producerArtifact"]["runId"] = run_id
+        receipt["invocation"]["runId"] = run_id
+        receipt["invocation"]["workflowRef"] = workflow_ref
+        receipt_bytes = json.dumps(receipt, sort_keys=True).encode()
+        receipt_path.write_bytes(receipt_bytes)
+        archive_bytes = onboarding_support._zip_bytes(
+            {"compatibility-receipt.json": receipt_bytes}
+        )
+        archive_path = tmp_path / f"archives/kaji-node-compat-{major}.zip"
+        archive_path.write_bytes(archive_bytes)
+        source_archives[major] = archive_path
+        source_digests[major] = "sha256:" + hashlib.sha256(archive_bytes).hexdigest()
+
+    loaded_producer = onboarding.load_authenticated_archive(
+        producer_archive,
+        name="kaji-beta-artifacts",
+        artifact_id=producer_id,
+        digest=producer_digest,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        head_sha=commit,
+        expired=False,
+    )
+    loaded_sources = {
+        major: onboarding.load_authenticated_archive(
+            source_archives[major],
+            name=f"kaji-node-compat-{major}",
+            artifact_id=source_ids[major],
+            digest=source_digests[major],
+            run_id=run_id,
+            run_attempt=run_attempt,
+            head_sha=commit,
+            expired=False,
+        )
+        for major in (22, 24)
+    }
+    aggregate = onboarding.compose_document(
+        producer_archive=loaded_producer,
+        node22_archive=loaded_sources[22],
+        node24_archive=loaded_sources[24],
+        expected_workflow_run=workflow_run,
+        expected_workflow_ref=workflow_ref,
+        expected_workflow_sha=commit,
+    )
+    aggregate_bytes = json.dumps(aggregate, indent=2, sort_keys=True).encode()
+    onboarding_evidence = (
+        tmp_path / "evidence/typescript-onboarding/typescript-onboarding-evidence.json"
+    )
+    onboarding_evidence.parent.mkdir(parents=True)
+    onboarding_evidence.write_bytes(aggregate_bytes)
+    onboarding_status = onboarding_evidence.with_name("status.json")
+    _write_release_evidence_json(
+        onboarding_status,
+        {
+            "schemaVersion": 1,
+            "kind": "kaji-typescript-onboarding-status",
+            "commit": commit,
+            "workflowRun": workflow_run,
+            "workflowRunAttempt": 1,
+            "workflowRef": workflow_ref,
+            "releaseManifestSha256": fixture.manifest_hash,
+            "aggregateSha256": hashlib.sha256(aggregate_bytes).hexdigest(),
+            "conclusion": "passed",
+            "failureCode": None,
+            "exitCode": 0,
+        },
+    )
+
+    bare_producer_digest = producer_digest.removeprefix("sha256:")
+    for label in ("performance-status", "provider-evidence"):
+        document = json.loads(fixture.paths[label].read_text())
+        document["releaseArtifactDigest"] = bare_producer_digest
+        _write_release_evidence_json(fixture.paths[label], document)
+
+    _replace_command_argument(command, "--release-artifact-digest", producer_digest)
+    command.extend(
+        [
+            "--mode",
+            mode,
+            "--producer-archive",
+            str(producer_archive),
+            "--node22-source-archive",
+            str(source_archives[22]),
+            "--node24-source-archive",
+            str(source_archives[24]),
+            "--onboarding-status",
+            str(onboarding_status),
+            "--onboarding-evidence",
+            str(onboarding_evidence),
+            "--node22-source-artifact-id",
+            str(source_ids[22]),
+            "--node22-source-artifact-digest",
+            source_digests[22],
+            "--node24-source-artifact-id",
+            str(source_ids[24]),
+            "--node24-source-artifact-digest",
+            source_digests[24],
+        ]
+    )
+    signed_paths: dict[str, Path] = {}
+    authorization_sha256: str | None = None
+    signed_rehearsal: SimpleNamespace | None = None
+    if mode == "publish":
+        signed_rehearsal = _signed_rehearsal_evidence_fixture(
+            tmp_path / "signed-source",
+            workflow_run_id=987,
+            producer_artifact_id=1456,
+            node_source_ids={22: 32201, 24: 32401},
+            evidence_artifact_id=1789,
+        )
+        signed_candidate = tmp_path / "signed/kaji-beta-artifacts.zip"
+        signed_evidence = tmp_path / "signed/kaji-release-candidate-evidence.zip"
+        signed_npm = tmp_path / "signed/kaji-sdk-0.2.0-beta.9.tgz"
+        rebuilt_npm = tmp_path / "rebuilt/kaji-sdk-0.2.0-beta.9.tgz"
+        signed_candidate.parent.mkdir(parents=True)
+        rebuilt_npm.parent.mkdir(parents=True)
+        signed_candidate.write_bytes(
+            signed_rehearsal.release.producer_archive.read_bytes()
+        )
+        signed_evidence_bytes = signed_rehearsal.archive.read_bytes()
+        signed_evidence.write_bytes(signed_evidence_bytes)
+        signed_artifacts_dir = Path(
+            _command_argument(
+                signed_rehearsal.release.command,
+                "--artifacts-dir",
+            )
+        )
+        npm_bytes = (signed_artifacts_dir / "kaji-sdk-0.2.0-beta.9.tgz").read_bytes()
+        signed_npm.write_bytes(npm_bytes)
+        rebuilt_npm.write_bytes(npm_bytes)
+        signed_evidence_digest = (
+            "sha256:" + hashlib.sha256(signed_evidence_bytes).hexdigest()
+        )
+        signed_npm_sha256 = hashlib.sha256(npm_bytes).hexdigest()
+        authorization = {
+            "schemaVersion": "1.0.0",
+            "commit": commit,
+            "rehearsal": {
+                "runId": 987,
+                "runAttempt": 1,
+                "workflowPath": ".github/workflows/kaji.rehearsal.yml",
+                "workflowSha": commit,
+            },
+            "candidateArtifact": {
+                "id": 1456,
+                "name": "kaji-beta-artifacts",
+                "digest": signed_rehearsal.release.producer_digest,
+            },
+            "evidenceArtifact": {
+                "id": 1789,
+                "name": "kaji-release-candidate-evidence",
+                "digest": signed_evidence_digest,
+            },
+            "releaseManifestSha256": signed_rehearsal.release.manifest_hash,
+            "npmTarball": {
+                "name": "kaji-sdk-0.2.0-beta.9.tgz",
+                "sha256": signed_npm_sha256,
+            },
+        }
+        authorization_sha256 = hashlib.sha256(
+            (
+                json.dumps(
+                    authorization,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("ascii")
+        ).hexdigest()
+        command.extend(
+            [
+                "--authorization-sha256",
+                authorization_sha256,
+                "--rehearsal-run-id",
+                "987",
+                "--rehearsal-run-attempt",
+                "1",
+                "--rehearsal-workflow-path",
+                ".github/workflows/kaji.rehearsal.yml",
+                "--rehearsal-workflow-sha",
+                commit,
+                "--signed-candidate-archive",
+                str(signed_candidate),
+                "--signed-candidate-artifact-id",
+                "1456",
+                "--signed-candidate-artifact-digest",
+                signed_rehearsal.release.producer_digest,
+                "--signed-evidence-archive",
+                str(signed_evidence),
+                "--signed-evidence-artifact-id",
+                "1789",
+                "--signed-evidence-artifact-digest",
+                signed_evidence_digest,
+                "--signed-node22-source-artifact-id",
+                "32201",
+                "--signed-node22-source-artifact-digest",
+                signed_rehearsal.release.source_digests[22],
+                "--signed-node24-source-artifact-id",
+                "32401",
+                "--signed-node24-source-artifact-digest",
+                signed_rehearsal.release.source_digests[24],
+                "--signed-release-manifest-sha256",
+                signed_rehearsal.release.manifest_hash,
+                "--signed-npm-tarball-name",
+                "kaji-sdk-0.2.0-beta.9.tgz",
+                "--signed-npm-tarball-sha256",
+                signed_npm_sha256,
+                "--signed-npm-tarball",
+                str(signed_npm),
+                "--rebuilt-npm-tarball",
+                str(rebuilt_npm),
+            ]
+        )
+        signed_paths = {
+            "signed-candidate-archive": signed_candidate,
+            "signed-evidence-archive": signed_evidence,
+            "signed-npm-tarball": signed_npm,
+            "rebuilt-npm-tarball": rebuilt_npm,
+        }
+    paths = dict(fixture.paths)
+    paths.update(
+        {
+            "onboarding-status": onboarding_status,
+            "onboarding-evidence": onboarding_evidence,
+            "producer-archive": producer_archive,
+            "node22-source-archive": source_archives[22],
+            "node24-source-archive": source_archives[24],
+        }
+    )
+    return SimpleNamespace(
+        **{
+            key: value
+            for key, value in vars(fixture).items()
+            if key not in {"command", "paths"}
+        },
+        command=command,
+        paths=paths,
+        mode=mode,
+        workflow_ref=workflow_ref,
+        producer_archive=producer_archive,
+        producer_digest=producer_digest,
+        source_archives=source_archives,
+        source_digests=source_digests,
+        source_ids=source_ids,
+        aggregate=aggregate,
+        onboarding_status=onboarding_status,
+        onboarding_evidence=onboarding_evidence,
+        signed_paths=signed_paths,
+        authorization_sha256=authorization_sha256,
+        signed_rehearsal=signed_rehearsal,
+    )
+
+
+SIGNED_REHEARSAL_EVIDENCE_MEMBERS = {
+    "compat-node-22.json",
+    "compat-node-24.json",
+    "compat-python-3.11.json",
+    "compat-python-3.14.json",
+    "offline-gate-summary.json",
+    "offline-gates.log",
+    "paired-benchmark-results.json",
+    "performance-imagedata.json",
+    "performance-status.json",
+    "provider-evidence.json",
+    "raw/benchmarks/replica-1-imagedata.json",
+    "raw/benchmarks/replica-1.json",
+    "raw/benchmarks/replica-2-imagedata.json",
+    "raw/benchmarks/replica-2.json",
+    "raw/benchmarks/replica-3-imagedata.json",
+    "raw/benchmarks/replica-3.json",
+    "raw/soak/python.json",
+    "raw/soak/results.json",
+    "raw/soak/typescript.json",
+    "release-evidence-validation.json",
+    "soak-results.json",
+    "typescript-onboarding/status.json",
+    "typescript-onboarding/typescript-onboarding-evidence.json",
+    "typescript-onboarding/validation.log",
+}
+
+
+def _signed_rehearsal_evidence_members(
+    fixture: SimpleNamespace,
+) -> dict[str, bytes]:
+    benchmark_root = fixture.paths["benchmark-results"].parent
+    return {
+        "compat-node-22.json": fixture.paths["compat-node-22"].read_bytes(),
+        "compat-node-24.json": fixture.paths["compat-node-24"].read_bytes(),
+        "compat-python-3.11.json": fixture.paths["compat-python-3.11"].read_bytes(),
+        "compat-python-3.14.json": fixture.paths["compat-python-3.14"].read_bytes(),
+        "offline-gate-summary.json": b'{"conclusion":"passed"}\n',
+        "offline-gates.log": b"offline gates passed\n",
+        "paired-benchmark-results.json": fixture.paths[
+            "benchmark-results"
+        ].read_bytes(),
+        "performance-imagedata.json": fixture.paths[
+            "performance-image-data"
+        ].read_bytes(),
+        "performance-status.json": fixture.paths["performance-status"].read_bytes(),
+        "provider-evidence.json": fixture.paths["provider-evidence"].read_bytes(),
+        **{
+            f"raw/benchmarks/replica-{replica}.json": (
+                benchmark_root / f"raw/benchmarks/replica-{replica}.json"
+            ).read_bytes()
+            for replica in ("1", "2", "3")
+        },
+        **{
+            f"raw/benchmarks/replica-{replica}-imagedata.json": (
+                benchmark_root / f"raw/benchmarks/replica-{replica}-imagedata.json"
+            ).read_bytes()
+            for replica in ("1", "2", "3")
+        },
+        "raw/soak/python.json": b'{"runtime":"python"}\n',
+        "raw/soak/results.json": fixture.paths["soak-results"].read_bytes(),
+        "raw/soak/typescript.json": b'{"runtime":"typescript"}\n',
+        "release-evidence-validation.json": fixture.output.read_bytes(),
+        "soak-results.json": fixture.paths["soak-results"].read_bytes(),
+        "typescript-onboarding/status.json": fixture.onboarding_status.read_bytes(),
+        "typescript-onboarding/typescript-onboarding-evidence.json": (
+            fixture.onboarding_evidence.read_bytes()
+        ),
+        "typescript-onboarding/validation.log": b"onboarding passed\n",
+    }
+
+
+def _signed_rehearsal_evidence_fixture(
+    tmp_path: Path,
+    *,
+    workflow_run_id: int = 123,
+    producer_artifact_id: int = 456,
+    node_source_ids: dict[int, int] | None = None,
+    evidence_artifact_id: int = 1789,
+) -> SimpleNamespace:
+    tmp_path.mkdir(parents=True)
+    fixture = _archive_native_release_evidence_fixture(
+        tmp_path,
+        workflow_run_id=workflow_run_id,
+        producer_artifact_id=producer_artifact_id,
+        node_source_ids=node_source_ids,
+    )
+    completed, summary = _run_release_evidence(fixture)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert summary["conclusion"] == "passed"
+    members = _signed_rehearsal_evidence_members(fixture)
+    assert set(members) == SIGNED_REHEARSAL_EVIDENCE_MEMBERS
+    support = _load_test_support("test_typescript_onboarding_evidence.py")
+    archive_bytes = support._zip_bytes(members)
+    archive = tmp_path / "signed-rehearsal-evidence.zip"
+    archive.write_bytes(archive_bytes)
+    return SimpleNamespace(
+        release=fixture,
+        members=members,
+        archive=archive,
+        artifact_id=evidence_artifact_id,
+        digest="sha256:" + hashlib.sha256(archive_bytes).hexdigest(),
+    )
+
+
+def _attach_signed_rehearsal_evidence(
+    fixture: SimpleNamespace,
+    signed: SimpleNamespace,
+) -> None:
+    fixture.command.extend(
+        [
+            "--signed-evidence-archive",
+            str(signed.archive),
+            "--signed-evidence-artifact-id",
+            str(signed.artifact_id),
+            "--signed-evidence-artifact-digest",
+            signed.digest,
+        ]
+    )
+    for option in (
+        "--onboarding-status",
+        "--onboarding-evidence",
+        "--python-compat-311",
+        "--python-compat-314",
+        "--node-compat-22",
+        "--node-compat-24",
+        "--performance-status",
+        "--benchmark-results",
+        "--soak-results",
+        "--performance-image-data",
+        "--provider-evidence",
+    ):
+        _remove_command_argument(fixture.command, option)
+
+
+def test_release_evidence_cli_is_archive_native_and_mode_closed() -> None:
+    source = _read("kaji/scripts/validate_release_evidence.py")
+    help_result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "kaji/scripts/validate_release_evidence.py"),
+            "--help",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    for option in (
+        "--mode",
+        "--producer-archive",
+        "--node22-source-archive",
+        "--node24-source-archive",
+        "--onboarding-status",
+        "--onboarding-evidence",
+        "--node22-source-artifact-id",
+        "--node22-source-artifact-digest",
+        "--node24-source-artifact-id",
+        "--node24-source-artifact-digest",
+        "--authorization-sha256",
+        "--signed-candidate-archive",
+        "--signed-evidence-archive",
+        "--signed-node22-source-artifact-id",
+        "--signed-node22-source-artifact-digest",
+        "--signed-node24-source-artifact-id",
+        "--signed-node24-source-artifact-digest",
+        "--signed-npm-tarball",
+        "--rebuilt-npm-tarball",
+    ):
+        assert option in help_result.stdout
+    for obsolete in (
+        "--tthw-status",
+        "--tthw-evidence",
+        "validate_tthw_evidence",
+        "validate_legacy_node_release_bindings",
+    ):
+        assert obsolete not in help_result.stdout
+        assert obsolete not in source
+
+
+@pytest.mark.parametrize(
+    ("option", "value", "expected_code"),
+    (
+        ("--expected-commit", "A" * 40, "expected_commit_invalid"),
+        (
+            "--workflow-run",
+            "http://github.com/enkyuan/alloy/actions/runs/123",
+            "workflow_run_invalid",
+        ),
+        (
+            "--workflow-run",
+            "https://github.com/enkyuan/alloy/actions/runs/9007199254740992",
+            "workflow_run_invalid",
+        ),
+        ("--workflow-run-attempt", "2", "workflow_run_attempt_invalid"),
+        ("--release-artifact-id", "0", "release_artifact_id_invalid"),
+        (
+            "--release-artifact-id",
+            "9007199254740992",
+            "release_artifact_id_invalid",
+        ),
+        (
+            "--release-artifact-digest",
+            "0" * 64,
+            "release_artifact_digest_invalid",
+        ),
+        (
+            "--node22-source-artifact-digest",
+            "sha256:" + "A" * 64,
+            "node22_source_artifact_digest_invalid",
+        ),
+        (
+            "--node24-source-artifact-id",
+            "0224",
+            "node24_source_artifact_id_invalid",
+        ),
+    ),
+)
+def test_release_evidence_invocation_grammar_is_canonical(
+    tmp_path: Path,
+    option: str,
+    value: str,
+    expected_code: str,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    command = list(fixture.command)
+    _replace_command_argument(command, option, value)
+    args = module.parse_args(command[2:])
+
+    assert {
+        "evidence": "invocation",
+        "code": expected_code,
+    } in module.invocation_failures(args)
+
+
+def test_signed_rehearsal_invocation_requires_pairwise_distinct_artifact_ids(
+    tmp_path: Path,
+) -> None:
+    signed = _signed_rehearsal_evidence_fixture(tmp_path / "source")
+    fixture = signed.release
+    _attach_signed_rehearsal_evidence(fixture, signed)
+    module = _load_root_script("validate_release_evidence.py")
+    _replace_command_argument(
+        fixture.command,
+        "--signed-evidence-artifact-id",
+        _command_argument(fixture.command, "--release-artifact-id"),
+    )
+
+    failures = module.invocation_failures(module.parse_args(fixture.command[2:]))
+
+    assert {
+        "evidence": "invocation",
+        "code": "artifact_ids_not_distinct",
+    } in failures
+
+
+def test_publish_invocation_requires_all_ids_and_run_ids_distinct(
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path, mode="publish")
+    module = _load_root_script("validate_release_evidence.py")
+    base_args = module.parse_args(fixture.command[2:])
+    assert module.invocation_failures(base_args) == []
+    artifact_options = (
+        "--release-artifact-id",
+        "--node22-source-artifact-id",
+        "--node24-source-artifact-id",
+        "--signed-candidate-artifact-id",
+        "--signed-evidence-artifact-id",
+        "--signed-node22-source-artifact-id",
+        "--signed-node24-source-artifact-id",
+    )
+    assert (
+        len({_command_argument(fixture.command, option) for option in artifact_options})
+        == 7
+    )
+
+    duplicate_command = list(fixture.command)
+    _replace_command_argument(
+        duplicate_command,
+        "--signed-node22-source-artifact-id",
+        _command_argument(duplicate_command, "--release-artifact-id"),
+    )
+    duplicate_failures = module.invocation_failures(
+        module.parse_args(duplicate_command[2:])
+    )
+    assert {
+        "evidence": "invocation",
+        "code": "artifact_ids_not_distinct",
+    } in duplicate_failures
+
+    repeated_run_command = list(fixture.command)
+    _replace_command_argument(
+        repeated_run_command,
+        "--rehearsal-run-id",
+        _command_argument(repeated_run_command, "--workflow-run").rsplit("/", 1)[1],
+    )
+    repeated_run_failures = module.invocation_failures(
+        module.parse_args(repeated_run_command[2:])
+    )
+    assert {
+        "evidence": "invocation",
+        "code": "rehearsal_run_not_distinct",
+    } in repeated_run_failures
+
+
+def test_release_evidence_validator_accepts_archive_native_rehearsal(
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    summary = json.loads(fixture.output.read_text())
+    assert summary["schemaVersion"] == 2
+    assert summary["mode"] == "rehearsal"
+    assert summary["workflowRef"] == fixture.workflow_ref
+    assert summary["conclusion"] == "passed"
+    assert summary["failureCode"] is None
+    assert summary["failures"] == []
+    assert summary["onboardingEvidence"] == {
+        "aggregateSha256": hashlib.sha256(
+            fixture.onboarding_evidence.read_bytes()
+        ).hexdigest(),
+        "recomputedAggregateSha256": hashlib.sha256(
+            fixture.onboarding_evidence.read_bytes()
+        ).hexdigest(),
+        "nodeReceiptSha256": {
+            "22": hashlib.sha256(
+                fixture.paths["compat-node-22"].read_bytes()
+            ).hexdigest(),
+            "24": hashlib.sha256(
+                fixture.paths["compat-node-24"].read_bytes()
+            ).hexdigest(),
+        },
+        "releaseManifestSha256": fixture.manifest_hash,
+        "statusSha256": hashlib.sha256(
+            fixture.onboarding_status.read_bytes()
+        ).hexdigest(),
+    }
+    assert summary["signedSource"] is None
+
+
+def test_release_evidence_revalidates_signed_rehearsal_archive_without_extraction(
+    tmp_path: Path,
+) -> None:
+    signed = _signed_rehearsal_evidence_fixture(tmp_path / "source")
+    fixture = signed.release
+    _attach_signed_rehearsal_evidence(fixture, signed)
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert summary["conclusion"] == "passed"
+    assert summary["signedSource"] is None
+    assert signed.members["release-evidence-validation.json"].endswith(b"\n")
+    assert not signed.members["release-evidence-validation.json"].endswith(b"\n\n")
+    assert (
+        fixture.output.read_bytes()
+        == signed.members["release-evidence-validation.json"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("hostile_case", "expected_code"),
+    (
+        ("empty_summary", "signed_evidence_summary_invalid"),
+        ("tampered_member", "signed_evidence_summary_mismatch"),
+        ("missing_member", "signed_evidence_archive_invalid"),
+        ("extra_member", "signed_evidence_archive_invalid"),
+        ("traversal", "signed_evidence_archive_invalid"),
+        ("symlink", "signed_evidence_archive_invalid"),
+        ("duplicate", "signed_evidence_archive_invalid"),
+        ("prefix", "signed_evidence_archive_invalid"),
+        ("trailing", "signed_evidence_archive_invalid"),
+        ("zip64", "signed_evidence_archive_invalid"),
+        ("comment", "signed_evidence_archive_invalid"),
+        ("encryption", "signed_evidence_archive_invalid"),
+        ("unsupported_compression", "signed_evidence_archive_invalid"),
+        ("compression_ratio", "signed_evidence_archive_invalid"),
+    ),
+)
+def test_release_evidence_rejects_hostile_signed_rehearsal_archive(
+    tmp_path: Path,
+    hostile_case: str,
+    expected_code: str,
+) -> None:
+    signed = _signed_rehearsal_evidence_fixture(tmp_path / "source")
+    fixture = signed.release
+    members = dict(signed.members)
+    support = _load_test_support("test_typescript_onboarding_evidence.py")
+    modes: dict[str, int] | None = None
+    comment = b"x" if hostile_case == "comment" else b""
+    if hostile_case == "empty_summary":
+        members["release-evidence-validation.json"] = b"{}\n"
+    elif hostile_case == "tampered_member":
+        members["compat-python-3.11.json"] += b" "
+    elif hostile_case == "missing_member":
+        del members["provider-evidence.json"]
+    elif hostile_case == "extra_member":
+        members["unreviewed.json"] = b"{}\n"
+    elif hostile_case == "traversal":
+        members["../provider-evidence.json"] = members.pop("provider-evidence.json")
+    elif hostile_case == "symlink":
+        modes = {"release-evidence-validation.json": 0o120777}
+    elif hostile_case == "compression_ratio":
+        members["offline-gates.log"] = b"x" * (1024 * 1024)
+
+    if hostile_case == "duplicate":
+        output = BytesIO()
+        with zipfile.ZipFile(
+            output,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            allowZip64=False,
+        ) as archive:
+            for name, encoded in members.items():
+                archive.writestr(name, encoded)
+            with pytest.warns(UserWarning, match="Duplicate name"):
+                archive.writestr(
+                    "provider-evidence.json",
+                    members["provider-evidence.json"],
+                )
+        archive_bytes = output.getvalue()
+    else:
+        archive_bytes = support._zip_bytes(members, modes=modes, comment=comment)
+    if hostile_case == "prefix":
+        archive_bytes = b"x" + archive_bytes
+    elif hostile_case == "trailing":
+        archive_bytes += b"x"
+    elif hostile_case == "zip64":
+        mutated_archive = bytearray(archive_bytes)
+        struct.pack_into(
+            "<L",
+            mutated_archive,
+            len(mutated_archive) - 22 + 12,
+            0xFFFFFFFF,
+        )
+        archive_bytes = bytes(mutated_archive)
+    elif hostile_case in {"encryption", "unsupported_compression"}:
+        mutated_archive = bytearray(archive_bytes)
+        with zipfile.ZipFile(BytesIO(archive_bytes)) as opened:
+            local_offset = opened.infolist()[0].header_offset
+        central_offset = struct.unpack_from(
+            "<L",
+            archive_bytes,
+            len(archive_bytes) - 22 + 16,
+        )[0]
+        if hostile_case == "encryption":
+            local_flags = struct.unpack_from(
+                "<H",
+                archive_bytes,
+                local_offset + 6,
+            )[0]
+            central_flags = struct.unpack_from(
+                "<H",
+                archive_bytes,
+                central_offset + 8,
+            )[0]
+            struct.pack_into(
+                "<H",
+                mutated_archive,
+                local_offset + 6,
+                local_flags | 0x1,
+            )
+            struct.pack_into(
+                "<H",
+                mutated_archive,
+                central_offset + 8,
+                central_flags | 0x1,
+            )
+        else:
+            struct.pack_into("<H", mutated_archive, local_offset + 8, 99)
+            struct.pack_into("<H", mutated_archive, central_offset + 10, 99)
+        archive_bytes = bytes(mutated_archive)
+    signed.archive.write_bytes(archive_bytes)
+    signed.digest = "sha256:" + hashlib.sha256(archive_bytes).hexdigest()
+    _attach_signed_rehearsal_evidence(fixture, signed)
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert expected_code in {
+        failure["code"] for failure in cast(list[dict[str, str]], summary["failures"])
+    }
+    assert summary["onboardingEvidence"] is None
+    assert summary["signedSource"] is None
+
+
+def test_release_evidence_validator_accepts_signed_publish_source(
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path, mode="publish")
+
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    summary = json.loads(fixture.output.read_text())
+    assert summary["schemaVersion"] == 2
+    assert summary["mode"] == "publish"
+    assert summary["workflowRef"] == fixture.workflow_ref
+    assert summary["conclusion"] == "passed"
+    assert summary["signedSource"] == {
+        "authorizationSha256": fixture.authorization_sha256,
+        "rehearsal": {
+            "runId": 987,
+            "runAttempt": 1,
+            "workflowPath": ".github/workflows/kaji.rehearsal.yml",
+            "workflowSha": "a" * 40,
+        },
+        "candidateArtifact": {
+            "id": 1456,
+            "name": "kaji-beta-artifacts",
+            "digest": fixture.producer_digest,
+        },
+        "evidenceArtifact": {
+            "id": 1789,
+            "name": "kaji-release-candidate-evidence",
+            "digest": "sha256:"
+            + hashlib.sha256(
+                fixture.signed_paths["signed-evidence-archive"].read_bytes()
+            ).hexdigest(),
+        },
+        "releaseManifestSha256": fixture.manifest_hash,
+        "npmTarball": {
+            "name": "kaji-sdk-0.2.0-beta.9.tgz",
+            "sha256": fixture.artifact_hashes["kaji-sdk-0.2.0-beta.9.tgz"],
+        },
+        "sourceRebuildCarrierEqual": True,
+    }
+
+
+def test_release_evidence_rehearsal_rejects_partial_or_mixed_signed_source_options(
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    signed_options = {
+        "--authorization-sha256": "c" * 64,
+        "--rehearsal-run-id": "987",
+        "--rehearsal-run-attempt": "1",
+        "--rehearsal-workflow-path": ".github/workflows/kaji.rehearsal.yml",
+        "--rehearsal-workflow-sha": "a" * 40,
+        "--signed-candidate-archive": str(fixture.producer_archive),
+        "--signed-candidate-artifact-id": "1456",
+        "--signed-candidate-artifact-digest": fixture.producer_digest,
+        "--signed-evidence-archive": str(fixture.producer_archive),
+        "--signed-evidence-artifact-id": "1789",
+        "--signed-evidence-artifact-digest": fixture.producer_digest,
+        "--signed-release-manifest-sha256": fixture.manifest_hash,
+        "--signed-npm-tarball-name": "kaji-sdk-0.2.0-beta.9.tgz",
+        "--signed-npm-tarball-sha256": fixture.artifact_hashes[
+            "kaji-sdk-0.2.0-beta.9.tgz"
+        ],
+        "--signed-npm-tarball": str(
+            Path(_command_argument(fixture.command, "--artifacts-dir"))
+            / "kaji-sdk-0.2.0-beta.9.tgz"
+        ),
+        "--rebuilt-npm-tarball": str(
+            Path(_command_argument(fixture.command, "--artifacts-dir"))
+            / "kaji-sdk-0.2.0-beta.9.tgz"
+        ),
+    }
+    for option, value in signed_options.items():
+        args = module.parse_args([*fixture.command[2:], option, value])
+        assert {
+            "evidence": "invocation",
+            "code": "signed_arguments_forbidden_in_rehearsal",
+        } in module.invocation_failures(args), option
+
+    fixture.command.extend(["--authorization-sha256", "c" * 64])
+
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    summary = json.loads(fixture.output.read_text())
+    assert {
+        "evidence": "invocation",
+        "code": "signed_arguments_forbidden_in_rehearsal",
+    } in summary["failures"]
+    assert summary["onboardingEvidence"] is None
+    assert summary["signedSource"] is None
+
+
+@pytest.mark.parametrize(
+    ("hostile_case", "expected_code"),
+    (
+        ("missing_argument", "signed_arguments_required"),
+        ("authorization", "authorization_sha256_invalid"),
+        ("rehearsal_run", "rehearsal_run_id_invalid"),
+        ("rehearsal_attempt", "rehearsal_run_attempt_invalid"),
+        ("rehearsal_path", "rehearsal_workflow_path_invalid"),
+        ("rehearsal_sha", "rehearsal_workflow_sha_invalid"),
+        ("candidate_id", "authorization_digest_mismatch"),
+        ("evidence_id", "authorization_digest_mismatch"),
+        ("candidate_archive", "signed_candidate_invalid"),
+        ("candidate_digest", "authorization_digest_mismatch"),
+        ("evidence_archive", "signed_evidence_digest_mismatch"),
+        ("signed_manifest", "authorization_digest_mismatch"),
+        ("signed_npm_hash", "authorization_digest_mismatch"),
+        ("signed_npm", "signed_npm_hash_mismatch"),
+        ("rebuilt_npm", "rebuilt_npm_mismatch"),
+    ),
+)
+def test_release_evidence_publish_rejects_signed_tuple_drift(
+    tmp_path: Path,
+    hostile_case: str,
+    expected_code: str,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path, mode="publish")
+    if hostile_case == "missing_argument":
+        _remove_command_argument(fixture.command, "--authorization-sha256")
+    elif hostile_case == "authorization":
+        _replace_command_argument(fixture.command, "--authorization-sha256", "C" * 64)
+    elif hostile_case == "rehearsal_run":
+        _replace_command_argument(fixture.command, "--rehearsal-run-id", "0")
+    elif hostile_case == "rehearsal_attempt":
+        _replace_command_argument(fixture.command, "--rehearsal-run-attempt", "2")
+    elif hostile_case == "rehearsal_path":
+        _replace_command_argument(
+            fixture.command,
+            "--rehearsal-workflow-path",
+            ".github/workflows/kaji.publish.yml",
+        )
+    elif hostile_case == "rehearsal_sha":
+        _replace_command_argument(fixture.command, "--rehearsal-workflow-sha", "b" * 40)
+    elif hostile_case == "candidate_id":
+        _replace_command_argument(
+            fixture.command, "--signed-candidate-artifact-id", "1457"
+        )
+    elif hostile_case == "evidence_id":
+        _replace_command_argument(
+            fixture.command, "--signed-evidence-artifact-id", "1790"
+        )
+    elif hostile_case == "candidate_archive":
+        fixture.signed_paths["signed-candidate-archive"].write_bytes(b"changed")
+    elif hostile_case == "candidate_digest":
+        _replace_command_argument(
+            fixture.command,
+            "--signed-candidate-artifact-digest",
+            "sha256:" + "0" * 64,
+        )
+    elif hostile_case == "evidence_archive":
+        fixture.signed_paths["signed-evidence-archive"].write_bytes(b"changed")
+    elif hostile_case == "signed_manifest":
+        _replace_command_argument(
+            fixture.command,
+            "--signed-release-manifest-sha256",
+            "0" * 64,
+        )
+    elif hostile_case == "signed_npm_hash":
+        _replace_command_argument(
+            fixture.command,
+            "--signed-npm-tarball-sha256",
+            "0" * 64,
+        )
+    elif hostile_case == "signed_npm":
+        fixture.signed_paths["signed-npm-tarball"].write_bytes(b"changed")
+    else:
+        fixture.signed_paths["rebuilt-npm-tarball"].write_bytes(b"changed")
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert expected_code in {
+        failure["code"] for failure in cast(list[dict[str, str]], summary["failures"])
+    }
+    assert summary["onboardingEvidence"] is None
+    assert summary["signedSource"] is None
+
+
+def _run_release_evidence(
+    fixture: SimpleNamespace,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    completed = subprocess.run(
+        fixture.command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    return completed, json.loads(fixture.output.read_text())
+
+
+@pytest.mark.parametrize(
+    ("hostile_case", "expected_code"),
+    (
+        ("initial", "manifest_hash_mismatch"),
+        ("failed", "manifest_hash_mismatch"),
+        ("cross_variant", "onboarding_status_not_passed"),
+        ("extra_key", "onboarding_status_invalid"),
+        ("missing_key", "onboarding_status_invalid"),
+        ("boolean_schema", "onboarding_status_invalid"),
+        ("wrong_kind", "onboarding_status_invalid"),
+        ("wrong_run", "workflow_run_mismatch"),
+        ("wrong_attempt", "workflow_run_attempt_mismatch"),
+        ("wrong_ref", "workflow_ref_mismatch"),
+        ("duplicate_key", "evidence_invalid_json"),
+        ("nonfinite", "evidence_invalid_json"),
+    ),
+)
+def test_release_evidence_rejects_nonpassed_or_nonclosed_onboarding_status(
+    tmp_path: Path,
+    hostile_case: str,
+    expected_code: str,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    status = json.loads(fixture.onboarding_status.read_text())
+    if hostile_case == "initial":
+        status.update(
+            {
+                "releaseManifestSha256": None,
+                "aggregateSha256": None,
+                "conclusion": "not_run",
+                "failureCode": "onboarding_not_completed",
+                "exitCode": None,
+            }
+        )
+    elif hostile_case == "failed":
+        status.update(
+            {
+                "releaseManifestSha256": None,
+                "aggregateSha256": None,
+                "conclusion": "failed",
+                "failureCode": "archive_authentication_not_completed",
+                "exitCode": 2,
+            }
+        )
+    elif hostile_case == "cross_variant":
+        status["conclusion"] = "failed"
+        status["failureCode"] = "archive_authentication_not_completed"
+        status["exitCode"] = 2
+    elif hostile_case == "extra_key":
+        status["untrusted"] = True
+    elif hostile_case == "missing_key":
+        del status["kind"]
+    elif hostile_case == "boolean_schema":
+        status["schemaVersion"] = True
+    elif hostile_case == "wrong_kind":
+        status["kind"] = "kaji-typescript-onboarding-status-v2"
+    elif hostile_case == "wrong_run":
+        status["workflowRun"] = "https://github.com/enkyuan/alloy/actions/runs/124"
+    elif hostile_case == "wrong_attempt":
+        status["workflowRunAttempt"] = 2
+    elif hostile_case == "wrong_ref":
+        status["workflowRef"] = (
+            "enkyuan/alloy/.github/workflows/"
+            "kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.9"
+        )
+    elif hostile_case == "duplicate_key":
+        encoded = json.dumps(status, indent=2, sort_keys=True) + "\n"
+        fixture.onboarding_status.write_text(
+            encoded.replace(
+                '  "schemaVersion": 1,\n',
+                '  "schemaVersion": 1,\n  "schemaVersion": 1,\n',
+                1,
+            )
+        )
+    else:
+        encoded = json.dumps(status, indent=2, sort_keys=True) + "\n"
+        fixture.onboarding_status.write_text(
+            encoded.replace('"exitCode": 0', '"exitCode": NaN')
+        )
+    if hostile_case not in {"duplicate_key", "nonfinite"}:
+        _write_release_evidence_json(fixture.onboarding_status, status)
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert expected_code in {
+        failure["code"] for failure in cast(list[dict[str, str]], summary["failures"])
+    }
+    assert summary["onboardingEvidence"] is None
+    assert summary["signedSource"] is None
+
+
+def test_release_evidence_rejects_oversized_onboarding_status(tmp_path: Path) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    encoded = fixture.onboarding_status.read_bytes()
+    fixture.onboarding_status.write_bytes(
+        encoded + b" " * (64 * 1024 + 1 - len(encoded))
+    )
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert {
+        "evidence": "onboarding-status",
+        "code": "evidence_invalid_json",
+    } in cast(list[dict[str, str]], summary["failures"])
+    assert summary["onboardingEvidence"] is None
+
+
+@pytest.mark.parametrize(
+    ("hostile_case", "expected_code"),
+    (
+        ("status_hash", "onboarding_aggregate_hash_mismatch"),
+        ("aggregate_serialization", "onboarding_aggregate_bytes_invalid"),
+        ("aggregate_semantics", "onboarding_evidence_invalid"),
+        ("retained_node_bytes", "node_receipt_hash_mismatch"),
+        ("producer_mutation", "onboarding_archive_invalid"),
+        ("node_repack", "onboarding_archive_invalid"),
+        ("swapped_nodes", "onboarding_archive_invalid"),
+        ("source_id", "onboarding_evidence_invalid"),
+        ("source_digest", "onboarding_archive_invalid"),
+    ),
+)
+def test_release_evidence_rejects_archive_or_aggregate_substitution(
+    tmp_path: Path,
+    hostile_case: str,
+    expected_code: str,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    if hostile_case == "status_hash":
+        status = json.loads(fixture.onboarding_status.read_text())
+        status["aggregateSha256"] = "0" * 64
+        _write_release_evidence_json(fixture.onboarding_status, status)
+    elif hostile_case == "aggregate_serialization":
+        fixture.onboarding_evidence.write_bytes(
+            fixture.onboarding_evidence.read_bytes() + b"\n"
+        )
+        status = json.loads(fixture.onboarding_status.read_text())
+        status["aggregateSha256"] = hashlib.sha256(
+            fixture.onboarding_evidence.read_bytes()
+        ).hexdigest()
+        _write_release_evidence_json(fixture.onboarding_status, status)
+    elif hostile_case == "aggregate_semantics":
+        aggregate = json.loads(fixture.onboarding_evidence.read_text())
+        aggregate["cells"][0]["runner"]["imageVersion"] = "forged"
+        encoded = json.dumps(aggregate, indent=2, sort_keys=True).encode()
+        fixture.onboarding_evidence.write_bytes(encoded)
+        status = json.loads(fixture.onboarding_status.read_text())
+        status["aggregateSha256"] = hashlib.sha256(encoded).hexdigest()
+        _write_release_evidence_json(fixture.onboarding_status, status)
+    elif hostile_case == "retained_node_bytes":
+        receipt = json.loads(fixture.paths["compat-node-22"].read_text())
+        _write_release_evidence_json(fixture.paths["compat-node-22"], receipt)
+    elif hostile_case == "producer_mutation":
+        encoded = bytearray(fixture.producer_archive.read_bytes())
+        encoded[-1] ^= 1
+        fixture.producer_archive.write_bytes(encoded)
+    elif hostile_case == "node_repack":
+        support = _load_test_support("test_typescript_onboarding_evidence.py")
+        receipt = fixture.paths["compat-node-22"].read_bytes()
+        fixture.source_archives[22].write_bytes(
+            support._zip_bytes(
+                {"compatibility-receipt.json": receipt},
+                comment=b"repacked",
+            )
+        )
+    elif hostile_case == "swapped_nodes":
+        node22 = _command_argument(fixture.command, "--node22-source-archive")
+        node24 = _command_argument(fixture.command, "--node24-source-archive")
+        _replace_command_argument(fixture.command, "--node22-source-archive", node24)
+        _replace_command_argument(fixture.command, "--node24-source-archive", node22)
+    elif hostile_case == "source_id":
+        _replace_command_argument(
+            fixture.command, "--node22-source-artifact-id", "2202"
+        )
+    else:
+        _replace_command_argument(
+            fixture.command,
+            "--node22-source-artifact-digest",
+            "sha256:" + "0" * 64,
+        )
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert expected_code in {
+        failure["code"] for failure in cast(list[dict[str, str]], summary["failures"])
+    }
+    assert summary["onboardingEvidence"] is None
+
+
+@pytest.mark.parametrize(
+    ("field_path", "replacement"),
+    (
+        (("schemaVersion",), 1),
+        (("executionMode",), "local"),
+        (("conclusion",), "failed"),
+        (("runner", "configuredLabel"), "ubuntu-latest"),
+        (("runner", "runnerArch"), "ARM64"),
+        (("runner", "platformOS"), "darwin"),
+        (("runtime", "version"), "v23.0.0"),
+        (("toolchain", "node"), "v22.0.0"),
+        (("invocation", "runAttempt"), 2),
+    ),
+)
+def test_release_evidence_revalidates_node_receipt_from_raw_archive(
+    tmp_path: Path,
+    field_path: tuple[str, ...],
+    replacement: object,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    receipt = json.loads(fixture.paths["compat-node-22"].read_text())
+    owner = receipt
+    for field in field_path[:-1]:
+        owner = owner[field]
+    owner[field_path[-1]] = replacement
+    receipt_bytes = json.dumps(receipt, sort_keys=True).encode()
+    fixture.paths["compat-node-22"].write_bytes(receipt_bytes)
+    support = _load_test_support("test_typescript_onboarding_evidence.py")
+    archive_bytes = support._zip_bytes({"compatibility-receipt.json": receipt_bytes})
+    fixture.source_archives[22].write_bytes(archive_bytes)
+    _replace_command_argument(
+        fixture.command,
+        "--node22-source-artifact-digest",
+        "sha256:" + hashlib.sha256(archive_bytes).hexdigest(),
+    )
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert "onboarding_evidence_invalid" in {
+        failure["code"] for failure in cast(list[dict[str, str]], summary["failures"])
+    }
+    assert summary["onboardingEvidence"] is None
+
+
+@pytest.mark.parametrize(
+    "hostile_case",
+    (
+        "status_symlink",
+        "producer_directory",
+        "node_archive_oversized",
+        "signed_tarball_symlink",
+    ),
+)
+def test_release_evidence_rejects_unsafe_or_oversized_inputs(
+    tmp_path: Path,
+    hostile_case: str,
+) -> None:
+    mode = "publish" if hostile_case == "signed_tarball_symlink" else "rehearsal"
+    fixture = _archive_native_release_evidence_fixture(tmp_path, mode=mode)
+    if hostile_case == "status_symlink":
+        target = fixture.onboarding_status.with_name("status-target.json")
+        fixture.onboarding_status.rename(target)
+        fixture.onboarding_status.symlink_to(target)
+    elif hostile_case == "producer_directory":
+        target = fixture.producer_archive.with_suffix(".saved")
+        fixture.producer_archive.rename(target)
+        fixture.producer_archive.mkdir()
+    elif hostile_case == "node_archive_oversized":
+        fixture.source_archives[22].write_bytes(b"x" * (16 * 1024 * 1024 + 1))
+    else:
+        signed = fixture.signed_paths["signed-npm-tarball"]
+        target = signed.with_suffix(".saved")
+        signed.rename(target)
+        signed.symlink_to(target)
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert summary["conclusion"] == "failed"
+    assert summary["onboardingEvidence"] is None
+    assert summary["signedSource"] is None
+
+
+def _current_release_snapshot_inputs(
+    fixture: SimpleNamespace,
+    module: ModuleType,
+) -> tuple[Path, object]:
+    args = module.parse_args(fixture.command[2:])
+    producer, _, _, _ = module.load_current_archives(args)
+    producer_release = module._verified_archive_release(
+        producer,
+        args.expected_commit,
+    )
+    return args.artifacts_dir, producer_release
+
+
+@pytest.mark.parametrize(
+    "hostile_case",
+    ("symlink", "directory", "hardlink", "oversize"),
+)
+def test_current_release_snapshot_rejects_unsafe_members(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    hostile_case: str,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    artifacts_dir, producer_release = _current_release_snapshot_inputs(fixture, module)
+    target = artifacts_dir / "SHA256SUMS"
+    saved = artifacts_dir / "saved-member"
+    if hostile_case == "symlink":
+        target.rename(saved)
+        target.symlink_to(saved.name)
+    elif hostile_case == "directory":
+        target.unlink()
+        target.mkdir()
+    elif hostile_case == "hardlink":
+        target.unlink()
+        os.link(artifacts_dir / "manifest.json", target)
+    else:
+        limits = dict(module.CURRENT_RELEASE_MEMBER_LIMITS)
+        limits["SHA256SUMS"] = len(target.read_bytes()) - 1
+        monkeypatch.setattr(module, "CURRENT_RELEASE_MEMBER_LIMITS", limits)
+
+    with pytest.raises(module.EvidenceValidationError) as error:
+        module.load_current_release_snapshot(
+            artifacts_dir,
+            producer_release=producer_release,
+            expected_commit="a" * 40,
+        )
+    assert error.value.code == "current_carrier_unsafe"
+
+
+def test_current_release_snapshot_rejects_same_inode_write_during_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    artifacts_dir, producer_release = _current_release_snapshot_inputs(fixture, module)
+    target = artifacts_dir / "manifest.json"
+    target_inode = target.stat().st_ino
+    original_read = module.os.read
+    mutated = False
+
+    def mutate_same_inode(descriptor: int, size: int) -> bytes:
+        nonlocal mutated
+        encoded = original_read(descriptor, size)
+        if (
+            not mutated
+            and encoded
+            and module.os.fstat(descriptor).st_ino == target_inode
+        ):
+            mutated = True
+            current = target.read_bytes()
+            replacement = bytes([current[0] ^ 1]) + current[1:] if current else current
+            target.write_bytes(replacement)
+        return encoded
+
+    monkeypatch.setattr(module.os, "read", mutate_same_inode)
+
+    with pytest.raises(module.EvidenceValidationError) as error:
+        module.load_current_release_snapshot(
+            artifacts_dir,
+            producer_release=producer_release,
+            expected_commit="a" * 40,
+        )
+    assert mutated
+    assert error.value.code == "current_carrier_unsafe"
+
+
+def test_current_release_snapshot_rejects_directory_inventory_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    artifacts_dir, producer_release = _current_release_snapshot_inputs(fixture, module)
+    original_listdir = module.os.listdir
+    calls = 0
+
+    def drift_inventory(descriptor: int) -> list[str]:
+        nonlocal calls
+        calls += 1
+        inventory = original_listdir(descriptor)
+        return inventory if calls == 1 else [*inventory, "unreviewed"]
+
+    monkeypatch.setattr(module.os, "listdir", drift_inventory)
+
+    with pytest.raises(module.EvidenceValidationError) as error:
+        module.load_current_release_snapshot(
+            artifacts_dir,
+            producer_release=producer_release,
+            expected_commit="a" * 40,
+        )
+    assert calls == 2
+    assert error.value.code == "current_carrier_unsafe"
+
+
+def test_current_release_snapshot_rejects_parent_path_replacement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    module = _load_root_script("validate_release_evidence.py")
+    artifacts_dir, producer_release = _current_release_snapshot_inputs(fixture, module)
+    saved_dir = artifacts_dir.with_name("release-before-replacement")
+    original_read = module.os.read
+    replaced = False
+
+    def replace_parent_path(descriptor: int, size: int) -> bytes:
+        nonlocal replaced
+        encoded = original_read(descriptor, size)
+        if not replaced and encoded:
+            replaced = True
+            artifacts_dir.rename(saved_dir)
+            artifacts_dir.mkdir()
+        return encoded
+
+    monkeypatch.setattr(module.os, "read", replace_parent_path)
+
+    with pytest.raises(module.EvidenceValidationError) as error:
+        module.load_current_release_snapshot(
+            artifacts_dir,
+            producer_release=producer_release,
+            expected_commit="a" * 40,
+        )
+    assert replaced
+    assert error.value.code == "current_carrier_unsafe"
+
+
+def test_release_evidence_rejects_valid_but_nonproducer_current_carrier(
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    artifacts_dir = Path(_command_argument(fixture.command, "--artifacts-dir"))
+    tarball = artifacts_dir / "kaji-sdk-0.2.0-beta.9.tgz"
+    tarball.write_bytes(tarball.read_bytes() + b"hostile")
+    manifest_path = artifacts_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    for entry in manifest["artifacts"]:
+        path = artifacts_dir / entry["file"]
+        entry["size"] = path.stat().st_size
+        entry["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    _write_release_evidence_json(manifest_path, manifest)
+    checksum_lines = [
+        f"{entry['sha256']}  {entry['file']}" for entry in manifest["artifacts"]
+    ]
+    (artifacts_dir / "SHA256SUMS").write_text("\n".join(checksum_lines) + "\n")
+
+    completed, summary = _run_release_evidence(fixture)
+
+    assert completed.returncode != 0
+    assert {
+        "evidence": "release-artifacts",
+        "code": "current_carrier_mismatch",
+    } in cast(list[dict[str, str]], summary["failures"])
+    assert summary["validatedEvidence"] == []
+
+
+def test_release_evidence_strict_loader_fails_closed_on_stable_read_drift(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = _load_root_script("validate_release_evidence.py")
+    path = tmp_path / "status.json"
+    path.write_text("{}")
+
+    def reject_drift(*_args: object, **_kwargs: object) -> bytes:
+        raise module.CompatibilityEvidenceError("/: input changed while reading")
+
+    monkeypatch.setattr(module, "load_stable_bytes", reject_drift)
+    with pytest.raises(module.EvidenceValidationError) as error:
+        module.load_strict_document(path, "status")
+    assert error.value.code == "evidence_invalid_json"
+
+
+def test_release_evidence_fallback_is_closed_deterministic_and_redacted(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
+    normal_completed, normal = _run_release_evidence(fixture)
+    assert normal_completed.returncode == 0
+    module = _load_root_script("validate_release_evidence.py")
+    args = module.parse_args(fixture.command[2:])
+    monkeypatch.setattr(module, "parse_args", lambda _argv=None: args)
+
+    def explode(_args: object) -> NoReturn:
+        raise RuntimeError("NPM_TOKEN=DO_NOT_RETAIN")
+
+    monkeypatch.setattr(module, "validate", explode)
+    first_code = module.main([])
+    first_stdout = capsys.readouterr().out
+    first_bytes = fixture.output.read_bytes()
+    second_code = module.main([])
+    second_stdout = capsys.readouterr().out
+
+    fallback = json.loads(first_bytes)
+    assert first_code == second_code == 1
+    assert set(fallback) == set(normal)
+    assert fallback["schemaVersion"] == 2
+    assert fallback["conclusion"] == "failed"
+    assert fallback["onboardingEvidence"] is None
+    assert fallback["signedSource"] is None
+    assert "DO_NOT_RETAIN" not in first_stdout
+    assert first_stdout == second_stdout
+    assert fixture.output.read_bytes() == first_bytes
 
 
 def test_release_evidence_validator_requires_identical_typescript_installed_proofs() -> (
@@ -3954,7 +6895,7 @@ def test_release_evidence_validator_requires_identical_typescript_installed_proo
 def test_release_evidence_validator_accepts_one_canonical_current_run(
     tmp_path: Path,
 ) -> None:
-    fixture = _release_evidence_fixture(tmp_path)
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
 
     completed = subprocess.run(
         fixture.command,
@@ -3996,7 +6937,7 @@ def test_release_evidence_validator_accepts_one_canonical_current_run(
 def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fixture = _release_evidence_fixture(tmp_path)
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
     module = _load_root_script("benchmark_platform.py")
     for name, value in {
         "GITHUB_ACTIONS": "true",
@@ -4023,6 +6964,16 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
     assert runner == soak["fingerprint"]["runner"]
 
 
+def test_release_evidence_uses_archive_native_node_bindings_only() -> None:
+    source = _read("kaji/scripts/validate_release_evidence.py")
+
+    assert "validate_legacy_node_release_bindings" not in source
+    assert "validate_tthw_evidence" not in source
+    assert "onboarding.load_authenticated_archive(" in source
+    assert "onboarding.recompute_and_compare(" in source
+    assert "node_receipt_sha256" in source
+
+
 @pytest.mark.parametrize(
     ("hostile_case", "expected_code"),
     (
@@ -4030,17 +6981,19 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         ("missing_canonical_python_receipt", "evidence_missing"),
         ("missing_canonical_node_receipt", "evidence_missing"),
         ("not_run_receipt", "receipt_not_passed"),
-        ("failed_receipt", "receipt_not_passed"),
+        ("failed_receipt", "node_receipt_hash_mismatch"),
         ("mixed_manifest", "manifest_hash_mismatch"),
         ("stale_workflow_run", "workflow_run_mismatch"),
         ("prior_artifact_id", "release_artifact_id_mismatch"),
         ("invalid_github_proof", "github_package_proof_invalid"),
-        ("invalid_ts_schema_1", "github_package_proof_invalid"),
-        ("invalid_ts_schema_3", "github_package_proof_invalid"),
-        ("invalid_ts_alias", "github_package_proof_invalid"),
-        ("invalid_ts_lifecycle", "github_package_proof_invalid"),
-        ("invalid_ts_counts", "github_package_proof_invalid"),
-        ("invalid_ts_proof_version_divergence", "github_package_proof_invalid"),
+        ("invalid_ts_schema_1", "node_receipt_hash_mismatch"),
+        ("invalid_ts_schema_3", "node_receipt_hash_mismatch"),
+        ("invalid_ts_alias", "node_receipt_hash_mismatch"),
+        ("invalid_ts_lifecycle", "node_receipt_hash_mismatch"),
+        ("invalid_ts_counts", "node_receipt_hash_mismatch"),
+        ("invalid_ts_proof_version_divergence", "node_receipt_hash_mismatch"),
+        ("node_producer_id_drift", "node_receipt_hash_mismatch"),
+        ("node_producer_digest_drift", "node_receipt_hash_mismatch"),
         ("source_path", "source_path_detected"),
         ("legacy_performance_runner", "performance_runner_invalid"),
         ("extra_performance_runner", "performance_runner_invalid"),
@@ -4064,13 +7017,10 @@ def test_release_evidence_fixture_uses_producer_valid_performance_image_data(
         ("tampered_raw_paired_replica", "paired_raw_replica_mismatch"),
         ("missing_provider_cell", "provider_cells_mismatch"),
         ("unexpected_anthropic_cell", "provider_cells_mismatch"),
-        ("mixed_tthw_status", "artifact_hash_mismatch"),
-        ("invalid_tthw_raw", "tthw_evidence_invalid"),
-        ("manual_tthw_timing", "tthw_evidence_invalid"),
-        ("canonical_extra_top_level", "tthw_evidence_invalid"),
-        ("canonical_negative_timing", "tthw_evidence_invalid"),
-        ("canonical_toolchain_drift", "tthw_evidence_invalid"),
-        ("canonical_boolean_attempt", "tthw_evidence_invalid"),
+        ("canonical_extra_top_level", "compatibility_receipt_invalid"),
+        ("canonical_negative_timing", "node_receipt_hash_mismatch"),
+        ("canonical_toolchain_drift", "node_receipt_hash_mismatch"),
+        ("canonical_boolean_attempt", "workflow_run_attempt_mismatch"),
     ),
 )
 def test_release_evidence_validator_rejects_hostile_retained_receipts(
@@ -4078,7 +7028,7 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
     hostile_case: str,
     expected_code: str,
 ) -> None:
-    fixture = _release_evidence_fixture(tmp_path)
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
     if hostile_case == "missing_receipt":
         fixture.paths["compat-python-3.11"].unlink()
     elif hostile_case == "missing_canonical_python_receipt":
@@ -4132,6 +7082,8 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "invalid_ts_lifecycle": "compat-node-22",
             "invalid_ts_counts": "compat-node-22",
             "invalid_ts_proof_version_divergence": "compat-node-22",
+            "node_producer_id_drift": "compat-node-22",
+            "node_producer_digest_drift": "compat-node-22",
             "source_path": "soak-results",
             "legacy_performance_runner": "soak-results",
             "extra_performance_runner": "soak-results",
@@ -4146,9 +7098,6 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             "stale_paired_run": "benchmark-results",
             "missing_provider_cell": "provider-evidence",
             "unexpected_anthropic_cell": "provider-evidence",
-            "mixed_tthw_status": "tthw-status",
-            "invalid_tthw_raw": "tthw-evidence",
-            "manual_tthw_timing": "tthw-evidence",
             "canonical_extra_top_level": "compat-python-3.14",
             "canonical_negative_timing": "compat-node-24",
             "canonical_toolchain_drift": "compat-node-24",
@@ -4193,6 +7142,10 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
             document["githubPackageProofs"]["bun"]["typescriptDeclarationChecks"][
                 "typescriptCurrent"
             ]["version"] = "6.0.3"
+        elif hostile_case == "node_producer_id_drift":
+            document["producerArtifact"]["id"] = 457
+        elif hostile_case == "node_producer_digest_drift":
+            document["producerArtifact"]["digest"] = "sha256:" + "f" * 64
         elif hostile_case == "source_path":
             document["resolvedPackages"]["typescript"] = str(
                 fixture.workspace / "kaji/ts/dist/node_modules/kaji-sdk"
@@ -4229,10 +7182,6 @@ def test_release_evidence_validator_rejects_hostile_retained_receipts(
                     "model": "claude-test-model",
                 }
             )
-        elif hostile_case == "mixed_tthw_status":
-            document["artifactSha256"]["kaji-sdk-0.2.0-beta.8.tgz"] = "0" * 64
-        elif hostile_case == "manual_tthw_timing":
-            document["automatedTimings"]["python"]["warmRunMs"] += 1
         elif hostile_case == "canonical_extra_top_level":
             document["untrusted"] = True
         elif hostile_case == "canonical_negative_timing":
@@ -4328,7 +7277,7 @@ def test_release_evidence_closes_every_compatibility_receipt_shape(
     receipt_label: str,
     hostile_case: str,
 ) -> None:
-    fixture = _release_evidence_fixture(tmp_path)
+    fixture = _archive_native_release_evidence_fixture(tmp_path)
     path = fixture.paths[receipt_label]
     document = json.loads(path.read_text())
     timing_name = "wheel" if receipt_label.startswith("compat-python") else "npm"
@@ -4356,9 +7305,24 @@ def test_release_evidence_closes_every_compatibility_receipt_shape(
 
     assert completed.returncode != 0
     summary = json.loads(fixture.output.read_text())
+    expected_code = (
+        "schema_mismatch"
+        if receipt_label.startswith("compat-python")
+        and hostile_case == "boolean-schema"
+        else (
+            "compatibility_receipt_invalid"
+            if receipt_label.startswith("compat-python")
+            else "node_receipt_hash_mismatch"
+        )
+    )
+    expected_evidence = (
+        receipt_label
+        if receipt_label.startswith("compat-python")
+        else "onboarding-evidence"
+    )
     assert {
-        "evidence": receipt_label,
-        "code": "compatibility_receipt_invalid",
+        "evidence": expected_evidence,
+        "code": expected_code,
     } in summary["failures"]
 
 

@@ -204,7 +204,7 @@ def test_authoritative_workflows_call_shared_performance_without_legacy_full_gat
 ):
     expected_commits = {
         "kaji.benchmark.yml": "${{ needs.release-artifacts.outputs.commit }}",
-        "kaji.rehearsal.yml": "${{ github.sha }}",
+        "kaji.rehearsal.yml": "${{ inputs.expected-commit }}",
         "kaji.publish.yml": "${{ needs.verify-tag.outputs.commit }}",
     }
     for filename, commit in expected_commits.items():

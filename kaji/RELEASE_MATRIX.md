@@ -4,7 +4,8 @@
 
 Kaji is in pre-beta release implementation. Promotion is blocked pending
 same-commit protected release evidence: floor/latest runtime matrices, the
-required keyed OpenAI proof, the paired A/B benchmark, a
+required automated TypeScript onboarding aggregate, keyed OpenAI proof, the
+paired A/B benchmark, a
 30-minute soak, a real signed tag, provenance, and publication verification.
 The sole beta-supported external provider must complete a real model-requested
 tool loop in Python and TypeScript on that exact release commit. It does not
@@ -107,9 +108,12 @@ uv run --project kaji python kaji/scripts/beta_release_check.py
 
 The wrapper runs the non-keyed local checks below and fails clearly when
 required local tooling such as `bun` or `uv` is missing. This is an offline
-rehearsal, not provider-readiness evidence. The protected `kaji-beta` workflow
-requires an OpenAI credential and completes the OpenAI provider tool loop in
-both SDKs; a missing credential blocks the release.
+rehearsal, not provider-readiness evidence. The protected rehearsal and
+publish workflows are authoritative. `kaji-beta-onboarding` protects the
+deterministic TypeScript onboarding aggregate, `kaji-beta` protects the keyed
+OpenAI tool loop in both SDKs, and `kaji-beta-publish` protects publisher
+identity and the sole npm write. A missing OpenAI credential blocks the
+release.
 
 The pinned ast-grep step is mandatory. It guards the Python SDK/service
 boundary, core package dependency direction, legacy tool-model imports,
@@ -126,11 +130,11 @@ TypeScript optional provider imports, and cancellation error shape.
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
+| TypeScript onboarding evidence | exact current-run tarball and raw `kaji-beta-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` REST ZIPs, independently recomputed by calibration and the protected aggregate | Yes; npm and Bun install, scaffold, no-key, Echo lifecycle, cold, and warm phases on GitHub-hosted Linux/x64 Node 22 `ubuntu-22.04` and Node 24 `ubuntu-24.04`; no human, macOS/arm64, Windows, or fully offline onboarding claim | Pending protected run |
 | Paired A/B benchmark | `kaji.performance.yml`: immutable reference artifacts and the exact candidate on three numbered GitHub-hosted `macos-15` matrix replicas in one run attempt; five adjacent matched pairs after two warmups per case, with retained raw runner/image receipts; diagnostic runner names may repeat | Yes; timing must pass unanimously at ≤1.20 across all three replicas, mixed timing is inconclusive, and any per-pair RSS ratio >1.20 is a hard failure | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30 --protected` on the exact candidate, with retained `macos-15` image provenance | Yes; independent of the paired benchmark | Pending protected run |
 | Keyed OpenAI proof | `live_provider_proof.py` in `kaji-beta` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
-| Five-user TTHW evidence | `validate_tthw_evidence.py` on exact-commit retained evidence | Yes; exactly 2 Python, 2 npm, and 1 Bun fresh arm64 macOS users, each bound to the installed candidate artifact; no-key median/max <5m/<10m and Echo median/max <10m/<20m; verified false-by-default attestations, monotonic timing, no failed/exhausted/cancelled terminal events, reviews within 7 days of composer-owned collection, collection ≤7 days old at release, and composed secret ≤49,152 bytes | Unmeasured |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
 | Registry publication proof | protected npm publication plus exact npm byte, integrity, signature, provenance, and attestation verification; PyPI remains absent/deferred | Yes for the TypeScript beta; Python registry promotion is deferred | Pending approval/publication |

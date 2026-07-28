@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -39,6 +40,63 @@ def _snippet(path: Path, name: str, language: str) -> str:
     )
     assert len(matches) == 1, f"expected exactly one {name} in {path}"
     return textwrap.dedent(matches[0])
+
+
+def test_exact_python_onboarding_echo_snippet_runs_offline(tmp_path: Path) -> None:
+    source = _snippet(
+        REPO_ROOT / "docs/kaji/typescript-onboarding-evidence.md",
+        "tthw-echo:python",
+        "python",
+    )
+    echo = tmp_path / "echo"
+    echo.mkdir()
+    shutil.copyfile(
+        REPO_ROOT / "kaji/src/kaji/integrations/registry/echo/echo.py",
+        echo / "echo.py",
+    )
+    script = tmp_path / "echo_loop.py"
+    script.write_text(source)
+    environment = os.environ.copy()
+    for name in (
+        "ANTHROPIC_API_KEY",
+        "GITHUB_TOKEN",
+        "GOOGLE_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+    ):
+        environment.pop(name, None)
+
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == (
+        "PASS: echo requested, started, completed, and observed"
+    )
+
+
+def test_onboarding_echo_snippets_reject_unexpected_terminal_events() -> None:
+    guide = REPO_ROOT / "docs/kaji/typescript-onboarding-evidence.md"
+    sources = (
+        _snippet(guide, "tthw-echo:python", "python"),
+        _snippet(guide, "tthw-echo:typescript", "ts"),
+    )
+
+    for event_type in (
+        "AGENT_TURN_FAILED",
+        "AGENT_TURN_EXHAUSTED",
+        "TOOL_CALL_FAILED",
+        "CANCELLATION_REQUESTED",
+        "CANCELLATION_COMPLETED",
+    ):
+        assert all(f"EventType.{event_type}" in source for source in sources)
 
 
 def test_exact_getting_started_python_no_key_snippet_runs(tmp_path: Path) -> None:
@@ -505,7 +563,7 @@ def test_public_onboarding_is_source_only_before_registry_verification() -> None
     combined = "\n".join(path.read_text() for path in paths)
     combined_compact = " ".join(combined.split())
 
-    assert "0.2.0-beta.8" in combined
+    assert "0.2.0-beta.9" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
     assert "kaji-sdk@0.2.0-beta.3" not in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
@@ -676,10 +734,15 @@ def test_package_readmes_have_permanent_status_neutral_canonical_links() -> None
     assert blocks == [expected, expected]
 
     typescript_readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
-    assert "Node 22 or 24" in typescript_readme
-    assert "Node 22+" not in typescript_readme
-    assert "TypeScript 5.7" in typescript_readme
-    assert "current TypeScript 6" in typescript_readme
+    normalized_typescript_readme = " ".join(typescript_readme.split())
+    assert (
+        "package metadata declares Node `22.x || 24.x`" in normalized_typescript_readme
+    )
+    assert "Node 22+" not in normalized_typescript_readme
+    assert "Node 22 on `ubuntu-22.04`" in normalized_typescript_readme
+    assert "Node 24 on `ubuntu-24.04`" in normalized_typescript_readme
+    assert "TypeScript 5.7.3 and 6.0.3" in normalized_typescript_readme
+    assert "current TypeScript 6" not in normalized_typescript_readme
 
 
 def test_trust_and_feedback_surfaces_are_complete() -> None:
@@ -736,7 +799,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
         assert stale not in combined
 
     getting_started = paths[0].read_text()
-    assert "0.2.0-beta.8" in getting_started
+    assert "0.2.0-beta.9" in getting_started
     assert "bun install --frozen-lockfile" in getting_started
     assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", getting_started) is None
     assert 'risk="read"' in getting_started
@@ -786,13 +849,17 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     assert "installed-quickstart:python:start" in python_smoke
     assert "exec(compile(match.group(1)" in python_smoke
     assert '"getting-started:no-key:python"' in python_smoke
+    assert '"typescript-onboarding-evidence.md"' in python_smoke
+    assert '"tthw-evidence.md"' not in python_smoke
     assert '"tthw-echo:python"' in python_smoke
     assert 'cli_main(["--no-color", "add", "echo"' in python_smoke
     assert "installed-quickstart:typescript:start" in ts_smoke
     assert '"getting-started:no-key:typescript"' in ts_smoke
+    assert '"docs/kaji/typescript-onboarding-evidence.md"' in ts_smoke
+    assert '"docs/kaji/tthw-evidence.md"' not in ts_smoke
     assert '"tthw-echo:typescript"' in ts_smoke
     assert "docs-getting-started-run" in ts_smoke
-    assert "docs-tthw-echo-run" in ts_smoke
+    assert "installed-artifact-echo-run" in ts_smoke
     assert re.search(
         r'runCommand\(\s*"docs:compile-typescript-current",\s*nodeBinary,\s*'
         r'\[\s*tsc,\s*"--project",\s*"tsconfig\.docs\.json"\s*,?\s*\]\s*\)',
@@ -805,20 +872,114 @@ def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
     )
 
 
-def test_tthw_typescript_echo_instructions_use_the_certified_toolchain() -> None:
-    guide = (REPO_ROOT / "docs" / "kaji" / "tthw-evidence.md").read_text()
+def test_typescript_onboarding_evidence_uses_the_certified_toolchain() -> None:
+    guide = (
+        REPO_ROOT / "docs" / "kaji" / "typescript-onboarding-evidence.md"
+    ).read_text()
 
-    assert (
-        'npm install "$KAJI_TARBALL" zod@4.3.6 tsx typescript@6.0.3 @types/node'
-        in guide
-    )
-    assert "bun remove typescript" in guide
-    assert 'bun add "$KAJI_TARBALL" zod@4.3.6 tsx @types/node' in guide
-    assert "bun add --dev typescript@6.0.3" in guide
+    assert "Bun 1.3.11" in guide
+    assert "TypeScript 5.7.3" in guide
+    assert "TypeScript 6.0.3" in guide
     assert "Save the following as `echo-loop.mts`." in guide
     assert "`./node_modules/.bin/tsx echo-loop.mts` for npm or" in guide
     assert "`bun --no-install echo-loop.mts` for Bun:" in guide
     assert "echo-loop.ts`" not in guide
+
+
+def test_typescript_onboarding_docs_make_only_the_protected_runner_claims() -> None:
+    guide = (
+        REPO_ROOT / "docs" / "kaji" / "typescript-onboarding-evidence.md"
+    ).read_text()
+    testing = (REPO_ROOT / "docs" / "kaji" / "testing.md").read_text()
+    readme = (REPO_ROOT / "docs" / "kaji" / "README.md").read_text()
+    production = (REPO_ROOT / "docs" / "kaji" / "production-beta.md").read_text()
+    troubleshooting = (REPO_ROOT / "docs" / "kaji" / "troubleshooting.md").read_text()
+    python_readme = (REPO_ROOT / "kaji" / "README.md").read_text()
+    typescript_readme = (REPO_ROOT / "kaji" / "ts" / "README.md").read_text()
+    matrix = (REPO_ROOT / "kaji" / "RELEASE_MATRIX.md").read_text()
+    support = (REPO_ROOT / "SUPPORT.md").read_text()
+    install = (REPO_ROOT / "apps" / "docs" / "content" / "install.mdx").read_text()
+    active_docs = "\n".join(
+        (
+            guide,
+            testing,
+            readme,
+            production,
+            troubleshooting,
+            python_readme,
+            typescript_readme,
+            matrix,
+            support,
+            install,
+        )
+    )
+    normalized_guide = " ".join(guide.split())
+
+    for required in (
+        "GitHub-hosted Linux/x64",
+        "Node 22",
+        "`ubuntu-22.04`",
+        "Node 24",
+        "`ubuntu-24.04`",
+        "npm and Bun",
+        "scaffold",
+        "no-key",
+        "Echo",
+        "cold",
+        "warm",
+    ):
+        assert required in active_docs
+
+    for excluded_claim in (
+        "five-user TTHW",
+        "five human participants",
+        "arm64 macOS users",
+        "human TTHW remains",
+        "validated TTHW regressions",
+        "KAJI_TTHW_EVIDENCE_JSON",
+        "approve_tthw_gate.py",
+        "Supported runtimes are Node 22 or 24 with npm or Bun.",
+        "does not narrow the SDK runtime platforms",
+        "protected `kaji-beta` workflow",
+        "TypeScript 6.0.2",
+    ):
+        assert excluded_claim not in active_docs
+
+    for explicit_limit in (
+        "not a five-human measurement",
+        "not a macOS or arm64 onboarding claim",
+        "not a Windows onboarding claim",
+        "not a fully offline dependency-installation claim",
+    ):
+        assert explicit_limit in normalized_guide
+
+    for scoped_document in (testing, typescript_readme, install):
+        normalized = " ".join(scoped_document.split())
+        assert "GitHub-hosted" in normalized
+        assert "Linux/x64" in normalized
+        assert "Node 22" in normalized
+        assert "`ubuntu-22.04`" in normalized
+        assert "Node 24" in normalized
+        assert "`ubuntu-24.04`" in normalized
+        assert "npm and Bun" in normalized
+        assert "macOS/arm64" in normalized
+        assert "Windows" in normalized
+        assert "fully offline" in normalized
+
+    assert "TypeScript 5.7.3 and 6.0.3" in typescript_readme
+    assert "5.7.3 and 6.0.3 in both cells" in install
+    for protected_document in (
+        production,
+        troubleshooting,
+        python_readme,
+        typescript_readme,
+        matrix,
+    ):
+        normalized = " ".join(protected_document.split())
+        assert "kaji-beta-onboarding" in normalized
+        assert "`kaji-beta`" in normalized
+        assert "kaji-beta-publish" in normalized
+        assert "rehearsal and publish workflows" in normalized
 
 
 def test_typescript_readme_quick_start_uses_an_esm_filename() -> None:
@@ -845,7 +1006,7 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
     }
     combined = "\n".join(documents.values())
     assert "kaji-sdk==0.2.0b1" in combined
-    assert "kaji-sdk@0.2.0-beta.8" in combined
+    assert "kaji-sdk@0.2.0-beta.9" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
     assert "kaji-sdk@0.2.0-beta.3" not in combined
 
@@ -867,11 +1028,11 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         for path in documents
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
-    assert "0.2.0-beta.8" in public_docs
+    assert "0.2.0-beta.9" in public_docs
     assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", public_docs) is None
     assert re.search(r"pip install [^\n`]*kaji-sdk", public_docs) is None
     typescript_readme = documents[REPO_ROOT / "kaji" / "ts" / "README.md"]
-    assert "npm install kaji-sdk@0.2.0-beta.8" in typescript_readme
+    assert "npm install kaji-sdk@0.2.0-beta.9" in typescript_readme
 
 
 def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:

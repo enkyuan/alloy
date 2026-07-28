@@ -17,12 +17,12 @@ from typing import Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.8.tgz": ("typescript", "0.2.0-beta.8"),
+    "kaji-sdk-0.2.0-beta.9.tgz": ("typescript", "0.2.0-beta.9"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
     "python": "0.2.0b1",
-    "typescript": "0.2.0-beta.8",
+    "typescript": "0.2.0-beta.9",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
@@ -65,12 +65,20 @@ class VerifiedReleaseArtifacts:
 
 
 @dataclass(frozen=True)
+class VerifiedReleaseArtifactBytes:
+    commit: str
+    manifest_sha256: str
+    members: Mapping[str, bytes]
+    artifact_sha256: Mapping[str, str]
+
+
+@dataclass(frozen=True)
 class ReleaseArtifactContract:
     artifacts: Mapping[str, tuple[str, str]]
     packages: Mapping[str, str]
 
 
-BETA8_RELEASE_CONTRACT = ReleaseArtifactContract(
+BETA9_RELEASE_CONTRACT = ReleaseArtifactContract(
     artifacts=MappingProxyType(EXPECTED_ARTIFACTS),
     packages=MappingProxyType(EXPECTED_PACKAGES),
 )
@@ -80,7 +88,7 @@ BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
 )
 RELEASE_ARTIFACT_CONTRACTS = MappingProxyType(
     {
-        "beta8": BETA8_RELEASE_CONTRACT,
+        "beta9": BETA9_RELEASE_CONTRACT,
         "beta2-reference": BETA2_REFERENCE_RELEASE_CONTRACT,
     }
 )
@@ -98,40 +106,53 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify(
-    artifacts: Path,
+def _sha256_bytes(encoded: bytes) -> str:
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def verify_release_member_bytes(
+    members: Mapping[str, bytes],
     expected_commit: str,
     *,
-    artifact_contract: ReleaseArtifactContract = BETA8_RELEASE_CONTRACT,
-) -> VerifiedReleaseArtifacts:
+    artifact_contract: ReleaseArtifactContract = BETA9_RELEASE_CONTRACT,
+) -> VerifiedReleaseArtifactBytes:
+    """Verify the complete reviewed release set from immutable member bytes."""
+
     if artifact_contract not in (
-        BETA8_RELEASE_CONTRACT,
+        BETA9_RELEASE_CONTRACT,
         BETA2_REFERENCE_RELEASE_CONTRACT,
     ):
         fail("unsupported release artifact contract")
     expected_artifacts = artifact_contract.artifacts
     expected_packages = artifact_contract.packages
+    if not isinstance(expected_commit, str):
+        fail("expected commit must be exactly 40 hexadecimal characters")
     commit = expected_commit.lower()
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         fail("expected commit must be exactly 40 hexadecimal characters")
-    if not artifacts.is_dir():
-        fail(f"artifact directory does not exist: {artifacts}")
-
     required = set(expected_artifacts) | {"manifest.json", "SHA256SUMS"}
-    children = list(artifacts.iterdir())
-    actual = {path.name for path in children}
-    if actual != required:
+    if set(members) != required:
         fail(
-            f"artifact file set mismatch: expected {sorted(required)}, got {sorted(actual)}"
+            f"artifact file set mismatch: expected {sorted(required)}, "
+            f"got {sorted(members)}"
         )
-    if any(not path.is_file() or path.is_symlink() for path in children):
-        fail("artifact directory contains a non-regular file or symlink")
+    if any(
+        type(name) is not str or type(encoded) is not bytes
+        for name, encoded in members.items()
+    ):
+        fail("artifact members must be immutable bytes")
 
     try:
-        manifest = json.loads((artifacts / "manifest.json").read_text())
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        manifest = json.loads(members["manifest.json"])
+    except (UnicodeError, json.JSONDecodeError) as error:
         fail(f"invalid manifest: {type(error).__name__}")
-    if manifest.get("schemaVersion") != 1 or manifest.get("commit") != commit:
+    if not isinstance(manifest, dict):
+        fail("invalid manifest: root must be an object")
+    if (
+        type(manifest.get("schemaVersion")) is not int
+        or manifest.get("schemaVersion") != 1
+        or manifest.get("commit") != commit
+    ):
         fail("manifest schema or commit mismatch")
     if manifest.get("packages") != expected_packages:
         fail("manifest package versions mismatch")
@@ -169,25 +190,42 @@ def verify(
         not isinstance(entry, dict) or set(entry) != ENTRY_KEYS for entry in entries
     ):
         fail("manifest artifact entry shape mismatch")
+    if any(
+        type(entry["file"]) is not str
+        or type(entry["package"]) is not str
+        or type(entry["version"]) is not str
+        or type(entry["commit"]) is not str
+        or type(entry["contractVersion"]) is not str
+        or type(entry["sha256"]) is not str
+        or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None
+        or type(entry["size"]) is not int
+        or entry["size"] < 1
+        for entry in entries
+    ):
+        fail("manifest artifact entry values are invalid")
     if {entry["file"] for entry in entries} != set(expected_artifacts):
         fail("manifest artifact names mismatch")
 
     manifest_hashes: dict[str, str] = {}
     for entry in entries:
         name = entry["file"]
-        path = artifacts / name
-        digest = sha256(path)
+        encoded = members[name]
+        digest = _sha256_bytes(encoded)
         package, version = expected_artifacts[name]
         if (entry["package"], entry["version"]) != (package, version):
             fail(f"package metadata mismatch for {name}")
         if entry["commit"] != commit or entry["contractVersion"] != "1.0.0":
             fail(f"provenance mismatch for {name}")
-        if entry["size"] != path.stat().st_size or entry["sha256"] != digest:
+        if entry["size"] != len(encoded) or entry["sha256"] != digest:
             fail(f"size/hash mismatch for {name}")
         manifest_hashes[name] = digest
 
+    try:
+        checksum_lines = members["SHA256SUMS"].decode("utf-8").splitlines()
+    except UnicodeError:
+        fail("malformed or duplicate checksum entry")
     checksum_hashes: dict[str, str] = {}
-    for line in (artifacts / "SHA256SUMS").read_text().splitlines():
+    for line in checksum_lines:
         match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
         if match is None or match.group(2) in checksum_hashes:
             fail("malformed or duplicate checksum entry")
@@ -195,11 +233,58 @@ def verify(
     if checksum_hashes != manifest_hashes:
         fail("SHA256SUMS does not exactly match manifest")
 
+    return VerifiedReleaseArtifactBytes(
+        commit=commit,
+        manifest_sha256=_sha256_bytes(members["manifest.json"]),
+        members=MappingProxyType(
+            {name: bytes(encoded) for name, encoded in sorted(members.items())}
+        ),
+        artifact_sha256=MappingProxyType(dict(sorted(manifest_hashes.items()))),
+    )
+
+
+def verify(
+    artifacts: Path,
+    expected_commit: str,
+    *,
+    artifact_contract: ReleaseArtifactContract = BETA9_RELEASE_CONTRACT,
+) -> VerifiedReleaseArtifacts:
+    if artifact_contract not in (
+        BETA9_RELEASE_CONTRACT,
+        BETA2_REFERENCE_RELEASE_CONTRACT,
+    ):
+        fail("unsupported release artifact contract")
+    expected_artifacts = artifact_contract.artifacts
+    if not isinstance(expected_commit, str):
+        fail("expected commit must be exactly 40 hexadecimal characters")
+    commit = expected_commit.lower()
+    if not artifacts.is_dir():
+        fail(f"artifact directory does not exist: {artifacts}")
+
+    required = set(expected_artifacts) | {"manifest.json", "SHA256SUMS"}
+    children = list(artifacts.iterdir())
+    actual = {path.name for path in children}
+    if actual != required:
+        fail(
+            f"artifact file set mismatch: expected {sorted(required)}, got {sorted(actual)}"
+        )
+    if any(not path.is_file() or path.is_symlink() for path in children):
+        fail("artifact directory contains a non-regular file or symlink")
+    try:
+        members = {path.name: path.read_bytes() for path in children}
+    except OSError as error:
+        fail(f"artifact members could not be read: {type(error).__name__}")
+    verified_bytes = verify_release_member_bytes(
+        members,
+        commit,
+        artifact_contract=artifact_contract,
+    )
+
     root = artifacts.resolve()
     return VerifiedReleaseArtifacts(
         root=root,
         commit=commit,
-        manifest_sha256=sha256(artifacts / "manifest.json"),
+        manifest_sha256=verified_bytes.manifest_sha256,
         python_wheel=(
             root
             / next(
@@ -224,7 +309,7 @@ def verify(
                 if package == "typescript"
             )
         ),
-        artifact_sha256=MappingProxyType(dict(sorted(manifest_hashes.items()))),
+        artifact_sha256=verified_bytes.artifact_sha256,
     )
 
 
@@ -235,7 +320,7 @@ def main() -> None:
     parser.add_argument(
         "--artifact-contract",
         choices=tuple(RELEASE_ARTIFACT_CONTRACTS),
-        default="beta8",
+        default="beta9",
     )
     args = parser.parse_args()
     if args.expected_commit is None:

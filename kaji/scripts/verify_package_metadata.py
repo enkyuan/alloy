@@ -21,7 +21,7 @@ from process_runner import METADATA_BUDGET, CommandError, run_checked
 PYTHON_PROJECT = "kaji-sdk"
 PYTHON_DISTRIBUTION = "kaji_sdk"
 PYTHON_VERSION = "0.2.0b1"
-TYPESCRIPT_VERSION = "0.2.0-beta.8"
+TYPESCRIPT_VERSION = "0.2.0-beta.9"
 PYTHON_BUILD_REQUIREMENTS = {"setuptools==83.0.0", "editables==0.6"}
 UV_VERSION = "0.11.25"
 BUN_VERSION = "1.3.11"

@@ -3,7 +3,7 @@ title: Install
 description: Prepare the TypeScript beta from source while protected npm publication is pending, and review the pre-1.0 compatibility boundary.
 ---
 
-Kaji's protected npm release candidate is TypeScript `0.2.0-beta.8`. It is not
+Kaji's protected npm release candidate is TypeScript `0.2.0-beta.9`. It is not
 available from the public registry until protected publication and exact-byte
 verification succeed, so use the source checkout for now. Python wheel and
 PyPI publication are deferred for this release. Both SDKs share the
@@ -37,15 +37,17 @@ The package declares `zod >=4.3 <5` as a required peer. `openai >=4 <8` is
 optional; omit it when you only use `MockProvider` from `kaji-sdk/testing`.
 Zod 3 and Zod 5 are outside the declared beta range.
 
-| Requirement  | Verified release snapshot |
-| ------------ | ------------------------- |
-| Runtime      | Node.js 22 or 24          |
-| TypeScript   | 5.7.3 and 6.0.2           |
-| Package tool | npm or Bun                |
+| Protected evidence cell | Verified release snapshot |
+| ----------------------- | ------------------------- |
+| Node 22                  | GitHub-hosted `ubuntu-22.04`, Linux/x64, npm and Bun |
+| Node 24                  | GitHub-hosted `ubuntu-24.04`, Linux/x64, npm and Bun |
+| TypeScript               | 5.7.3 and 6.0.3 in both cells |
 
 pnpm and Yarn are outside the tested package matrix. Anthropic, Gemini, Kimi,
 and OpenRouter are WIP; their machine contract tier is `experimental`. See
-[providers](/docs/concepts/providers) before choosing one.
+[providers](/docs/concepts/providers) before choosing one. These two protected
+cells make no broader runtime or platform claim, including for macOS/arm64,
+Windows, other Node versions, or fully offline dependency installation.
 
 ## CLI
 

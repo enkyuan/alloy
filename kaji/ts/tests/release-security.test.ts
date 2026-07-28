@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -19,6 +21,11 @@ import { providerAPIErrorFromUnknown } from "@/providers/errors";
 import { AgentBuilder } from "@/runtime/builder";
 import { ToolExecutionController } from "@/tools/execution";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
+import {
+  assertClosedOrdinaryReceipt,
+  ordinaryFailureReceipt,
+  SmokeCommandError,
+} from "../scripts/smoke_package.mts";
 
 const handoffSchemaRelative = "contracts/release/kaji-ts-consumer-handoff-v1.schema.json";
 const canonicalHandoffSchemaRelative =
@@ -373,6 +380,7 @@ describe("release redaction boundaries", () => {
 
 type PermissionMap = Record<string, string>;
 type WorkflowStep = {
+  id?: string;
   name?: string;
   uses?: string;
   run?: string;
@@ -452,7 +460,8 @@ const expectedKajiJobNames = {
     performance: "performance evidence",
     "python-compat": "Python ${{ matrix.python-version }} compatibility",
     "node-compat": "Node ${{ matrix.node-version }} compatibility",
-    "tthw-evidence": "time-to-hello-world evidence",
+    "typescript-onboarding-archive-calibration": "TypeScript onboarding archive calibration",
+    "typescript-onboarding-evidence": "TypeScript onboarding evidence",
     "keyed-proof": "keyed provider proof",
     "candidate-evidence": "release candidate evidence",
   },
@@ -462,11 +471,11 @@ const expectedKajiJobNames = {
     performance: "performance evidence",
     "python-compat": "Python ${{ matrix.python-version }} compatibility",
     "node-compat": "Node ${{ matrix.node-version }} compatibility",
-    "tthw-evidence": "time-to-hello-world evidence",
+    "typescript-onboarding-archive-calibration": "TypeScript onboarding archive calibration",
+    "typescript-onboarding-evidence": "TypeScript onboarding evidence",
     "keyed-proof": "keyed provider proof",
     "supply-chain": "supply-chain evidence",
     "registry-preflight": "registry preflight",
-    "publisher-preflight": "publisher preflight",
     "publish-npm": "publish npm package",
     "publication-status": "verify publication",
     "publication-incident": "publication incident",
@@ -532,19 +541,28 @@ const expectedJobPermissionDeclarations: Partial<
   },
   "kaji.rehearsal.yml": {
     performance: { actions: "read", contents: "read" },
+    "node-compat": { actions: "read", contents: "read" },
+    "typescript-onboarding-archive-calibration": { actions: "read", contents: "read" },
+    "typescript-onboarding-evidence": { actions: "read", contents: "read" },
+    "candidate-evidence": { actions: "read", contents: "read" },
   },
   "kaji.publish.yml": {
+    "verify-tag": { actions: "read", contents: "read" },
+    "offline-gates": { actions: "read", contents: "read" },
     performance: { actions: "read", contents: "read" },
+    "node-compat": { actions: "read", contents: "read" },
+    "typescript-onboarding-archive-calibration": { actions: "read", contents: "read" },
+    "typescript-onboarding-evidence": { actions: "read", contents: "read" },
     "supply-chain": {
+      actions: "read",
       contents: "read",
       "id-token": "write",
       attestations: "write",
     },
-    "publisher-preflight": { contents: "read" },
-    "publish-npm": { contents: "read", "id-token": "write" },
-    "publication-status": { contents: "read", attestations: "read" },
+    "publish-npm": { actions: "read", contents: "read", "id-token": "write" },
+    "publication-status": { actions: "read", contents: "read", attestations: "read" },
     "publication-incident": { contents: "write" },
-    "release-evidence": { contents: "write" },
+    "release-evidence": { actions: "read", contents: "write" },
   },
   "kaji.handoff.trusted.yml": {
     stage: { contents: "read" },
@@ -1247,6 +1265,896 @@ async function runCandidateArtifactBinding(runAttempt: string | undefined) {
   return getArtifact;
 }
 
+function signedBetaFixture() {
+  const tagName = "kaji-v0.2.0-beta.9";
+  const tagObject = "a".repeat(40);
+  const commit = "b".repeat(40);
+  const taggerEmail = "release@example.com";
+  const taggerName = "Kaji Release";
+  const epoch = 1_786_000_000;
+  const runId = 123_456;
+  const candidateArtifactId = 234_567;
+  const evidenceArtifactId = 345_678;
+  const candidateArtifactDigest = `sha256:${"c".repeat(64)}`;
+  const evidenceArtifactDigest = `sha256:${"d".repeat(64)}`;
+  const releaseManifestSha256 = "e".repeat(64);
+  const npmTarballSha256 = "f".repeat(64);
+  const authorization = {
+    candidateArtifact: {
+      digest: candidateArtifactDigest,
+      id: candidateArtifactId,
+      name: "kaji-beta-artifacts",
+    },
+    commit,
+    evidenceArtifact: {
+      digest: evidenceArtifactDigest,
+      id: evidenceArtifactId,
+      name: "kaji-release-candidate-evidence",
+    },
+    npmTarball: {
+      name: "kaji-sdk-0.2.0-beta.9.tgz",
+      sha256: npmTarballSha256,
+    },
+    rehearsal: {
+      runAttempt: 1,
+      runId,
+      workflowPath: ".github/workflows/kaji.rehearsal.yml",
+      workflowSha: commit,
+    },
+    releaseManifestSha256,
+    schemaVersion: "1.0.0",
+  };
+  const body = `${JSON.stringify(authorization)}\n`;
+  const payload = [
+    `object ${commit}`,
+    "type commit",
+    `tag ${tagName}`,
+    `tagger ${taggerName} <${taggerEmail}> ${epoch} +0000`,
+    "",
+    body,
+  ].join("\n");
+  const artifact = (id: number, name: string, digest: string): Record<string, unknown> => ({
+    id,
+    name,
+    digest,
+    expired: false,
+    size_in_bytes: 4096,
+    url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${id}`,
+    archive_download_url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${id}/zip`,
+    workflow_run: {
+      id: runId,
+      head_branch: "main",
+      head_sha: commit,
+    },
+  });
+  return {
+    expected: {
+      tagName,
+      tagObject,
+      commit,
+      taggerEmail,
+      authorizationSha256: createHash("sha256").update(body, "ascii").digest("hex"),
+      runId,
+      candidateArtifactId,
+      candidateArtifactDigest,
+      evidenceArtifactId,
+      evidenceArtifactDigest,
+      releaseManifestSha256,
+      npmTarballSha256,
+    },
+    ref: {
+      ref: `refs/tags/${tagName}`,
+      url: `https://api.github.com/repos/enkyuan/alloy/git/refs/tags/${tagName}`,
+      object: { type: "tag", sha: tagObject },
+    },
+    tag: {
+      sha: tagObject,
+      url: `https://api.github.com/repos/enkyuan/alloy/git/tags/${tagObject}`,
+      tag: tagName,
+      object: { type: "commit", sha: commit },
+      tagger: {
+        name: taggerName,
+        email: taggerEmail,
+        date: new Date(epoch * 1000).toISOString(),
+      },
+      verification: {
+        verified: true,
+        reason: "valid",
+        signature: "verified-signature",
+        payload,
+      },
+    },
+    run: {
+      id: runId,
+      run_attempt: 1,
+      event: "workflow_dispatch",
+      path: ".github/workflows/kaji.rehearsal.yml",
+      head_branch: "main",
+      head_sha: commit,
+      status: "completed",
+      conclusion: "success",
+    },
+    candidate: artifact(candidateArtifactId, "kaji-beta-artifacts", candidateArtifactDigest),
+    evidence: artifact(
+      evidenceArtifactId,
+      "kaji-release-candidate-evidence",
+      evidenceArtifactDigest,
+    ),
+    comparison: { merge_base_commit: { sha: commit } },
+  };
+}
+
+type SignedBetaFixture = ReturnType<typeof signedBetaFixture>;
+
+async function runSignedTagParser(
+  mutate?: (fixture: SignedBetaFixture) => void,
+): Promise<Record<string, string>> {
+  const fixture = signedBetaFixture();
+  mutate?.(fixture);
+  const step = workflowStep(
+    readWorkflow("kaji.publish.yml").workflow.jobs?.["verify-tag"]!,
+    "Verify exact signed annotated beta tag",
+  );
+  const outputs: Record<string, string> = {};
+  const summary = {
+    addHeading: vi.fn(),
+    addList: vi.fn(),
+    write: vi.fn().mockResolvedValue(undefined),
+  };
+  summary.addHeading.mockReturnValue(summary);
+  summary.addList.mockReturnValue(summary);
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+    ...arguments_: string[]
+  ) => (...values: unknown[]) => Promise<void>;
+  const run = new AsyncFunction(
+    "github",
+    "context",
+    "core",
+    "process",
+    "createHash",
+    `"use strict";\n${String(step.with?.script).replace(
+      'const { createHash } = await import("node:crypto");',
+      "",
+    )}`,
+  );
+  await run(
+    {
+      rest: {
+        git: {
+          getRef: vi.fn().mockResolvedValue({ data: fixture.ref }),
+          getTag: vi.fn().mockResolvedValue({ data: fixture.tag }),
+        },
+        actions: {
+          getWorkflowRun: vi.fn().mockResolvedValue({ data: fixture.run }),
+          getArtifact: vi.fn().mockImplementation(({ artifact_id }: { artifact_id: number }) =>
+            Promise.resolve({
+              data:
+                artifact_id === fixture.expected.candidateArtifactId
+                  ? fixture.candidate
+                  : fixture.evidence,
+            }),
+          ),
+        },
+        repos: {
+          compareCommits: vi.fn().mockResolvedValue({ data: fixture.comparison }),
+        },
+      },
+    },
+    {
+      repo: { owner: "enkyuan", repo: "alloy" },
+      eventName: "push",
+      ref: "refs/tags/kaji-v0.2.0-beta.9",
+      runAttempt: 1,
+      payload: {
+        repository: {
+          private: false,
+          default_branch: "main",
+        },
+      },
+    },
+    {
+      setOutput: (name: string, value: string) => {
+        outputs[name] = String(value);
+      },
+      summary,
+    },
+    { env: { EXPECTED_TAGGER_EMAIL: fixture.expected.taggerEmail } },
+    createHash,
+  );
+  return outputs;
+}
+
+function runCompositeTagReverification(
+  mutate?: (fixture: SignedBetaFixture) => void,
+): ReturnType<typeof spawnSync> & { endpoints: string[] } {
+  const fixture = signedBetaFixture();
+  mutate?.(fixture);
+  const action = readYaml(".github/actions/verify-kaji-beta-tag/action.yml").value;
+  const step = (action.runs as { steps: WorkflowStep[] }).steps[0]!;
+  const root = mkdtempSync(join(tmpdir(), "kaji-signed-tag-action-"));
+  const bin = join(root, "bin");
+  const endpointLog = join(root, "endpoints.log");
+  mkdirSync(bin);
+  writeFileSync(endpointLog, "");
+  for (const [name, value] of [
+    ["ref.json", fixture.ref],
+    ["tag.json", fixture.tag],
+    ["run.json", fixture.run],
+    ["candidate.json", fixture.candidate],
+    ["evidence.json", fixture.evidence],
+  ] as const) {
+    writeFileSync(join(root, name), JSON.stringify(value));
+  }
+  const gh = join(bin, "gh");
+  writeFileSync(
+    gh,
+    `#!/bin/bash
+set -euo pipefail
+for endpoint in "$@"; do :; done
+printf '%s\n' "$endpoint" >>"$KAJI_ENDPOINT_LOG"
+case "$endpoint" in
+  */git/ref/tags/*) file=ref.json ;;
+  */git/tags/*) file=tag.json ;;
+  */actions/runs/*) file=run.json ;;
+  */actions/artifacts/${fixture.expected.candidateArtifactId}) file=candidate.json ;;
+  */actions/artifacts/${fixture.expected.evidenceArtifactId}) file=evidence.json ;;
+  *) exit 64 ;;
+esac
+cat "$KAJI_FIXTURE_ROOT/$file"
+`,
+  );
+  chmodSync(gh, 0o700);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        KAJI_ENDPOINT_LOG: endpointLog,
+        KAJI_FIXTURE_ROOT: root,
+        GITHUB_REPOSITORY: "enkyuan/alloy",
+        EXPECTED_TAG: fixture.expected.tagName,
+        EXPECTED_TAG_OBJECT: fixture.expected.tagObject,
+        EXPECTED_COMMIT: fixture.expected.commit,
+        EXPECTED_TAGGER_EMAIL: fixture.expected.taggerEmail,
+        EXPECTED_AUTHORIZATION_SHA256: fixture.expected.authorizationSha256,
+        EXPECTED_REHEARSAL_RUN_ID: String(fixture.expected.runId),
+        EXPECTED_REHEARSAL_RUN_ATTEMPT: "1",
+        EXPECTED_REHEARSAL_WORKFLOW_PATH: ".github/workflows/kaji.rehearsal.yml",
+        EXPECTED_REHEARSAL_WORKFLOW_SHA: fixture.expected.commit,
+        EXPECTED_CANDIDATE_ARTIFACT_ID: String(fixture.expected.candidateArtifactId),
+        EXPECTED_CANDIDATE_ARTIFACT_NAME: "kaji-beta-artifacts",
+        EXPECTED_CANDIDATE_ARTIFACT_DIGEST: fixture.expected.candidateArtifactDigest,
+        EXPECTED_EVIDENCE_ARTIFACT_ID: String(fixture.expected.evidenceArtifactId),
+        EXPECTED_EVIDENCE_ARTIFACT_NAME: "kaji-release-candidate-evidence",
+        EXPECTED_EVIDENCE_ARTIFACT_DIGEST: fixture.expected.evidenceArtifactDigest,
+        EXPECTED_RELEASE_MANIFEST_SHA256: fixture.expected.releaseManifestSha256,
+        EXPECTED_NPM_TARBALL_NAME: "kaji-sdk-0.2.0-beta.9.tgz",
+        EXPECTED_NPM_TARBALL_SHA256: fixture.expected.npmTarballSha256,
+      },
+    });
+    const endpoints = readFileSync(endpointLog, "utf8").split("\n").filter(Boolean);
+    return Object.assign(completed, { endpoints });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const onboardingArtifactKeys = ["producer", "onboarding", "node22", "node24"] as const;
+type OnboardingArtifactKey = (typeof onboardingArtifactKeys)[number];
+type OnboardingConsumerWorkflow = "kaji.rehearsal.yml" | "kaji.publish.yml";
+
+function onboardingBindingFixture(workflowName: OnboardingConsumerWorkflow) {
+  const publish = workflowName === "kaji.publish.yml";
+  const runId = publish ? 701_002 : 701_001;
+  const commit = publish ? "6".repeat(40) : "5".repeat(40);
+  const headBranch = publish ? "kaji-v0.2.0-beta.9" : "main";
+  const expected = {
+    producer: {
+      id: 702_001,
+      name: "kaji-beta-artifacts",
+      digest: `sha256:${"a".repeat(64)}`,
+    },
+    onboarding: {
+      id: 702_002,
+      name: "kaji-typescript-onboarding-evidence",
+      digest: `sha256:${"b".repeat(64)}`,
+    },
+    node22: {
+      id: 702_003,
+      name: "kaji-node-compat-22",
+      digest: `sha256:${"c".repeat(64)}`,
+    },
+    node24: {
+      id: 702_004,
+      name: "kaji-node-compat-24",
+      digest: `sha256:${"d".repeat(64)}`,
+    },
+  };
+  const artifacts = Object.fromEntries(
+    onboardingArtifactKeys.map((key) => {
+      const binding = expected[key];
+      return [
+        key,
+        {
+          id: binding.id,
+          name: binding.name,
+          digest: binding.digest,
+          expired: false,
+          size_in_bytes: 4096,
+          url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${binding.id}`,
+          archive_download_url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${binding.id}/zip`,
+          workflow_run: {
+            id: runId,
+            head_branch: headBranch,
+            head_sha: commit,
+          },
+        } as Record<string, unknown>,
+      ];
+    }),
+  ) as Record<OnboardingArtifactKey, Record<string, unknown>>;
+  return {
+    runId,
+    commit,
+    headBranch,
+    event: publish ? "push" : "workflow_dispatch",
+    workflowPath: `.github/workflows/${workflowName}`,
+    expected,
+    artifacts,
+    run: {
+      id: runId,
+      run_attempt: 1,
+      event: publish ? "push" : "workflow_dispatch",
+      path: `.github/workflows/${workflowName}`,
+      head_branch: headBranch,
+      head_sha: commit,
+    } as Record<string, unknown>,
+    env: {
+      PRODUCER_ID: String(expected.producer.id),
+      PRODUCER_DIGEST: expected.producer.digest,
+      ONBOARDING_ID: String(expected.onboarding.id),
+      ONBOARDING_DIGEST: expected.onboarding.digest,
+      NODE22_ID: String(expected.node22.id),
+      NODE22_DIGEST: expected.node22.digest,
+      NODE24_ID: String(expected.node24.id),
+      NODE24_DIGEST: expected.node24.digest,
+    } as Record<string, string>,
+  };
+}
+
+type OnboardingBindingFixture = ReturnType<typeof onboardingBindingFixture>;
+
+function runOnboardingBindingAuthentication(
+  workflowName: OnboardingConsumerWorkflow,
+  mutate?: (fixture: OnboardingBindingFixture) => void,
+): ReturnType<typeof spawnSync> & { endpoints: string[] } {
+  const fixture = onboardingBindingFixture(workflowName);
+  mutate?.(fixture);
+  const jobId = workflowName === "kaji.publish.yml" ? "supply-chain" : "candidate-evidence";
+  const job = readWorkflow(workflowName).workflow.jobs?.[jobId];
+  const step = workflowStep(
+    job!,
+    "Authenticate exact onboarding artifact bindings before downloads",
+  );
+  const root = mkdtempSync(join(tmpdir(), "kaji-onboarding-bindings-"));
+  const bin = join(root, "bin");
+  const endpointLog = join(root, "endpoints.log");
+  mkdirSync(bin);
+  writeFileSync(endpointLog, "");
+  writeFileSync(join(root, "run.json"), JSON.stringify(fixture.run));
+  for (const key of onboardingArtifactKeys) {
+    writeFileSync(join(root, `${key}.json`), JSON.stringify(fixture.artifacts[key]));
+  }
+  const gh = join(bin, "gh");
+  writeFileSync(
+    gh,
+    `#!/bin/bash
+set -euo pipefail
+for endpoint in "$@"; do :; done
+printf '%s\n' "$endpoint" >>"$KAJI_ENDPOINT_LOG"
+case "$endpoint" in
+  */actions/runs/${fixture.runId}) file=run.json ;;
+  */actions/artifacts/${fixture.expected.producer.id}) file=producer.json ;;
+  */actions/artifacts/${fixture.expected.onboarding.id}) file=onboarding.json ;;
+  */actions/artifacts/${fixture.expected.node22.id}) file=node22.json ;;
+  */actions/artifacts/${fixture.expected.node24.id}) file=node24.json ;;
+  *) exit 64 ;;
+esac
+cat "$KAJI_FIXTURE_ROOT/$file"
+`,
+  );
+  chmodSync(gh, 0o700);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...fixture.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        GH_TOKEN: "read-only-test-token",
+        GITHUB_REPOSITORY: "enkyuan/alloy",
+        GITHUB_RUN_ID: String(fixture.runId),
+        GITHUB_RUN_ATTEMPT: "1",
+        KAJI_ENDPOINT_LOG: endpointLog,
+        KAJI_FIXTURE_ROOT: root,
+        RUNNER_TEMP: root,
+        EXPECTED_COMMIT: fixture.commit,
+        EXPECTED_EVENT: fixture.event,
+        EXPECTED_HEAD_BRANCH: fixture.headBranch,
+        EXPECTED_WORKFLOW_PATH: fixture.workflowPath,
+      },
+    });
+    const endpoints = readFileSync(endpointLog, "utf8").split("\n").filter(Boolean);
+    return Object.assign(completed, { endpoints });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function publisherIdentityArtifactFixture() {
+  const runId = 812_345;
+  const artifactId = 812_346;
+  const commit = "7".repeat(40);
+  const digest = "8".repeat(64);
+  const tag = "kaji-v0.2.0-beta.9";
+  const name = `kaji-publisher-identity-${runId}-1`;
+  return {
+    runId,
+    artifactId,
+    commit,
+    digest,
+    tag,
+    name,
+    run: {
+      id: runId,
+      run_attempt: 1,
+      event: "push",
+      path: ".github/workflows/kaji.publish.yml",
+      head_branch: tag,
+      head_sha: commit,
+    } as Record<string, unknown>,
+    artifact: {
+      id: artifactId,
+      name,
+      digest: `sha256:${digest}`,
+      expired: false,
+      size_in_bytes: 4096,
+      url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${artifactId}`,
+      archive_download_url: `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${artifactId}/zip`,
+      workflow_run: {
+        id: runId,
+        head_branch: tag,
+        head_sha: commit,
+      },
+    } as Record<string, unknown>,
+    env: {
+      PUBLISHER_ARTIFACT_ID: String(artifactId),
+      PUBLISHER_ARTIFACT_NAME: name,
+      PUBLISHER_ARTIFACT_DIGEST: digest,
+      EXPECTED_COMMIT: commit,
+      EXPECTED_TAG: tag,
+      EXPECTED_WORKFLOW_PATH: ".github/workflows/kaji.publish.yml",
+    } as Record<string, string>,
+  };
+}
+
+type PublisherIdentityArtifactFixture = ReturnType<typeof publisherIdentityArtifactFixture>;
+
+function runPublisherReceiptOutputBinding(
+  overrides: Record<string, string> = {},
+): ReturnType<typeof spawnSync> & { outputs: Record<string, string>; endpoints: string[] } {
+  const step = workflowStep(
+    readWorkflow("kaji.publish.yml").workflow.jobs?.["publication-status"]!,
+    "Classify publisher identity receipt outputs before setup",
+  );
+  const root = mkdtempSync(join(tmpdir(), "kaji-publisher-output-binding-"));
+  const bin = join(root, "bin");
+  const output = join(root, "github-output");
+  const endpointLog = join(root, "endpoints.log");
+  mkdirSync(bin);
+  writeFileSync(output, "");
+  writeFileSync(endpointLog, "");
+  const gh = join(bin, "gh");
+  writeFileSync(
+    gh,
+    `#!/bin/bash
+printf '%s\n' "$*" >>"$KAJI_ENDPOINT_LOG"
+exit 70
+`,
+  );
+  chmodSync(gh, 0o700);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        GITHUB_OUTPUT: output,
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "812345",
+        KAJI_ENDPOINT_LOG: endpointLog,
+        PUBLISH_RESULT: "skipped",
+        PUBLISHER_ARTIFACT_ID: "",
+        PUBLISHER_ARTIFACT_NAME: "",
+        PUBLISHER_ARTIFACT_DIGEST: "",
+        PUBLISHER_OUTPUT: "",
+        ...overrides,
+      },
+    });
+    const outputs = Object.fromEntries(
+      readFileSync(output, "utf8")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const separator = line.indexOf("=");
+          return [line.slice(0, separator), line.slice(separator + 1)];
+        }),
+    );
+    const endpoints = readFileSync(endpointLog, "utf8").split("\n").filter(Boolean);
+    return Object.assign(completed, { outputs, endpoints });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runInitialPublicationStatus(
+  publishResult: string,
+): ReturnType<typeof spawnSync> & { payload: Record<string, unknown> } {
+  const step = workflowStep(
+    readWorkflow("kaji.publish.yml").workflow.jobs?.["publication-status"]!,
+    "Initialize fail-closed publication status before setup",
+  );
+  const root = mkdtempSync(join(tmpdir(), "kaji-initial-publication-status-"));
+  const output = join(root, "github-output");
+  writeFileSync(output, "");
+  const commit = "7".repeat(40);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: output,
+        GITHUB_REPOSITORY: "enkyuan/alloy",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "812345",
+        GITHUB_SERVER_URL: "https://github.com",
+        NPM_PUBLISH_RESULT: publishResult,
+        PUBLISHER_OUTPUT: "",
+        RELEASE_COMMIT: commit,
+        RELEASE_TAG: "kaji-v0.2.0-beta.9",
+        RUNNER_TEMP: root,
+        WORKFLOW_SHA: commit,
+      },
+    });
+    const payload = JSON.parse(
+      readFileSync(
+        join(root, ".artifacts/kaji-publication-status/publication-status.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    return Object.assign(completed, { payload });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+type ExactVersionRegistryFixture = {
+  pypiHttp: string;
+  controlHttp: string;
+  controlBody: string;
+  controlContentType: string;
+  controlEffectiveUrl: string;
+  controlRedirects: string;
+  controlTransportStatus: string;
+  packumentHttp: string;
+  packumentBody: string;
+  packumentContentType: string;
+  packumentEffectiveUrl: string;
+  packumentRedirects: string;
+  packumentTransportStatus: string;
+  targetHttp: string;
+  targetBody: string;
+  targetContentType: string;
+  targetEffectiveUrl: string;
+  targetRedirects: string;
+  targetTransportStatus: string;
+};
+
+function runExactVersionRegistryAbsence(
+  jobId: "registry-preflight" | "publish-npm",
+  stepName:
+    | "Require PyPI beta absence and exact npm beta absence"
+    | "Recheck exact registry absence immediately before npm publication",
+  overrides: Partial<ExactVersionRegistryFixture> = {},
+): ReturnType<typeof spawnSync> {
+  const step = workflowStep(readWorkflow("kaji.publish.yml").workflow.jobs?.[jobId]!, stepName);
+  const fixture: ExactVersionRegistryFixture = {
+    pypiHttp: "404",
+    controlHttp: "200",
+    controlBody: '{"name":"tiny-tarball","version":"1.0.0"}',
+    controlContentType: "application/json",
+    controlEffectiveUrl: "https://registry.npmjs.org/tiny-tarball/1.0.0",
+    controlRedirects: "0",
+    controlTransportStatus: "0",
+    packumentHttp: "404",
+    packumentBody: '{"error":"Not found"}',
+    packumentContentType: "application/json",
+    packumentEffectiveUrl: "https://registry.npmjs.org/kaji-sdk",
+    packumentRedirects: "0",
+    packumentTransportStatus: "0",
+    targetHttp: "404",
+    targetBody: '"Not Found"',
+    targetContentType: "application/json",
+    targetEffectiveUrl: "https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9",
+    targetRedirects: "0",
+    targetTransportStatus: "0",
+    ...overrides,
+  };
+  const root = mkdtempSync(join(tmpdir(), "kaji-registry-preflight-"));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  for (const [name, body] of [
+    ["control", fixture.controlBody],
+    ["packument", fixture.packumentBody],
+    ["target", fixture.targetBody],
+  ] as const) {
+    writeFileSync(join(root, `${name}.json`), body);
+  }
+  const curl = join(bin, "curl");
+  writeFileSync(
+    curl,
+    `#!/bin/bash
+set -euo pipefail
+output=
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output)
+      output="$2"
+      shift 2
+      ;;
+    --write-out|--header|--max-time|--connect-timeout|--proto|--max-filesize)
+      shift 2
+      ;;
+    --silent|--show-error|--tlsv1.2)
+      shift
+      ;;
+    https://*)
+      url="$1"
+      shift
+      ;;
+    *)
+      exit 64
+      ;;
+  esac
+done
+case "$url" in
+  https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)
+    printf '%s' "$KAJI_PYPI_HTTP"
+    ;;
+  https://registry.npmjs.org/tiny-tarball/1.0.0)
+    key=CONTROL
+    body_file="$KAJI_FIXTURE_ROOT/control.json"
+    ;;
+  https://registry.npmjs.org/kaji-sdk)
+    key=PACKUMENT
+    body_file="$KAJI_FIXTURE_ROOT/packument.json"
+    ;;
+  https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9)
+    key=TARGET
+    body_file="$KAJI_FIXTURE_ROOT/target.json"
+    ;;
+  *)
+    exit 65
+    ;;
+esac
+if [ -n "\${key:-}" ]; then
+  eval "transport_status=\\\$KAJI_\${key}_TRANSPORT_STATUS"
+  [ "$transport_status" -eq 0 ] || exit "$transport_status"
+  eval "http_status=\\\$KAJI_\${key}_HTTP"
+  eval "content_type=\\\$KAJI_\${key}_CONTENT_TYPE"
+  eval "effective_url=\\\$KAJI_\${key}_EFFECTIVE_URL"
+  eval "redirects=\\\$KAJI_\${key}_REDIRECTS"
+  cp "$body_file" "$output"
+  size="$(wc -c <"$output" | tr -d '[:space:]')"
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \
+    "$http_status" "$content_type" "$effective_url" "$redirects" "$size"
+fi
+`,
+  );
+  chmodSync(curl, 0o700);
+  try {
+    return spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        KAJI_FIXTURE_ROOT: root,
+        KAJI_PYPI_HTTP: fixture.pypiHttp,
+        KAJI_CONTROL_HTTP: fixture.controlHttp,
+        KAJI_CONTROL_CONTENT_TYPE: fixture.controlContentType,
+        KAJI_CONTROL_EFFECTIVE_URL: fixture.controlEffectiveUrl,
+        KAJI_CONTROL_REDIRECTS: fixture.controlRedirects,
+        KAJI_CONTROL_TRANSPORT_STATUS: fixture.controlTransportStatus,
+        KAJI_PACKUMENT_HTTP: fixture.packumentHttp,
+        KAJI_PACKUMENT_CONTENT_TYPE: fixture.packumentContentType,
+        KAJI_PACKUMENT_EFFECTIVE_URL: fixture.packumentEffectiveUrl,
+        KAJI_PACKUMENT_REDIRECTS: fixture.packumentRedirects,
+        KAJI_PACKUMENT_TRANSPORT_STATUS: fixture.packumentTransportStatus,
+        KAJI_TARGET_HTTP: fixture.targetHttp,
+        KAJI_TARGET_CONTENT_TYPE: fixture.targetContentType,
+        KAJI_TARGET_EFFECTIVE_URL: fixture.targetEffectiveUrl,
+        KAJI_TARGET_REDIRECTS: fixture.targetRedirects,
+        KAJI_TARGET_TRANSPORT_STATUS: fixture.targetTransportStatus,
+        RUNNER_TEMP: root,
+      },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPublicationClassifierFallback(
+  overrides: Record<string, string>,
+): ReturnType<typeof spawnSync> & { payload: Record<string, unknown> } {
+  const step = workflowStep(
+    readWorkflow("kaji.publish.yml").workflow.jobs?.["publication-status"]!,
+    "Reduce monotonic publication state",
+  );
+  const root = mkdtempSync(join(tmpdir(), "kaji-publication-fallback-"));
+  const bin = join(root, "bin");
+  const output = join(root, "github-output");
+  const summary = join(root, "github-summary");
+  mkdirSync(bin);
+  writeFileSync(output, "");
+  writeFileSync(summary, "");
+  writeFileSync(join(root, "control.json"), '{"name":"tiny-tarball","version":"1.0.0"}');
+  writeFileSync(join(root, "target.json"), '"Not Found"');
+  const curl = join(bin, "curl");
+  writeFileSync(
+    curl,
+    `#!/bin/bash
+set -euo pipefail
+output=
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output) output="$2"; shift 2 ;;
+    --write-out|--header|--max-time|--connect-timeout|--proto|--max-filesize)
+      shift 2
+      ;;
+    --silent|--show-error|--tlsv1.2) shift ;;
+    https://*) url="$1"; shift ;;
+    *) exit 64 ;;
+  esac
+done
+case "$url" in
+  https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)
+    printf '404'
+    exit 0
+    ;;
+  https://registry.npmjs.org/tiny-tarball/1.0.0)
+    body="$KAJI_FIXTURE_ROOT/control.json"
+    http=200
+    ;;
+  https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9)
+    body="$KAJI_FIXTURE_ROOT/target.json"
+    http=404
+    ;;
+  *) exit 65 ;;
+esac
+cp "$body" "$output"
+size="$(wc -c <"$output" | tr -d '[:space:]')"
+printf '%s\\tapplication/json\\t%s\\t0\\t%s\\n' "$http" "$url" "$size"
+`,
+  );
+  chmodSync(curl, 0o700);
+  const commit = "7".repeat(40);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        GITHUB_OUTPUT: output,
+        GITHUB_REPOSITORY: "enkyuan/alloy",
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_RUN_ID: "812345",
+        GITHUB_SERVER_URL: "https://github.com",
+        GITHUB_STEP_SUMMARY: summary,
+        KAJI_FIXTURE_ROOT: root,
+        NPM_PUBLISH_RESULT: "failure",
+        PUBLISHER_ARTIFACT_DIGEST: "8".repeat(64),
+        PUBLISHER_ARTIFACT_ID: "812346",
+        PUBLISHER_ARTIFACT_NAME: "kaji-publisher-identity-812345-1",
+        PUBLISHER_BINDING_MODE: "receipt",
+        PUBLISHER_BINDING_REASON: "",
+        PUBLISHER_DOWNLOAD_OUTCOME: "success",
+        PUBLISHER_INVENTORY_OUTCOME: "success",
+        PUBLISHER_METADATA_OUTCOME: "success",
+        PUBLISHER_OUTPUT: "approved-publisher",
+        RELEASE_COMMIT: commit,
+        RELEASE_TAG: "kaji-v0.2.0-beta.9",
+        RUNNER_TEMP: root,
+        WORKFLOW_SHA: commit,
+        ...overrides,
+      },
+    });
+    const payload = JSON.parse(
+      readFileSync(
+        join(root, ".artifacts/kaji-publication-status/publication-status.json"),
+        "utf8",
+      ),
+    ) as Record<string, unknown>;
+    return Object.assign(completed, { payload });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPublisherIdentityArtifactAuthentication(
+  mutate?: (fixture: PublisherIdentityArtifactFixture) => void,
+): ReturnType<typeof spawnSync> & { endpoints: string[] } {
+  const fixture = publisherIdentityArtifactFixture();
+  mutate?.(fixture);
+  const step = workflowStep(
+    readWorkflow("kaji.publish.yml").workflow.jobs?.["publication-status"]!,
+    "Authenticate exact publisher identity artifact before download",
+  );
+  const root = mkdtempSync(join(tmpdir(), "kaji-publisher-identity-binding-"));
+  const bin = join(root, "bin");
+  const endpointLog = join(root, "endpoints.log");
+  mkdirSync(bin);
+  writeFileSync(endpointLog, "");
+  writeFileSync(join(root, "run.json"), JSON.stringify(fixture.run));
+  writeFileSync(join(root, "artifact.json"), JSON.stringify(fixture.artifact));
+  const gh = join(bin, "gh");
+  writeFileSync(
+    gh,
+    `#!/bin/bash
+set -euo pipefail
+for endpoint in "$@"; do :; done
+printf '%s\n' "$endpoint" >>"$KAJI_ENDPOINT_LOG"
+case "$endpoint" in
+  */actions/runs/${fixture.runId}) file=run.json ;;
+  */actions/artifacts/${fixture.artifactId}) file=artifact.json ;;
+  *) exit 64 ;;
+esac
+cat "$KAJI_FIXTURE_ROOT/$file"
+`,
+  );
+  chmodSync(gh, 0o700);
+  try {
+    const completed = spawnSync("/bin/bash", ["-c", step.run!], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...fixture.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        GH_TOKEN: "read-only-test-token",
+        GITHUB_REPOSITORY: "enkyuan/alloy",
+        GITHUB_RUN_ID: String(fixture.runId),
+        GITHUB_RUN_ATTEMPT: "1",
+        GITHUB_REF_NAME: fixture.tag,
+        KAJI_ENDPOINT_LOG: endpointLog,
+        KAJI_FIXTURE_ROOT: root,
+        RUNNER_TEMP: root,
+      },
+    });
+    const endpoints = readFileSync(endpointLog, "utf8").split("\n").filter(Boolean);
+    return Object.assign(completed, { endpoints });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 describe("Kaji workflow contracts", () => {
   it("uses functional display names for every Kaji workflow and job", () => {
     for (const workflowFile of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
@@ -1333,7 +2241,7 @@ describe("Kaji workflow contracts", () => {
         expect(syntax.status, `${relativePath}:run step ${index}: ${syntax.stderr}`).toBe(0);
       }
     }
-  });
+  }, 20_000);
 
   it("parses every Kaji github-script program with Node", () => {
     for (const name of Object.keys(expectedKajiWorkflowNames) as KajiWorkflowFile[]) {
@@ -1427,102 +2335,769 @@ describe("Kaji workflow contracts", () => {
     }
   });
 
-  it("gates rehearsal and publication on exact-commit protected TTHW evidence", () => {
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "accepts only the installed-artifact Echo failure phase in %s",
+    (workflowName) => {
+      const { source } = readWorkflow(workflowName);
+      const smokePhaseMatch = source.match(
+        /def smoke_phase:\s*type == "string" and\s*test\("([^"]+)"\);/u,
+      );
+
+      expect(smokePhaseMatch, workflowName).not.toBeNull();
+      expect(source, workflowName).toContain("installed-artifact-echo-run");
+      expect(source, workflowName).not.toContain("docs-installed-artifact-echo-run");
+      expect(source, workflowName).not.toContain("docs-tthw-echo-run");
+      expect(source, workflowName).not.toContain("docs-(tthw-echo|installed-artifact-echo)-run");
+
+      const smokePhase = new RegExp(smokePhaseMatch![1]!, "u");
+      for (const manager of ["npm", "bun"] as const) {
+        const producerReceipt = ordinaryFailureReceipt(
+          new SmokeCommandError(`${manager}:installed-artifact-echo-run`, "exit"),
+          { expectedCommit: "a".repeat(40) },
+          {
+            commit: "a".repeat(40),
+            manifestSha256: "b".repeat(64),
+            artifactSha256: {},
+          },
+          "v22.0.0",
+        );
+        const producerPhase = producerReceipt["failedPhase"];
+        expect(producerPhase).toBe(`${manager}:installed-artifact-echo-run`);
+        expect(
+          typeof producerPhase === "string" && smokePhase.test(producerPhase),
+          `${workflowName}:${manager}:installed-artifact`,
+        ).toBe(true);
+        expect(
+          smokePhase.test(`${manager}:docs-tthw-echo-run`),
+          `${workflowName}:${manager}:obsolete-tthw`,
+        ).toBe(false);
+      }
+    },
+  );
+
+  it("freezes the npm-only calibration and protected onboarding workflow boundary", () => {
+    const rehearsal = readWorkflow("kaji.rehearsal.yml");
+    const publish = readWorkflow("kaji.publish.yml");
+    const cases = [
+      {
+        name: "kaji.rehearsal.yml",
+        document: rehearsal,
+        jobCount: 8,
+        calibrationNeeds: ["offline-release", "node-compat"],
+        onboardingNeeds: [
+          "offline-release",
+          "python-compat",
+          "node-compat",
+          "typescript-onboarding-archive-calibration",
+        ],
+        workflowRef: "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+      },
+      {
+        name: "kaji.publish.yml",
+        document: publish,
+        jobCount: 14,
+        calibrationNeeds: ["verify-tag", "offline-gates", "node-compat"],
+        onboardingNeeds: [
+          "verify-tag",
+          "offline-gates",
+          "performance",
+          "python-compat",
+          "node-compat",
+          "typescript-onboarding-archive-calibration",
+        ],
+        workflowRef:
+          "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.9",
+      },
+    ] as const;
+
+    for (const {
+      name,
+      document: { source, workflow },
+      jobCount,
+      calibrationNeeds,
+      onboardingNeeds,
+      workflowRef,
+    } of cases) {
+      const jobs = workflow.jobs ?? {};
+      expect(Object.keys(jobs), name).toHaveLength(jobCount);
+      expect(jobs).not.toHaveProperty("tthw-evidence");
+      expect(jobs).not.toHaveProperty("publisher-preflight");
+      expect(source).not.toContain("KAJI_TTHW_EVIDENCE_JSON");
+      expect(source).not.toContain("validate_tthw_evidence.py");
+      expect(source).not.toContain("--tthw-status");
+      expect(source).not.toContain("--tthw-evidence");
+
+      const calibration = jobs["typescript-onboarding-archive-calibration"];
+      const onboarding = jobs["typescript-onboarding-evidence"];
+      expect(calibration?.name).toBe("TypeScript onboarding archive calibration");
+      expect(onboarding?.name).toBe("TypeScript onboarding evidence");
+      expect(calibration?.["runs-on"]).toBe("ubuntu-24.04");
+      expect(onboarding?.["runs-on"]).toBe("ubuntu-24.04");
+      expect(calibration?.needs).toEqual(calibrationNeeds);
+      expect(onboarding?.needs).toEqual(onboardingNeeds);
+      expect(calibration?.permissions).toEqual({ actions: "read", contents: "read" });
+      expect(onboarding?.permissions).toEqual({ actions: "read", contents: "read" });
+      expect(calibration?.environment).toBeUndefined();
+      expect(onboarding?.environment).toBe("kaji-beta-onboarding");
+      expect(calibration?.outputs).toBeUndefined();
+      expect(Object.keys(onboarding?.outputs ?? {}).sort()).toEqual(
+        [
+          "aggregate-sha256",
+          "node22-source-artifact-digest",
+          "node22-source-artifact-id",
+          "node24-source-artifact-digest",
+          "node24-source-artifact-id",
+          "onboarding-artifact-digest",
+          "onboarding-artifact-id",
+          "producer-artifact-digest",
+          "producer-artifact-id",
+          "release-manifest-sha256",
+        ].sort(),
+      );
+      for (const [jobId, job, directNeeds] of [
+        ["typescript-onboarding-archive-calibration", calibration, calibrationNeeds],
+        ["typescript-onboarding-evidence", onboarding, onboardingNeeds],
+      ] as const) {
+        expect(job?.if, `${name}:${jobId}`).toContain("github.run_attempt == 1");
+        expect(job?.if, `${name}:${jobId}`).toContain("!cancelled()");
+        expect(job?.if, `${name}:${jobId}`).not.toContain("always()");
+        for (const dependency of directNeeds) {
+          expect(job?.if, `${name}:${jobId}:${dependency}`).toContain(
+            `needs.${dependency}.result == 'success'`,
+          );
+        }
+        expect(JSON.stringify(job), `${name}:${jobId}:secret-free`).not.toMatch(
+          /NPM_TOKEN|KAJI_NPM_PUBLISHER|OPENAI_API_KEY|KAJI_TTHW_EVIDENCE_JSON|secrets\./u,
+        );
+        const checkout = (job?.steps ?? []).find((step) =>
+          step.uses?.startsWith("actions/checkout@"),
+        );
+        expect(checkout?.with?.["persist-credentials"]).toBe(false);
+        expect(job?.env?.EXPECTED_WORKFLOW_REF, `${name}:${jobId}:workflow ref`).toBe(workflowRef);
+        const combinedRuns = (job?.steps ?? []).map((step) => step.run ?? "").join("\n");
+        for (const fragment of [
+          "X-GitHub-Api-Version: 2026-03-10",
+          "actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100",
+          "actions/artifacts/$artifact_id",
+          "actions/artifacts/$artifact_id/zip",
+          "sha256:",
+          "load_authenticated_archive",
+          "validate_document",
+          "recompute_and_compare",
+          "validate_typescript_onboarding_evidence.py",
+        ]) {
+          expect(combinedRuns, `${name}:${jobId}:${fragment}`).toContain(fragment);
+        }
+        expect(combinedRuns, `${name}:${jobId}: stable collection binding`).toContain(
+          ".artifacts as $artifacts",
+        );
+        expect(combinedRuns, `${name}:${jobId}: no streaming collection alias`).not.toContain(
+          "inputs.artifacts",
+        );
+      }
+
+      const calibrationUploads = (calibration?.steps ?? []).filter((step) =>
+        step.uses?.startsWith("actions/upload-artifact@"),
+      );
+      expect(calibrationUploads.map((step) => step.with?.name)).toEqual([
+        "kaji-typescript-onboarding-archive-calibration-initial",
+        "kaji-typescript-onboarding-archive-calibration",
+      ]);
+      expect(calibrationUploads.every((step) => step.with?.["if-no-files-found"] === "error")).toBe(
+        true,
+      );
+      const onboardingUploads = (onboarding?.steps ?? []).filter((step) =>
+        step.uses?.startsWith("actions/upload-artifact@"),
+      );
+      expect(onboardingUploads.map((step) => step.with?.name)).toEqual([
+        "kaji-typescript-onboarding-evidence-initial",
+        "kaji-typescript-onboarding-evidence",
+      ]);
+      expect(String(onboardingUploads[1]?.with?.path)).toContain(
+        "typescript-onboarding-evidence.json",
+      );
+      expect(source.match(/environment:\s+kaji-beta-onboarding/g)).toHaveLength(1);
+      expect(source.match(/environment:\s+kaji-beta(?:\s|$)/g)).toHaveLength(1);
+    }
+
+    const dispatch = rehearsal.workflow.on?.workflow_dispatch as
+      | { inputs?: Record<string, Record<string, unknown>> }
+      | undefined;
+    expect(dispatch?.inputs?.["expected-commit"]).toEqual({
+      description: "Exact reviewed main commit",
+      required: true,
+      type: "string",
+    });
+    const firstRehearsalStep = rehearsal.workflow.jobs?.["offline-release"]?.steps?.[0];
+    expect(firstRehearsalStep?.name).toBe("Bind exact reviewed main commit before execution");
+    expect(firstRehearsalStep?.env?.EXPECTED_COMMIT).toBe("${{ inputs.expected-commit }}");
+    expect(firstRehearsalStep?.run).toContain('test "$GITHUB_REF" = refs/heads/main');
+    expect(firstRehearsalStep?.run).toContain('test "$EXPECTED_COMMIT" = "$GITHUB_SHA"');
+    expect(firstRehearsalStep?.run).toContain('test "$GITHUB_RUN_ATTEMPT" = 1');
+    for (const [name, workflow] of [
+      ["kaji.rehearsal.yml", rehearsal.workflow],
+      ["kaji.publish.yml", publish.workflow],
+    ] as const) {
+      for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
+        for (const checkout of (job.steps ?? []).filter((step) =>
+          step.uses?.startsWith("actions/checkout@"),
+        )) {
+          expect(
+            checkout.with?.["persist-credentials"],
+            `${name}:${jobId}: checkout credentials`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("requires signature-bound authorization at every npm release mutation boundary", () => {
+    const { source, workflow } = readWorkflow("kaji.publish.yml");
+    const verifyTag = workflow.jobs?.["verify-tag"];
+    const expectedOutputs = [
+      "authorization-sha256",
+      "candidate-artifact-digest",
+      "candidate-artifact-id",
+      "candidate-artifact-name",
+      "commit",
+      "evidence-artifact-digest",
+      "evidence-artifact-id",
+      "evidence-artifact-name",
+      "npm-tarball-name",
+      "npm-tarball-sha256",
+      "rehearsal-run-attempt",
+      "rehearsal-run-id",
+      "rehearsal-workflow-path",
+      "rehearsal-workflow-sha",
+      "release-manifest-sha256",
+      "tag-name",
+      "tag-object",
+    ];
+    expect(Object.keys(verifyTag?.outputs ?? {}).sort()).toEqual(expectedOutputs.sort());
+    expect(verifyTag?.permissions).toEqual({ actions: "read", contents: "read" });
+    const parser = workflowStep(verifyTag!, "Verify exact signed annotated beta tag");
+    const parserSource = String(parser.with?.script ?? "");
+    expect(parserSource).toContain("verification.payload");
+    expect(parserSource).not.toContain("tag.data.message");
+    expect(parserSource).toContain('verification.reason !== "valid"');
+    expect(parserSource).toContain("canonicalize");
+    expect(parserSource).toContain("authorization-sha256");
+    expect(parserSource).toContain(".github/workflows/kaji.rehearsal.yml");
+    expect(parserSource).toContain("getWorkflowRun");
+    expect(parserSource.match(/getArtifact/g)?.length).toBeGreaterThanOrEqual(2);
+
+    const action = readYaml(".github/actions/verify-kaji-beta-tag/action.yml");
+    const requiredInputs = [
+      "authorization_sha256",
+      "candidate_artifact_digest",
+      "candidate_artifact_id",
+      "candidate_artifact_name",
+      "commit",
+      "evidence_artifact_digest",
+      "evidence_artifact_id",
+      "evidence_artifact_name",
+      "npm_tarball_name",
+      "npm_tarball_sha256",
+      "rehearsal_run_attempt",
+      "rehearsal_run_id",
+      "rehearsal_workflow_path",
+      "rehearsal_workflow_sha",
+      "release_manifest_sha256",
+      "tag",
+      "tag_object",
+      "tagger_email",
+      "token",
+    ];
+    expect(Object.keys((action.value.inputs as Record<string, unknown>) ?? {}).sort()).toEqual(
+      requiredInputs.sort(),
+    );
+    expect(action.source).toContain("verification.payload");
+    expect(action.source).not.toContain(".message");
+    expect(action.source).toContain("X-GitHub-Api-Version: 2026-03-10");
+    expect(action.source).toContain("actions/runs/$EXPECTED_REHEARSAL_RUN_ID");
+    expect(action.source).toContain("actions/artifacts/$EXPECTED_CANDIDATE_ARTIFACT_ID");
+    expect(action.source).toContain("actions/artifacts/$EXPECTED_EVIDENCE_ARTIFACT_ID");
+
+    expect(workflow.jobs).not.toHaveProperty("publisher-preflight");
+    expect(source.match(/environment:\s+kaji-beta-publish/g)).toHaveLength(1);
+    expect(source).not.toContain("inputs.artifacts");
+    const offlineSteps = workflow.jobs?.["offline-gates"]?.steps ?? [];
+    const signedSourceIndex = offlineSteps.findIndex(
+      (step) => step.name === "Resolve and authenticate signed rehearsal source artifacts",
+    );
+    const checkoutIndex = offlineSteps.findIndex((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    const restoreIndex = offlineSteps.findIndex(
+      (step) => step.name === "Restore authenticated signed source after the exact clean checkout",
+    );
+    expect(signedSourceIndex).toBeGreaterThanOrEqual(0);
+    expect(checkoutIndex).toBeGreaterThan(signedSourceIndex);
+    expect(restoreIndex).toBe(checkoutIndex + 1);
+    expect(offlineSteps[signedSourceIndex]?.run).toContain(
+      'signed_root="$RUNNER_TEMP/kaji-authenticated-signed-source"',
+    );
+    expect(offlineSteps[signedSourceIndex]?.run).not.toContain(
+      ".artifacts/kaji-authorized-rehearsal",
+    );
+    expect(offlineSteps[checkoutIndex]?.with?.["persist-credentials"]).toBe(false);
+    expect(offlineSteps[restoreIndex]?.run).toContain('[ ! -e "$destination_path" ]');
+    const publish = workflow.jobs?.["publish-npm"];
+    expect(publish?.needs).toEqual(["verify-tag", "supply-chain", "registry-preflight"]);
+    expect(publish?.permissions).toEqual({
+      actions: "read",
+      contents: "read",
+      "id-token": "write",
+    });
+    const releaseEvidence = workflow.jobs?.["release-evidence"];
+    expect(releaseEvidence?.permissions).toEqual({ actions: "read", contents: "write" });
+    for (const job of [publish, releaseEvidence]) {
+      const reverify = (job?.steps ?? []).filter(
+        (step) => step.uses === "./.github/actions/verify-kaji-beta-tag",
+      );
+      expect(reverify).toHaveLength(1);
+      expect(Object.keys(reverify[0]?.with ?? {}).sort()).toEqual(requiredInputs.sort());
+    }
+    const credentialedSteps = Object.values(workflow.jobs ?? {}).flatMap((job) =>
+      (job.steps ?? []).filter((step) => JSON.stringify(step).includes("secrets.NPM_TOKEN")),
+    );
+    expect(credentialedSteps.map((step) => step.name)).toEqual([
+      "Verify exact npm publisher identity",
+      "Publish exact npm beta with provenance",
+    ]);
+  });
+
+  it("executes the exact signed-tag parser and composite reverifier on valid authorization", async () => {
+    const fixture = signedBetaFixture();
+    await expect(runSignedTagParser()).resolves.toMatchObject({
+      "tag-name": fixture.expected.tagName,
+      "tag-object": fixture.expected.tagObject,
+      commit: fixture.expected.commit,
+      "authorization-sha256": fixture.expected.authorizationSha256,
+      "rehearsal-run-id": String(fixture.expected.runId),
+      "candidate-artifact-id": String(fixture.expected.candidateArtifactId),
+      "candidate-artifact-digest": fixture.expected.candidateArtifactDigest,
+      "evidence-artifact-id": String(fixture.expected.evidenceArtifactId),
+      "evidence-artifact-digest": fixture.expected.evidenceArtifactDigest,
+      "release-manifest-sha256": fixture.expected.releaseManifestSha256,
+      "npm-tarball-sha256": fixture.expected.npmTarballSha256,
+    });
+    const composite = runCompositeTagReverification();
+    expect(composite.status, String(composite.stderr)).toBe(0);
+    expect(composite.endpoints).toEqual([
+      `repos/enkyuan/alloy/git/ref/tags/${fixture.expected.tagName}`,
+      `repos/enkyuan/alloy/git/tags/${fixture.expected.tagObject}`,
+      `repos/enkyuan/alloy/actions/runs/${fixture.expected.runId}`,
+      `repos/enkyuan/alloy/actions/artifacts/${fixture.expected.candidateArtifactId}`,
+      `repos/enkyuan/alloy/actions/artifacts/${fixture.expected.evidenceArtifactId}`,
+    ]);
+  });
+
+  it.each([
+    [
+      "unverified signature before invalid JSON",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.verified = false;
+        fixture.tag.verification.payload = "not-json";
+      },
+    ],
+    [
+      "extra signed authorization field",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.payload = fixture.tag.verification.payload.replace(
+          ',"schemaVersion":"1.0.0"}\n',
+          ',"schemaVersion":"1.0.0","unexpected":true}\n',
+        );
+      },
+    ],
+    [
+      "retargeted annotated tag ref",
+      (fixture: SignedBetaFixture) => {
+        fixture.ref.object.sha = "0".repeat(40);
+      },
+    ],
+    [
+      "rerun rehearsal",
+      (fixture: SignedBetaFixture) => {
+        fixture.run.run_attempt = 2;
+      },
+    ],
+    [
+      "mutated candidate REST digest",
+      (fixture: SignedBetaFixture) => {
+        fixture.candidate.digest = `sha256:${"0".repeat(64)}`;
+      },
+    ],
+    [
+      "commit absent from default branch",
+      (fixture: SignedBetaFixture) => {
+        fixture.comparison.merge_base_commit.sha = "0".repeat(40);
+      },
+    ],
+  ] as const)("rejects hostile initial signed-tag mutation: %s", async (_label, mutate) => {
+    await expect(runSignedTagParser(mutate)).rejects.toThrow();
+  });
+
+  it.each([
+    [
+      "signature",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.reason = "unknown_key";
+      },
+    ],
+    [
+      "signed body",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.payload = fixture.tag.verification.payload.replace(
+          '"runAttempt":1',
+          '"runAttempt":2',
+        );
+      },
+    ],
+    [
+      "rehearsal terminal state",
+      (fixture: SignedBetaFixture) => {
+        fixture.run.conclusion = "failure";
+      },
+    ],
+    [
+      "candidate expiry",
+      (fixture: SignedBetaFixture) => {
+        fixture.candidate.expired = true;
+      },
+    ],
+    [
+      "evidence artifact run",
+      (fixture: SignedBetaFixture) => {
+        const workflowRun = fixture.evidence.workflow_run as Record<string, unknown>;
+        workflowRun.id = fixture.expected.runId + 1;
+      },
+    ],
+  ] as const)("rejects hostile composite signed-tag mutation: %s", (_label, mutate) => {
+    const completed = runCompositeTagReverification(mutate);
+    expect(completed.status).not.toBe(0);
+  });
+
+  it.each([
+    [
+      "invalid signature",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.reason = "unknown_key";
+      },
+    ],
+    [
+      "missing signature",
+      (fixture: SignedBetaFixture) => {
+        delete (fixture.tag.verification as unknown as Record<string, unknown>).signature;
+      },
+    ],
+    [
+      "invalid payload",
+      (fixture: SignedBetaFixture) => {
+        fixture.tag.verification.payload = "not-json";
+      },
+    ],
+    [
+      "missing payload",
+      (fixture: SignedBetaFixture) => {
+        delete (fixture.tag.verification as unknown as Record<string, unknown>).payload;
+      },
+    ],
+  ] as const)(
+    "makes zero run or artifact queries when signed tag authorization has %s",
+    (_label, mutate) => {
+      const completed = runCompositeTagReverification(mutate);
+      expect(completed.status).not.toBe(0);
+      expect(completed.endpoints).toEqual([
+        `repos/enkyuan/alloy/git/ref/tags/kaji-v0.2.0-beta.9`,
+        `repos/enkyuan/alloy/git/tags/${"a".repeat(40)}`,
+      ]);
+      expect(completed.endpoints.some((endpoint) => endpoint.includes("/actions/"))).toBe(false);
+    },
+  );
+
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "%s authenticates all onboarding output artifacts before any download",
+    (workflowName) => {
+      const fixture = onboardingBindingFixture(workflowName);
+      const completed = runOnboardingBindingAuthentication(workflowName);
+      expect(completed.status, String(completed.stderr)).toBe(0);
+      expect(completed.endpoints).toEqual([
+        `repos/enkyuan/alloy/actions/runs/${fixture.runId}`,
+        ...onboardingArtifactKeys.map(
+          (key) => `repos/enkyuan/alloy/actions/artifacts/${fixture.expected[key].id}`,
+        ),
+      ]);
+      expect(completed.endpoints.some((endpoint) => endpoint.endsWith("/zip"))).toBe(false);
+
+      const jobId = workflowName === "kaji.publish.yml" ? "supply-chain" : "candidate-evidence";
+      const steps = readWorkflow(workflowName).workflow.jobs?.[jobId]?.steps ?? [];
+      const authenticationIndex = steps.findIndex(
+        (step) => step.name === "Authenticate exact onboarding artifact bindings before downloads",
+      );
+      const exactArtifactIds = onboardingArtifactKeys.map(
+        (key) =>
+          `\${{ needs.typescript-onboarding-evidence.outputs.${
+            key === "producer" ? "producer" : key === "onboarding" ? "onboarding" : `${key}-source`
+          }-artifact-id }}`,
+      );
+      const downloadIndexes = exactArtifactIds.map((artifactId) =>
+        steps.findIndex(
+          (step) =>
+            step.uses?.startsWith("actions/download-artifact@") &&
+            step.with?.["artifact-ids"] === artifactId,
+        ),
+      );
+      expect(authenticationIndex).toBeGreaterThan(0);
+      for (const [index, downloadIndex] of downloadIndexes.entries()) {
+        expect(
+          downloadIndex,
+          `${workflowName}:${onboardingArtifactKeys[index]} download`,
+        ).toBeGreaterThan(authenticationIndex + 1);
+      }
+      const rawStepName =
+        workflowName === "kaji.publish.yml"
+          ? "Download and authenticate current validator raw source archives"
+          : "Download and authenticate validator raw source archives by exact ID";
+      const rawIndex = steps.findIndex((step) => step.name === rawStepName);
+      expect(rawIndex).toBe(authenticationIndex + 1);
+      const rawRun = steps[rawIndex]?.run ?? "";
+      for (const key of onboardingArtifactKeys) {
+        expect(rawRun, `${workflowName}:${key} raw archive`).toContain(
+          `${key}|$${key === "node22" ? "NODE22" : key === "node24" ? "NODE24" : key.toUpperCase()}_ID`,
+        );
+      }
+      expect(rawRun).toContain('[ "$observed" = "$digest" ]');
+    },
+    30_000,
+  );
+
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "%s rejects every hostile onboarding artifact metadata field before a ZIP download",
+    (workflowName) => {
+      const artifactMutations = [
+        ["id", (artifact: Record<string, unknown>) => (artifact.id = 999_999)],
+        ["name", (artifact: Record<string, unknown>) => (artifact.name = "wrong-name")],
+        [
+          "digest",
+          (artifact: Record<string, unknown>) => (artifact.digest = `sha256:${"0".repeat(64)}`),
+        ],
+        ["expired", (artifact: Record<string, unknown>) => (artifact.expired = true)],
+        ["size", (artifact: Record<string, unknown>) => (artifact.size_in_bytes = 0)],
+        ["url", (artifact: Record<string, unknown>) => (artifact.url = "https://example.invalid")],
+        [
+          "archive-url",
+          (artifact: Record<string, unknown>) =>
+            (artifact.archive_download_url = "https://example.invalid/archive"),
+        ],
+        [
+          "run-id",
+          (artifact: Record<string, unknown>) => {
+            (artifact.workflow_run as Record<string, unknown>).id = 999_999;
+          },
+        ],
+        [
+          "head-branch",
+          (artifact: Record<string, unknown>) => {
+            (artifact.workflow_run as Record<string, unknown>).head_branch = "wrong-ref";
+          },
+        ],
+        [
+          "head-sha",
+          (artifact: Record<string, unknown>) => {
+            (artifact.workflow_run as Record<string, unknown>).head_sha = "0".repeat(40);
+          },
+        ],
+      ] as const;
+      for (const key of onboardingArtifactKeys) {
+        for (const [field, mutate] of artifactMutations) {
+          const completed = runOnboardingBindingAuthentication(workflowName, (fixture) => {
+            mutate(fixture.artifacts[key]);
+          });
+          expect(completed.status, `${workflowName}:${key}:${field}`).not.toBe(0);
+          expect(
+            completed.endpoints.some((endpoint) => endpoint.endsWith("/zip")),
+            `${workflowName}:${key}:${field}`,
+          ).toBe(false);
+        }
+      }
+    },
+    30_000,
+  );
+
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "%s rejects invalid onboarding output bindings before any API download",
+    (workflowName) => {
+      for (const key of onboardingArtifactKeys) {
+        const prefix =
+          key === "node22" ? "NODE22" : key === "node24" ? "NODE24" : key.toUpperCase();
+        for (const [field, value] of [
+          [`${prefix}_ID`, "0"],
+          [`${prefix}_ID`, "9007199254740992"],
+          [`${prefix}_DIGEST`, `sha256:${"A".repeat(64)}`],
+        ] as const) {
+          const completed = runOnboardingBindingAuthentication(workflowName, (fixture) => {
+            fixture.env[field] = value;
+          });
+          expect(completed.status, `${workflowName}:${key}:${field}:${value}`).not.toBe(0);
+          expect(completed.endpoints, `${workflowName}:${key}:${field}:${value}`).toEqual([]);
+        }
+      }
+    },
+  );
+
+  it.each(["kaji.rehearsal.yml", "kaji.publish.yml"] as const)(
+    "%s rejects hostile current-run identity before artifact metadata or downloads",
+    (workflowName) => {
+      const runMutations = [
+        ["id", (fixture: OnboardingBindingFixture) => (fixture.run.id = 999_999)],
+        ["attempt", (fixture: OnboardingBindingFixture) => (fixture.run.run_attempt = 2)],
+        ["event", (fixture: OnboardingBindingFixture) => (fixture.run.event = "schedule")],
+        ["path", (fixture: OnboardingBindingFixture) => (fixture.run.path = "wrong.yml")],
+        ["head-branch", (fixture: OnboardingBindingFixture) => (fixture.run.head_branch = "wrong")],
+        [
+          "head-sha",
+          (fixture: OnboardingBindingFixture) => (fixture.run.head_sha = "0".repeat(40)),
+        ],
+      ] as const;
+      const expectedRunEndpoint = `repos/enkyuan/alloy/actions/runs/${onboardingBindingFixture(workflowName).runId}`;
+      for (const [field, mutate] of runMutations) {
+        const completed = runOnboardingBindingAuthentication(workflowName, mutate);
+        expect(completed.status, `${workflowName}:run:${field}`).not.toBe(0);
+        expect(completed.endpoints, `${workflowName}:run:${field}`).toEqual([expectedRunEndpoint]);
+      }
+    },
+  );
+
+  it("authenticates raw signed rehearsal evidence before extraction and carrier fanout", () => {
+    const offline = readWorkflow("kaji.publish.yml").workflow.jobs?.["offline-gates"];
+    expect(offline).toBeDefined();
+    const steps = offline?.steps ?? [];
+    const offlineIndex = steps.findIndex((step) => step.id === "offline");
+    const signedEvidenceIndex = steps.findIndex((step) => step.id === "signed-evidence");
+    const signedCandidateIndex = steps.findIndex((step) => step.id === "signed-candidate");
+    const carrierIndex = steps.findIndex((step) => step.id === "carrier");
+    expect(signedEvidenceIndex).toBe(offlineIndex + 1);
+    expect(signedCandidateIndex).toBe(signedEvidenceIndex + 1);
+    expect(carrierIndex).toBe(signedCandidateIndex + 1);
+    const signedEvidence = steps[signedEvidenceIndex]!;
+    expect(signedEvidence.name).toBe(
+      "Revalidate exact signed rehearsal evidence before carrier fanout",
+    );
+    expect(signedEvidence.if).toBe("${{ steps.offline.outcome == 'success' }}");
+    expect(steps[carrierIndex]?.if).toBe(
+      "${{ steps.offline.outcome == 'success' && steps.signed-evidence.outcome == 'success' && steps.signed-candidate.outcome == 'success' }}",
+    );
+    for (const fragment of [
+      "kaji/scripts/validate_release_evidence.py",
+      "--mode rehearsal",
+      "--artifacts-dir .artifacts/kaji-release",
+      "--producer-archive .artifacts/kaji-authorized-rehearsal-raw/candidate.zip",
+      "--node22-source-archive .artifacts/kaji-authorized-rehearsal-node-22/source.zip",
+      "--node24-source-archive .artifacts/kaji-authorized-rehearsal-node-24/source.zip",
+      '--expected-commit "$RELEASE_COMMIT"',
+      '--workflow-run "https://github.com/enkyuan/alloy/actions/runs/$REHEARSAL_RUN_ID"',
+      '--workflow-run-attempt "$REHEARSAL_RUN_ATTEMPT"',
+      '--release-artifact-id "$SIGNED_CANDIDATE_ID"',
+      '--release-artifact-digest "$SIGNED_CANDIDATE_DIGEST"',
+      '--node22-source-artifact-id "$SIGNED_NODE22_ID"',
+      '--node22-source-artifact-digest "$SIGNED_NODE22_DIGEST"',
+      '--node24-source-artifact-id "$SIGNED_NODE24_ID"',
+      '--node24-source-artifact-digest "$SIGNED_NODE24_DIGEST"',
+      "--signed-evidence-archive .artifacts/kaji-authorized-rehearsal-evidence/source.zip",
+      '--signed-evidence-artifact-id "$SIGNED_EVIDENCE_ID"',
+      '--signed-evidence-artifact-digest "$SIGNED_EVIDENCE_DIGEST"',
+      '--workspace "$GITHUB_WORKSPACE"',
+      "--output .artifacts/kaji-offline-evidence/signed-rehearsal-revalidation.json",
+    ]) {
+      expect(signedEvidence.run, fragment).toContain(fragment);
+    }
+    for (const forbidden of [
+      "--onboarding-status",
+      "--onboarding-evidence",
+      "--python-compat-311",
+      "--python-compat-314",
+      "--node-compat-22",
+      "--node-compat-24",
+      "--performance-status",
+      "--benchmark-results",
+      "--soak-results",
+      "--performance-image-data",
+      "--provider-evidence",
+      "--signed-node22-source-artifact-id",
+      "--signed-node22-source-artifact-digest",
+      "--signed-node24-source-artifact-id",
+      "--signed-node24-source-artifact-digest",
+      "unzip",
+      "cmp --silent",
+    ]) {
+      expect(signedEvidence.run, forbidden).not.toContain(forbidden);
+    }
+    for (const step of steps.slice(0, signedCandidateIndex)) {
+      expect(step.run ?? "", step.name).not.toContain("unzip");
+      expect(step.run ?? "", step.name).not.toContain("zipfile.ZipFile");
+    }
+
+    const signedCandidate = steps[signedCandidateIndex]!;
+    expect(signedCandidate.name).toBe(
+      "Extract authenticated signed candidate only after rehearsal revalidation",
+    );
+    expect(signedCandidate.if).toBe("${{ steps.signed-evidence.outcome == 'success' }}");
+    for (const fragment of [
+      '[ "sha256:$(sha256sum "$archive" | cut -d\' \' -f1)" = "$SIGNED_CANDIDATE_DIGEST" ]',
+      "zipfile.ZipFile",
+      '"SHA256SUMS"',
+      '"kaji-sdk-0.2.0-beta.9.tgz"',
+      '"kaji_sdk-0.2.0b1-py3-none-any.whl"',
+      '"kaji_sdk-0.2.0b1.tar.gz"',
+      '"manifest.json"',
+      "len(members) != len(expected)",
+      "len(names) != len(set(names))",
+      "stat.S_ISLNK(mode)",
+    ]) {
+      expect(signedCandidate.run, fragment).toContain(fragment);
+    }
+
+    const carrierRun = steps[carrierIndex]?.run ?? "";
+    expect(carrierRun.indexOf('--artifacts-dir "$signed"')).toBeLessThan(
+      carrierRun.indexOf("cp .artifacts/kaji-authorized-rehearsal-raw/candidate.zip"),
+    );
+  });
+
+  it("gates rehearsal and publication on deterministic protected TypeScript onboarding", () => {
     const rehearsal = readWorkflow("kaji.rehearsal.yml");
     const publish = readWorkflow("kaji.publish.yml");
 
-    expect(Object.keys(rehearsal.workflow.jobs ?? {})).toHaveLength(7);
-    expect(Object.keys(publish.workflow.jobs ?? {})).toHaveLength(14);
-    for (const [workflowName, { source, workflow }] of [
-      ["kaji.rehearsal.yml", rehearsal],
-      ["kaji.publish.yml", publish],
+    for (const [workflowName, { source, workflow }, terminalJobs] of [
+      ["kaji.rehearsal.yml", rehearsal, ["keyed-proof", "candidate-evidence"]],
+      [
+        "kaji.publish.yml",
+        publish,
+        [
+          "keyed-proof",
+          "supply-chain",
+          "registry-preflight",
+          "publish-npm",
+          "publication-status",
+          "publication-incident",
+          "release-evidence",
+        ],
+      ],
     ] as const) {
-      const job = workflow.jobs?.["tthw-evidence"];
-      expect(job?.needs).toEqual(
-        workflowName === "kaji.rehearsal.yml"
-          ? ["offline-release", "python-compat", "node-compat"]
-          : ["verify-tag", "offline-gates", "performance", "python-compat", "node-compat"],
-      );
-      expect(job?.environment).toBe("kaji-beta");
-      expect(effectivePermissions(workflow, job!)).toEqual(readOnlyPermissions);
-      expect(JSON.stringify(job?.env ?? {})).not.toContain("secrets.KAJI_TTHW_EVIDENCE_JSON");
-      expect(source.match(/\$\{\{ secrets\.KAJI_TTHW_EVIDENCE_JSON \}\}/g)).toHaveLength(1);
-
-      const secretSteps = (job?.steps ?? []).filter((step) =>
-        JSON.stringify(step).includes("secrets.KAJI_TTHW_EVIDENCE_JSON"),
-      );
-      expect(secretSteps).toHaveLength(1);
-      expect(secretSteps[0]?.name).toBe("Validate protected exact-commit five-user TTHW evidence");
-      expect(secretSteps[0]?.run).toContain("validate_tthw_evidence.py");
-      expect(secretSteps[0]?.run).toContain(
-        "--release-manifest .artifacts/kaji-release/manifest.json",
-      );
-      expect(secretSteps[0]?.run).toContain("--artifacts-dir .artifacts/kaji-release");
-      expect(secretSteps[0]?.run).toContain(
-        "--python-compatibility-receipt .artifacts/kaji-tthw-compat/python-3.14/compatibility-receipt.json",
-      );
-      expect(secretSteps[0]?.run).toContain(
-        "--node-compatibility-receipt .artifacts/kaji-tthw-compat/node-24/compatibility-receipt.json",
-      );
-      expect(secretSteps[0]?.run).toContain("--expected-workflow-run-attempt");
-      expect(secretSteps[0]?.run).toContain('if [ "$status" -eq 0 ]; then');
-      const nonemptyGuard =
-        ': "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON before approving tthw-evidence}"';
-      const validation = secretSteps[0]?.run ?? "";
-      expect(validation.split(nonemptyGuard)).toHaveLength(2);
-      expect(validation.indexOf(nonemptyGuard)).toBeLessThan(
-        validation.indexOf('raw_evidence="$RUNNER_TEMP/'),
-      );
-      expect(validation.indexOf('raw_evidence="$RUNNER_TEMP/')).toBeLessThan(
-        validation.indexOf("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\""),
-      );
-      expect(validation.indexOf("printf '%s' \"$KAJI_TTHW_EVIDENCE_JSON\"")).toBeLessThan(
-        validation.indexOf("validate_tthw_evidence.py"),
-      );
-
-      const compatibilityDownloads = (job?.steps ?? []).filter((step) =>
-        ["kaji-python-compat-3.14", "kaji-node-compat-24"].includes(String(step.with?.name ?? "")),
-      );
-      expect(compatibilityDownloads.map((step) => step.with?.name)).toEqual([
-        "kaji-python-compat-3.14",
-        "kaji-node-compat-24",
-      ]);
-      expect(compatibilityDownloads.map((step) => step.with?.path)).toEqual([
-        ".artifacts/kaji-tthw-compat/python-3.14",
-        ".artifacts/kaji-tthw-compat/node-24",
-      ]);
-      expect(
-        compatibilityDownloads.every((step) => !String(step.with?.name).endsWith("-initial")),
-      ).toBe(true);
-
-      const uploads = (job?.steps ?? []).filter((step) =>
-        step.uses?.startsWith("actions/upload-artifact@"),
-      );
-      expect(uploads.map((step) => step.with?.name)).toEqual([
-        "kaji-tthw-evidence-initial",
-        "kaji-tthw-evidence",
-      ]);
-      expect(uploads[1]?.if).toBe("${{ always() }}");
+      const jobs = workflow.jobs ?? {};
+      expect(jobs, workflowName).not.toHaveProperty("tthw-evidence");
+      expect(source, workflowName).not.toContain("KAJI_TTHW_EVIDENCE_JSON");
+      expect(source, workflowName).not.toContain("validate_tthw_evidence.py");
+      expect(jobs["typescript-onboarding-archive-calibration"]?.environment).toBeUndefined();
+      expect(jobs["typescript-onboarding-evidence"]?.environment).toBe("kaji-beta-onboarding");
+      expect(jobs["keyed-proof"]?.environment).toBe("kaji-beta");
+      for (const jobId of terminalJobs) {
+        expect(
+          dependencyClosure(workflow, jobId),
+          `${workflowName}:${jobId}: onboarding closure`,
+        ).toContain("typescript-onboarding-evidence");
+      }
     }
-
-    expect(dependencyClosure(rehearsal.workflow, "keyed-proof")).toContain("tthw-evidence");
-    for (const jobId of [
-      "keyed-proof",
-      "supply-chain",
-      "registry-preflight",
-      "publisher-preflight",
-      "publish-npm",
-      "publication-status",
-      "publication-incident",
-      "release-evidence",
-    ]) {
-      expect(dependencyClosure(publish.workflow, jobId), jobId).toContain("tthw-evidence");
-    }
-    expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain("github.run_attempt == 1");
-    expect(publish.workflow.jobs?.["tthw-evidence"]?.if).toContain(
-      "needs.performance.result == 'success'",
-    );
-    expect(rehearsal.workflow.jobs?.["tthw-evidence"]?.if).not.toContain("github.run_attempt == 1");
 
     const classifier = publish.workflow.jobs?.["publication-status"]?.steps?.find(
       (step) => step.name === "Reduce monotonic publication state",
@@ -1535,106 +3110,71 @@ describe("Kaji workflow contracts", () => {
     expect(classifier?.run).toContain("npm_byte_verified");
   });
 
-  it("collects TTHW from current tag artifacts before environment approval", () => {
+  it("documents the protected npm-only onboarding approval and expired-token stop", () => {
     const runbookSource = readFileSync(resolve(repositoryRoot, "docs/kaji/releasing.md"), "utf8");
     const runbook = runbookSource.replace(/\s+/gu, " ");
     const orderedSteps = [
-      "Before creating the tag, configure the required `kaji-beta` reviewer",
-      "Leave `KAJI_TTHW_EVIDENCE_JSON` unset",
-      "Create and push the signed, annotated tag",
-      "Wait for the exact tag-triggered workflow run",
-      "Download `kaji-beta-artifacts` by the exact workflow run ID and artifact ID",
-      "Generate five candidate-bound participant skeletons",
-      "Use the approval helper for the exact validate",
-      "kaji/scripts/approve_tthw_gate.py",
-      "Do not set `KAJI_TTHW_EVIDENCE_JSON` separately",
-      "do not approve `tthw-evidence` manually",
+      "The existing granular npm token has expired",
+      "Dispatch the rehearsal at ref `main`; never dispatch a raw SHA",
+      "The calibration must be terminal success before `typescript-onboarding-evidence`",
+      "Query the complete current-run artifact collection",
+      "Run the approved helper first without `--approve`",
+      "Only after that command succeeds, rerun the identical command with `--approve` appended",
+      "Do not approve onboarding manually in the Actions UI",
+      "Require the protected onboarding aggregate",
+      "Approve the later, distinct `kaji-beta` deployment separately",
+      "Stop here until the operator explicitly confirms a fresh `NPM_TOKEN`",
     ];
     const positions = orderedSteps.map((step) => runbook.indexOf(step));
-
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
-    expect(runbook).toContain("`kaji-beta` approval is the safe pause");
-    expect(runbook).toContain("Do not remove the approval requirement");
-    expect(runbook).toContain(
-      "validate → attempt-1 remote preflight → secret metadata snapshot → secret set-time/freshness check → repeated identical remote preflight → unchanged-secret metadata recheck → exact-deployment approval/response transaction",
-    );
-    for (const invariant of [
-      "exact attempt-1 TTHW job is the sole waiting job in the run",
-      "complete protected reviewer/custom branch-policy configuration",
-      "complete post-set secret metadata snapshot is still unchanged",
-      "exactly one deployment for the candidate commit, tag, and `kaji-beta`",
+
+    for (const authority of [
+      "`kaji-beta-onboarding` protects only the deterministic TypeScript onboarding aggregate",
+      "`kaji-beta` protects mandatory keyed OpenAI proof",
+      "`kaji-beta-publish` protects the sole final npm write",
+      "It must not contain a provider key",
+      "do not inspect, copy, test, or use it",
+      "Do not run a local credential preflight",
+      "first credentialed action and fails closed before publication",
     ]) {
-      expect(runbook).toContain(invariant);
+      expect(runbook).toContain(authority);
     }
-    const helper = runbookSource
-      .split("uv run --project kaji --no-sync python kaji/scripts/approve_tthw_gate.py", 2)[1]!
-      .split("```", 1)[0]!;
-    for (const argument of [
-      '--run-id "$RUN_ID"',
-      '--evidence "$TTHW_DIR/KAJI_TTHW_EVIDENCE_JSON.json"',
-      '--release-manifest "$ARTIFACTS_DIR/manifest.json"',
-      '--artifacts-dir "$ARTIFACTS_DIR"',
-      "--python-compatibility-receipt",
-      "--node-compatibility-receipt",
-      "--approve",
+    for (const binding of [
+      "actions/runs/$REHEARSAL_RUN_ID/artifacts?per_page=100",
+      "actions/artifacts/$PRODUCER_ARTIFACT_ID/zip",
+      "actions/artifacts/$NODE22_ARTIFACT_ID/zip",
+      "actions/artifacts/$NODE24_ARTIFACT_ID/zip",
+      "kaji/scripts/approve_typescript_onboarding_gate.py gate",
+      "--mode rehearsal",
+      '--run-id "$REHEARSAL_RUN_ID"',
+      '--expected-commit "$REVIEWED_COMMIT"',
+      '--producer-artifact-id "$PRODUCER_ARTIFACT_ID"',
+      '--producer-artifact-digest "$PRODUCER_ARTIFACT_DIGEST"',
+      '--node22-artifact-id "$NODE22_ARTIFACT_ID"',
+      '--node22-artifact-digest "$NODE22_ARTIFACT_DIGEST"',
+      '--node24-artifact-id "$NODE24_ARTIFACT_ID"',
+      '--node24-artifact-digest "$NODE24_ARTIFACT_DIGEST"',
     ]) {
-      expect(helper).toContain(argument);
+      expect(runbookSource).toContain(binding);
     }
     expect(runbookSource).not.toContain("gh secret set");
-    expect(runbook).toContain("Do not set `KAJI_TTHW_EVIDENCE_JSON` separately");
-    expect(runbook).toContain("do not approve `tthw-evidence` manually or in the Actions UI");
-    expect(runbook).toContain("rejects terminal CR/LF bytes that GitHub CLI would remove");
-    for (const exactBinding of [
-      "set -euo pipefail",
-      "umask 077",
-      ': "${RUN_ID:?set RUN_ID to the numeric tag-triggered workflow run ID}"',
-      "actions/runs/$RUN_ID/artifacts?per_page=100",
-      'select(.name == "kaji-beta-artifacts" and .expired == false)',
-      'case "$ARTIFACT_ID" in',
-      "*[!0-9]*",
-      'mktemp -d "$HOME/.kaji-release-${RUN_ID}.XXXXXX"',
-      "actions/artifacts/$ARTIFACT_ID/zip",
-      'unzip -q "$ARCHIVE" -d "$ARTIFACTS_DIR"',
-    ]) {
-      expect(runbook).toContain(exactBinding);
-    }
-    expect(runbook).not.toContain("RUN_ID=<tag-triggered-publish-run-id>");
-    expect(runbook).not.toContain("/secure/");
-    const artifactShell =
-      "set -euo pipefail" + runbookSource.split("set -euo pipefail", 2)[1]!.split("```", 1)[0]!;
-    const syntax = spawnSync("/bin/bash", ["-n"], {
-      encoding: "utf8",
-      input: artifactShell,
-    });
-    expect(syntax.status, syntax.stderr).toBe(0);
     expect(runbook).toContain(
-      "Prior release, rehearsal, and performance artifacts are invalid substitutes.",
+      "It does not claim five human participants, macOS or arm64 onboarding",
     );
-    expect(runbook).toContain("`kaji-beta-publish` remains a separate");
-
-    const guideSource = readFileSync(resolve(repositoryRoot, "docs/kaji/tthw-evidence.md"), "utf8");
-    const guide = guideSource.replace(/\s+/gu, " ");
-    expect(guide).toContain("exact `kaji-beta-artifacts` upload from the current tag-triggered");
-    expect(guide).toContain("workflow run ID and artifact ID");
-    expect(guide).toContain(': "${EVIDENCE_ROOT:?follow the release runbook first}"');
-    expect(guide).toContain(': "${ARTIFACTS_DIR:?follow the release runbook first}"');
-    expect(guide).toContain('TTHW_DIR="$EVIDENCE_ROOT/tthw"');
-    expect(guide).not.toContain("/secure/");
-    expect(guide).toContain("Do not copy it into `KAJI_TTHW_EVIDENCE_JSON`");
-    expect(guide).toContain("kaji/scripts/approve_tthw_gate.py");
-    expect(guideSource).not.toContain("Copy the file bytes");
-    expect(guide).toContain("never rerun only the TTHW job");
-    expect(guide).toContain("Mixed-attempt receipts are intentionally rejected");
-    expect(guide).toContain(
-      "Prior release, rehearsal, and performance artifacts are invalid substitutes.",
+    expect(runbook).toContain(
+      "The separate paired benchmark and soak receipts retain their own reviewed runner claims",
     );
   });
 
-  it("binds the current TypeScript candidate to beta.8 and preserves beta.7 as unpublished history", () => {
+  it("binds the current TypeScript candidate to beta.9 and preserves beta.8 as unpublished history", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;
       version: string;
+      main: string;
+      module: string;
+      types: string;
+      exports: { ".": { require: { types: string } } };
     };
     const sourceVersion = readFileSync(resolve("src/index.ts"), "utf8").match(
       /export const VERSION = "([^"]+)"/,
@@ -1649,13 +3189,29 @@ describe("Kaji workflow contracts", () => {
     );
 
     expect(packageManifest.name).toBe("kaji-sdk");
-    expect(packageManifest.version).toBe("0.2.0-beta.8");
+    expect(packageManifest.version).toBe("0.2.0-beta.9");
     expect(packageManifest.version).not.toBe("0.2.0-beta.2");
     expect(packageManifest.version).not.toBe("0.2.0-beta.4");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);
     expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
     expect(tarball).toBe(`kaji-sdk-${packageManifest.version}.tgz`);
-    expect(tarball).toBe("kaji-sdk-0.2.0-beta.8.tgz");
+    expect(tarball).toBe("kaji-sdk-0.2.0-beta.9.tgz");
+    if (existsSync(resolve("dist"))) {
+      const exportedIdentityPaths = new Set([
+        packageManifest.main,
+        packageManifest.module,
+        packageManifest.types,
+        packageManifest.exports["."].require.types,
+      ]);
+      expect(exportedIdentityPaths.size).toBe(4);
+      for (const relativePath of exportedIdentityPaths) {
+        const outputPath = resolve(relativePath);
+        expect(existsSync(outputPath), relativePath).toBe(true);
+        const output = readFileSync(outputPath, "utf8");
+        expect(output, relativePath).toMatch(/(?:var|declare const) VERSION = "0\.2\.0-beta\.9"/);
+        expect(output, relativePath).not.toContain("0.2.0-beta.8");
+      }
+    }
     for (const name of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const { source } = readWorkflow(name);
       expect(source).toContain(tarball);
@@ -1664,10 +3220,27 @@ describe("Kaji workflow contracts", () => {
       expect(source).not.toContain("0.2.0-beta.5");
       expect(source).not.toContain("0.2.0-beta.6");
       expect(source).not.toContain("0.2.0-beta.7");
+      expect(source).not.toContain("0.2.0-beta.8");
     }
 
     const changelog = readFileSync(resolve("CHANGELOG.md"), "utf8");
-    expect(changelog).toContain("## [0.2.0-beta.8] - 2026-07-27");
+    expect(changelog).toContain("## [0.2.0-beta.9] - 2026-07-27");
+    const beta8History = changelog
+      .split("## [0.2.0-beta.8] - 2026-07-27", 2)[1]!
+      .split("## [0.2.0-beta.7]", 1)[0]!
+      .replace(/\s+/g, " ");
+    for (const evidence of [
+      "Signed tag `kaji-v0.2.0-beta.8` triggered protected run `30296132900`",
+      "`4dd04a1cf74927c4b3de31a1bd1db54a7b7c7a4e`",
+      "`KAJI_TTHW_EVIDENCE_JSON` was empty",
+      "Provider proof, registry and publisher preflight, and npm publication were skipped",
+      "npm and PyPI remained absent",
+      "cannot be reused for beta.9",
+      "rehearsal `30291287818` is terminal cancelled",
+      "cannot be reused as beta.9 evidence",
+    ]) {
+      expect(beta8History).toContain(evidence);
+    }
     expect(changelog).toMatch(
       /## \[0\.2\.0-beta\.7\][\s\S]*protected run `30265105639`[\s\S]*inconclusive[\s\S]*npm and PyPI remained absent/i,
     );
@@ -1684,6 +3257,12 @@ describe("Kaji workflow contracts", () => {
     expect(runbook).toContain("`0.9805314383`, `0.9756823917`,");
     expect(runbook).toContain("and `1.2290586651`");
     expect(runbook.replace(/\s+/g, " ")).toContain("recovery requires the new beta.8 attempt");
+    expect(runbook).toContain("run `30296132900`");
+    expect(runbook).toContain("`KAJI_TTHW_EVIDENCE_JSON` was empty");
+    expect(runbook).toContain("five-user TTHW validation did not start");
+    expect(runbook.replace(/\s+/g, " ")).toContain("recovery requires the new beta.9 attempt");
+    expect(runbook).toContain("rehearsal `30291287818` is");
+    expect(runbook).toContain("terminal cancelled and cannot be reused as beta.9 evidence");
   });
 
   it("smokes compatibility matrices only from verified producer artifacts", () => {
@@ -1714,9 +3293,11 @@ describe("Kaji workflow contracts", () => {
         );
         const verify = steps.findIndex((step) => step.run?.includes("verify_release_artifacts.py"));
         const smoke = steps.findIndex((step) => step.run?.includes(smokeScript));
-        const normalize = steps.findIndex(
-          (step) => step.name === "Normalize compatibility receipt",
-        );
+        const normalizerName =
+          jobId === "node-compat"
+            ? "Finalize closed protected Node receipt"
+            : "Normalize compatibility receipt";
+        const normalize = steps.findIndex((step) => step.name === normalizerName);
         const finalUpload = steps.findIndex(
           (step) => step.name === "Retain final compatibility receipt",
         );
@@ -1731,10 +3312,19 @@ describe("Kaji workflow contracts", () => {
         expect(normalize, `${jobId}: normalize`).toBeGreaterThan(smoke);
         expect(finalUpload, `${jobId}: final upload`).toBeGreaterThan(normalize);
         expect(JSON.stringify(job?.env ?? {})).not.toContain("${{ runner.");
-        expect(steps[download]?.with).toMatchObject({
-          name: "kaji-beta-artifacts",
-          path: ".artifacts/kaji-release",
-        });
+        if (jobId === "node-compat") {
+          expect(steps[download]?.with).toEqual({
+            "artifact-ids": `\${{ needs.${producer}.outputs.artifact-id }}`,
+            path: ".artifacts/kaji-release",
+            "merge-multiple": true,
+            "github-token": "${{ github.token }}",
+          });
+        } else {
+          expect(steps[download]?.with).toMatchObject({
+            name: "kaji-beta-artifacts",
+            path: ".artifacts/kaji-release",
+          });
+        }
         expect(steps[verify]?.run).toContain("--expected-commit");
         expect(steps[smoke]?.run).toContain("--output");
         if (jobId === "python-compat") {
@@ -1746,13 +3336,21 @@ describe("Kaji workflow contracts", () => {
           expect(steps[smoke]?.run).toContain("--expected-commit");
         }
         expect(steps[normalize]?.if).toBe("${{ always() }}");
-        expect(steps[normalize]?.run).toContain('conclusion == "passed"');
-        expect(steps[normalize]?.run).toContain('conclusion == "failed"');
-        expect(steps[normalize]?.run).toContain("compatibility_receipt_not_terminal");
-        expect(steps[normalize]?.run).toContain(".timings");
-        expect(steps[normalize]?.run).toContain('keys == ["sdist", "wheel"]');
-        expect(steps[normalize]?.run).toContain('keys == ["bun", "npm"]');
-        expect(steps[normalize]?.run).toContain("9007199254740991");
+        if (jobId === "python-compat") {
+          expect(steps[normalize]?.run).toContain('conclusion == "passed"');
+          expect(steps[normalize]?.run).toContain('conclusion == "failed"');
+          expect(steps[normalize]?.run).toContain("compatibility_receipt_not_terminal");
+          expect(steps[normalize]?.run).toContain(".timings");
+          expect(steps[normalize]?.run).toContain('keys == ["sdist", "wheel"]');
+          expect(steps[normalize]?.run).toContain('keys == ["bun", "npm"]');
+          expect(steps[normalize]?.run).toContain("9007199254740991");
+        } else {
+          expect(steps[normalize]?.run).toContain("assertClosedOrdinaryReceipt");
+          expect(steps[normalize]?.run).toContain("assertProtectedOrdinaryReceiptForWorkflow");
+          expect(steps[normalize]?.run).toContain('document.conclusion !== "passed"');
+          expect(steps[normalize]?.run).toContain("failure_code=artifact_identity_failed");
+          expect(steps[normalize]?.run).toContain("failure_code=node_smoke_failed");
+        }
         const source = steps.map((step) => step.run ?? "").join("\n");
         expect(source).not.toContain("uv build");
         expect(source).not.toContain("npm pack");
@@ -1774,6 +3372,281 @@ describe("Kaji workflow contracts", () => {
         expect(steps[initialize]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
         expect(steps[smoke]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
         expect(steps[normalize]?.env?.KAJI_COMPAT_RECEIPT_DIR).toBe(receiptPath);
+      }
+    }
+  });
+
+  it("pins protected Node onboarding to exact hosted runner/runtime cells", () => {
+    for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
+      const workflow = readWorkflow(workflowName).workflow;
+      const job = workflow.jobs?.["node-compat"];
+
+      expect(job?.["runs-on"]).toBe("${{ matrix.runner }}");
+      expect(job?.permissions).toEqual({ actions: "read", contents: "read" });
+      expect(job?.strategy?.matrix).toEqual({
+        include: [
+          { "node-version": "22", runner: "ubuntu-22.04" },
+          { "node-version": "24", runner: "ubuntu-24.04" },
+        ],
+      });
+    }
+  });
+
+  it("resolves Node producer artifacts by authenticated API identity before ID download", () => {
+    for (const [workflowName, producer] of [
+      ["kaji.rehearsal.yml", "offline-release"],
+      ["kaji.publish.yml", "offline-gates"],
+    ] as const) {
+      const workflow = readWorkflow(workflowName).workflow;
+      const assertProtectedNodeJob = (job: WorkflowJob) => {
+        expect(job.if).toBe("${{ github.run_attempt == 1 }}");
+        expect(job["runs-on"]).toBe("${{ matrix.runner }}");
+        expect(job.permissions).toEqual({ actions: "read", contents: "read" });
+        expect(job.strategy?.matrix).toEqual({
+          include: [
+            { "node-version": "22", runner: "ubuntu-22.04" },
+            { "node-version": "24", runner: "ubuntu-24.04" },
+          ],
+        });
+        expect(JSON.stringify(job.env ?? {})).not.toContain("github.token");
+        const steps = job.steps ?? [];
+        const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"));
+        const lookup = steps.findIndex((step) => step.uses?.startsWith("actions/github-script@"));
+        const download = steps.findIndex((step) =>
+          step.uses?.startsWith("actions/download-artifact@"),
+        );
+        const verify = steps.findIndex((step) => step.run?.includes("verify_release_artifacts.py"));
+        const smoke = steps.findIndex((step) =>
+          step.run?.includes("kaji/ts/scripts/smoke_package.mts"),
+        );
+        const finalizer = steps.findIndex(
+          (step) => step.name === "Finalize closed protected Node receipt",
+        );
+        const upload = steps.findIndex(
+          (step) =>
+            step.uses?.startsWith("actions/upload-artifact@") &&
+            step.with?.name === "kaji-node-compat-${{ matrix.node-version }}",
+        );
+        expect(lookup, workflowName).toBeGreaterThanOrEqual(0);
+        expect(download, workflowName).toBeGreaterThan(lookup);
+        expect(verify, workflowName).toBeGreaterThan(download);
+        expect(smoke, workflowName).toBeGreaterThan(verify);
+        expect(finalizer, workflowName).toBeGreaterThan(smoke);
+        expect(upload, workflowName).toBeGreaterThan(finalizer);
+        expect(steps[checkout]?.with?.["persist-credentials"]).toBe(false);
+        expect(steps[lookup]?.with?.["github-token"]).toBe("${{ github.token }}");
+        const lookupScript = String(steps[lookup]?.with?.script ?? "");
+        for (const required of [
+          "getArtifact",
+          "getWorkflowRunAttempt",
+          'artifact.name !== "kaji-beta-artifacts"',
+          "artifact.id !== artifactId",
+          "artifact.digest !== `sha256:${expectedDigest}`",
+          "artifact.expired !== false",
+          "artifact.workflow_run?.id !== context.runId",
+          "artifact.workflow_run?.head_sha !== expectedCommit",
+          "context.runAttempt !== 1",
+          "attempt_number: 1",
+          "producerRun.run_attempt !== 1",
+          "producerRun.head_sha !== expectedCommit",
+        ]) {
+          expect(lookupScript, `${workflowName}:${required}`).toContain(required);
+        }
+        expect(steps[download]?.with).toEqual({
+          "artifact-ids": `\${{ needs.${producer}.outputs.artifact-id }}`,
+          path: ".artifacts/kaji-release",
+          "merge-multiple": true,
+          "github-token": "${{ github.token }}",
+        });
+        expect(steps[download]?.with).not.toHaveProperty("name");
+        expect(steps[download]?.with).not.toHaveProperty("pattern");
+        const smokeRun = steps[smoke]?.run ?? "";
+        for (const required of [
+          "--protected",
+          "--expected-node-major",
+          "--configured-runner-label",
+          "--producer-artifact-id",
+          "--producer-artifact-digest",
+          "--release-manifest",
+          "--expected-commit",
+        ]) {
+          expect(smokeRun).toContain(required);
+        }
+        const finalizerRun = steps[finalizer]?.run ?? "";
+        expect(steps[finalizer]?.env).toMatchObject({
+          KAJI_COMPAT_CANDIDATE_TARBALL: ".artifacts/kaji-release/kaji-sdk-0.2.0-beta.9.tgz",
+          KAJI_COMPAT_RUNNER_LABEL: "${{ matrix.runner }}",
+          KAJI_COMPAT_PRODUCER_ARTIFACT_ID: `\${{ needs.${producer}.outputs.artifact-id }}`,
+          KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: `\${{ needs.${producer}.outputs.artifact-digest }}`,
+        });
+        expect(finalizerRun).toContain("assertProtectedOrdinaryReceiptForWorkflow");
+        expect(finalizerRun).toContain("KAJI_COMPAT_CANDIDATE_TARBALL");
+        expect(finalizerRun).toContain("KAJI_COMPAT_PRODUCER_ARTIFACT_ID");
+        expect(finalizerRun).toContain("KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST");
+        expect(finalizerRun).toContain("GITHUB_WORKFLOW_REF");
+        expect(finalizerRun).toContain("GITHUB_WORKFLOW_SHA");
+        expect(finalizerRun).toContain('schemaVersion: 2, executionMode: "protected"');
+        expect(finalizerRun).toContain("githubPackageProofs: {}, onboardingProofs: {}");
+        for (const [index, step] of steps.entries()) {
+          if (index === lookup || index === download) continue;
+          expect(JSON.stringify(step), `${workflowName}:token step ${index}`).not.toContain(
+            "github.token",
+          );
+        }
+      };
+
+      const job = workflow.jobs?.["node-compat"];
+      expect(job).toBeDefined();
+      assertProtectedNodeJob(job!);
+
+      const rejectMutation = (mutate: (job: WorkflowJob) => void) => {
+        const candidate = structuredClone(job!);
+        mutate(candidate);
+        expect(() => assertProtectedNodeJob(candidate)).toThrow();
+      };
+      rejectMutation((candidate) => {
+        candidate["runs-on"] = "ubuntu-latest";
+      });
+      rejectMutation((candidate) => {
+        candidate.if = "${{ always() }}";
+      });
+      rejectMutation((candidate) => {
+        const checkout = candidate.steps!.find((step) =>
+          step.uses?.startsWith("actions/checkout@"),
+        )!;
+        checkout.with = { ...checkout.with, "persist-credentials": true };
+      });
+      rejectMutation((candidate) => {
+        candidate.permissions = { contents: "read" };
+      });
+      rejectMutation((candidate) => {
+        candidate.strategy = {
+          failFast: false,
+          matrix: { "node-version": ["22", "24"], runner: ["ubuntu-22.04", "ubuntu-24.04"] },
+        };
+      });
+      rejectMutation((candidate) => {
+        candidate.env = { ...candidate.env, GITHUB_TOKEN: "${{ github.token }}" };
+      });
+      for (const fragment of [
+        "getArtifact",
+        "getWorkflowRunAttempt",
+        'artifact.name !== "kaji-beta-artifacts"',
+        "artifact.digest !== `sha256:${expectedDigest}`",
+        "artifact.expired !== false",
+        "artifact.workflow_run?.head_sha !== expectedCommit",
+        "context.runAttempt !== 1",
+        "attempt_number: 1",
+        "producerRun.run_attempt !== 1",
+      ]) {
+        rejectMutation((candidate) => {
+          const lookup = candidate.steps!.find((step) =>
+            step.uses?.startsWith("actions/github-script@"),
+          )!;
+          lookup.with = {
+            ...lookup.with,
+            script: String(lookup.with?.script ?? "").replace(fragment, "weakened_check"),
+          };
+        });
+      }
+      rejectMutation((candidate) => {
+        const download = candidate.steps!.find((step) =>
+          step.uses?.startsWith("actions/download-artifact@"),
+        )!;
+        download.with = {
+          name: "kaji-beta-artifacts",
+          path: ".artifacts/kaji-release",
+        };
+      });
+      rejectMutation((candidate) => {
+        const steps = candidate.steps!;
+        const lookup = steps.findIndex((step) => step.uses?.startsWith("actions/github-script@"));
+        const download = steps.findIndex((step) =>
+          step.uses?.startsWith("actions/download-artifact@"),
+        );
+        [steps[lookup], steps[download]] = [steps[download]!, steps[lookup]!];
+      });
+    }
+  });
+
+  it("writes executable closed v2 initial and fallback Node receipts", () => {
+    const expectedCommit = "a".repeat(40);
+    const failureCases = [
+      {
+        expectedFailureCode: "artifact_identity_failed",
+        outcomes: {
+          CHECKOUT_OUTCOME: "failure",
+          RUNTIME_SETUP_OUTCOME: "skipped",
+          DEPENDENCY_SETUP_OUTCOME: "skipped",
+          LOOKUP_OUTCOME: "skipped",
+          DOWNLOAD_OUTCOME: "skipped",
+          VERIFICATION_OUTCOME: "skipped",
+          SMOKE_OUTCOME: "skipped",
+        },
+      },
+      {
+        expectedFailureCode: "node_smoke_failed",
+        outcomes: {
+          CHECKOUT_OUTCOME: "success",
+          RUNTIME_SETUP_OUTCOME: "success",
+          DEPENDENCY_SETUP_OUTCOME: "success",
+          LOOKUP_OUTCOME: "success",
+          DOWNLOAD_OUTCOME: "success",
+          VERIFICATION_OUTCOME: "success",
+          SMOKE_OUTCOME: "failure",
+        },
+      },
+    ] as const;
+
+    for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
+      const job = readWorkflow(workflowName).workflow.jobs?.["node-compat"];
+      expect(job).toBeDefined();
+      const initialize = workflowStep(job!, "Initialize compatibility receipt before setup");
+      const finalizer = workflowStep(job!, "Finalize closed protected Node receipt");
+      const root = mkdtempSync(join(tmpdir(), "kaji-node-receipt-writer-"));
+      try {
+        const environment = {
+          ...process.env,
+          EXPECTED_COMMIT: expectedCommit,
+          KAJI_COMPAT_RECEIPT_DIR: root,
+          KAJI_COMPAT_RUNTIME_VERSION: "24",
+        };
+        const initialized = spawnSync("bash", ["-c", initialize.run!], {
+          cwd: repositoryRoot,
+          encoding: "utf8",
+          env: environment,
+        });
+        expect(initialized.status, initialized.stderr).toBe(0);
+        expect(() =>
+          assertClosedOrdinaryReceipt(
+            JSON.parse(readFileSync(join(root, "compatibility-receipt.json"), "utf8")),
+            "protected",
+          ),
+        ).not.toThrow();
+
+        for (const { expectedFailureCode, outcomes } of failureCases) {
+          writeFileSync(
+            join(root, "compatibility-receipt.json"),
+            JSON.stringify({ conclusion: "untrusted" }),
+          );
+          const finalized = spawnSync("bash", ["-c", finalizer.run!], {
+            cwd: repositoryRoot,
+            encoding: "utf8",
+            env: {
+              ...environment,
+              ...outcomes,
+            },
+          });
+          expect(finalized.status, `${workflowName}:${expectedFailureCode}`).toBe(1);
+          const fallback = JSON.parse(
+            readFileSync(join(root, "compatibility-receipt.json"), "utf8"),
+          );
+          expect(fallback.failureCode).toBe(expectedFailureCode);
+          expect(fallback.conclusion).toBe("failed");
+          expect(() => assertClosedOrdinaryReceipt(fallback, "protected")).not.toThrow();
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true });
       }
     }
   });
@@ -2066,6 +3939,537 @@ describe("Kaji workflow contracts", () => {
     },
   );
 
+  it("creates, normalizes, and uploads the exact publisher identity receipt", () => {
+    const { workflow } = readWorkflow("kaji.publish.yml");
+    const publish = workflow.jobs?.["publish-npm"]!;
+    const steps = publish.steps ?? [];
+    expect(Object.keys(publish.outputs ?? {}).sort()).toEqual(
+      [
+        "expected-publisher",
+        "publisher-artifact-digest",
+        "publisher-artifact-id",
+        "publisher-artifact-name",
+      ].sort(),
+    );
+    expect(publish.outputs).toEqual({
+      "expected-publisher": "${{ steps.publisher-identity-init.outputs.expected-publisher }}",
+      "publisher-artifact-id": "${{ steps.publisher-identity-upload.outputs.artifact-id }}",
+      "publisher-artifact-digest": "${{ steps.publisher-identity-upload.outputs.artifact-digest }}",
+      "publisher-artifact-name": "${{ steps.publisher-identity-init.outputs.artifact-name }}",
+    });
+
+    const initial = workflowStep(publish, "Initialize fail-closed publisher identity receipt");
+    expect(steps[0]).toBe(initial);
+    expect(initial.id).toBe("publisher-identity-init");
+    expect(JSON.stringify(initial)).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);
+    for (const field of [
+      "schemaVersion",
+      "commit",
+      "tag",
+      "workflowRun",
+      "workflowRunAttempt",
+      "workflowPath",
+      "workflowSha",
+      "expectedPublisher",
+      "actualPublisher",
+      "conclusion",
+      "exitCode",
+      "failureCode",
+    ]) {
+      expect(initial.run, field).toContain(field);
+    }
+    expect(initial.run).toContain("identity_check_incomplete");
+    expect(initial.run).toContain("expected_publisher_missing");
+    expect(initial.run).toContain("expected_publisher_invalid");
+    expect(initial.run).toContain("jq --sort-keys --indent 2");
+    expect(initial.run).toContain("publisher-identity-receipt.json");
+    expect(initial.run).toContain("kaji-publisher-identity-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT");
+    expect(initial.run).toContain('mv -- "$temporary" "$receipt"');
+    expect(initial.run).toContain("65536");
+
+    const whoami = workflowStep(publish, "Verify exact npm publisher identity");
+    expect(whoami.run).toContain("npm whoami --registry=https://registry.npmjs.org/");
+    expect(whoami.run).toContain("ulimit -f");
+    expect(whoami.run).toContain("timeout --signal=TERM");
+    expect(whoami.run).toContain("npm_whoami_failed");
+    expect(whoami.run).toContain("npm_whoami_output_invalid");
+    expect(whoami.run).toContain("publisher_mismatch");
+    expect(whoami.run).toContain("token_missing");
+    expect(whoami.run).not.toMatch(/\bcat\b|tee|set -x/u);
+
+    const upload = steps.find((step) => step.id === "publisher-identity-upload");
+    expect(upload?.name).toBe("Upload exact publisher identity receipt");
+    expect(upload?.if).toBe("${{ always() }}");
+    expect(upload?.with).toEqual({
+      name: "${{ steps.publisher-identity-init.outputs.artifact-name }}",
+      path: "${{ runner.temp }}/kaji-publisher-identity/publisher-identity-receipt.json",
+      "if-no-files-found": "error",
+    });
+    expect(steps.indexOf(upload!)).toBe(steps.indexOf(whoami) + 1);
+    expect(steps[steps.indexOf(upload!) + 1]?.name).toBe(
+      "Revalidate current carrier immediately before npm publication",
+    );
+
+    const credentialedSteps = Object.values(workflow.jobs ?? {}).flatMap((job) =>
+      (job.steps ?? []).filter((step) => JSON.stringify(step).includes("secrets.NPM_TOKEN")),
+    );
+    expect(credentialedSteps.map((step) => step.name)).toEqual([
+      "Verify exact npm publisher identity",
+      "Publish exact npm beta with provenance",
+    ]);
+    expect(whoami.env).toEqual({
+      NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}",
+      EXPECTED_NPM_PUBLISHER: "${{ vars.KAJI_NPM_PUBLISHER }}",
+    });
+    expect(
+      JSON.stringify([workflow.jobs?.["publication-status"], workflow.jobs?.["release-evidence"]]),
+    ).not.toMatch(/KAJI_NPM_PUBLISHER|secrets\.NPM_TOKEN|NODE_AUTH_TOKEN/u);
+  });
+
+  it("authenticates the all-or-none publisher receipt output tuple before exact-ID download", () => {
+    const { workflow } = readWorkflow("kaji.publish.yml");
+    const status = workflow.jobs?.["publication-status"]!;
+    expect(status.permissions).toEqual({
+      actions: "read",
+      contents: "read",
+      attestations: "read",
+    });
+    const steps = status.steps ?? [];
+    const binding = workflowStep(
+      status,
+      "Classify publisher identity receipt outputs before setup",
+    );
+    const metadata = workflowStep(
+      status,
+      "Authenticate exact publisher identity artifact before download",
+    );
+    const checkoutIndex = steps.findIndex((step) => step.uses?.startsWith("actions/checkout@"));
+    expect(steps.indexOf(binding)).toBeLessThan(checkoutIndex);
+    expect(binding["continue-on-error"]).toBe(true);
+    expect(binding.run).toContain("receipt_outputs_missing");
+    expect(binding.run).toContain("receipt_artifact_metadata_mismatch");
+    expect(binding.run).toContain("publish_job_not_started");
+    expect(binding.run).not.toMatch(/\bgh\s+api\b|actions\/artifacts|actions\/runs/u);
+    expect(metadata.if).toContain("steps.publisher-receipt-binding.outputs.mode == 'receipt'");
+    for (const fragment of [
+      "actions/runs/$GITHUB_RUN_ID",
+      "actions/artifacts/$PUBLISHER_ARTIFACT_ID",
+      ".run_attempt == 1",
+      '.path == ".github/workflows/kaji.publish.yml"',
+      '.head_branch == "kaji-v0.2.0-beta.9"',
+      ".head_sha == $commit",
+      ".id == $id",
+      ".name == $name",
+      ".digest == $digest",
+      ".expired == false",
+      ".size_in_bytes > 0",
+    ]) {
+      expect(metadata.run, fragment).toContain(fragment);
+    }
+    const download = steps.find(
+      (step) =>
+        step.uses?.startsWith("actions/download-artifact@") &&
+        step.with?.["artifact-ids"] === "${{ needs.publish-npm.outputs.publisher-artifact-id }}",
+    );
+    expect(download?.if).toContain("steps.publisher-artifact-metadata.outcome == 'success'");
+    expect(download?.with).toMatchObject({
+      "artifact-ids": "${{ needs.publish-npm.outputs.publisher-artifact-id }}",
+      path: "${{ runner.temp }}/kaji-publisher-identity-download",
+      "merge-multiple": true,
+      "github-token": "${{ github.token }}",
+    });
+    const inventory = workflowStep(status, "Validate exact publisher receipt inventory");
+    expect(inventory.run).toContain("publisher-identity-receipt.json");
+    expect(inventory.run).toContain("find");
+    expect(inventory.run).toContain('[ "$observed_count" = 1 ]');
+    expect(steps.indexOf(inventory)).toBe(steps.indexOf(download!) + 1);
+
+    const valid = runPublisherIdentityArtifactAuthentication();
+    expect(valid.status, String(valid.stderr)).toBe(0);
+    expect(valid.endpoints).toEqual([
+      `repos/enkyuan/alloy/actions/runs/${publisherIdentityArtifactFixture().runId}`,
+      `repos/enkyuan/alloy/actions/artifacts/${publisherIdentityArtifactFixture().artifactId}`,
+    ]);
+  });
+
+  it("distinguishes a skipped no-start publisher job from missing started-job receipts", () => {
+    const skipped = runPublisherReceiptOutputBinding();
+    expect(skipped.status, String(skipped.stderr)).toBe(0);
+    expect(skipped.outputs).toMatchObject({
+      mode: "no-receipt",
+      reason: "publish_job_not_started",
+    });
+    expect(skipped.endpoints).toEqual([]);
+
+    for (const publishResult of ["failure", "cancelled", "success"]) {
+      const started = runPublisherReceiptOutputBinding({ PUBLISH_RESULT: publishResult });
+      expect(started.status, publishResult).not.toBe(0);
+      expect(started.outputs).toMatchObject({
+        mode: "no-receipt",
+        reason: "receipt_outputs_missing",
+      });
+      expect(started.endpoints, publishResult).toEqual([]);
+    }
+
+    const partial = runPublisherReceiptOutputBinding({
+      PUBLISH_RESULT: "failure",
+      PUBLISHER_ARTIFACT_ID: "812346",
+    });
+    expect(partial.status).not.toBe(0);
+    expect(partial.outputs).toMatchObject({
+      mode: "no-receipt",
+      reason: "receipt_outputs_missing",
+    });
+    expect(partial.endpoints).toEqual([]);
+  });
+
+  it("keeps the retained initial publication writer honest about publisher job start", () => {
+    for (const [publishResult, expectedReason] of [
+      ["skipped", "publish_job_not_started"],
+      ["failure", "receipt_outputs_missing"],
+      ["cancelled", "receipt_outputs_missing"],
+      ["success", "receipt_outputs_missing"],
+    ] as const) {
+      const completed = runInitialPublicationStatus(publishResult);
+      expect(completed.status, `${publishResult}: ${completed.stderr}`).toBe(0);
+      expect(completed.payload).toMatchObject({
+        state: "unpublished",
+        releaseReady: false,
+        installRecommendation: false,
+        incident: {
+          code: "classification_pending",
+          recovery: "fix_forward_next_beta",
+        },
+        publisherIdentity: {
+          conclusion: "not_run",
+          reason: expectedReason,
+          artifact: null,
+          receiptSha256: null,
+          identity: null,
+        },
+      });
+    }
+  });
+
+  it.each([
+    [
+      "missing outputs",
+      {
+        PUBLISHER_BINDING_MODE: "no-receipt",
+        PUBLISHER_BINDING_REASON: "receipt_outputs_missing",
+      },
+      "receipt_outputs_missing",
+    ],
+    [
+      "metadata mismatch",
+      { PUBLISHER_METADATA_OUTCOME: "failure" },
+      "receipt_artifact_metadata_mismatch",
+    ],
+    ["download failure", { PUBLISHER_DOWNLOAD_OUTCOME: "failure" }, "receipt_download_failed"],
+    ["inventory failure", { PUBLISHER_INVENTORY_OUTCOME: "failure" }, "receipt_download_failed"],
+    ["raw receipt validation failure", {}, "receipt_invalid"],
+  ] as const)(
+    "preserves %s in the executable emergency publication fallback",
+    (_label, overrides, expectedReason) => {
+      const completed = runPublicationClassifierFallback(overrides);
+      expect(completed.status, String(completed.stderr)).toBe(0);
+      expect(completed.payload).toMatchObject({
+        state: "unpublished",
+        releaseReady: false,
+        installRecommendation: false,
+        expectedPublisher: null,
+        publisherIdentity: {
+          conclusion: "not_run",
+          reason: expectedReason,
+          artifact: null,
+          receiptSha256: null,
+          identity: null,
+        },
+        incident: {
+          code: "status_classifier_unavailable",
+          recovery: "fix_forward_next_beta",
+        },
+      });
+      expect(completed.payload.state).not.toBe("npm_byte_verified");
+    },
+  );
+
+  it.each([
+    [
+      "id",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.artifact.id = 999_999;
+      },
+    ],
+    [
+      "name",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.artifact.name = "wrong-name";
+      },
+    ],
+    [
+      "digest",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.artifact.digest = `sha256:${"0".repeat(64)}`;
+      },
+    ],
+    [
+      "expired",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.artifact.expired = true;
+      },
+    ],
+    [
+      "size",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.artifact.size_in_bytes = 0;
+      },
+    ],
+    [
+      "run",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        (fixture.artifact.workflow_run as Record<string, unknown>).id = 999_999;
+      },
+    ],
+    [
+      "attempt",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.run.run_attempt = 2;
+      },
+    ],
+    [
+      "ref",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.run.head_branch = "wrong-ref";
+      },
+    ],
+    [
+      "head SHA",
+      (fixture: PublisherIdentityArtifactFixture) => {
+        fixture.run.head_sha = "0".repeat(40);
+      },
+    ],
+  ] as const)(
+    "rejects hostile publisher receipt artifact %s metadata before download",
+    (_label, mutate) => {
+      const completed = runPublisherIdentityArtifactAuthentication(mutate);
+      expect(completed.status).not.toBe(0);
+      expect(completed.endpoints.some((endpoint) => endpoint.endsWith("/zip"))).toBe(false);
+    },
+  );
+
+  it("projects publisher identity through every status writer and terminal gate", () => {
+    const { workflow } = readWorkflow("kaji.publish.yml");
+    const status = workflow.jobs?.["publication-status"]!;
+    expect(status.outputs?.["expected-publisher"]).toBe(
+      "${{ steps.classify.outputs.expected-publisher }}",
+    );
+    const initial = workflowStep(status, "Initialize fail-closed publication status before setup");
+    for (const fragment of [
+      "publisherIdentity",
+      'conclusion: "not_run"',
+      "publisher_reason=publish_job_not_started",
+      "reason: $publisherReason",
+      "receiptSha256: null",
+      "identity: null",
+      "expectedPublisher",
+      "workflowRunAttempt",
+      "workflowPath",
+      "workflowSha",
+    ]) {
+      expect(initial.run, fragment).toContain(fragment);
+    }
+
+    const classifier = workflowStep(status, "Reduce monotonic publication state");
+    for (const fragment of [
+      "--publisher-receipt",
+      "--publisher-artifact-name",
+      "--publisher-artifact-id",
+      "--publisher-artifact-digest",
+      "--publisher-no-receipt-reason",
+      "--expected-publisher",
+      "--workflow-run-attempt",
+      "--workflow-path",
+      "--workflow-sha",
+      "--tag",
+      "publisherIdentity",
+      "receiptSha256",
+      "receipt_invalid",
+      "identity_check_failed",
+    ]) {
+      expect(classifier.run, fragment).toContain(fragment);
+    }
+    const fallbackWriter = classifier.run
+      ?.split('if [ "$CLASSIFY_STATUS" -ne 0 ]; then', 2)[1]
+      ?.split("cat .artifacts/kaji-publication-status/publication-status.md", 1)[0];
+    expect(fallbackWriter).toContain('[ "$PUBLISHER_REASON" = publish_job_not_started ]');
+    expect(fallbackWriter).toContain('publisherIdentity: {conclusion: "not_run"');
+    expect(fallbackWriter).toContain("receiptSha256: null, identity: null");
+    expect(fallbackWriter).toContain("expectedPublisher: null");
+    expect(fallbackWriter).not.toContain("FALLBACK_STATE=npm_byte_verified");
+    const exactState = workflowStep(status, "Require exact npm byte-verified publication state");
+    expect(exactState.run).toContain('.publisherIdentity.conclusion == "passed"');
+    expect(exactState.run).toContain(
+      ".publisherIdentity.identity.actualPublisher == .expectedPublisher",
+    );
+    expect(exactState.run).toContain(
+      ".publisherIdentity.identity.expectedPublisher == .expectedPublisher",
+    );
+    expect(exactState.run).toContain(".publisherIdentity.receiptSha256");
+    expect(exactState.run).toContain('test -n "$EXPECTED_PUBLISHER"');
+
+    const release = workflow.jobs?.["release-evidence"]!;
+    const releaseSteps = release.steps ?? [];
+    const validate = workflowStep(
+      release,
+      "Validate terminal publication status before release attachment",
+    );
+    const attach = workflowStep(
+      release,
+      "Create or verify prerelease and attach only missing digest-matched assets",
+    );
+    expect(releaseSteps.indexOf(validate)).toBeLessThan(releaseSteps.indexOf(attach));
+    for (const fragment of [
+      "validate_release_evidence.py publication-status",
+      "--publication-status .artifacts/kaji-publication-status/publication-status.json",
+      "--expected-commit",
+      "--workflow-run",
+      "--workflow-run-attempt 1",
+      "--expected-tag",
+      "--expected-workflow-path .github/workflows/kaji.publish.yml",
+      "--expected-workflow-sha",
+      "--expected-publisher",
+      '--output "$RUNNER_TEMP/kaji-publication-status-validation.json"',
+    ]) {
+      expect(validate.run, fragment).toContain(fragment);
+    }
+    expect(validate.env?.EXPECTED_PUBLISHER).toBe(
+      "${{ needs.publication-status.outputs.expected-publisher }}",
+    );
+    expect(attach.run).not.toContain("publisher-identity-receipt");
+    expect(attach.run).not.toContain("kaji-publication-status-validation");
+  });
+
+  it("uses exact-version HTTPS registry absence responses instead of E404 text matching", () => {
+    const { source, workflow } = readWorkflow("kaji.publish.yml");
+    expect(source).not.toContain("npm view kaji-sdk@0.2.0-beta.9");
+    expect(source).not.toMatch(/\bE404\b/u);
+    const preflight = workflowStep(
+      workflow.jobs?.["registry-preflight"]!,
+      "Require PyPI beta absence and exact npm beta absence",
+    );
+    const immediate = workflowStep(
+      workflow.jobs?.["publish-npm"]!,
+      "Recheck exact registry absence immediately before npm publication",
+    );
+    const classifier = workflowStep(
+      workflow.jobs?.["publication-status"]!,
+      "Reduce monotonic publication state",
+    );
+    for (const step of [preflight, immediate]) {
+      for (const fragment of [
+        "https://registry.npmjs.org/tiny-tarball/1.0.0",
+        "https://registry.npmjs.org/kaji-sdk",
+        "https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9",
+        "--connect-timeout 10",
+        "--proto '=https'",
+        "--tlsv1.2",
+        "--max-filesize",
+        "%{content_type}",
+        "%{url_effective}",
+        "%{num_redirects}",
+        "%{size_download}",
+        '[ "$effective_url" = "$url" ]',
+        '[ "$redirects" = 0 ]',
+        "application/json",
+        '.name == "tiny-tarball"',
+        '.version == "1.0.0"',
+        'keys == ["error"]',
+        '.error == "Not found"',
+        'type == "string" and . == "Not Found"',
+        '[ "$PACKUMENT_HTTP/$TARGET_HTTP" = 404/404 ]',
+      ]) {
+        expect(step.run, fragment).toContain(fragment);
+      }
+    }
+    expect(JSON.stringify(immediate)).not.toMatch(
+      /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.|KAJI_NPM_PUBLISHER/u,
+    );
+    expect(classifier.run).toContain("https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9");
+    expect(classifier.run).toContain('type == "string" and . == "Not Found"');
+    for (const fragment of [
+      "https://registry.npmjs.org/tiny-tarball/1.0.0",
+      "fetch_classification_json",
+      "--max-filesize",
+      "%{content_type}",
+      "%{url_effective}",
+      "%{num_redirects}",
+      "%{size_download}",
+      '.name == "tiny-tarball"',
+      '.version == "1.0.0"',
+    ]) {
+      expect(classifier.run, fragment).toContain(fragment);
+    }
+    for (const step of [preflight, immediate, classifier]) {
+      expect(step.run).toContain("https://registry.npmjs.org/kaji-sdk/0.2.0-beta.9");
+    }
+    expect(classifier.run).toContain('.name == "kaji-sdk"');
+    expect(classifier.run).toContain('.version == "0.2.0-beta.9"');
+
+    for (const [jobId, stepName] of [
+      ["registry-preflight", "Require PyPI beta absence and exact npm beta absence"],
+      ["publish-npm", "Recheck exact registry absence immediately before npm publication"],
+    ] as const) {
+      const absent = runExactVersionRegistryAbsence(jobId, stepName);
+      expect(absent.status, `${jobId}: ${absent.stderr}`).toBe(0);
+      for (const [label, overrides] of [
+        ["control transport", { controlTransportStatus: "6" }],
+        ["control status", { controlHttp: "500" }],
+        ["control identity", { controlBody: '{"name":"other","version":"1.0.0"}' }],
+        ["control content type", { controlContentType: "text/plain" }],
+        ["control redirect", { controlRedirects: "1" }],
+        [
+          "control effective URL",
+          { controlEffectiveUrl: "https://registry.npmjs.org/tiny-tarball/1.0.1" },
+        ],
+        ["packument object", { packumentBody: '{"error":"Not Found"}' }],
+        ["packument string", { packumentBody: '"Not Found"' }],
+        ["packument status", { packumentHttp: "500" }],
+        ["packument content type", { packumentContentType: "text/html" }],
+        ["target package object", { targetBody: '{"error":"Not found"}' }],
+        ["target incidental E404", { targetBody: '"E404 Not Found"' }],
+        ["target wrong string case", { targetBody: '"Not found"' }],
+        ["target mixed JSON", { targetBody: '["Not Found",{"error":"E404"}]' }],
+        ["target ambiguous status", { targetHttp: "500" }],
+        ["target content type", { targetContentType: "text/plain" }],
+        ["target redirect", { targetRedirects: "1" }],
+        [
+          "target effective URL",
+          { targetEffectiveUrl: "https://registry.npmjs.org/kaji-sdk/0.2.0-beta.10" },
+        ],
+        ["target oversized body", { targetBody: `"${"x".repeat(70_000)}"` }],
+      ] as const) {
+        const completed = runExactVersionRegistryAbsence(jobId, stepName, overrides);
+        expect(
+          completed.status,
+          `${jobId}:${label}:stdout=${completed.stdout}:stderr=${completed.stderr}`,
+        ).not.toBe(0);
+      }
+      const targetPresent = runExactVersionRegistryAbsence(jobId, stepName, {
+        targetHttp: "200",
+        targetBody: "not-json",
+      });
+      expect(targetPresent.status, jobId).not.toBe(0);
+      expect(targetPresent.stderr, jobId).toContain("already exists");
+      const packagePresent = runExactVersionRegistryAbsence(jobId, stepName, {
+        packumentHttp: "200",
+        packumentBody: "not-json",
+      });
+      expect(packagePresent.status, jobId).not.toBe(0);
+      expect(packagePresent.stderr, jobId).toContain("already exists");
+    }
+  }, 30_000);
+
   it("publishes and byte-verifies npm only while requiring PyPI absence", () => {
     const { source, workflow } = readWorkflow("kaji.publish.yml");
     const jobs = workflow.jobs ?? {};
@@ -2080,29 +4484,47 @@ describe("Kaji workflow contracts", () => {
     expect(registryPreflight?.run).toContain("404)");
     expect(registryPreflight?.run).toContain("PyPI beta 0.2.0b1 must remain absent");
 
-    const npmPublish = workflowStep(jobs["publish-npm"]!, "Publish exact npm beta with provenance");
+    const publisherJob = jobs["publish-npm"]!;
+    const identity = workflowStep(publisherJob, "Verify exact npm publisher identity");
+    const npmPublish = workflowStep(publisherJob, "Publish exact npm beta with provenance");
+    const identityRun = identity.run ?? "";
     const npmPublishRun = npmPublish.run ?? "";
-    expect(npmPublishRun).toContain("npm whoami --registry=https://registry.npmjs.org/");
+    expect(identityRun).toContain("npm whoami --registry=https://registry.npmjs.org/");
+    expect(identityRun).not.toContain("npm publish");
     expect(npmPublishRun).toContain("npm publish");
-    expect(npmPublishRun.indexOf("npm whoami")).toBeLessThan(npmPublishRun.indexOf("npm publish"));
-    expect(npmPublishRun).toContain('"$IDENTITY" = "$EXPECTED_NPM_PUBLISHER"');
-    expect(npmPublish.env).toMatchObject({
+    expect(npmPublishRun).not.toContain("npm whoami");
+    expect(identityRun).toContain('"$identity" = "$EXPECTED_NPM_PUBLISHER"');
+    expect(identity.env).toEqual({
       NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}",
       EXPECTED_NPM_PUBLISHER: "${{ vars.KAJI_NPM_PUBLISHER }}",
+    });
+    expect(npmPublish.env).toEqual({
+      NODE_AUTH_TOKEN: "${{ secrets.NPM_TOKEN }}",
     });
     expect(npmPublish.run).toContain("--provenance");
     expect(npmPublish.run).toContain("--access public");
     expect(npmPublish.run).toContain("--tag beta");
+    const publisherSteps = publisherJob.steps ?? [];
+    const reverifyIndex = publisherSteps.findIndex(
+      (step) => step.uses === "./.github/actions/verify-kaji-beta-tag",
+    );
+    expect(publisherSteps[reverifyIndex - 1]?.name).toBe(
+      "Revalidate current carrier immediately before npm publication",
+    );
+    expect(publisherSteps[reverifyIndex + 1]?.name).toBe(
+      "Recheck exact registry absence immediately before npm publication",
+    );
+    expect(publisherSteps[reverifyIndex + 2]?.name).toBe("Publish exact npm beta with provenance");
     expect([...dependencyClosure(workflow, "publish-npm")].sort()).toEqual([
       "keyed-proof",
       "node-compat",
       "offline-gates",
       "performance",
-      "publisher-preflight",
       "python-compat",
       "registry-preflight",
       "supply-chain",
-      "tthw-evidence",
+      "typescript-onboarding-archive-calibration",
+      "typescript-onboarding-evidence",
       "verify-tag",
     ]);
 
@@ -2111,7 +4533,6 @@ describe("Kaji workflow contracts", () => {
       "verify-tag",
       "supply-chain",
       "registry-preflight",
-      "publisher-preflight",
       "publish-npm",
     ]);
     const registryVerifier = workflowStep(
@@ -2131,7 +4552,9 @@ describe("Kaji workflow contracts", () => {
       publicationStatus,
       "Require exact npm byte-verified publication state",
     );
-    expect(exactState.if).toContain("npm_byte_verified");
+    expect(exactState.if).toBe("${{ always() }}");
+    expect(exactState.run).toContain('.state == "npm_byte_verified"');
+    expect(exactState.run).toContain('.publisherIdentity.conclusion == "passed"');
     expect(jobs["publication-incident"]?.if).toContain("npm_byte_verified");
     expect(jobs["release-evidence"]?.if).toContain("npm_byte_verified");
 
@@ -2142,7 +4565,7 @@ describe("Kaji workflow contracts", () => {
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     )?.run;
-    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.8.tgz");
+    expect(releaseAttach).toContain("kaji-sdk-0.2.0-beta.9.tgz");
     for (const forbidden of [
       "kaji_sdk-0.2.0b1-py3-none-any.whl",
       "kaji_sdk-0.2.0b1.tar.gz",
@@ -2160,9 +4583,9 @@ describe("Kaji workflow contracts", () => {
       ["supply-chain", "Rebuild and verify exact package contents against the clean checkout"],
       ["publish-npm", "Rebuild and verify npm archive contents against the clean checkout"],
     ] as const) {
-      expect(workflowStep(workflow.jobs?.[jobId]!, stepName).run).toContain(
-        "bun run --cwd kaji/ts build",
-      );
+      const job = workflow.jobs?.[jobId];
+      expect(job, jobId).toBeDefined();
+      expect(workflowStep(job!, stepName).run).toContain("bun run --cwd kaji/ts build");
     }
     expect(source).not.toContain("bun --cwd kaji/ts run build");
   });
@@ -2176,7 +4599,8 @@ describe("Kaji workflow contracts", () => {
           "performance",
           "python-compat",
           "node-compat",
-          "tthw-evidence",
+          "typescript-onboarding-archive-calibration",
+          "typescript-onboarding-evidence",
           "keyed-proof",
           "candidate-evidence",
         ],
@@ -2188,7 +4612,8 @@ describe("Kaji workflow contracts", () => {
           "performance",
           "python-compat",
           "node-compat",
-          "tthw-evidence",
+          "typescript-onboarding-archive-calibration",
+          "typescript-onboarding-evidence",
           "keyed-proof",
           "supply-chain",
           "publish-npm",
@@ -2234,6 +4659,70 @@ describe("Kaji workflow contracts", () => {
           continue;
         }
         const steps = job?.steps ?? [];
+        if (
+          jobId === "typescript-onboarding-archive-calibration" ||
+          jobId === "typescript-onboarding-evidence"
+        ) {
+          const commands = steps.map((step) => step.run ?? "").join("\n");
+          expect(commands, `${name}:${jobId}: complete artifact collection`).toContain(
+            "actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100",
+          );
+          expect(commands, `${name}:${jobId}: exact producer ZIP`).toContain(
+            "actions/artifacts/$artifact_id/zip",
+          );
+          expect(commands, `${name}:${jobId}: raw ZIP authentication`).toContain(
+            "load_authenticated_archive",
+          );
+          continue;
+        }
+        if (jobId === "node-compat") {
+          const downloads = steps.filter(
+            (step) =>
+              step.uses?.startsWith("actions/download-artifact@") &&
+              step.with?.["artifact-ids"] === `\${{ needs.${producer}.outputs.artifact-id }}`,
+          );
+          expect(downloads, `${name}:${jobId}: exact candidate ID download`).toHaveLength(1);
+          expect(downloads[0]?.with).toEqual({
+            "artifact-ids": `\${{ needs.${producer}.outputs.artifact-id }}`,
+            path: ".artifacts/kaji-release",
+            "merge-multiple": true,
+            "github-token": "${{ github.token }}",
+          });
+          const downloadIndex = steps.indexOf(downloads[0]!);
+          const verifyIndex = steps.findIndex((step) =>
+            step.run?.includes("kaji/scripts/verify_release_artifacts.py"),
+          );
+          expect(verifyIndex, `${name}:${jobId}: verifier`).toBeGreaterThan(downloadIndex);
+          continue;
+        }
+        const exactIdExpression =
+          jobId === "candidate-evidence" || jobId === "supply-chain"
+            ? "${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}"
+            : jobId === "publish-npm" ||
+                jobId === "publication-status" ||
+                jobId === "release-evidence"
+              ? "${{ needs.supply-chain.outputs.carrier-artifact-id }}"
+              : undefined;
+        if (exactIdExpression !== undefined) {
+          const downloads = steps.filter(
+            (step) =>
+              step.uses?.startsWith("actions/download-artifact@") &&
+              step.with?.["artifact-ids"] === exactIdExpression,
+          );
+          expect(downloads, `${name}:${jobId}: exact candidate ID download`).toHaveLength(1);
+          expect(downloads[0]?.with).toMatchObject({
+            "artifact-ids": exactIdExpression,
+            path: ".artifacts/kaji-release",
+            "merge-multiple": true,
+            "github-token": "${{ github.token }}",
+          });
+          const downloadIndex = steps.indexOf(downloads[0]!);
+          const verifyIndex = steps.findIndex((step) =>
+            step.run?.includes("kaji/scripts/verify_release_artifacts.py"),
+          );
+          expect(verifyIndex, `${name}:${jobId}: verifier`).toBeGreaterThan(downloadIndex);
+          continue;
+        }
         const downloads = steps.filter(
           (step) =>
             step.uses?.startsWith("actions/download-artifact@") &&
@@ -2291,30 +4780,46 @@ describe("Kaji workflow contracts", () => {
     expect(evidence?.needs).toEqual([
       "offline-release",
       "performance",
-      "tthw-evidence",
+      "typescript-onboarding-evidence",
       "keyed-proof",
       "python-compat",
       "node-compat",
     ]);
-    expect(evidence?.if).toBe("${{ always() && needs.offline-release.result == 'success' }}");
+    expect(evidence?.if).toBe(
+      "${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.typescript-onboarding-evidence.result == 'success' && needs.keyed-proof.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}",
+    );
     const steps = evidence?.steps ?? [];
     const downloads = steps.filter((step) => step.uses?.startsWith("actions/download-artifact@"));
     const requiredDownloads = downloads.filter((step) => !step["continue-on-error"]);
-    expect(requiredDownloads.map((step) => step.with?.name)).toEqual([
-      "kaji-beta-artifacts",
-      "kaji-offline-evidence",
+    expect(requiredDownloads.map((step) => step.with?.["artifact-ids"])).toEqual([
+      "${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}",
+      undefined,
+      "${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-id }}",
+      "${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}",
+      "${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}",
     ]);
+    expect(
+      requiredDownloads.filter((step) => step.with?.name).map((step) => step.with?.name),
+    ).toEqual(["kaji-offline-evidence"]);
     expect(
       downloads.filter((step) => step["continue-on-error"]).map((step) => step.with?.name),
     ).toEqual([
       "kaji-provider-evidence",
-      "kaji-tthw-evidence",
       "kaji-performance-evidence",
       "kaji-python-compat-3.11",
       "kaji-python-compat-3.14",
-      "kaji-node-compat-22",
-      "kaji-node-compat-24",
     ]);
+    const rawArchives = workflowStep(
+      evidence!,
+      "Download and authenticate validator raw source archives by exact ID",
+    );
+    for (const fragment of [
+      "actions/artifacts/$artifact_id/zip",
+      'observed="sha256:$(sha256sum "$archive"',
+      '[ "$observed" = "$digest" ]',
+    ]) {
+      expect(rawArchives.run).toContain(fragment);
+    }
     const verifyIndex = steps.findIndex((step) =>
       step.run?.includes("kaji/scripts/verify_release_artifacts.py"),
     );
@@ -2328,6 +4833,15 @@ describe("Kaji workflow contracts", () => {
     for (const flag of [
       "--release-artifact-id",
       "--release-artifact-digest",
+      "--producer-archive",
+      "--node22-source-archive",
+      "--node24-source-archive",
+      "--node22-source-artifact-id",
+      "--node22-source-artifact-digest",
+      "--node24-source-artifact-id",
+      "--node24-source-artifact-digest",
+      "--onboarding-status",
+      "--onboarding-evidence",
       "--python-compat-311",
       "--python-compat-314",
       "--node-compat-22",
@@ -2337,27 +4851,79 @@ describe("Kaji workflow contracts", () => {
       "--soak-results",
       "--performance-image-data",
       "--provider-evidence",
-      "--tthw-status",
-      "--tthw-evidence",
+      "--mode rehearsal",
       "--output",
     ]) {
       expect(validation?.run, flag).toContain(flag);
     }
+    const staging = workflowStep(evidence!, "Stage exact signed rehearsal evidence archive");
+    expect(steps.indexOf(staging)).toBe(validationIndex + 1);
+    const exactSignedEvidenceMembers = [
+      "compat-node-22.json",
+      "compat-node-24.json",
+      "compat-python-3.11.json",
+      "compat-python-3.14.json",
+      "offline-gate-summary.json",
+      "offline-gates.log",
+      "paired-benchmark-results.json",
+      "performance-imagedata.json",
+      "performance-status.json",
+      "provider-evidence.json",
+      "raw/benchmarks/replica-1-imagedata.json",
+      "raw/benchmarks/replica-1.json",
+      "raw/benchmarks/replica-2-imagedata.json",
+      "raw/benchmarks/replica-2.json",
+      "raw/benchmarks/replica-3-imagedata.json",
+      "raw/benchmarks/replica-3.json",
+      "raw/soak/python.json",
+      "raw/soak/results.json",
+      "raw/soak/typescript.json",
+      "release-evidence-validation.json",
+      "soak-results.json",
+      "typescript-onboarding/status.json",
+      "typescript-onboarding/typescript-onboarding-evidence.json",
+      "typescript-onboarding/validation.log",
+    ];
+    expect(exactSignedEvidenceMembers).toHaveLength(24);
+    for (const member of exactSignedEvidenceMembers) {
+      expect(staging.run, member).toContain(member);
+    }
+    for (const excludedDiagnostic of [
+      "raw/benchmarks/replica-1-status.json",
+      "raw/benchmarks/replica-2-status.json",
+      "raw/benchmarks/replica-3-status.json",
+      "raw/soak/imagedata.json",
+      "raw/soak/installed-runtime.json",
+    ]) {
+      expect(staging.run, excludedDiagnostic).not.toContain(excludedDiagnostic);
+    }
+    expect(staging.run).toContain("destination=.artifacts/kaji-signed-evidence");
+    expect(staging.run).toContain('[ "$observed_count" = 24 ]');
     const upload = steps.find(
       (step) =>
         step.uses?.startsWith("actions/upload-artifact@") &&
         step.with?.name === "kaji-release-candidate-evidence",
     );
-    expect(steps.indexOf(upload!)).toBeGreaterThan(validationIndex);
+    expect(steps.indexOf(upload!)).toBe(steps.indexOf(staging) + 1);
     expect(upload?.if).toBe("${{ always() }}");
+    expect(upload?.with?.path).toBe(".artifacts/kaji-signed-evidence");
     expect(upload?.with?.["if-no-files-found"]).toBe("error");
   });
 
-  it("terminal-normalizes protected TTHW and provider receipts after every failure boundary", () => {
+  it("terminal-normalizes calibration, onboarding, and provider evidence after failures", () => {
     for (const workflowName of ["kaji.rehearsal.yml", "kaji.publish.yml"] as const) {
       const workflow = readWorkflow(workflowName).workflow;
       for (const [jobId, normalizerName, uploadName] of [
-        ["tthw-evidence", "Normalize terminal TTHW status", "kaji-tthw-evidence"],
+        [
+          "typescript-onboarding-archive-calibration",
+          "Normalize terminal calibration diagnostic",
+          "kaji-typescript-onboarding-archive-calibration",
+        ],
+        [
+          "typescript-onboarding-evidence",
+          "Normalize terminal onboarding evidence",
+          "kaji-typescript-onboarding-evidence",
+        ],
         ["keyed-proof", "Normalize terminal provider evidence", "kaji-provider-evidence"],
       ] as const) {
         const steps = workflow.jobs?.[jobId]?.steps ?? [];
@@ -2383,7 +4949,7 @@ describe("Kaji workflow contracts", () => {
     const { workflow } = readWorkflow("kaji.publish.yml");
     const supplyChain = workflow.jobs?.["supply-chain"];
     expect(supplyChain?.if).toBe(
-      "${{ always() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' }}",
+      "${{ github.run_attempt == 1 && !cancelled() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.typescript-onboarding-evidence.result == 'success' && needs.keyed-proof.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}",
     );
     const steps = supplyChain?.steps ?? [];
     const compatibilityDownloads = steps.filter((step) =>
@@ -2392,14 +4958,38 @@ describe("Kaji workflow contracts", () => {
     expect(compatibilityDownloads.map((step) => step.with?.name)).toEqual([
       "kaji-python-compat-3.11",
       "kaji-python-compat-3.14",
-      "kaji-node-compat-22",
-      "kaji-node-compat-24",
+    ]);
+    expect(
+      steps
+        .filter((step) =>
+          String(step.with?.["artifact-ids"] ?? "").includes(
+            "typescript-onboarding-evidence.outputs.node",
+          ),
+        )
+        .map((step) => step.with?.["artifact-ids"]),
+    ).toEqual([
+      "${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}",
+      "${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}",
     ]);
     const rename = steps.find((step) => step.name === "Uniquely name final compatibility receipts");
     expect(rename?.run).toContain("compat-python-3.11.json");
     expect(rename?.run).toContain("compat-python-3.14.json");
     expect(rename?.run).toContain("compat-node-22.json");
     expect(rename?.run).toContain("compat-node-24.json");
+    const sourceProofCheck = workflowStep(
+      supplyChain!,
+      "Revalidate current signed-source proof identity",
+    );
+    const sourceProofDownload = workflowStep(
+      supplyChain!,
+      "Download authenticated signed-source proof by exact ID",
+    );
+    expect(sourceProofCheck.env?.SOURCE_PROOF_ACTION_DIGEST).toBe(
+      "${{ needs.offline-gates.outputs.source-proof-artifact-digest }}",
+    );
+    expect(sourceProofCheck.run).toContain('.name == "kaji-authorized-rehearsal-source"');
+    expect(sourceProofCheck.run).toContain(".digest == $digest");
+    expect(steps.indexOf(sourceProofCheck)).toBeLessThan(steps.indexOf(sourceProofDownload));
 
     const validateIndex = steps.findIndex((step) =>
       step.run?.includes("kaji/scripts/validate_release_evidence.py"),
@@ -2413,6 +5003,16 @@ describe("Kaji workflow contracts", () => {
     for (const flag of [
       "--release-artifact-id",
       "--release-artifact-digest",
+      "--mode publish",
+      "--producer-archive",
+      "--node22-source-archive",
+      "--node24-source-archive",
+      "--node22-source-artifact-id",
+      "--node22-source-artifact-digest",
+      "--node24-source-artifact-id",
+      "--node24-source-artifact-digest",
+      "--onboarding-status",
+      "--onboarding-evidence",
       "--workflow-run",
       "--workflow-run-attempt",
       "--python-compat-311",
@@ -2424,12 +5024,38 @@ describe("Kaji workflow contracts", () => {
       "--soak-results",
       "--performance-image-data",
       "--provider-evidence",
-      "--tthw-status",
-      "--tthw-evidence",
+      "--authorization-sha256",
+      "--rehearsal-run-id",
+      "--rehearsal-run-attempt",
+      "--rehearsal-workflow-path",
+      "--rehearsal-workflow-sha",
+      "--signed-candidate-archive",
+      "--signed-candidate-artifact-id",
+      "--signed-candidate-artifact-digest",
+      "--signed-evidence-archive",
+      "--signed-evidence-artifact-id",
+      "--signed-evidence-artifact-digest",
+      "--signed-node22-source-artifact-id",
+      "--signed-node22-source-artifact-digest",
+      "--signed-node24-source-artifact-id",
+      "--signed-node24-source-artifact-digest",
+      "--signed-release-manifest-sha256",
+      "--signed-npm-tarball-name",
+      "--signed-npm-tarball-sha256",
+      "--signed-npm-tarball",
+      "--rebuilt-npm-tarball",
       "--workspace",
       "--output",
     ]) {
       expect(validation).toContain(flag);
+    }
+    for (const binding of [
+      '--signed-node22-source-artifact-id "${{ needs.offline-gates.outputs.signed-node22-artifact-id }}"',
+      '--signed-node22-source-artifact-digest "${{ needs.offline-gates.outputs.signed-node22-artifact-digest }}"',
+      '--signed-node24-source-artifact-id "${{ needs.offline-gates.outputs.signed-node24-artifact-id }}"',
+      '--signed-node24-source-artifact-digest "${{ needs.offline-gates.outputs.signed-node24-artifact-digest }}"',
+    ]) {
+      expect(validation).toContain(binding);
     }
     const subjectPaths = String(steps[attestIndex]?.with?.["subject-path"] ?? "");
     for (const filename of [
@@ -2447,16 +5073,38 @@ describe("Kaji workflow contracts", () => {
     const attach = releaseEvidence.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     );
-    for (const filename of [
-      "compat-python-3.11.json",
-      "compat-python-3.14.json",
-      "compat-node-22.json",
-      "compat-node-24.json",
-      "performance-imagedata.json",
-      "release-evidence-validation.json",
-    ]) {
-      expect(attach?.run).toContain(filename);
-    }
+    const attachedPaths = (attach?.run?.match(/\.artifacts\/[^\s]+/gu) ?? []).map((path) =>
+      path.replace(/\s+$/u, ""),
+    );
+    expect(attachedPaths).toEqual([
+      ".artifacts/kaji-release/kaji-sdk-0.2.0-beta.9.tgz",
+      ".artifacts/kaji-release/manifest.json",
+      ".artifacts/kaji-release/SHA256SUMS",
+      ".artifacts/kaji-evidence/offline-gates.log",
+      ".artifacts/kaji-evidence/offline-gate-summary.json",
+      ".artifacts/kaji-evidence/provider-evidence.json",
+      ".artifacts/kaji-evidence/typescript-onboarding/status.json",
+      ".artifacts/kaji-evidence/typescript-onboarding/validation.log",
+      ".artifacts/kaji-evidence/typescript-onboarding/typescript-onboarding-evidence.json",
+      ".artifacts/kaji-evidence/paired-benchmark-results.json",
+      ".artifacts/kaji-evidence/soak-results.json",
+      ".artifacts/kaji-evidence/performance-status.json",
+      ".artifacts/kaji-evidence/performance-imagedata.json",
+      ".artifacts/kaji-evidence/compat-python-3.11.json",
+      ".artifacts/kaji-evidence/compat-python-3.14.json",
+      ".artifacts/kaji-evidence/compat-node-22.json",
+      ".artifacts/kaji-evidence/compat-node-24.json",
+      ".artifacts/kaji-evidence/release-evidence-validation.json",
+      ".artifacts/kaji-evidence/sbom.spdx.json",
+      ".artifacts/kaji-evidence/provenance.bundle.jsonl",
+      ".artifacts/kaji-evidence/provenance.json",
+      ".artifacts/kaji-publication-status/registry-verification.json",
+      ".artifacts/kaji-publication-status/publication-status.json",
+      ".artifacts/kaji-publication-status/publication-status.md",
+      ".artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.9.tgz",
+      ".artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.9.tgz.github-attestation.json",
+      ".artifacts/kaji-publication-status/downloaded/npm-signature-audit.json",
+    ]);
   });
 
   it("sets up frozen Python dependencies before central evidence validation", () => {
@@ -2523,9 +5171,10 @@ describe("Kaji workflow contracts", () => {
 
     const shared = readWorkflow("kaji.performance.yml").workflow;
     for (const jobId of ["paired-replica", "soak"] as const) {
-      const job = shared.jobs?.[jobId]!;
-      expect(job["runs-on"], jobId).toBe("macos-15");
-      const environment = effectiveEnvironment(shared, job);
+      const job = shared.jobs?.[jobId];
+      expect(job, jobId).toBeDefined();
+      expect(job?.["runs-on"], jobId).toBe("macos-15");
+      const environment = effectiveEnvironment(shared, job!);
       expect(environment.KAJI_BENCHMARK_PINNED_RUNNER, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST, jobId).toBeUndefined();
       expect(environment.KAJI_BENCHMARK_RUNNER_MANIFEST_SHA256, jobId).toBeUndefined();

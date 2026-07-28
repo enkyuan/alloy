@@ -53,23 +53,35 @@ sequence. TypeScript tests pack the npm tarball, validate the scaffold's exact
 SDK version and peer ranges, substitute that local tarball, then use separate
 clean npm and Bun projects.
 
-Packed TypeScript consumers compile with TypeScript 5.7.3 and the current 6.x
-compiler with `skipLibCheck: false`. Runtime support is a separate Node 22 and
-Node 24 matrix; compiler support does not imply other Node versions.
+Packed TypeScript consumers compile with TypeScript 5.7.3 and 6.0.3 with
+`skipLibCheck: false`. Protected runtime onboarding is limited to two
+GitHub-hosted Linux/x64 cells: Node 22 on `ubuntu-22.04` and Node 24 on
+`ubuntu-24.04`, each using npm and Bun. This evidence makes no broader runtime
+or platform claim, including for other Node versions, macOS/arm64, Windows, or
+fully offline dependency installation.
 
 Release child processes use the bounded release-operator runner. Its tested
 POSIX process-group cleanup requires macOS or Linux. That operator constraint
-does not narrow the SDK runtime platforms declared by package metadata.
+is separate from protected onboarding and does not establish another SDK
+runtime platform.
 
 ## Protected evidence
 
 OpenAI requires a real normalized tool loop in Python and TypeScript on the
 exact commit. A missing `OPENAI_API_KEY` is a blocking failure, not a skip.
 Anthropic and the other experimental/WIP providers are not beta publication
-proof. The exact-commit five-user TTHW protocol lives in
-`kaji/contracts/release/tthw-evidence-v1.schema.json`. Follow the
-[TTHW evidence operator guide](tthw-evidence.md) for the exact no-source
-Python, npm, and Bun paths, candidate-bound receipt generation, arm64 macOS
-version capture, Echo lifecycle assertions, and atomic composition command.
-Until five real runs are retained and validated, human TTHW remains
-**unmeasured**.
+proof.
+
+TypeScript onboarding evidence is derived from the exact current-run tarball
+and raw producer/Node-compatibility archives. It requires npm and Bun install,
+scaffold, no-key, deterministic Echo lifecycle, cold, and warm phases in two
+GitHub-hosted Linux/x64 cells: Node 22 on `ubuntu-22.04` and Node 24 on
+`ubuntu-24.04`. See the
+[TypeScript onboarding evidence contract](typescript-onboarding-evidence.md).
+This automated evidence does not claim human usability measurements,
+macOS/arm64 or Windows onboarding, or fully offline dependency installation.
+
+The paired benchmark and 30-minute soak remain separate required
+GitHub-hosted macOS/arm64 evidence. Keyed provider proof and the final npm
+publisher each retain their distinct protected-environment reviewer boundary.
+PyPI publication is deferred.

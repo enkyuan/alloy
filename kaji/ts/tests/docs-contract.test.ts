@@ -142,8 +142,12 @@ describe("cross-SDK release matrix docs", () => {
       "event-delivery:typescript",
       "ts",
     );
-    const tthw = snippet(read("docs/kaji/tthw-evidence.md"), "tthw-echo:typescript", "ts");
-    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-tthw-"));
+    const onboarding = snippet(
+      read("docs/kaji/typescript-onboarding-evidence.md"),
+      "tthw-echo:typescript",
+      "ts",
+    );
+    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-onboarding-"));
     try {
       mkdirSync(resolve(workdir, "echo"));
       copyFileSync(
@@ -152,7 +156,7 @@ describe("cross-SDK release matrix docs", () => {
       );
       writeFileSync(resolve(workdir, "getting-started.mts"), gettingStarted);
       writeFileSync(resolve(workdir, "event-delivery.mts"), eventDelivery);
-      writeFileSync(resolve(workdir, "echo-loop.mts"), tthw);
+      writeFileSync(resolve(workdir, "echo-loop.mts"), onboarding);
       const environment = tokenFreeEnvironment();
       const noKey = execFileSync("bun", ["getting-started.mts"], {
         cwd: workdir,
@@ -176,6 +180,55 @@ describe("cross-SDK release matrix docs", () => {
       rmSync(workdir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("limits automated onboarding claims to the two protected Linux cells", () => {
+    const guide = read("docs/kaji/typescript-onboarding-evidence.md");
+    const normalizedGuide = guide.replace(/\s+/gu, " ");
+    const activeDocs = [
+      guide,
+      read("docs/kaji/testing.md"),
+      read("docs/kaji/README.md"),
+      read("kaji/RELEASE_MATRIX.md"),
+      read("SUPPORT.md"),
+    ].join("\n");
+
+    for (const required of [
+      "GitHub-hosted Linux/x64",
+      "Node 22",
+      "`ubuntu-22.04`",
+      "Node 24",
+      "`ubuntu-24.04`",
+      "npm and Bun",
+      "scaffold",
+      "no-key",
+      "Echo",
+      "cold",
+      "warm",
+    ]) {
+      expect(activeDocs).toContain(required);
+    }
+
+    for (const excludedClaim of [
+      "five-user TTHW",
+      "five human participants",
+      "arm64 macOS users",
+      "human TTHW remains",
+      "validated TTHW regressions",
+      "KAJI_TTHW_EVIDENCE_JSON",
+      "approve_tthw_gate.py",
+    ]) {
+      expect(activeDocs).not.toContain(excludedClaim);
+    }
+
+    for (const explicitLimit of [
+      "not a five-human measurement",
+      "not a macOS or arm64 onboarding claim",
+      "not a Windows onboarding claim",
+      "not a fully offline dependency-installation claim",
+    ]) {
+      expect(normalizedGuide).toContain(explicitLimit);
+    }
+  });
 
   it("defines privileged journal recovery and disposal boundaries", () => {
     const readme = read("kaji/ts/README.md");

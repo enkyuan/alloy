@@ -328,8 +328,12 @@ KAJI_RELEASE_COMMIT=<40-character-commit> KAJI_RUN_KEYED_LIVE=1 \
 uv run --project kaji python kaji/scripts/beta_release_check.py
 ```
 
-The protected `kaji-beta` workflow is authoritative release evidence; the
-single-provider command above is only a local paid smoke test.
+The protected rehearsal and publish workflows are authoritative release
+evidence. Their required-reviewer environments are purpose-specific:
+`kaji-beta-onboarding` protects deterministic TypeScript onboarding,
+`kaji-beta` protects keyed OpenAI proof, and `kaji-beta-publish` protects
+publisher identity and the sole npm write. The single-provider command above
+is only a local paid smoke test.
 
 ## Stability tiers
 

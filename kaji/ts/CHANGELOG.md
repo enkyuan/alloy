@@ -5,17 +5,37 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.9] - 2026-07-27
+
+- Replaced the retired five-participant onboarding policy with deterministic,
+  exact-artifact npm and Bun install, scaffold, no-key, Echo lifecycle, cold,
+  and warm proof on GitHub-hosted Linux/x64: Node 22 on `ubuntu-22.04` and
+  Node 24 on `ubuntu-24.04`.
+- Kept the claim scoped to those automated cells; it does not assert
+  five-human, macOS/arm64, Windows, or fully offline dependency-installation
+  onboarding.
+- Kept the `1.20` threshold, five paired samples, three-replica unanimity,
+  Python `toolBatch100` measurement floor, separate GitHub-hosted macOS/arm64
+  performance and soak receipts, keyed provider proof, artifact binding, and
+  every protected approval gate unchanged.
+- Bound release, installed-runtime, evidence, provenance, and registry-byte
+  verification to the new beta.9 identity. Publication remains npm-only;
+  Python `0.2.0b1` is evidence-only and PyPI publication remains deferred.
+
 ## [0.2.0-beta.8] - 2026-07-27
 
-- Advanced the npm candidate after beta.7 failed closed on an inconclusive
-  protected Python timing aggregate while keeping Python publication deferred.
-- Kept the `1.20` threshold, five paired samples, three-replica unanimity,
-  artifact binding, and every protected approval gate unchanged.
-- Raised only Python `toolBatch100` from 64 to 256 cumulative repetitions so
-  each matched sample has a longer measurement window against runner variance.
-- Bound release, installed-runtime, evidence, provenance, and registry-byte
-  verification to the new beta.8 identity. Python `0.2.0b1` remains
-  evidence-only and absent from PyPI.
+- Signed tag `kaji-v0.2.0-beta.8` triggered protected run `30296132900` at
+  `4dd04a1cf74927c4b3de31a1bd1db54a7b7c7a4e` passed exact tag and artifact
+  verification, compatibility, all three paired replicas and their aggregate,
+  and the 30-minute soak.
+- It failed closed because `KAJI_TTHW_EVIDENCE_JSON` was empty when the
+  protected environment was approved, so five-user TTHW validation did not
+  start.
+- Provider proof, registry and publisher preflight, and npm publication were
+  skipped. npm and PyPI remained absent; the tag, artifacts, and receipts are
+  immutable incident history and cannot be reused for beta.9.
+- Obsolete same-commit rehearsal `30291287818` is terminal cancelled and
+  cannot be reused as beta.9 evidence.
 
 ## [0.2.0-beta.7] - 2026-07-26
 

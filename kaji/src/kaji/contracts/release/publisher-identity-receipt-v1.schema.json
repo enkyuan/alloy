@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/release/publisher-identity-receipt-v1.schema.json",
+  "title": "Kaji npm publisher identity receipt v1",
+  "description": "Closed, redaction-safe evidence for the protected npm publisher identity step. A raw receipt exists only when the publish job starts; no-job outcomes are represented separately as not_run publication status.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commit",
+    "tag",
+    "workflowRun",
+    "workflowRunAttempt",
+    "workflowPath",
+    "workflowSha",
+    "expectedPublisher",
+    "actualPublisher",
+    "conclusion",
+    "exitCode",
+    "failureCode"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "commit": {
+      "$ref": "#/$defs/commit"
+    },
+    "tag": {
+      "const": "kaji-v0.2.0-beta.9"
+    },
+    "workflowRun": {
+      "$ref": "#/$defs/workflowRun"
+    },
+    "workflowRunAttempt": {
+      "const": 1
+    },
+    "workflowPath": {
+      "const": ".github/workflows/kaji.publish.yml"
+    },
+    "workflowSha": {
+      "$ref": "#/$defs/commit"
+    },
+    "expectedPublisher": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "actualPublisher": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conclusion": {
+      "enum": [
+        "passed",
+        "failed"
+      ]
+    },
+    "exitCode": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/exitCode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "failureCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "identity_check_incomplete",
+            "expected_publisher_missing",
+            "expected_publisher_invalid",
+            "token_missing",
+            "npm_whoami_failed",
+            "npm_whoami_output_invalid",
+            "publisher_mismatch"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/passed"
+    },
+    {
+      "$ref": "#/$defs/identityCheckIncomplete"
+    },
+    {
+      "$ref": "#/$defs/expectedPublisherMissing"
+    },
+    {
+      "$ref": "#/$defs/expectedPublisherInvalid"
+    },
+    {
+      "$ref": "#/$defs/tokenMissing"
+    },
+    {
+      "$ref": "#/$defs/npmWhoamiFailed"
+    },
+    {
+      "$ref": "#/$defs/npmWhoamiOutputInvalid"
+    },
+    {
+      "$ref": "#/$defs/publisherMismatch"
+    }
+  ],
+  "$defs": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "workflowRun": {
+      "type": "string",
+      "pattern": "^https://github\\.com/enkyuan/alloy/actions/runs/[1-9][0-9]{0,15}$"
+    },
+    "npmIdentity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "allOf": [
+        {
+          "not": {
+            "pattern": "^(?:npm_|github_pat_|gh[oprsu]_)"
+          }
+        },
+        {
+          "not": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        }
+      ]
+    },
+    "exitCode": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "passed": {
+      "properties": {
+        "expectedPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "actualPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "conclusion": {
+          "const": "passed"
+        },
+        "exitCode": {
+          "const": 0
+        },
+        "failureCode": {
+          "type": "null"
+        }
+      }
+    },
+    "identityCheckIncomplete": {
+      "properties": {
+        "expectedPublisher": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/npmIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "type": "null"
+        },
+        "failureCode": {
+          "const": "identity_check_incomplete"
+        }
+      }
+    },
+    "expectedPublisherMissing": {
+      "properties": {
+        "expectedPublisher": {
+          "type": "null"
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "const": 1
+        },
+        "failureCode": {
+          "const": "expected_publisher_missing"
+        }
+      }
+    },
+    "expectedPublisherInvalid": {
+      "properties": {
+        "expectedPublisher": {
+          "type": "null"
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "const": 1
+        },
+        "failureCode": {
+          "const": "expected_publisher_invalid"
+        }
+      }
+    },
+    "tokenMissing": {
+      "properties": {
+        "expectedPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "const": 1
+        },
+        "failureCode": {
+          "const": "token_missing"
+        }
+      }
+    },
+    "npmWhoamiFailed": {
+      "properties": {
+        "expectedPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "failureCode": {
+          "const": "npm_whoami_failed"
+        }
+      }
+    },
+    "npmWhoamiOutputInvalid": {
+      "properties": {
+        "expectedPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "actualPublisher": {
+          "type": "null"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "const": 1
+        },
+        "failureCode": {
+          "const": "npm_whoami_output_invalid"
+        }
+      }
+    },
+    "publisherMismatch": {
+      "properties": {
+        "expectedPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "actualPublisher": {
+          "$ref": "#/$defs/npmIdentity"
+        },
+        "conclusion": {
+          "const": "failed"
+        },
+        "exitCode": {
+          "const": 1
+        },
+        "failureCode": {
+          "const": "publisher_mismatch"
+        }
+      }
+    }
+  }
+}

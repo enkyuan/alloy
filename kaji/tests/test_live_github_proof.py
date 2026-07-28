@@ -125,11 +125,11 @@ def _compatibility_receipt(
     return {
         **common,
         "artifactSha256": {
-            "kaji-sdk-0.2.0-beta.8.tgz": "3" * 64,
+            "kaji-sdk-0.2.0-beta.9.tgz": "3" * 64,
         },
         "runtime": {"version": "v22.14.0"},
         "artifacts": {
-            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+            "tarball": "/artifacts/kaji-sdk-0.2.0-beta.9.tgz",
             "package": "/tmp/installed/node_modules/kaji-sdk",
         },
     }
@@ -152,11 +152,11 @@ def _release(tmp_path: Path) -> VerifiedReleaseArtifacts:
         manifest_sha256=MANIFEST,
         python_wheel=tmp_path / "artifacts/kaji_sdk-0.2.0b1-py3-none-any.whl",
         python_sdist=tmp_path / "artifacts/kaji_sdk-0.2.0b1.tar.gz",
-        npm_tarball=tmp_path / "artifacts/kaji-sdk-0.2.0-beta.8.tgz",
+        npm_tarball=tmp_path / "artifacts/kaji-sdk-0.2.0-beta.9.tgz",
         artifact_sha256={
             "kaji_sdk-0.2.0b1-py3-none-any.whl": "1" * 64,
             "kaji_sdk-0.2.0b1.tar.gz": "2" * 64,
-            "kaji-sdk-0.2.0-beta.8.tgz": "3" * 64,
+            "kaji-sdk-0.2.0-beta.9.tgz": "3" * 64,
         },
     )
 
@@ -917,7 +917,7 @@ def _runtime_identity() -> dict[str, Any]:
                 "sha256": "1" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.8.tgz",
+                "file": "kaji-sdk-0.2.0-beta.9.tgz",
                 "sha256": "3" * 64,
             },
         },

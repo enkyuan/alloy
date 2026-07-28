@@ -1,5 +1,5 @@
 name: Verify immutable Kaji beta tag
-description: Reverify the annotated tag object, signature, and peeled direct commit.
+description: Reverify the signed authorization, exact rehearsal, and source artifacts.
 inputs:
   token:
     description: Read-only GitHub token
@@ -16,6 +16,48 @@ inputs:
   tagger_email:
     description: Repository-approved signed tagger email
     required: true
+  authorization_sha256:
+    description: SHA-256 of the exact signed authorization body including its LF
+    required: true
+  rehearsal_run_id:
+    description: Exact authorized rehearsal run ID
+    required: true
+  rehearsal_run_attempt:
+    description: Exact authorized rehearsal run attempt
+    required: true
+  rehearsal_workflow_path:
+    description: Exact authorized rehearsal workflow path
+    required: true
+  rehearsal_workflow_sha:
+    description: Exact authorized rehearsal workflow SHA
+    required: true
+  candidate_artifact_id:
+    description: Exact authorized candidate artifact ID
+    required: true
+  candidate_artifact_name:
+    description: Exact authorized candidate artifact name
+    required: true
+  candidate_artifact_digest:
+    description: Exact authorized candidate artifact REST digest
+    required: true
+  evidence_artifact_id:
+    description: Exact authorized evidence artifact ID
+    required: true
+  evidence_artifact_name:
+    description: Exact authorized evidence artifact name
+    required: true
+  evidence_artifact_digest:
+    description: Exact authorized evidence artifact REST digest
+    required: true
+  release_manifest_sha256:
+    description: Exact authorized release manifest SHA-256
+    required: true
+  npm_tarball_name:
+    description: Exact authorized npm tarball basename
+    required: true
+  npm_tarball_sha256:
+    description: Exact authorized npm tarball SHA-256
+    required: true
 runs:
   using: composite
   steps:
@@ -26,33 +68,319 @@ runs:
         EXPECTED_TAG_OBJECT: ${{ inputs.tag_object }}
         EXPECTED_COMMIT: ${{ inputs.commit }}
         EXPECTED_TAGGER_EMAIL: ${{ inputs.tagger_email }}
+        EXPECTED_AUTHORIZATION_SHA256: ${{ inputs.authorization_sha256 }}
+        EXPECTED_REHEARSAL_RUN_ID: ${{ inputs.rehearsal_run_id }}
+        EXPECTED_REHEARSAL_RUN_ATTEMPT: ${{ inputs.rehearsal_run_attempt }}
+        EXPECTED_REHEARSAL_WORKFLOW_PATH: ${{ inputs.rehearsal_workflow_path }}
+        EXPECTED_REHEARSAL_WORKFLOW_SHA: ${{ inputs.rehearsal_workflow_sha }}
+        EXPECTED_CANDIDATE_ARTIFACT_ID: ${{ inputs.candidate_artifact_id }}
+        EXPECTED_CANDIDATE_ARTIFACT_NAME: ${{ inputs.candidate_artifact_name }}
+        EXPECTED_CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.candidate_artifact_digest }}
+        EXPECTED_EVIDENCE_ARTIFACT_ID: ${{ inputs.evidence_artifact_id }}
+        EXPECTED_EVIDENCE_ARTIFACT_NAME: ${{ inputs.evidence_artifact_name }}
+        EXPECTED_EVIDENCE_ARTIFACT_DIGEST: ${{ inputs.evidence_artifact_digest }}
+        EXPECTED_RELEASE_MANIFEST_SHA256: ${{ inputs.release_manifest_sha256 }}
+        EXPECTED_NPM_TARBALL_NAME: ${{ inputs.npm_tarball_name }}
+        EXPECTED_NPM_TARBALL_SHA256: ${{ inputs.npm_tarball_sha256 }}
       run: |
         set -euo pipefail
-        test -n "$EXPECTED_TAGGER_EMAIL" || {
-          echo "Approved beta tagger email is not configured." >&2
-          exit 1
+        umask 077
+        [ "$GITHUB_REPOSITORY" = enkyuan/alloy ]
+        [ "$EXPECTED_TAG" = kaji-v0.2.0-beta.9 ]
+        [ "$EXPECTED_REHEARSAL_RUN_ATTEMPT" = 1 ]
+        [ "$EXPECTED_REHEARSAL_WORKFLOW_PATH" = .github/workflows/kaji.rehearsal.yml ]
+        [ "$EXPECTED_CANDIDATE_ARTIFACT_NAME" = kaji-beta-artifacts ]
+        [ "$EXPECTED_EVIDENCE_ARTIFACT_NAME" = kaji-release-candidate-evidence ]
+        [ "$EXPECTED_NPM_TARBALL_NAME" = kaji-sdk-0.2.0-beta.9.tgz ]
+        for sha in "$EXPECTED_TAG_OBJECT" "$EXPECTED_COMMIT" "$EXPECTED_REHEARSAL_WORKFLOW_SHA"; do
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+        done
+        for sha256 in "$EXPECTED_AUTHORIZATION_SHA256" \
+          "$EXPECTED_RELEASE_MANIFEST_SHA256" "$EXPECTED_NPM_TARBALL_SHA256"; do
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
+        done
+        for digest in "$EXPECTED_CANDIDATE_ARTIFACT_DIGEST" \
+          "$EXPECTED_EVIDENCE_ARTIFACT_DIGEST"; do
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+        done
+        for id in "$EXPECTED_REHEARSAL_RUN_ID" "$EXPECTED_CANDIDATE_ARTIFACT_ID" \
+          "$EXPECTED_EVIDENCE_ARTIFACT_ID"; do
+          [[ "$id" =~ ^[1-9][0-9]*$ ]]
+          [ "$id" -le 9007199254740991 ]
+        done
+        [ "$EXPECTED_CANDIDATE_ARTIFACT_ID" != "$EXPECTED_EVIDENCE_ARTIFACT_ID" ]
+        [ -n "$EXPECTED_TAGGER_EMAIL" ]
+
+        root="$(mktemp -d)"
+        cleanup() {
+          rm -f -- \
+            "$root/ref.json" \
+            "$root/tag.json" \
+            "$root/run.json" \
+            "$root/candidate.json" \
+            "$root/evidence.json"
+          rmdir -- "$root"
         }
-        ref_json="$(mktemp)"
-        tag_json="$(mktemp)"
-        trap 'rm -f "$ref_json" "$tag_json"' EXIT
-        timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$EXPECTED_TAG" >"$ref_json"
-        jq --exit-status \
-          --arg object "$EXPECTED_TAG_OBJECT" \
-          '.object.type == "tag" and .object.sha == $object' \
-          "$ref_json" >/dev/null || {
-            echo "Annotated beta tag object changed before release mutation." >&2
-            exit 1
+        trap cleanup EXIT
+        api() {
+          timeout 30s gh api \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$@"
+        }
+        api "repos/$GITHUB_REPOSITORY/git/ref/tags/$EXPECTED_TAG" >"$root/ref.json"
+        api "repos/$GITHUB_REPOSITORY/git/tags/$EXPECTED_TAG_OBJECT" >"$root/tag.json"
+
+        node - "$root" <<'NODE'
+        const { createHash } = require("node:crypto");
+        const { readFileSync } = require("node:fs");
+        const { join } = require("node:path");
+
+        const fail = () => {
+          throw new Error("signed beta authorization reverification failed");
+        };
+        const required = (name) => {
+          const value = process.env[name];
+          if (typeof value !== "string" || value.length === 0) fail();
+          return value;
+        };
+        const positiveSafeInteger = (value) =>
+          Number.isSafeInteger(value) && value > 0;
+        const exactKeys = (value, keys) =>
+          value !== null &&
+          typeof value === "object" &&
+          !Array.isArray(value) &&
+          JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...keys].sort());
+        const canonicalize = (value) => {
+          if (value === null || typeof value === "string" || typeof value === "boolean") {
+            return JSON.stringify(value);
           }
-        timeout 30s gh api "repos/$GITHUB_REPOSITORY/git/tags/$EXPECTED_TAG_OBJECT" >"$tag_json"
-        jq --exit-status \
-          --arg commit "$EXPECTED_COMMIT" \
-          --arg tag "$EXPECTED_TAG" \
-          --arg tagger "$EXPECTED_TAGGER_EMAIL" \
-          '.verification.verified == true and .verification.reason == "valid" and
-           .tag == $tag and
-           .tagger.email == $tagger and
-           .object.type == "commit" and .object.sha == $commit' \
-          "$tag_json" >/dev/null || {
-            echo "Beta tag no longer verifies or targets the approved commit directly." >&2
-            exit 1
+          if (typeof value === "number") {
+            if (!Number.isSafeInteger(value)) fail();
+            return JSON.stringify(value);
           }
+          if (Array.isArray(value) || typeof value !== "object") fail();
+          return `{${Object.keys(value)
+            .sort()
+            .map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`)
+            .join(",")}}`;
+        };
+        const load = (name) => JSON.parse(readFileSync(join(process.argv[2], name), "utf8"));
+        const ref = load("ref.json");
+        const tag = load("tag.json");
+
+        const expectedTag = required("EXPECTED_TAG");
+        const expectedTagObject = required("EXPECTED_TAG_OBJECT");
+        const expectedCommit = required("EXPECTED_COMMIT");
+        const expectedTaggerEmail = required("EXPECTED_TAGGER_EMAIL");
+        const verification = tag.verification;
+
+        // Signature verification is deliberately complete before payload interpretation.
+        if (
+          verification === null ||
+          typeof verification !== "object" ||
+          verification.verified !== true ||
+          verification.reason !== "valid" ||
+          typeof verification.signature !== "string" ||
+          verification.signature.length === 0 ||
+          verification.signature.length > 16384 ||
+          typeof verification.payload !== "string" ||
+          verification.payload.length === 0 ||
+          verification.payload.length > 4096
+        ) fail();
+
+        if (
+          ref.ref !== `refs/tags/${expectedTag}` ||
+          ref.url !== `https://api.github.com/repos/enkyuan/alloy/git/refs/tags/${expectedTag}` ||
+          ref.object?.type !== "tag" ||
+          ref.object?.sha !== expectedTagObject ||
+          tag.sha !== expectedTagObject ||
+          tag.url !== `https://api.github.com/repos/enkyuan/alloy/git/tags/${expectedTagObject}` ||
+          tag.tag !== expectedTag ||
+          tag.object?.type !== "commit" ||
+          tag.object?.sha !== expectedCommit ||
+          tag.tagger?.email !== expectedTaggerEmail
+        ) fail();
+
+        const payload = verification.payload;
+        if (
+          Buffer.byteLength(payload, "utf8") > 4096 ||
+          [...payload].some((character) => character.codePointAt(0) > 0x7f) ||
+          payload.includes("\r") ||
+          payload.includes("\0") ||
+          payload.startsWith("\ufeff")
+        ) fail();
+        const separator = payload.indexOf("\n\n");
+        if (separator < 0 || separator !== payload.lastIndexOf("\n\n")) fail();
+        const headers = payload.slice(0, separator).split("\n");
+        const body = payload.slice(separator + 2);
+        if (headers.length !== 4 || !body.endsWith("\n") || body.endsWith("\n\n")) fail();
+        const bodyLine = body.slice(0, -1);
+        if (
+          bodyLine.length === 0 ||
+          bodyLine.includes("\n") ||
+          bodyLine.includes("-----BEGIN SSH SIGNATURE-----") ||
+          Buffer.byteLength(body, "utf8") > 2048
+        ) fail();
+        const objectMatch = /^object ([0-9a-f]{40})$/.exec(headers[0]);
+        const typeMatch = /^type commit$/.exec(headers[1]);
+        const tagMatch = /^tag (kaji-v0\.2\.0-beta\.9)$/.exec(headers[2]);
+        const taggerMatch = /^tagger (.+) <([^<>\n]+)> ([1-9][0-9]*) ([+-])([0-9]{2})([0-9]{2})$/.exec(
+          headers[3],
+        );
+        if (!objectMatch || !typeMatch || !tagMatch || !taggerMatch) fail();
+        const epoch = Number(taggerMatch[3]);
+        const zoneHours = Number(taggerMatch[5]);
+        const zoneMinutes = Number(taggerMatch[6]);
+        if (
+          objectMatch[1] !== expectedCommit ||
+          tagMatch[1] !== expectedTag ||
+          taggerMatch[1] !== tag.tagger?.name ||
+          taggerMatch[2] !== expectedTaggerEmail ||
+          !positiveSafeInteger(epoch) ||
+          zoneHours > 23 ||
+          zoneMinutes > 59 ||
+          new Date(epoch * 1000).toISOString() !== new Date(tag.tagger.date).toISOString()
+        ) fail();
+
+        // JSON.parse occurs only after the verified signature and signed header binding above.
+        const authorization = JSON.parse(bodyLine);
+        if (
+          !exactKeys(authorization, [
+            "candidateArtifact",
+            "commit",
+            "evidenceArtifact",
+            "npmTarball",
+            "rehearsal",
+            "releaseManifestSha256",
+            "schemaVersion",
+          ]) ||
+          !exactKeys(authorization.rehearsal, [
+            "runAttempt",
+            "runId",
+            "workflowPath",
+            "workflowSha",
+          ]) ||
+          !exactKeys(authorization.candidateArtifact, ["digest", "id", "name"]) ||
+          !exactKeys(authorization.evidenceArtifact, ["digest", "id", "name"]) ||
+          !exactKeys(authorization.npmTarball, ["name", "sha256"])
+        ) fail();
+        if (
+          authorization.schemaVersion !== "1.0.0" ||
+          authorization.commit !== expectedCommit ||
+          authorization.rehearsal.runAttempt !== 1 ||
+          authorization.rehearsal.workflowPath !== ".github/workflows/kaji.rehearsal.yml" ||
+          authorization.rehearsal.workflowSha !== expectedCommit ||
+          !positiveSafeInteger(authorization.rehearsal.runId) ||
+          authorization.candidateArtifact.name !== "kaji-beta-artifacts" ||
+          authorization.evidenceArtifact.name !== "kaji-release-candidate-evidence" ||
+          !positiveSafeInteger(authorization.candidateArtifact.id) ||
+          !positiveSafeInteger(authorization.evidenceArtifact.id) ||
+          authorization.candidateArtifact.id === authorization.evidenceArtifact.id ||
+          !/^sha256:[0-9a-f]{64}$/.test(authorization.candidateArtifact.digest) ||
+          !/^sha256:[0-9a-f]{64}$/.test(authorization.evidenceArtifact.digest) ||
+          !/^[0-9a-f]{64}$/.test(authorization.releaseManifestSha256) ||
+          authorization.npmTarball.name !== "kaji-sdk-0.2.0-beta.9.tgz" ||
+          !/^[0-9a-f]{64}$/.test(authorization.npmTarball.sha256)
+        ) fail();
+        if (`${canonicalize(authorization)}\n` !== body) fail();
+        const authorizationSha256 = createHash("sha256").update(body, "ascii").digest("hex");
+        if (
+          authorizationSha256 !== required("EXPECTED_AUTHORIZATION_SHA256") ||
+          String(authorization.rehearsal.runId) !== required("EXPECTED_REHEARSAL_RUN_ID") ||
+          String(authorization.rehearsal.runAttempt) !==
+            required("EXPECTED_REHEARSAL_RUN_ATTEMPT") ||
+          authorization.rehearsal.workflowPath !==
+            required("EXPECTED_REHEARSAL_WORKFLOW_PATH") ||
+          authorization.rehearsal.workflowSha !== required("EXPECTED_REHEARSAL_WORKFLOW_SHA") ||
+          String(authorization.candidateArtifact.id) !==
+            required("EXPECTED_CANDIDATE_ARTIFACT_ID") ||
+          authorization.candidateArtifact.name !==
+            required("EXPECTED_CANDIDATE_ARTIFACT_NAME") ||
+          authorization.candidateArtifact.digest !==
+            required("EXPECTED_CANDIDATE_ARTIFACT_DIGEST") ||
+          String(authorization.evidenceArtifact.id) !==
+            required("EXPECTED_EVIDENCE_ARTIFACT_ID") ||
+          authorization.evidenceArtifact.name !==
+            required("EXPECTED_EVIDENCE_ARTIFACT_NAME") ||
+          authorization.evidenceArtifact.digest !==
+            required("EXPECTED_EVIDENCE_ARTIFACT_DIGEST") ||
+          authorization.releaseManifestSha256 !==
+            required("EXPECTED_RELEASE_MANIFEST_SHA256") ||
+          authorization.npmTarball.name !== required("EXPECTED_NPM_TARBALL_NAME") ||
+          authorization.npmTarball.sha256 !== required("EXPECTED_NPM_TARBALL_SHA256")
+        ) fail();
+        NODE
+
+        api "repos/$GITHUB_REPOSITORY/actions/runs/$EXPECTED_REHEARSAL_RUN_ID" \
+          >"$root/run.json"
+        api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_CANDIDATE_ARTIFACT_ID" \
+          >"$root/candidate.json"
+        api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_EVIDENCE_ARTIFACT_ID" \
+          >"$root/evidence.json"
+
+        node - "$root" <<'NODE'
+        const { readFileSync } = require("node:fs");
+        const { join } = require("node:path");
+
+        const fail = () => {
+          throw new Error("signed beta rehearsal reverification failed");
+        };
+        const required = (name) => {
+          const value = process.env[name];
+          if (typeof value !== "string" || value.length === 0) fail();
+          return value;
+        };
+        const positiveSafeInteger = (value) =>
+          Number.isSafeInteger(value) && value > 0;
+        const load = (name) => JSON.parse(readFileSync(join(process.argv[2], name), "utf8"));
+        const run = load("run.json");
+        const candidate = load("candidate.json");
+        const evidence = load("evidence.json");
+        const expectedCommit = required("EXPECTED_COMMIT");
+        const expectedRunId = Number(required("EXPECTED_REHEARSAL_RUN_ID"));
+        const expectedCandidate = {
+          id: Number(required("EXPECTED_CANDIDATE_ARTIFACT_ID")),
+          name: required("EXPECTED_CANDIDATE_ARTIFACT_NAME"),
+          digest: required("EXPECTED_CANDIDATE_ARTIFACT_DIGEST"),
+        };
+        const expectedEvidence = {
+          id: Number(required("EXPECTED_EVIDENCE_ARTIFACT_ID")),
+          name: required("EXPECTED_EVIDENCE_ARTIFACT_NAME"),
+          digest: required("EXPECTED_EVIDENCE_ARTIFACT_DIGEST"),
+        };
+        if (
+          !positiveSafeInteger(expectedRunId) ||
+          !positiveSafeInteger(expectedCandidate.id) ||
+          !positiveSafeInteger(expectedEvidence.id) ||
+          expectedCandidate.id === expectedEvidence.id
+        ) fail();
+        if (
+          run.id !== expectedRunId ||
+          run.run_attempt !== 1 ||
+          run.event !== "workflow_dispatch" ||
+          run.path !== ".github/workflows/kaji.rehearsal.yml" ||
+          run.head_branch !== "main" ||
+          run.head_sha !== expectedCommit ||
+          run.status !== "completed" ||
+          run.conclusion !== "success"
+        ) fail();
+        const checkArtifact = (artifact, expected) => {
+          if (
+            artifact.id !== expected.id ||
+            artifact.name !== expected.name ||
+            artifact.digest !== expected.digest ||
+            artifact.expired !== false ||
+            !positiveSafeInteger(artifact.size_in_bytes) ||
+            artifact.url !==
+              `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${expected.id}` ||
+            artifact.archive_download_url !==
+              `https://api.github.com/repos/enkyuan/alloy/actions/artifacts/${expected.id}/zip` ||
+            artifact.workflow_run?.id !== expectedRunId ||
+            artifact.workflow_run?.head_branch !== "main" ||
+            artifact.workflow_run?.head_sha !== expectedCommit
+          ) fail();
+        };
+        checkArtifact(candidate, expectedCandidate);
+        checkArtifact(evidence, expectedEvidence);
+        NODE

@@ -185,26 +185,34 @@ exec(
 print("  ok: Getting Started no-key guide")
 
 # ---------------------------------------------------------------------------
-# 7. The installed CLI stages Echo and the exact TTHW block runs unchanged.
+# 7. The installed CLI stages Echo and the canonical onboarding block runs unchanged.
 # ---------------------------------------------------------------------------
-print("\nRunning installed-package TTHW Echo guide...")
+print("\nRunning installed-package onboarding Echo guide...")
 from kaji.cli import main as cli_main  # noqa: E402
 
-tthw_path = Path(__file__).resolve().parents[2] / "docs" / "kaji" / "tthw-evidence.md"
-tthw = marked_snippet(tthw_path, "tthw-echo:python", "python")
-with TemporaryDirectory(prefix="kaji-installed-tthw-") as directory:
+onboarding_path = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "kaji"
+    / "typescript-onboarding-evidence.md"
+)
+onboarding = marked_snippet(onboarding_path, "tthw-echo:python", "python")
+with TemporaryDirectory(prefix="kaji-installed-onboarding-") as directory:
     root = Path(directory)
     if cli_main(["--no-color", "add", "echo", "--out", str(root / "echo")]) != 0:
         print("FAIL: installed CLI could not stage Echo", file=sys.stderr)
         raise SystemExit(1)
     script = root / "echo_loop.py"
-    script.write_text(tthw)
+    script.write_text(onboarding)
     sys.path.insert(0, str(root))
     try:
         with chdir(root):
-            exec(compile(tthw, str(script), "exec"), {"__name__": "__main__"})
+            exec(
+                compile(onboarding, str(onboarding_path), "exec"),
+                {"__name__": "__main__"},
+            )
     finally:
         sys.path.remove(str(root))
-print("  ok: TTHW Echo guide")
+print("  ok: onboarding Echo guide")
 
 print("\nSmoke install: PASSED")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import hashlib
 import importlib.util
 import json
@@ -607,7 +607,7 @@ if name == "uv":
 if name == "npm" and args and args[0] == "pack":
     destination = Path(args[args.index("--pack-destination") + 1])
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "kaji-sdk-0.2.0-beta.8.tgz").write_bytes(b"npm")
+    (destination / "kaji-sdk-0.2.0-beta.9.tgz").write_bytes(b"npm")
 """
     for name in ("bun", "node", "npm", "uv"):
         executable = binaries / name
@@ -801,7 +801,7 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.8.tgz",
+                "file": "kaji-sdk-0.2.0-beta.9.tgz",
                 "sha256": "d" * 64,
             },
         },
@@ -1183,7 +1183,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
                 "private": True,
                 "type": "module",
                 "dependencies": {
-                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.8.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.9.tgz",
                     "zod": "4.4.3",
                 },
             }
@@ -1197,13 +1197,13 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
             "": {
                 "name": "kaji-installed-release-runtime",
                 "dependencies": {
-                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.8.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.9.tgz",
                     "zod": "4.4.3",
                 },
             },
             "node_modules/kaji-sdk": {
-                "version": "0.2.0-beta.8",
-                "resolved": "file:kaji-sdk-0.2.0-beta.8.tgz",
+                "version": "0.2.0-beta.9",
+                "resolved": "file:kaji-sdk-0.2.0-beta.9.tgz",
                 "integrity": "sha512-template",
             },
             "node_modules/zod": {
@@ -1214,7 +1214,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         },
     }
     lock.write_text(json.dumps(template))
-    tarball = tmp_path / "kaji-sdk-0.2.0-beta.8.tgz"
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.9.tgz"
     tarball.write_bytes(b"verified tarball bytes")
     consumer = tmp_path / "consumer"
     consumer.mkdir()
@@ -1247,7 +1247,7 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
     assert lock["lockfileVersion"] == 3
     assert lock["packages"][""]["dependencies"] == manifest["dependencies"]
     assert lock["packages"]["node_modules/kaji-sdk"]["resolved"] == (
-        "file:kaji-sdk-0.2.0-beta.8.tgz"
+        "file:kaji-sdk-0.2.0-beta.9.tgz"
     )
     for name, package in lock["packages"].items():
         if not name or name == "node_modules/kaji-sdk":
@@ -1378,7 +1378,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     module = _load_root_script("installed_release_runtime.py")
     wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     sdist = tmp_path / "kaji_sdk-0.2.0b1.tar.gz"
-    tarball = tmp_path / "kaji-sdk-0.2.0-beta.8.tgz"
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.9.tgz"
     for path in (wheel, sdist, tarball):
         path.write_bytes(b"artifact")
 
@@ -2588,6 +2588,108 @@ def _complete_benchmark_baseline(module: object) -> dict[str, Any]:
     }
 
 
+def test_calibration_artifact_a_is_auditable_but_applicability_uses_fingerprint() -> (
+    None
+):
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline = _complete_benchmark_baseline(module)
+    baseline.update(
+        {
+            "commit": "a" * 40,
+            "releaseManifestSha256": "b" * 64,
+            "artifacts": {"python": {"sha256": "c" * 64}},
+        }
+    )
+    candidate_b_fingerprint = module._baseline_fingerprint(baseline)
+
+    module._validate_baseline(baseline, candidate_b_fingerprint)
+
+    assert baseline["calibrationCommit"] == "a" * 40
+    assert baseline["releaseManifestSha256"] == "b" * 64
+    assert "commit" not in candidate_b_fingerprint
+    assert "releaseManifestSha256" not in candidate_b_fingerprint
+
+
+def test_full_candidate_b_report_uses_b_artifacts_not_calibration_a(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_root_script("beta_benchmark_gate.py")
+    baseline_a = _complete_benchmark_baseline(module)
+    baseline_a.update(
+        {
+            "commit": "a" * 40,
+            "releaseManifestSha256": "b" * 64,
+            "artifacts": {"python": {"sha256": "c" * 64}},
+        }
+    )
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps(baseline_a))
+    output = tmp_path / "full.json"
+    commit_b = "f" * 40
+    manifest_b = "1" * 64
+    identity_b = {
+        "commit": commit_b,
+        "releaseManifestSha256": manifest_b,
+        "artifacts": {
+            "python": {"sha256": "2" * 64},
+            "typescript": {"sha256": "3" * 64},
+        },
+        "resolvedPackages": {
+            "python": "/candidate-b/python",
+            "typescript": "/candidate-b/typescript",
+        },
+        "typescriptConsumerLock": {
+            "templateSha256": "4" * 64,
+            "renderedSha256": "5" * 64,
+        },
+    }
+    current = module._baseline_fingerprint(baseline_a)
+    result = {
+        "medianMs": 3.0,
+        "maxPeakMiB": 95.0,
+        "sampleResults": [
+            {"durationMs": float(index), "peakMiB": 90.0 + index}
+            for index in range(1, 6)
+        ],
+    }
+    installed = SimpleNamespace(identity=lambda: identity_b)
+    monkeypatch.setattr(module, "BASELINE_PATH", baseline_path)
+    monkeypatch.setattr(
+        module,
+        "_parse_args",
+        lambda: module.argparse.Namespace(
+            mode="full",
+            output=output,
+            candidate_baseline=None,
+            protected=True,
+            artifacts_dir=tmp_path / "candidate-b",
+            expected_commit=commit_b,
+        ),
+    )
+    monkeypatch.setattr(
+        module,
+        "performance_provenance",
+        lambda **_kwargs: {
+            "commit": commit_b,
+            "fingerprint": current,
+            "protected": True,
+        },
+    )
+    monkeypatch.setattr(
+        module, "_installed_context", lambda _args: nullcontext(installed)
+    )
+    monkeypatch.setattr(module, "_run_case", lambda *_args, **_kwargs: result)
+    monkeypatch.setattr(module, "_absolute_failures", lambda *_args, **_kwargs: [])
+
+    assert module.main() == 0
+
+    report = json.loads(output.read_text())
+    assert report["commit"] == commit_b
+    assert report["releaseManifestSha256"] == manifest_b
+    assert report["artifacts"] == identity_b["artifacts"]
+    assert report["releaseManifestSha256"] != baseline_a["releaseManifestSha256"]
+
+
 @pytest.mark.parametrize("mode", ["quick"])
 def test_beta_benchmark_non_full_modes_do_not_read_baseline(
     monkeypatch: pytest.MonkeyPatch,
@@ -3489,7 +3591,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.8.tgz",
+                "file": "kaji-sdk-0.2.0-beta.9.tgz",
                 "sha256": "d" * 64,
             },
         },
@@ -3761,7 +3863,7 @@ def test_soak_report_reuses_complete_performance_provenance(
                 "sha256": "d" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.8.tgz",
+                "file": "kaji-sdk-0.2.0-beta.9.tgz",
                 "sha256": "e" * 64,
             },
         },

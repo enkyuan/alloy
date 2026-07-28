@@ -2,12 +2,17 @@ name: rehearsal / kaji
 
 on:
   workflow_dispatch:
+    inputs:
+      expected-commit:
+        description: Exact reviewed main commit
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: kaji-beta-rehearsal-0.2.0-beta.8
+  group: kaji-beta-rehearsal-0.2.0-beta.9
   cancel-in-progress: false
 
 jobs:
@@ -19,7 +24,20 @@ jobs:
       artifact-id: ${{ steps.release-artifacts.outputs.artifact-id }}
       artifact-digest: ${{ steps.release-artifacts.outputs.artifact-digest }}
     steps:
+      - name: Bind exact reviewed main commit before execution
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_COMMIT" = "$GITHUB_SHA"
+          test "$GITHUB_RUN_ATTEMPT" = 1
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.expected-commit }}
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
@@ -35,6 +53,8 @@ jobs:
       - name: Run offline release gates and retain the actual summary
         id: offline
         shell: bash
+        env:
+          KAJI_RELEASE_COMMIT: ${{ inputs.expected-commit }}
         run: |
           mkdir -p .artifacts/kaji-offline-evidence
           set +e
@@ -43,7 +63,7 @@ jobs:
           status=$?
           set -e
           jq --null-input \
-            --arg commit "$GITHUB_SHA" \
+            --arg commit "$KAJI_RELEASE_COMMIT" \
             --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
             --argjson exitCode "$status" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
@@ -53,7 +73,7 @@ jobs:
           {
             echo "## Offline Kaji beta rehearsal"
             echo
-            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Commit: \`$KAJI_RELEASE_COMMIT\`"
             echo "- Exit code: \`$status\`"
             echo "- Conclusion: \`$([ "$status" -eq 0 ] && printf passed || printf failed)\`"
           } >>"$GITHUB_STEP_SUMMARY"
@@ -82,7 +102,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/kaji.performance.yml
     with:
-      candidate-commit: ${{ github.sha }}
+      candidate-commit: ${{ inputs.expected-commit }}
       candidate-artifact-id: ${{ needs.offline-release.outputs.artifact-id }}
       candidate-artifact-digest: ${{ needs.offline-release.outputs.artifact-digest }}
 
@@ -92,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_COMMIT: ${{ inputs.expected-commit }}
     strategy:
       fail-fast: false
       matrix:
@@ -120,6 +140,8 @@ jobs:
           if-no-files-found: error
       - id: checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
@@ -219,7 +241,7 @@ jobs:
               index($kind) != null;
             def smoke_phase:
               type == "string" and
-              test("^(npm:pack|node:version|npm:version|bun:version|(npm|bun):audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
+              test("^(npm:pack|node:version|npm:version|bun:version|(npm|bun):audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|installed-artifact-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
             def passed_keys:
               ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
                "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
@@ -348,7 +370,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.8.tgz"] and
+                    keys == ["kaji-sdk-0.2.0-beta.9.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -453,14 +475,22 @@ jobs:
   node-compat:
     name: Node ${{ matrix.node-version }} compatibility
     needs: offline-release
-    runs-on: ubuntu-latest
+    if: ${{ github.run_attempt == 1 }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      actions: read
+      contents: read
     timeout-minutes: 20
     env:
-      EXPECTED_COMMIT: ${{ github.sha }}
+      EXPECTED_COMMIT: ${{ inputs.expected-commit }}
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["22", "24"]
+        include:
+          - node-version: "22"
+            runner: ubuntu-22.04
+          - node-version: "24"
+            runner: ubuntu-24.04
     steps:
       - name: Initialize compatibility receipt before setup
         shell: bash
@@ -472,9 +502,12 @@ jobs:
           jq --null-input \
             --arg commit "$EXPECTED_COMMIT" \
             --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
-            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
-              failureCode: "compatibility_not_completed", runtime: {kind: "node", requestedVersion: $version},
-              releaseManifestSha256: null, artifactSha256: {}, artifacts: {tarball: null, package: null}}' \
+            '{schemaVersion: 2, executionMode: "protected",
+              commit: $commit, conclusion: "not_run",
+              failureCode: "compatibility_not_completed", runtime: {version: null},
+              releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+              githubPackageProofs: {}, onboardingProofs: {},
+              failedPhase: null, failureKind: "unknown"}' \
             >"$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
       - name: Retain initial not-run compatibility receipt
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -484,6 +517,8 @@ jobs:
           if-no-files-found: error
       - id: checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - id: setup_node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -494,11 +529,54 @@ jobs:
           working-directory: kaji/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
+      - name: Resolve exact producer artifact by ID
+        id: resolve_candidate
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          EXPECTED_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
+          EXPECTED_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
+          EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const artifactId = Number(process.env.EXPECTED_ARTIFACT_ID);
+            const expectedDigest = process.env.EXPECTED_ARTIFACT_DIGEST;
+            const expectedCommit = process.env.EXPECTED_COMMIT;
+            if (context.runAttempt !== 1 ||
+                !Number.isSafeInteger(artifactId) || artifactId <= 0 ||
+                !/^[0-9a-f]{64}$/.test(expectedDigest ?? "") ||
+                !/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {
+              throw new Error("producer artifact inputs are invalid");
+            }
+            const { data: artifact } = await github.rest.actions.getArtifact({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              artifact_id: artifactId,
+            });
+            const { data: producerRun } = await github.rest.actions.getWorkflowRunAttempt({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+              attempt_number: 1,
+            });
+            if (artifact.id !== artifactId ||
+                artifact.name !== "kaji-beta-artifacts" ||
+                artifact.digest !== `sha256:${expectedDigest}` ||
+                artifact.expired !== false ||
+                artifact.workflow_run?.id !== context.runId ||
+                artifact.workflow_run?.head_sha !== expectedCommit ||
+                producerRun.id !== context.runId ||
+                producerRun.run_attempt !== 1 ||
+                producerRun.head_sha !== expectedCommit) {
+              throw new Error("producer artifact identity does not match this workflow attempt");
+            }
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-beta-artifacts
+          artifact-ids: ${{ needs.offline-release.outputs.artifact-id }}
           path: .artifacts/kaji-release
+          merge-multiple: true
+          github-token: ${{ github.token }}
       - name: Verify exact candidate artifacts before Node smoke
         id: verify
         run: >-
@@ -511,307 +589,113 @@ jobs:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
           bun kaji/ts/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.8.tgz
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.9.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
+          --protected
+          --expected-node-major "${{ matrix.node-version }}"
+          --configured-runner-label "${{ matrix.runner }}"
+          --producer-artifact-id "${{ needs.offline-release.outputs.artifact-id }}"
+          --producer-artifact-digest "${{ needs.offline-release.outputs.artifact-digest }}"
           --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
-      - name: Normalize compatibility receipt
+      - name: Finalize closed protected Node receipt
+        id: finalize_receipt
         if: ${{ always() }}
         shell: bash
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
-          KAJI_COMPAT_RUNTIME_KIND: node
           KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
+          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-sdk-0.2.0-beta.9.tgz
+          KAJI_COMPAT_RUNNER_LABEL: ${{ matrix.runner }}
+          KAJI_COMPAT_PRODUCER_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
+          KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
           RUNTIME_SETUP_OUTCOME: ${{ steps.setup_node.outcome }}
           DEPENDENCY_SETUP_OUTCOME: ${{ steps.setup_bun.outcome }}
+          LOOKUP_OUTCOME: ${{ steps.resolve_candidate.outcome }}
           DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
           VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
         run: |
           set -euo pipefail
-          mkdir -p "$KAJI_COMPAT_RECEIPT_DIR"
           receipt="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
-          temporary="$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.tmp"
-          if [ "$CHECKOUT_OUTCOME" != success ]; then
-            failure_code=checkout_not_completed
-          elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
-            failure_code=runtime_setup_not_completed
-          elif [ "$DEPENDENCY_SETUP_OUTCOME" != success ]; then
-            failure_code=dependency_setup_not_completed
-          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
-            failure_code=artifact_download_not_completed
-          elif [ "$VERIFICATION_OUTCOME" != success ]; then
-            failure_code=artifact_verification_not_completed
-          elif [ "$SMOKE_OUTCOME" != success ]; then
-            failure_code=compatibility_smoke_not_completed
-          else
-            failure_code=compatibility_receipt_not_terminal
-          fi
           all_success=true
-          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
-            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
-            "$VERIFICATION_OUTCOME" "$SMOKE_OUTCOME"; do
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME"             "$DEPENDENCY_SETUP_OUTCOME" "$LOOKUP_OUTCOME" "$DOWNLOAD_OUTCOME"             "$VERIFICATION_OUTCOME" "$SMOKE_OUTCOME"; do
             if [ "$outcome" != success ]; then
               all_success=false
               break
             fi
           done
+          if [ "$all_success" = true ] && KAJI_CLOSED_RECEIPT="$receipt" bun --eval '
+            const { readFileSync } = await import("node:fs");
+            const {
+              assertClosedOrdinaryReceipt,
+              assertProtectedOrdinaryReceiptForWorkflow,
+            } = await import("./kaji/ts/scripts/smoke_package.mts");
+            const required = (name) => {
+              const value = process.env[name];
+              if (!value) throw new Error("missing trusted receipt input: " + name);
+              return value;
+            };
+            const document = JSON.parse(
+              readFileSync(required("KAJI_CLOSED_RECEIPT"), "utf8"),
+            );
+            assertClosedOrdinaryReceipt(document, "protected");
+            if (document.conclusion !== "passed") {
+              throw new Error("protected Node receipt is not passed");
+            }
+            assertProtectedOrdinaryReceiptForWorkflow(document, {
+              packageArtifactPath: required("KAJI_COMPAT_CANDIDATE_TARBALL"),
+              expectedCommit: required("EXPECTED_COMMIT"),
+              expectedNodeMajor: required("KAJI_COMPAT_RUNTIME_VERSION"),
+              configuredRunnerLabel: required("KAJI_COMPAT_RUNNER_LABEL"),
+              producerArtifactId: required("KAJI_COMPAT_PRODUCER_ARTIFACT_ID"),
+              producerArtifactDigest: required("KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST"),
+              githubServerUrl: required("GITHUB_SERVER_URL"),
+              githubRepository: required("GITHUB_REPOSITORY"),
+              githubRunId: required("GITHUB_RUN_ID"),
+              githubRunAttempt: required("GITHUB_RUN_ATTEMPT"),
+              githubWorkflowRef: required("GITHUB_WORKFLOW_REF"),
+              githubWorkflowSha: required("GITHUB_WORKFLOW_SHA"),
+              githubJob: required("GITHUB_JOB"),
+              runnerEnvironment: required("RUNNER_ENVIRONMENT"),
+              runnerOS: required("RUNNER_OS"),
+              runnerArch: required("RUNNER_ARCH"),
+              platformOS: process.platform,
+              platformArch: process.arch,
+              imageOS: required("ImageOS"),
+              imageVersion: required("ImageVersion"),
+            });
+          '; then
+            exit 0
+          fi
+          failure_code=artifact_identity_failed
           smoke_began=true
-          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME" \
-            "$DEPENDENCY_SETUP_OUTCOME" "$DOWNLOAD_OUTCOME" \
-            "$VERIFICATION_OUTCOME"; do
+          for outcome in "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME"             "$DEPENDENCY_SETUP_OUTCOME" "$LOOKUP_OUTCOME" "$DOWNLOAD_OUTCOME"             "$VERIFICATION_OUTCOME"; do
             if [ "$outcome" != success ]; then
               smoke_began=false
               break
             fi
           done
-          terminal=false
-          if [ -f "$receipt" ] && jq -e \
-            --arg commit "$EXPECTED_COMMIT" \
-            --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
-            --arg version "$KAJI_COMPAT_RUNTIME_VERSION" '
-            def nonempty: type == "string" and length > 0;
-            def sha256: type == "string" and test("^[0-9a-f]{64}$");
-            def safe_nonnegative_integer:
-              type == "number" and . >= 0 and . <= 9007199254740991 and
-              (tojson | test("^(0|[1-9][0-9]*)$"));
-            def python_timing:
-              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
-              all(.[]; safe_nonnegative_integer);
-            def typescript_timing:
-              type == "object" and keys == ["coldSetupToOutputMs", "warmRunMs"] and
-              all(.[]; safe_nonnegative_integer);
-            def failure_kind:
-              type == "string" and . as $kind |
-              ["unsupported_host", "start", "exit", "timeout", "output_limit",
-               "cleanup", "capture", "shutting_down", "unknown"] |
-              index($kind) != null;
-            def smoke_phase:
-              type == "string" and
-              test("^(npm:pack|node:version|npm:version|bun:version|(npm|bun):audit|exports:(esm|cjs)|cli:(help|help-cjs)|docs:(compile-typescript-current|run)|workspace:cleanup|(npm|bun):((package|bootstrap|generated)-install|cli-(init|owner-conflict|owner-qualified|add|inspect|list|replay)|github-package-proof|compile-typescript-(5[.]7|current)|github-types-compiler-version-(5[.]7|current)|github-types-(esm|cjs)-typescript-(5[.]7|current)|lifecycle-run|failure-history-run|docs-getting-started-run|docs-tthw-echo-run|cold-run|warm-run)|handoff:(npm-install|bun-install|typescript57-version|typescriptCurrent-version|typescript57-esm|typescript57-cjs|typescriptCurrent-esm|typescriptCurrent-cjs|npm-github-proof|bun-github-proof|archive-list|archive-types|archive-extract|policy-before-token|node-version|npm-version|node-esm|node-commonjs))$");
-            def passed_keys:
-              ["artifactSha256", "artifacts", "commit", "conclusion", "failureCode",
-               "githubPackageProofs", "releaseManifestSha256", "runtime", "schemaVersion",
-               "timings", "toolchain"];
-            def failed_keys:
-              ["artifactSha256", "artifacts", "commit", "conclusion", "failedPhase",
-               "failureCode", "failureKind", "githubPackageProofs",
-               "releaseManifestSha256", "runtime", "schemaVersion"];
-            def github_tools: [
-              "add_comment", "create_issue", "get_file", "get_issue", "list_issues",
-              "search_code", "get_commit", "get_pull_request", "list_pull_request_files",
-              "list_check_runs", "get_workflow_run", "list_workflow_jobs",
-              "list_file_commits", "get_release", "list_deployments"
-            ];
-            def github_read_tools: github_tools[2:];
-            def python_github_proof:
-              . == {
-                schemaVersion: 1, evidenceClass: "offline_exact_artifact_smoke",
-                integration: "github", runtime: "python", network: "scripted",
-                liveProvider: false, contractVersion: "1.0.0", caseCount: 23,
-                toolCount: 6, approvalDeniedBeforeCredentialAccess: true,
-                mutationRetries: 0, unknownMutationPreserved: true,
-                sourceRuntimeDetected: false, conclusion: "passed", failureCode: null
-              };
-            def typescript_github_proof:
-              . as $proof |
-              ($proof.typescriptDeclarationChecks.typescriptCurrent.version // null) as $current |
-              ($current | type == "string" and
-                test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$") and . != "5.7.3") and
-              $proof == {
-                schemaVersion: 5, evidenceClass: "offline_exact_artifact_smoke",
-                integration: "github", runtime: "typescript", network: "blocked",
-                liveProvider: false, sharedAbiVersion: "1.0.0",
-                packageAbiSchemaVersion: "1.0.0", packageCatalogVersion: "0.2.0",
-                apiFixtureVersion: "1.0.0", sharedFixtureCaseCount: 23,
-                publicScenarioCount: 15,
-                packageCatalog: {
-                  schemaVersion: "1.0.0", catalogVersion: "0.2.0", toolCount: 15,
-                  readToolCount: 13, tools: github_tools, readTools: github_read_tools,
-                  providerAliases: [github_tools[] | "github_" + .],
-                  catalogNames: [github_tools[] | "github." + .]
-                },
-                cliCopiedCatalog: {
-                  manifestVersion: "0.1.0", toolCount: 6, readToolCount: 4,
-                  tools: github_tools[0:6], readTools: github_read_tools[0:4]
-                },
-                esmSharedAbiMatched: true, cjsSharedAbiMatched: true,
-                esmPackageAbiMatched: true, cjsPackageAbiMatched: true,
-                esmClassIdentityMatched: true, cjsClassIdentityMatched: true,
-                esmFactoryIdentityMatched: true, cjsFactoryIdentityMatched: true,
-                esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
-                cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
-                esmDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
-                  "createGithubIntegration", "inspectIntegration"],
-                cjsDeclarationExports: ["CreateGitHubIntegrationOptions", "GitHubIntegration",
-                  "createGithubIntegration", "inspectIntegration"],
-                typescriptDeclarationChecks: {
-                  compilerOptions: {module: "NodeNext", moduleResolution: "NodeNext", skipLibCheck: false},
-                  typescript57: {version: "5.7.3", mtsImport: "passed", ctsRequire: "passed"},
-                  typescriptCurrent: {version: $current, mtsImport: "passed", ctsRequire: "passed"}
-                },
-                privateGitHubCompositionSourcesPacked: false,
-                privateGitHubCompositionSourceImportsRejected: true,
-                closedCallsDeniedBeforeCredentialAccess: true,
-                approvalDeniedBeforeCredentialAccess: true,
-                repositoryDeniedBeforeCredentialAccess: true,
-                githubCatalogEventsVerified: ["requested", "started", "failed"],
-                genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
-                githubFailureRecovery: {error_code: "INTEGRATION_AUTH_REQUIRED",
-                  reason_code: "github_token_missing", recovery_code: "CONFIGURE_GITHUB_TOKEN",
-                  doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token"},
-                githubObservabilitySinksVerified: true,
-                unknownMutationPreserved: true, mutationRetries: 0,
-                lifecycle: {
-                  githubFailure: {stages: ["requested", "started", "failed"],
-                    providerAlias: "github_get_file", catalogName: "github.get_file",
-                    sameIdentityAtEveryStage: true},
-                  syntheticCompletion: {stages: ["requested", "started", "completed"],
-                    providerAlias: "synthetic_complete", catalogName: "synthetic.complete",
-                    sameIdentityAtEveryStage: true}
-                },
-                policyBeforeRequest: {testFile: "kaji/ts/tests/github-registry.test.ts",
-                  testName: "rejects approval for github_create_issue before token or HTTP",
-                  tokenLookups: 0, requestAttempts: 0},
-                aliasCollisionRejected: true, conclusion: "passed", failureCode: null
-              };
-            def github_proof($runtime):
-              if $runtime == "python" then python_github_proof
-              elif $runtime == "typescript" then typescript_github_proof
-              else false end;
-            (.schemaVersion == 1) and (.commit == $commit) and (
-              (.conclusion == "failed" and (keys == failed_keys) and
-               (.failureCode == "artifact_identity_failed" or
-                .failureCode == "node_smoke_failed") and
-               (.failedPhase | smoke_phase) and (.failureKind | failure_kind)) or
-              (.conclusion == "passed" and (keys == passed_keys) and .failureCode == null and
-               (.releaseManifestSha256 | sha256) and (
-                if $kind == "python" then
-                  (.artifactSha256 |
-                    type == "object" and
-                    keys == ["kaji_sdk-0.2.0b1-py3-none-any.whl", "kaji_sdk-0.2.0b1.tar.gz"] and
-                    all(.[]; sha256)) and
-                  (.runtime |
-                    type == "object" and
-                    (.implementation | nonempty) and
-                    (.version | nonempty and startswith($version + ".")) and
-                    (.executable | nonempty)) and
-                  (.artifacts |
-                    type == "object" and
-                    (.wheel | nonempty) and
-                    (.sdist | nonempty)) and
-                  (.githubPackageProofs |
-                    type == "object" and keys == ["sdist", "wheel"] and
-                    (.sdist | github_proof("python")) and
-                    (.wheel | github_proof("python"))) and
-                  (.timings |
-                    type == "object" and keys == ["sdist", "wheel"] and
-                    all(.[]; python_timing)) and
-                  (.runtime.version as $pythonVersion |
-                   .toolchain |
-                    type == "object" and
-                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
-                    .python == $pythonVersion and .uv == "0.11.25" and
-                    .node == "not-used" and .npm == "not-used" and
-                    .bun == "not-used" and .typescript == "not-used")
-                else
-                  (.artifactSha256 |
-                    type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.8.tgz"] and
-                    all(.[]; sha256)) and
-                  (.runtime |
-                    type == "object" and
-                    (.version | nonempty and startswith("v" + $version + "."))) and
-                  (.artifacts |
-                    type == "object" and
-                    (.tarball | nonempty) and
-                    (.package | nonempty)) and
-                  (.githubPackageProofs |
-                    type == "object" and keys == ["bun", "npm"] and
-                    (.bun == .npm) and
-                    (.bun | github_proof("typescript")) and
-                    (.npm | github_proof("typescript"))) and
-                  (.timings |
-                    type == "object" and keys == ["bun", "npm"] and
-                    all(.[]; typescript_timing)) and
-                  (.runtime.version as $nodeVersion |
-                   .githubPackageProofs.npm.typescriptDeclarationChecks as $declarations |
-                   .toolchain |
-                    type == "object" and
-                    keys == ["bun", "node", "npm", "python", "typescript", "uv"] and
-                    .python == "not-used" and .uv == "not-used" and
-                    .node == $nodeVersion and
-                    (.npm | test("^[0-9]+[.][0-9]+[.][0-9]+(?:[-+][0-9A-Za-z.-]+)?$")) and
-                    .bun == "1.3.11" and
-                    .typescript == ($declarations.typescript57.version + " and " +
-                      $declarations.typescriptCurrent.version))
-                end
-              ))
-            )
-          ' "$receipt" >/dev/null; then
-            terminal=true
+          if [ "$smoke_began" = true ]; then
+            failure_code=node_smoke_failed
           fi
-          if [ "$terminal" = true ] && [ "$all_success" != true ] && \
-            [ "$(jq -r '.conclusion' "$receipt")" = passed ]; then
-            terminal=false
-          fi
-          if [ "$terminal" = true ] && \
-            [ "$(jq -r '.conclusion' "$receipt")" = failed ]; then
-            jq --null-input \
-              --arg commit "$EXPECTED_COMMIT" \
-              --arg failureCode "$(jq -r '.failureCode' "$receipt")" \
-              --arg failedPhase "$(jq -r '.failedPhase' "$receipt")" \
-              --arg failureKind "$(jq -r '.failureKind' "$receipt")" \
-              --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
-              --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
-              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
-                failureCode: $failureCode, failedPhase: $failedPhase,
-                failureKind: $failureKind,
-                runtime: {kind: $kind, requestedVersion: $version},
-                releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
-                githubPackageProofs: {}}' >"$temporary"
-            mv "$temporary" "$receipt"
-          elif [ "$terminal" != true ]; then
-            if [ "$smoke_began" = true ]; then
-              jq --null-input \
-                --arg commit "$EXPECTED_COMMIT" \
-                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
-                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
-                '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
-                  failureCode: "compatibility_receipt_not_terminal",
-                  runtime: {kind: $kind, requestedVersion: $version},
-                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
-                  githubPackageProofs: {}}' >"$temporary"
-            else
-              jq --null-input \
-                --arg commit "$EXPECTED_COMMIT" \
-                --arg failureCode "$failure_code" \
-                --arg kind "$KAJI_COMPAT_RUNTIME_KIND" \
-                --arg version "$KAJI_COMPAT_RUNTIME_VERSION" \
-                '{schemaVersion: 1, commit: $commit, conclusion: "failed",
-                  failureCode: $failureCode, failedPhase: null, failureKind: "unknown",
-                  runtime: {kind: $kind, requestedVersion: $version},
-                  releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
-                  githubPackageProofs: {}}' >"$temporary"
-            fi
-            mv "$temporary" "$receipt"
-          fi
-          jq \
-            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '. + {workflowRun: $workflowRun,
-                  workflowRunAttempt: $workflowRunAttempt}' \
-            "$receipt" >"$temporary"
-          mv "$temporary" "$receipt"
-          if [ "$all_success" = true ] && [ "$(jq -r '.conclusion' "$receipt")" != passed ]; then
-            echo "compatibility steps succeeded without a passed terminal receipt" >&2
-            exit 1
-          fi
-          if [ "$smoke_began" = true ] && [ "$terminal" != true ]; then
-            echo "compatibility smoke ran without classified terminal evidence" >&2
-            exit 1
-          fi
+          jq --null-input             --arg commit "$EXPECTED_COMMIT"             --arg failureCode "$failure_code"             '{schemaVersion: 2, executionMode: "protected",
+              commit: $commit, conclusion: "failed",
+              failureCode: $failureCode, failedPhase: null, failureKind: "unknown",
+              runtime: {version: null},
+              releaseManifestSha256: null, artifactSha256: {}, artifacts: {},
+              githubPackageProofs: {}, onboardingProofs: {}}' >"$receipt"
+          KAJI_CLOSED_RECEIPT="$receipt" bun --eval '
+            const { readFileSync } = await import("node:fs");
+            const { assertClosedOrdinaryReceipt } =
+              await import("./kaji/ts/scripts/smoke_package.mts");
+            assertClosedOrdinaryReceipt(
+              JSON.parse(readFileSync(process.env.KAJI_CLOSED_RECEIPT, "utf8")),
+              "protected",
+            );
+          '
+          exit 1
       - name: Retain final compatibility receipt
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -820,198 +704,687 @@ jobs:
           path: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
           if-no-files-found: error
 
-  tthw-evidence:
-    name: time-to-hello-world evidence
-    needs: [offline-release, python-compat, node-compat]
-    if: ${{ always() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: kaji-beta
+  typescript-onboarding-archive-calibration:
+    name: TypeScript onboarding archive calibration
+    needs: [offline-release, node-compat]
+    if: ${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.node-compat.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      actions: read
+      contents: read
     env:
-      KAJI_RELEASE_COMMIT: ${{ github.sha }}
+      EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+      EXPECTED_PRODUCER_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
+      EXPECTED_PRODUCER_ACTION_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
+      EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.rehearsal.yml
+      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main
+      EXPECTED_EVENT: workflow_dispatch
+      EXPECTED_HEAD_BRANCH: main
     steps:
-      - name: Initialize exact-commit TTHW status before setup
+      - name: Initialize claim-free calibration status
+        id: initialize
         shell: bash
         env:
-          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
         run: |
-          mkdir -p "$KAJI_TTHW_EVIDENCE_DIR"
-          echo "TTHW validation did not start." >"$KAJI_TTHW_EVIDENCE_DIR/validation.log"
-          jq --null-input \
-            --arg commit "$KAJI_RELEASE_COMMIT" \
-            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '{schemaVersion: 1, commit: $commit, conclusion: "not_run",
-              failureCode: "tthw_not_completed", exitCode: null,
-              releaseManifestSha256: null, artifactSha256: {}, workflowRun: $workflowRun,
-              workflowRunAttempt: $workflowRunAttempt}' \
-            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
-      - name: Retain initial not-run TTHW status before setup
+          set -euo pipefail
+          umask 077
+          mkdir -p "$KAJI_JOB_ROOT/initial" "$KAJI_JOB_ROOT/final" "$KAJI_JOB_ROOT/work/archives"
+          printf '%s\n' "Calibration did not start." >"$KAJI_JOB_ROOT/initial/validation.log"
+          jq --null-input             --arg commit "$EXPECTED_COMMIT"             --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --arg workflowRef "$EXPECTED_WORKFLOW_REF"             '{schemaVersion: 1,
+              kind: "kaji-typescript-onboarding-archive-calibration-status",
+              commit: $commit, workflowRun: $workflowRun,
+              workflowRunAttempt: 1, workflowRef: $workflowRef,
+              artifacts: [], aggregateSha256: null, conclusion: "not_run",
+              failureCode: "calibration_not_completed", exitCode: null}'             >"$KAJI_JOB_ROOT/initial/status.json"
+      - name: Retain initial calibration diagnostic
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-tthw-evidence-initial
-          path: ${{ runner.temp }}/kaji-tthw-evidence
+          name: kaji-typescript-onboarding-archive-calibration-initial
+          path: |
+            ${{ runner.temp }}/kaji-typescript-onboarding-calibration/initial/status.json
+            ${{ runner.temp }}/kaji-typescript-onboarding-calibration/initial/validation.log
           if-no-files-found: error
-      - id: checkout
+      - name: Checkout exact calibration commit
+        id: checkout
+        continue-on-error: true
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - id: setup_python
+        with:
+          ref: ${{ inputs.expected-commit }}
+          persist-credentials: false
+      - name: Set up frozen calibration runtime
+        id: runtime_setup
+        if: ${{ steps.checkout.outcome == 'success' }}
+        continue-on-error: true
         uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji
           python-version: "3.14"
-      - id: download
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-beta-artifacts
-          path: .artifacts/kaji-release
-      - id: download_python_compat
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-python-compat-3.14
-          path: .artifacts/kaji-tthw-compat/python-3.14
-      - id: download_node_compat
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: kaji-node-compat-24
-          path: .artifacts/kaji-tthw-compat/node-24
-      - name: Revalidate exact current-run artifacts before TTHW validation
-        id: verify
-        env:
-          EXPECTED_COMMIT: ${{ github.sha }}
-        run: >-
-          python3 kaji/scripts/verify_release_artifacts.py
-          --artifacts-dir .artifacts/kaji-release
-          --expected-commit "$EXPECTED_COMMIT"
-      - name: Validate protected exact-commit five-user TTHW evidence
-        id: tthw
+          sync-args: --frozen
+      - name: Resolve exact current-run onboarding archives
+        id: artifact_lookup
+        if: ${{ steps.runtime_setup.outcome == 'success' }}
+        continue-on-error: true
         shell: bash
         env:
-          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
-          KAJI_TTHW_EVIDENCE_JSON: ${{ secrets.KAJI_TTHW_EVIDENCE_JSON }}
+          GH_TOKEN: ${{ github.token }}
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
         run: |
-          : "${KAJI_TTHW_EVIDENCE_JSON:?set KAJI_TTHW_EVIDENCE_JSON before approving tthw-evidence}"
-          raw_evidence="$RUNNER_TEMP/kaji-tthw-evidence.raw.json"
-          trap 'rm -f "$raw_evidence"' EXIT
-          printf '%s' "$KAJI_TTHW_EVIDENCE_JSON" >"$raw_evidence"
+          set -euo pipefail
+          umask 077
+          api() {
+            gh api               --header "Accept: application/vnd.github+json"               --header "X-GitHub-Api-Version: 2026-03-10"               "$@"
+          }
+          run_json="$KAJI_JOB_ROOT/work/run.json"
+          collection="$KAJI_JOB_ROOT/work/artifacts.json"
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >"$run_json" 2>/dev/null || {
+            echo "Current workflow-run lookup failed." >&2
+            exit 1
+          }
+          jq --exit-status             --argjson runId "$GITHUB_RUN_ID"             --arg commit "$EXPECTED_COMMIT"             --arg event "$EXPECTED_EVENT"             --arg path "$EXPECTED_WORKFLOW_PATH"             --arg branch "$EXPECTED_HEAD_BRANCH"             '.id == $runId and .run_attempt == 1 and .event == $event and
+             .path == $path and .head_branch == $branch and .head_sha == $commit'             "$run_json" >/dev/null
+          api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100"             >"$collection" 2>/dev/null || {
+              echo "Current artifact collection lookup failed." >&2
+              exit 1
+            }
+          jq --exit-status '
+            .artifacts as $artifacts |
+            (.total_count == (.artifacts | length)) and (.total_count <= 100) and
+            ([.artifacts[].id] as $ids |
+              ($ids | length) == ($ids | unique | length) and
+              all($ids[]; type == "number" and . > 0 and . <= 9007199254740991 and
+                (tojson | test("^[1-9][0-9]*$")))) and
+            (["kaji-beta-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
+              all(. as $name |
+                ([$artifacts[] | select(.name == $name and .expired == false)] | length) == 1))
+          ' "$collection" >/dev/null
+          printf '[]' >"$metadata"
+          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+            key="${binding%%:*}"
+            name="${binding#*:}"
+            row="$(jq --compact-output --arg name "$name"               '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]'               "$collection")"
+            artifact_id="$(jq -r '.id' <<<"$row")"
+            artifact_digest="$(jq -r '.digest' <<<"$row")"
+            [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+            [ "$artifact_id" -le 9007199254740991 ]
+            [[ "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            if [ "$key" = producer ]; then
+              [[ "$EXPECTED_PRODUCER_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+              [[ "$EXPECTED_PRODUCER_ACTION_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+              [ "$artifact_id" = "$EXPECTED_PRODUCER_ARTIFACT_ID" ]
+              [ "$artifact_digest" = "sha256:$EXPECTED_PRODUCER_ACTION_DIGEST" ]
+            fi
+            exact="$KAJI_JOB_ROOT/work/$key-artifact.json"
+            api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" >"$exact" 2>/dev/null || {
+              echo "Exact artifact lookup failed." >&2
+              exit 1
+            }
+            jq --exit-status               --argjson id "$artifact_id"               --arg name "$name"               --arg digest "$artifact_digest"               --argjson runId "$GITHUB_RUN_ID"               --arg branch "$EXPECTED_HEAD_BRANCH"               --arg commit "$EXPECTED_COMMIT"               --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id"               --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip"               '.id == $id and .name == $name and .digest == $digest and
+               .expired == false and .size_in_bytes > 0 and
+               .url == $url and .archive_download_url == $archive and
+               .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
+               .workflow_run.head_sha == $commit' "$exact" >/dev/null
+            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest"               '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]'               "$metadata" >"$metadata.tmp"
+            mv "$metadata.tmp" "$metadata"
+            printf '%s-artifact-id=%s\n' "$key" "$artifact_id" >>"$GITHUB_OUTPUT"
+            printf '%s-artifact-digest=%s\n' "$key" "$artifact_digest" >>"$GITHUB_OUTPUT"
+          done
+      - name: Download and authenticate exact raw archive bodies
+        id: archive_download
+        if: ${{ steps.artifact_lookup.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
+        run: |
+          set -euo pipefail
+          umask 077
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+            key="${binding%%:*}"
+            name="${binding#*:}"
+            artifact_id="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .id' "$metadata")"
+            expected_digest="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .digest' "$metadata")"
+            archive="$KAJI_JOB_ROOT/work/archives/$key.zip"
+            gh api               --header "Accept: application/vnd.github+json"               --header "X-GitHub-Api-Version: 2026-03-10"               "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               >"$archive" 2>/dev/null || {
+                echo "Raw archive download failed." >&2
+                exit 1
+              }
+            observed="sha256:$(sha256sum "$archive" | cut -d' ' -f1)"
+            [ "$observed" = "$expected_digest" ] || {
+              echo "Raw archive digest differs from REST metadata." >&2
+              exit 1
+            }
+            jq --arg name "$name" --arg observed "$observed"               'map(if .name == $name then .observedDigest = $observed else . end)'               "$metadata" >"$metadata.tmp"
+            mv "$metadata.tmp" "$metadata"
+          done
+      - name: Authenticate archives and compose calibration aggregate
+        id: aggregate
+        if: ${{ steps.archive_download.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
+        run: |
+          set -euo pipefail
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
           set +e
-          uv run --project kaji --no-sync python kaji/scripts/validate_tthw_evidence.py \
-            "$raw_evidence" \
-            --release-manifest .artifacts/kaji-release/manifest.json \
-            --artifacts-dir .artifacts/kaji-release \
-            --python-compatibility-receipt .artifacts/kaji-tthw-compat/python-3.14/compatibility-receipt.json \
-            --node-compatibility-receipt .artifacts/kaji-tthw-compat/node-24/compatibility-receipt.json \
-            --expected-workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --expected-workflow-run-attempt "$GITHUB_RUN_ATTEMPT" \
-            > >(tee "$KAJI_TTHW_EVIDENCE_DIR/validation.log") 2>&1
+          uv run --project kaji --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
           status=$?
           set -e
-          manifest_sha="$(sha256sum .artifacts/kaji-release/manifest.json | cut -d ' ' -f 1)"
-          artifact_hashes='{}'
-          if [ "$status" -eq 0 ]; then
-            cp "$raw_evidence" "$KAJI_TTHW_EVIDENCE_DIR/tthw-evidence.json"
-            artifact_hashes="$(jq -c '.artifacts | map({key: .name, value: .sha256}) | from_entries' "$raw_evidence")"
-          fi
-          jq --null-input \
-            --arg commit "$KAJI_RELEASE_COMMIT" \
-            --arg conclusion "$([ "$status" -eq 0 ] && printf passed || printf failed)" \
-            --argjson exitCode "$status" \
-            --arg releaseManifestSha256 "$manifest_sha" \
-            --argjson artifactSha256 "$artifact_hashes" \
-            --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '{schemaVersion: 1, commit: $commit, conclusion: $conclusion,
-              failureCode: (if $exitCode == 0 then null else "tthw_validation_failed" end),
-              exitCode: $exitCode, releaseManifestSha256: $releaseManifestSha256,
-              artifactSha256: $artifactSha256, workflowRun: $workflowRun,
-              workflowRunAttempt: $workflowRunAttempt}' \
-            >"$KAJI_TTHW_EVIDENCE_DIR/status.json"
+          printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
           exit "$status"
-      - name: Normalize terminal TTHW status
+      - name: Independently validate and recompute calibration aggregate
+        id: aggregate_validation
+        if: ${{ steps.aggregate.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
+        run: |
+          set -euo pipefail
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          uv run --project kaji --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          from validate_typescript_onboarding_evidence import (
+              load_authenticated_archive,
+              recompute_and_compare,
+              validate_document,
+          )
+          evidence, producer_path, node22_path, node24_path = map(Path, sys.argv[1:5])
+          producer_id, producer_digest = int(sys.argv[5]), sys.argv[6]
+          node22_id, node22_digest = int(sys.argv[7]), sys.argv[8]
+          node24_id, node24_digest = int(sys.argv[9]), sys.argv[10]
+          run_id, commit, workflow_ref = int(sys.argv[11]), sys.argv[12], sys.argv[13]
+          common = dict(run_id=run_id, run_attempt=1, head_sha=commit, expired=False)
+          producer = load_authenticated_archive(
+              producer_path, name="kaji-beta-artifacts",
+              artifact_id=producer_id, digest=producer_digest, **common,
+          )
+          node22 = load_authenticated_archive(
+              node22_path, name="kaji-node-compat-22",
+              artifact_id=node22_id, digest=node22_digest, **common,
+          )
+          node24 = load_authenticated_archive(
+              node24_path, name="kaji-node-compat-24",
+              artifact_id=node24_id, digest=node24_digest, **common,
+          )
+          document = json.loads(evidence.read_text("utf-8"))
+          validate_document(document)
+          recompute_and_compare(
+              document, producer_archive=producer, node22_archive=node22,
+              node24_archive=node24,
+              expected_workflow_run=f"https://github.com/enkyuan/alloy/actions/runs/{run_id}",
+              expected_workflow_ref=workflow_ref, expected_workflow_sha=commit,
+          )
+          PY
+      - name: Normalize terminal calibration diagnostic
+        id: normalize
         if: ${{ always() }}
         shell: bash
         env:
-          KAJI_TTHW_EVIDENCE_DIR: ${{ runner.temp }}/kaji-tthw-evidence
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-calibration
+          INITIALIZE_OUTCOME: ${{ steps.initialize.outcome }}
           CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
-          RUNTIME_SETUP_OUTCOME: ${{ steps.setup_python.outcome }}
-          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
-          PYTHON_COMPAT_DOWNLOAD_OUTCOME: ${{ steps.download_python_compat.outcome }}
-          NODE_COMPAT_DOWNLOAD_OUTCOME: ${{ steps.download_node_compat.outcome }}
-          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
-          TTHW_OUTCOME: ${{ steps.tthw.outcome }}
+          RUNTIME_SETUP_OUTCOME: ${{ steps.runtime_setup.outcome }}
+          LOOKUP_OUTCOME: ${{ steps.artifact_lookup.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.archive_download.outcome }}
+          AGGREGATE_OUTCOME: ${{ steps.aggregate.outcome }}
+          AGGREGATE_EXIT: ${{ steps.aggregate.outputs.exit-code }}
+          VALIDATION_OUTCOME: ${{ steps.aggregate_validation.outcome }}
         run: |
           set -euo pipefail
-          receipt="$KAJI_TTHW_EVIDENCE_DIR/status.json"
-          temporary="$KAJI_TTHW_EVIDENCE_DIR/status.tmp"
-          if [ "$CHECKOUT_OUTCOME" != success ]; then
+          mkdir -p "$KAJI_JOB_ROOT/final"
+          if [ -f "$KAJI_JOB_ROOT/work/validation.log" ]; then
+            sed -n '1,40p' "$KAJI_JOB_ROOT/work/validation.log" >"$KAJI_JOB_ROOT/final/validation.log"
+          else
+            printf '%s\n' "Calibration did not reach aggregate validation." >"$KAJI_JOB_ROOT/final/validation.log"
+          fi
+          interrupted=false
+          for outcome in "$INITIALIZE_OUTCOME" "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME"             "$LOOKUP_OUTCOME" "$DOWNLOAD_OUTCOME" "$AGGREGATE_OUTCOME" "$VALIDATION_OUTCOME"; do
+            if [ "$outcome" = cancelled ]; then interrupted=true; fi
+          done
+          if [ "$AGGREGATE_EXIT" = 130 ] || [ "$AGGREGATE_EXIT" = 143 ]; then
+            interrupted=true
+          fi
+          if [ "$interrupted" = true ]; then
+            failure_code=calibration_interrupted
+          elif [ "$CHECKOUT_OUTCOME" != success ]; then
             failure_code=checkout_not_completed
           elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
             failure_code=runtime_setup_not_completed
+          elif [ "$LOOKUP_OUTCOME" != success ]; then
+            failure_code=artifact_lookup_not_completed
           elif [ "$DOWNLOAD_OUTCOME" != success ]; then
-            failure_code=artifact_download_not_completed
-          elif [ "$PYTHON_COMPAT_DOWNLOAD_OUTCOME" != success ] || \
-            [ "$NODE_COMPAT_DOWNLOAD_OUTCOME" != success ]; then
-            failure_code=compatibility_download_not_completed
-          elif [ "$VERIFICATION_OUTCOME" != success ]; then
-            failure_code=artifact_verification_not_completed
-          elif [ "$TTHW_OUTCOME" != success ]; then
-            failure_code=tthw_validation_not_completed
+            failure_code=archive_download_not_completed
+          elif [ "$AGGREGATE_OUTCOME" != success ]; then
+            case "$AGGREGATE_EXIT" in
+              2) failure_code=calibration_aggregate_write_ambiguous ;;
+              3) failure_code=calibration_aggregate_write_unrecoverable ;;
+              4) failure_code=calibration_aggregate_cleanup_ambiguous ;;
+              *) failure_code=archive_authentication_not_completed ;;
+            esac
+          elif [ "$VALIDATION_OUTCOME" != success ]; then
+            failure_code=aggregate_validation_not_completed
           else
-            failure_code=tthw_receipt_not_terminal
+            failure_code=calibration_receipt_not_terminal
           fi
-          if [ "$CHECKOUT_OUTCOME" = success ] && [ "$RUNTIME_SETUP_OUTCOME" = success ] && \
-            [ "$DOWNLOAD_OUTCOME" = success ] && \
-            [ "$PYTHON_COMPAT_DOWNLOAD_OUTCOME" = success ] && \
-            [ "$NODE_COMPAT_DOWNLOAD_OUTCOME" = success ] && \
-            [ "$VERIFICATION_OUTCOME" = success ] && \
-            [ "$TTHW_OUTCOME" = success ] && jq -e \
-              --arg commit "$KAJI_RELEASE_COMMIT" \
-              '.schemaVersion == 1 and .commit == $commit and .conclusion == "passed" and
-               .failureCode == null and .exitCode == 0' "$receipt" >/dev/null; then
+          if [ "$CHECKOUT_OUTCOME" = success ] && [ "$RUNTIME_SETUP_OUTCOME" = success ] &&              [ "$LOOKUP_OUTCOME" = success ] && [ "$DOWNLOAD_OUTCOME" = success ] &&              [ "$AGGREGATE_OUTCOME" = success ] && [ "$VALIDATION_OUTCOME" = success ]; then
+            aggregate_sha="$(sha256sum "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json" | cut -d' ' -f1)"
+            artifacts="$(jq --compact-output '
+              if length == 3 and all(.[]; .digest == .observedDigest) then . else error end
+            ' "$KAJI_JOB_ROOT/work/archive-metadata.json")"
+            jq --null-input               --arg commit "$EXPECTED_COMMIT"               --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"               --arg workflowRef "$EXPECTED_WORKFLOW_REF"               --arg aggregateSha256 "$aggregate_sha"               --argjson artifacts "$artifacts"               '{schemaVersion: 1,
+                kind: "kaji-typescript-onboarding-archive-calibration-status",
+                commit: $commit, workflowRun: $workflowRun,
+                workflowRunAttempt: 1, workflowRef: $workflowRef,
+                artifacts: $artifacts, aggregateSha256: $aggregateSha256,
+                conclusion: "passed", failureCode: null, exitCode: 0}'               >"$KAJI_JOB_ROOT/final/status.json"
             exit 0
           fi
-          if [ -f "$receipt" ] && jq -e --arg commit "$KAJI_RELEASE_COMMIT" \
-            'type == "object" and .schemaVersion == 1 and .commit == $commit' \
-            "$receipt" >/dev/null; then
-            jq --arg failureCode "$failure_code" \
-              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-              '. + {conclusion: "failed", failureCode: $failureCode,
-                    workflowRun: $workflowRun, workflowRunAttempt: $workflowRunAttempt}' \
-              "$receipt" >"$temporary"
-          else
-            jq --null-input --arg commit "$KAJI_RELEASE_COMMIT" \
-              --arg failureCode "$failure_code" \
-              --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-              --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-              '{schemaVersion: 1, commit: $commit, conclusion: "failed",
-                failureCode: $failureCode, exitCode: null, releaseManifestSha256: null,
-                artifactSha256: {}, workflowRun: $workflowRun,
-                workflowRunAttempt: $workflowRunAttempt}' >"$temporary"
+          exit_code=null
+          if [[ "$AGGREGATE_EXIT" =~ ^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]; then
+            exit_code="$AGGREGATE_EXIT"
           fi
-          mv "$temporary" "$receipt"
-          if [ "$TTHW_OUTCOME" = success ]; then
-            echo "TTHW validation succeeded without a passed terminal receipt" >&2
-            exit 1
-          fi
-      - name: Retain exact-commit TTHW evidence and status
+          jq --null-input             --arg commit "$EXPECTED_COMMIT"             --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --arg workflowRef "$EXPECTED_WORKFLOW_REF"             --arg failureCode "$failure_code"             --argjson exitCode "$exit_code"             '{schemaVersion: 1,
+              kind: "kaji-typescript-onboarding-archive-calibration-status",
+              commit: $commit, workflowRun: $workflowRun,
+              workflowRunAttempt: 1, workflowRef: $workflowRef,
+              artifacts: [], aggregateSha256: null, conclusion: "failed",
+              failureCode: $failureCode, exitCode: $exitCode}'             >"$KAJI_JOB_ROOT/final/status.json"
+          exit 1
+      - name: Retain terminal calibration diagnostic
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-tthw-evidence
-          path: ${{ runner.temp }}/kaji-tthw-evidence
+          name: kaji-typescript-onboarding-archive-calibration
+          path: |
+            ${{ runner.temp }}/kaji-typescript-onboarding-calibration/final/status.json
+            ${{ runner.temp }}/kaji-typescript-onboarding-calibration/final/validation.log
           if-no-files-found: error
+
+  typescript-onboarding-evidence:
+    name: TypeScript onboarding evidence
+    needs:
+      [offline-release, python-compat, node-compat,
+       typescript-onboarding-archive-calibration]
+    if: ${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' && needs.typescript-onboarding-archive-calibration.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: kaji-beta-onboarding
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      producer-artifact-id: ${{ steps.expose.outputs.producer-artifact-id }}
+      producer-artifact-digest: ${{ steps.expose.outputs.producer-artifact-digest }}
+      node22-source-artifact-id: ${{ steps.expose.outputs.node22-source-artifact-id }}
+      node22-source-artifact-digest: ${{ steps.expose.outputs.node22-source-artifact-digest }}
+      node24-source-artifact-id: ${{ steps.expose.outputs.node24-source-artifact-id }}
+      node24-source-artifact-digest: ${{ steps.expose.outputs.node24-source-artifact-digest }}
+      onboarding-artifact-id: ${{ steps.expose.outputs.onboarding-artifact-id }}
+      onboarding-artifact-digest: ${{ steps.expose.outputs.onboarding-artifact-digest }}
+      release-manifest-sha256: ${{ steps.expose.outputs.release-manifest-sha256 }}
+      aggregate-sha256: ${{ steps.expose.outputs.aggregate-sha256 }}
+    env:
+      EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+      EXPECTED_PRODUCER_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
+      EXPECTED_PRODUCER_ACTION_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
+      EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.rehearsal.yml
+      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main
+      EXPECTED_EVENT: workflow_dispatch
+      EXPECTED_HEAD_BRANCH: main
+    steps:
+      - name: Initialize claim-free onboarding status
+        id: initialize
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$KAJI_JOB_ROOT/initial" "$KAJI_JOB_ROOT/final" "$KAJI_JOB_ROOT/work/archives"
+          printf '%s\n' "Onboarding evidence did not start." >"$KAJI_JOB_ROOT/initial/validation.log"
+          jq --null-input             --arg commit "$EXPECTED_COMMIT"             --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --arg workflowRef "$EXPECTED_WORKFLOW_REF"             '{schemaVersion: 1, kind: "kaji-typescript-onboarding-status",
+              commit: $commit, workflowRun: $workflowRun,
+              workflowRunAttempt: 1, workflowRef: $workflowRef,
+              releaseManifestSha256: null, aggregateSha256: null,
+              conclusion: "not_run", failureCode: "onboarding_not_completed",
+              exitCode: null}' >"$KAJI_JOB_ROOT/initial/status.json"
+      - name: Retain initial onboarding diagnostic
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-typescript-onboarding-evidence-initial
+          path: |
+            ${{ runner.temp }}/kaji-typescript-onboarding-evidence/initial/status.json
+            ${{ runner.temp }}/kaji-typescript-onboarding-evidence/initial/validation.log
+          if-no-files-found: error
+      - name: Checkout exact onboarding commit
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ inputs.expected-commit }}
+          persist-credentials: false
+      - name: Set up frozen onboarding runtime
+        id: runtime_setup
+        if: ${{ steps.checkout.outcome == 'success' }}
+        continue-on-error: true
+        uses: ./.github/actions/setup-python-uv
+        with:
+          working-directory: kaji
+          python-version: "3.14"
+          sync-args: --frozen
+      - name: Resolve exact current-run onboarding archives independently
+        id: artifact_lookup
+        if: ${{ steps.runtime_setup.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          api() {
+            gh api               --header "Accept: application/vnd.github+json"               --header "X-GitHub-Api-Version: 2026-03-10"               "$@"
+          }
+          run_json="$KAJI_JOB_ROOT/work/run.json"
+          collection="$KAJI_JOB_ROOT/work/artifacts.json"
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >"$run_json" 2>/dev/null
+          jq --exit-status             --argjson runId "$GITHUB_RUN_ID" --arg commit "$EXPECTED_COMMIT"             --arg event "$EXPECTED_EVENT" --arg path "$EXPECTED_WORKFLOW_PATH"             --arg branch "$EXPECTED_HEAD_BRANCH"             '.id == $runId and .run_attempt == 1 and .event == $event and
+             .path == $path and .head_branch == $branch and .head_sha == $commit'             "$run_json" >/dev/null
+          api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100"             >"$collection" 2>/dev/null
+          jq --exit-status '
+            .artifacts as $artifacts |
+            (.total_count == (.artifacts | length)) and (.total_count <= 100) and
+            ([.artifacts[].id] as $ids |
+              ($ids | length) == ($ids | unique | length) and
+              all($ids[]; type == "number" and . > 0 and . <= 9007199254740991 and
+                (tojson | test("^[1-9][0-9]*$")))) and
+            (["kaji-beta-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
+              all(. as $name |
+                ([$artifacts[] | select(.name == $name and .expired == false)] | length) == 1))
+          ' "$collection" >/dev/null
+          printf '[]' >"$metadata"
+          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+            key="${binding%%:*}"
+            name="${binding#*:}"
+            row="$(jq --compact-output --arg name "$name"               '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]'               "$collection")"
+            artifact_id="$(jq -r '.id' <<<"$row")"
+            artifact_digest="$(jq -r '.digest' <<<"$row")"
+            [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+            [ "$artifact_id" -le 9007199254740991 ]
+            [[ "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            if [ "$key" = producer ]; then
+              [[ "$EXPECTED_PRODUCER_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+              [[ "$EXPECTED_PRODUCER_ACTION_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+              [ "$artifact_id" = "$EXPECTED_PRODUCER_ARTIFACT_ID" ]
+              [ "$artifact_digest" = "sha256:$EXPECTED_PRODUCER_ACTION_DIGEST" ]
+            fi
+            exact="$KAJI_JOB_ROOT/work/$key-artifact.json"
+            api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" >"$exact" 2>/dev/null
+            jq --exit-status               --argjson id "$artifact_id" --arg name "$name" --arg digest "$artifact_digest"               --argjson runId "$GITHUB_RUN_ID" --arg branch "$EXPECTED_HEAD_BRANCH"               --arg commit "$EXPECTED_COMMIT"               --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id"               --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip"               '.id == $id and .name == $name and .digest == $digest and
+               .expired == false and .size_in_bytes > 0 and
+               .url == $url and .archive_download_url == $archive and
+               .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
+               .workflow_run.head_sha == $commit' "$exact" >/dev/null
+            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest"               '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]'               "$metadata" >"$metadata.tmp"
+            mv "$metadata.tmp" "$metadata"
+            printf '%s-artifact-id=%s\n' "$key" "$artifact_id" >>"$GITHUB_OUTPUT"
+            printf '%s-artifact-digest=%s\n' "$key" "$artifact_digest" >>"$GITHUB_OUTPUT"
+          done
+      - name: Download and authenticate exact raw archive bodies independently
+        id: archive_download
+        if: ${{ steps.artifact_lookup.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          umask 077
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+            key="${binding%%:*}"
+            name="${binding#*:}"
+            artifact_id="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .id' "$metadata")"
+            expected_digest="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .digest' "$metadata")"
+            archive="$KAJI_JOB_ROOT/work/archives/$key.zip"
+            gh api               --header "Accept: application/vnd.github+json"               --header "X-GitHub-Api-Version: 2026-03-10"               "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"               >"$archive" 2>/dev/null
+            observed="sha256:$(sha256sum "$archive" | cut -d' ' -f1)"
+            [ "$observed" = "$expected_digest" ]
+            jq --arg name "$name" --arg observed "$observed"               'map(if .name == $name then .observedDigest = $observed else . end)'               "$metadata" >"$metadata.tmp"
+            mv "$metadata.tmp" "$metadata"
+          done
+      - name: Authenticate archives and compose protected onboarding evidence
+        id: aggregate
+        if: ${{ steps.archive_download.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          set +e
+          uv run --project kaji --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
+          status=$?
+          set -e
+          printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Verify authenticated candidate bytes
+        id: candidate_verification
+        if: ${{ steps.aggregate.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          candidate="$KAJI_JOB_ROOT/work/candidate"
+          mkdir -p "$candidate"
+          unzip -q "$KAJI_JOB_ROOT/work/archives/producer.zip" -d "$candidate"
+          uv run --project kaji --no-sync python kaji/scripts/verify_release_artifacts.py             --artifacts-dir "$candidate" --expected-commit "$EXPECTED_COMMIT"
+      - name: Independently validate and recompute protected onboarding evidence
+        id: aggregate_validation
+        if: ${{ steps.candidate_verification.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
+          uv run --project kaji --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          from validate_typescript_onboarding_evidence import (
+              load_authenticated_archive,
+              recompute_and_compare,
+              validate_document,
+          )
+          evidence, producer_path, node22_path, node24_path = map(Path, sys.argv[1:5])
+          producer_id, producer_digest = int(sys.argv[5]), sys.argv[6]
+          node22_id, node22_digest = int(sys.argv[7]), sys.argv[8]
+          node24_id, node24_digest = int(sys.argv[9]), sys.argv[10]
+          run_id, commit, workflow_ref = int(sys.argv[11]), sys.argv[12], sys.argv[13]
+          common = dict(run_id=run_id, run_attempt=1, head_sha=commit, expired=False)
+          producer = load_authenticated_archive(
+              producer_path, name="kaji-beta-artifacts",
+              artifact_id=producer_id, digest=producer_digest, **common,
+          )
+          node22 = load_authenticated_archive(
+              node22_path, name="kaji-node-compat-22",
+              artifact_id=node22_id, digest=node22_digest, **common,
+          )
+          node24 = load_authenticated_archive(
+              node24_path, name="kaji-node-compat-24",
+              artifact_id=node24_id, digest=node24_digest, **common,
+          )
+          document = json.loads(evidence.read_text("utf-8"))
+          validate_document(document)
+          recompute_and_compare(
+              document, producer_archive=producer, node22_archive=node22,
+              node24_archive=node24,
+              expected_workflow_run=f"https://github.com/enkyuan/alloy/actions/runs/{run_id}",
+              expected_workflow_ref=workflow_ref, expected_workflow_sha=commit,
+          )
+          PY
+      - name: Normalize terminal onboarding evidence
+        id: normalize
+        if: ${{ always() }}
+        shell: bash
+        env:
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+          INITIALIZE_OUTCOME: ${{ steps.initialize.outcome }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          RUNTIME_SETUP_OUTCOME: ${{ steps.runtime_setup.outcome }}
+          LOOKUP_OUTCOME: ${{ steps.artifact_lookup.outcome }}
+          DOWNLOAD_OUTCOME: ${{ steps.archive_download.outcome }}
+          AGGREGATE_OUTCOME: ${{ steps.aggregate.outcome }}
+          AGGREGATE_EXIT: ${{ steps.aggregate.outputs.exit-code }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate_verification.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.aggregate_validation.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$KAJI_JOB_ROOT/final"
+          if [ -f "$KAJI_JOB_ROOT/work/validation.log" ]; then
+            sed -n '1,40p' "$KAJI_JOB_ROOT/work/validation.log" >"$KAJI_JOB_ROOT/final/validation.log"
+          else
+            printf '%s\n' "Onboarding did not reach aggregate validation." >"$KAJI_JOB_ROOT/final/validation.log"
+          fi
+          interrupted=false
+          for outcome in "$INITIALIZE_OUTCOME" "$CHECKOUT_OUTCOME" "$RUNTIME_SETUP_OUTCOME"             "$LOOKUP_OUTCOME" "$DOWNLOAD_OUTCOME" "$AGGREGATE_OUTCOME"             "$CANDIDATE_OUTCOME" "$VALIDATION_OUTCOME"; do
+            if [ "$outcome" = cancelled ]; then interrupted=true; fi
+          done
+          if [ "$AGGREGATE_EXIT" = 130 ] || [ "$AGGREGATE_EXIT" = 143 ]; then
+            interrupted=true
+          fi
+          if [ "$interrupted" = true ]; then
+            failure_code=onboarding_interrupted
+          elif [ "$CHECKOUT_OUTCOME" != success ]; then
+            failure_code=checkout_not_completed
+          elif [ "$RUNTIME_SETUP_OUTCOME" != success ]; then
+            failure_code=runtime_setup_not_completed
+          elif [ "$LOOKUP_OUTCOME" != success ]; then
+            failure_code=artifact_lookup_not_completed
+          elif [ "$DOWNLOAD_OUTCOME" != success ]; then
+            failure_code=archive_download_not_completed
+          elif [ "$AGGREGATE_OUTCOME" != success ]; then
+            case "$AGGREGATE_EXIT" in
+              2) failure_code=onboarding_aggregate_write_ambiguous ;;
+              3) failure_code=onboarding_aggregate_write_unrecoverable ;;
+              4) failure_code=onboarding_aggregate_cleanup_ambiguous ;;
+              *) failure_code=archive_authentication_not_completed ;;
+            esac
+          elif [ "$CANDIDATE_OUTCOME" != success ]; then
+            failure_code=candidate_verification_not_completed
+          elif [ "$VALIDATION_OUTCOME" != success ]; then
+            failure_code=aggregate_validation_not_completed
+          else
+            failure_code=onboarding_receipt_not_terminal
+          fi
+          if [ "$CHECKOUT_OUTCOME" = success ] && [ "$RUNTIME_SETUP_OUTCOME" = success ] &&              [ "$LOOKUP_OUTCOME" = success ] && [ "$DOWNLOAD_OUTCOME" = success ] &&              [ "$AGGREGATE_OUTCOME" = success ] && [ "$CANDIDATE_OUTCOME" = success ] &&              [ "$VALIDATION_OUTCOME" = success ]; then
+            evidence="$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"
+            aggregate_sha="$(sha256sum "$evidence" | cut -d' ' -f1)"
+            manifest_sha="$(jq -r '.releaseManifestSha256' "$evidence")"
+            [[ "$aggregate_sha" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$manifest_sha" =~ ^[0-9a-f]{64}$ ]]
+            jq --null-input               --arg commit "$EXPECTED_COMMIT"               --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"               --arg workflowRef "$EXPECTED_WORKFLOW_REF"               --arg releaseManifestSha256 "$manifest_sha"               --arg aggregateSha256 "$aggregate_sha"               '{schemaVersion: 1, kind: "kaji-typescript-onboarding-status",
+                commit: $commit, workflowRun: $workflowRun,
+                workflowRunAttempt: 1, workflowRef: $workflowRef,
+                releaseManifestSha256: $releaseManifestSha256,
+                aggregateSha256: $aggregateSha256, conclusion: "passed",
+                failureCode: null, exitCode: 0}' >"$KAJI_JOB_ROOT/final/status.json"
+            cp "$evidence" "$KAJI_JOB_ROOT/final/typescript-onboarding-evidence.json"
+            exit 0
+          fi
+          exit_code=null
+          if [[ "$AGGREGATE_EXIT" =~ ^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$ ]]; then
+            exit_code="$AGGREGATE_EXIT"
+          fi
+          jq --null-input             --arg commit "$EXPECTED_COMMIT"             --arg workflowRun "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --arg workflowRef "$EXPECTED_WORKFLOW_REF"             --arg failureCode "$failure_code"             --argjson exitCode "$exit_code"             '{schemaVersion: 1, kind: "kaji-typescript-onboarding-status",
+              commit: $commit, workflowRun: $workflowRun,
+              workflowRunAttempt: 1, workflowRef: $workflowRef,
+              releaseManifestSha256: null, aggregateSha256: null,
+              conclusion: "failed", failureCode: $failureCode,
+              exitCode: $exitCode}' >"$KAJI_JOB_ROOT/final/status.json"
+          exit 1
+      - name: Retain terminal protected onboarding evidence
+        id: onboarding_upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kaji-typescript-onboarding-evidence
+          path: |
+            ${{ runner.temp }}/kaji-typescript-onboarding-evidence/final/status.json
+            ${{ runner.temp }}/kaji-typescript-onboarding-evidence/final/validation.log
+            ${{ runner.temp }}/kaji-typescript-onboarding-evidence/final/typescript-onboarding-evidence.json
+          if-no-files-found: error
+      - name: Expose validated onboarding artifact bindings
+        id: expose
+        if: ${{ steps.normalize.outcome == 'success' && steps.onboarding_upload.outcome == 'success' }}
+        shell: bash
+        env:
+          PRODUCER_ID: ${{ steps.artifact_lookup.outputs.producer-artifact-id }}
+          PRODUCER_DIGEST: ${{ steps.artifact_lookup.outputs.producer-artifact-digest }}
+          NODE22_ID: ${{ steps.artifact_lookup.outputs.node22-artifact-id }}
+          NODE22_DIGEST: ${{ steps.artifact_lookup.outputs.node22-artifact-digest }}
+          NODE24_ID: ${{ steps.artifact_lookup.outputs.node24-artifact-id }}
+          NODE24_DIGEST: ${{ steps.artifact_lookup.outputs.node24-artifact-digest }}
+          ONBOARDING_ID: ${{ steps.onboarding_upload.outputs.artifact-id }}
+          ONBOARDING_ACTION_DIGEST: ${{ steps.onboarding_upload.outputs.artifact-digest }}
+          KAJI_JOB_ROOT: ${{ runner.temp }}/kaji-typescript-onboarding-evidence
+        run: |
+          set -euo pipefail
+          for id in "$PRODUCER_ID" "$NODE22_ID" "$NODE24_ID" "$ONBOARDING_ID"; do
+            [[ "$id" =~ ^[1-9][0-9]*$ ]]
+            [ "$id" -le 9007199254740991 ]
+          done
+          [ "$PRODUCER_ID" != "$NODE22_ID" ]
+          [ "$PRODUCER_ID" != "$NODE24_ID" ]
+          [ "$NODE22_ID" != "$NODE24_ID" ]
+          for digest in "$PRODUCER_DIGEST" "$NODE22_DIGEST" "$NODE24_DIGEST"; do
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          done
+          [[ "$ONBOARDING_ACTION_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          manifest_sha="$(jq -r '.releaseManifestSha256' "$KAJI_JOB_ROOT/final/status.json")"
+          aggregate_sha="$(jq -r '.aggregateSha256' "$KAJI_JOB_ROOT/final/status.json")"
+          [[ "$manifest_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$aggregate_sha" =~ ^[0-9a-f]{64}$ ]]
+          {
+            printf 'producer-artifact-id=%s\n' "$PRODUCER_ID"
+            printf 'producer-artifact-digest=%s\n' "$PRODUCER_DIGEST"
+            printf 'node22-source-artifact-id=%s\n' "$NODE22_ID"
+            printf 'node22-source-artifact-digest=%s\n' "$NODE22_DIGEST"
+            printf 'node24-source-artifact-id=%s\n' "$NODE24_ID"
+            printf 'node24-source-artifact-digest=%s\n' "$NODE24_DIGEST"
+            printf 'onboarding-artifact-id=%s\n' "$ONBOARDING_ID"
+            printf 'onboarding-artifact-digest=sha256:%s\n' "$ONBOARDING_ACTION_DIGEST"
+            printf 'release-manifest-sha256=%s\n' "$manifest_sha"
+            printf 'aggregate-sha256=%s\n' "$aggregate_sha"
+          } >>"$GITHUB_OUTPUT"
 
   keyed-proof:
     name: keyed provider proof
-    needs: [offline-release, performance, tthw-evidence, python-compat, node-compat]
-    if: ${{ always() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.tthw-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
+    needs: [offline-release, performance, typescript-onboarding-evidence, python-compat, node-compat]
+    if: ${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.typescript-onboarding-evidence.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
     # Two proofs are capped at three minutes each. Thirty minutes leaves setup
     # and final evidence upload outside the child-process budget.
     timeout-minutes: 30
     environment: kaji-beta
     env:
-      KAJI_RELEASE_COMMIT: ${{ github.sha }}
+      KAJI_RELEASE_COMMIT: ${{ inputs.expected-commit }}
       KAJI_RELEASE_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
       KAJI_RELEASE_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
       KAJI_PROVIDER_STATUS_FILE: ${{ github.workspace }}/provider-evidence.json
@@ -1042,6 +1415,8 @@ jobs:
           if-no-files-found: error
       - id: checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - name: Restore not-run provider evidence after checkout
         if: ${{ always() }}
         env:
@@ -1158,23 +1533,146 @@ jobs:
 
   candidate-evidence:
     name: release candidate evidence
-    needs: [offline-release, performance, tthw-evidence, keyed-proof, python-compat, node-compat]
-    if: ${{ always() && needs.offline-release.result == 'success' }}
+    needs: [offline-release, performance, typescript-onboarding-evidence, keyed-proof, python-compat, node-compat]
+    if: ${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.performance.result == 'success' && needs.typescript-onboarding-evidence.result == 'success' && needs.keyed-proof.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.expected-commit }}
+          persist-credentials: false
       - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: kaji
           python-version: "3.14"
           sync-args: --frozen
+      - name: Authenticate exact onboarding artifact bindings before downloads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+          EXPECTED_EVENT: workflow_dispatch
+          EXPECTED_HEAD_BRANCH: main
+          EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.rehearsal.yml
+          PRODUCER_ID: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}
+          PRODUCER_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-digest }}
+          ONBOARDING_ID: ${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-id }}
+          ONBOARDING_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-digest }}
+          NODE22_ID: ${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}
+          NODE22_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-digest }}
+          NODE24_ID: ${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}
+          NODE24_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-digest }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [ "$GITHUB_RUN_ID" -le 9007199254740991 ] || exit 1
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || exit 1
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          ids=()
+          for binding in \
+            "$PRODUCER_ID|$PRODUCER_DIGEST" \
+            "$ONBOARDING_ID|$ONBOARDING_DIGEST" \
+            "$NODE22_ID|$NODE22_DIGEST" \
+            "$NODE24_ID|$NODE24_DIGEST"; do
+            IFS='|' read -r artifact_id digest <<<"$binding"
+            [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]] || exit 1
+            [ "$artifact_id" -le 9007199254740991 ] || exit 1
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+            ids+=("$artifact_id")
+          done
+          [ "$(printf '%s\n' "${ids[@]}" | sort -u | wc -l | tr -d ' ')" = 4 ] || exit 1
+          api() {
+            gh api \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "$@"
+          }
+          run_metadata="$RUNNER_TEMP/kaji-onboarding-consumer-run.json"
+          api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            >"$run_metadata" 2>/dev/null
+          jq --exit-status \
+            --argjson id "$GITHUB_RUN_ID" \
+            --argjson attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg event "$EXPECTED_EVENT" \
+            --arg path "$EXPECTED_WORKFLOW_PATH" \
+            --arg branch "$EXPECTED_HEAD_BRANCH" \
+            --arg commit "$EXPECTED_COMMIT" \
+            '.id == $id and .run_attempt == $attempt and .event == $event and
+             .path == $path and .head_branch == $branch and .head_sha == $commit' \
+            "$run_metadata" >/dev/null
+          for binding in \
+            "producer|$PRODUCER_ID|$PRODUCER_DIGEST|kaji-beta-artifacts" \
+            "onboarding|$ONBOARDING_ID|$ONBOARDING_DIGEST|kaji-typescript-onboarding-evidence" \
+            "node22|$NODE22_ID|$NODE22_DIGEST|kaji-node-compat-22" \
+            "node24|$NODE24_ID|$NODE24_DIGEST|kaji-node-compat-24"; do
+            IFS='|' read -r key artifact_id digest name <<<"$binding"
+            metadata="$RUNNER_TEMP/kaji-onboarding-consumer-$key.json"
+            api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" \
+              >"$metadata" 2>/dev/null
+            jq --exit-status \
+              --argjson id "$artifact_id" \
+              --arg name "$name" \
+              --arg digest "$digest" \
+              --argjson runId "$GITHUB_RUN_ID" \
+              --arg branch "$EXPECTED_HEAD_BRANCH" \
+              --arg commit "$EXPECTED_COMMIT" \
+              --arg url "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" \
+              --arg archive "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              '.id == $id and .name == $name and .digest == $digest and
+               .expired == false and
+               (.size_in_bytes | type == "number" and floor == . and
+                 . > 0 and . <= 9007199254740991) and
+               .url == $url and .archive_download_url == $archive and
+               .workflow_run.id == $runId and
+               .workflow_run.head_branch == $branch and
+               .workflow_run.head_sha == $commit' \
+              "$metadata" >/dev/null
+          done
+      - name: Download and authenticate validator raw source archives by exact ID
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_ID: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}
+          PRODUCER_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-digest }}
+          ONBOARDING_ID: ${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-id }}
+          ONBOARDING_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-digest }}
+          NODE22_ID: ${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}
+          NODE22_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-digest }}
+          NODE24_ID: ${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}
+          NODE24_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-digest }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p .artifacts/kaji-raw
+          for binding in \
+            "producer|$PRODUCER_ID|$PRODUCER_DIGEST" \
+            "onboarding|$ONBOARDING_ID|$ONBOARDING_DIGEST" \
+            "node22|$NODE22_ID|$NODE22_DIGEST" \
+            "node24|$NODE24_ID|$NODE24_DIGEST"; do
+            IFS='|' read -r key artifact_id digest <<<"$binding"
+            [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
+            [ "$artifact_id" -le 9007199254740991 ]
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            archive=".artifacts/kaji-raw/$key.zip"
+            gh api \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              >"$archive" 2>/dev/null
+            observed="sha256:$(sha256sum "$archive" | cut -d' ' -f1)"
+            [ "$observed" = "$digest" ]
+          done
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-beta-artifacts
+          artifact-ids: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}
           path: .artifacts/kaji-release
+          merge-multiple: true
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-offline-evidence
@@ -1186,9 +1684,10 @@ jobs:
         continue-on-error: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-tthw-evidence
-          path: .artifacts/kaji-evidence/tthw
-        continue-on-error: true
+          artifact-ids: ${{ needs.typescript-onboarding-evidence.outputs.onboarding-artifact-id }}
+          path: .artifacts/kaji-evidence/typescript-onboarding
+          merge-multiple: true
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: kaji-performance-evidence
@@ -1206,14 +1705,16 @@ jobs:
         continue-on-error: true
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-node-compat-22
+          artifact-ids: ${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}
           path: .artifacts/kaji-compat/node-22
-        continue-on-error: true
+          merge-multiple: true
+          github-token: ${{ github.token }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-node-compat-24
+          artifact-ids: ${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}
           path: .artifacts/kaji-compat/node-24
-        continue-on-error: true
+          merge-multiple: true
+          github-token: ${{ github.token }}
       - name: Uniquely name final compatibility receipts
         if: ${{ always() }}
         shell: bash
@@ -1234,16 +1735,26 @@ jobs:
         run: >-
           python3 kaji/scripts/verify_release_artifacts.py
           --artifacts-dir .artifacts/kaji-release
-          --expected-commit "${{ github.sha }}"
+          --expected-commit "${{ inputs.expected-commit }}"
       - name: Validate one canonical current-run candidate evidence set
         run: >-
           uv run --project kaji --no-sync python kaji/scripts/validate_release_evidence.py
+          --mode rehearsal
           --artifacts-dir .artifacts/kaji-release
-          --expected-commit "${{ github.sha }}"
+          --producer-archive .artifacts/kaji-raw/producer.zip
+          --node22-source-archive .artifacts/kaji-raw/node22.zip
+          --node24-source-archive .artifacts/kaji-raw/node24.zip
+          --expected-commit "${{ inputs.expected-commit }}"
           --workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           --workflow-run-attempt "$GITHUB_RUN_ATTEMPT"
           --release-artifact-id "${{ needs.offline-release.outputs.artifact-id }}"
-          --release-artifact-digest "${{ needs.offline-release.outputs.artifact-digest }}"
+          --release-artifact-digest "sha256:${{ needs.offline-release.outputs.artifact-digest }}"
+          --node22-source-artifact-id "${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-id }}"
+          --node22-source-artifact-digest "${{ needs.typescript-onboarding-evidence.outputs.node22-source-artifact-digest }}"
+          --node24-source-artifact-id "${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-id }}"
+          --node24-source-artifact-digest "${{ needs.typescript-onboarding-evidence.outputs.node24-source-artifact-digest }}"
+          --onboarding-status .artifacts/kaji-evidence/typescript-onboarding/status.json
+          --onboarding-evidence .artifacts/kaji-evidence/typescript-onboarding/typescript-onboarding-evidence.json
           --python-compat-311 .artifacts/kaji-evidence/compat-python-3.11.json
           --python-compat-314 .artifacts/kaji-evidence/compat-python-3.14.json
           --node-compat-22 .artifacts/kaji-evidence/compat-node-22.json
@@ -1253,14 +1764,56 @@ jobs:
           --soak-results .artifacts/kaji-evidence/soak-results.json
           --performance-image-data .artifacts/kaji-evidence/performance-imagedata.json
           --provider-evidence .artifacts/kaji-evidence/provider-evidence.json
-          --tthw-status .artifacts/kaji-evidence/tthw/status.json
-          --tthw-evidence .artifacts/kaji-evidence/tthw/tthw-evidence.json
           --workspace "$GITHUB_WORKSPACE"
           --output .artifacts/kaji-evidence/release-evidence-validation.json
+      - name: Stage exact signed rehearsal evidence archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          source=.artifacts/kaji-evidence
+          destination=.artifacts/kaji-signed-evidence
+          [ ! -e "$destination" ]
+          mkdir -p \
+            "$destination/raw/benchmarks" \
+            "$destination/raw/soak" \
+            "$destination/typescript-onboarding"
+          for relative in \
+            compat-node-22.json \
+            compat-node-24.json \
+            compat-python-3.11.json \
+            compat-python-3.14.json \
+            offline-gate-summary.json \
+            offline-gates.log \
+            paired-benchmark-results.json \
+            performance-imagedata.json \
+            performance-status.json \
+            provider-evidence.json \
+            raw/benchmarks/replica-1-imagedata.json \
+            raw/benchmarks/replica-1.json \
+            raw/benchmarks/replica-2-imagedata.json \
+            raw/benchmarks/replica-2.json \
+            raw/benchmarks/replica-3-imagedata.json \
+            raw/benchmarks/replica-3.json \
+            raw/soak/python.json \
+            raw/soak/results.json \
+            raw/soak/typescript.json \
+            release-evidence-validation.json \
+            soak-results.json \
+            typescript-onboarding/status.json \
+            typescript-onboarding/typescript-onboarding-evidence.json \
+            typescript-onboarding/validation.log; do
+            [ -f "$source/$relative" ]
+            [ ! -L "$source/$relative" ]
+            cp -- "$source/$relative" "$destination/$relative"
+            cmp --silent "$source/$relative" "$destination/$relative"
+          done
+          observed_count="$(find "$destination" -type f | wc -l | tr -d ' ')"
+          [ "$observed_count" = 24 ]
       - name: Retain canonical release-candidate evidence
+        id: candidate-evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: kaji-release-candidate-evidence
-          path: .artifacts/kaji-evidence
+          path: .artifacts/kaji-signed-evidence
           if-no-files-found: error

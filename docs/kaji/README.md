@@ -5,9 +5,12 @@ TypeScript `kaji-sdk` packages. Package pages link here for scope and to the
 [release matrix](../../kaji/RELEASE_MATRIX.md) for evidence. Package README
 canonical-status-link blocks do not change when release status changes.
 
-Human time-to-hello-world evidence is **unmeasured**. The target protocol is
-defined in [testing](testing.md) and [releasing](releasing.md); no cohort result
-is inferred from automated smoke tests.
+Automated TypeScript onboarding evidence is defined in
+[testing](testing.md), the
+[evidence contract](typescript-onboarding-evidence.md), and the
+[release runbook](releasing.md). It proves only the exact npm/Bun artifact
+phases on the two declared GitHub-hosted Linux/x64 cells; it does not imply a
+human, macOS/arm64, Windows, or fully offline onboarding result.
 
 ## Start here
 
@@ -15,6 +18,7 @@ is inferred from automated smoke tests.
 - [Python/TypeScript API parity](api-parity.md)
 - [CLI grammar, streams, and exit codes](cli.md)
 - [Deterministic and artifact testing](testing.md)
+- [Protected TypeScript onboarding evidence](typescript-onboarding-evidence.md)
 - [Concurrency and ordering](concurrency-and-ordering.md)
 - [Tool and durable-result contracts](tool-contracts.md)
 - [Integration manifests](integration-manifests.md)

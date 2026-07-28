@@ -4,6 +4,7 @@ from pathlib import Path
 import runpy
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -29,6 +30,20 @@ EVENT_SCHEMAS = (
 )
 TS_HANDOFF_SCHEMA_RELATIVE = Path("release/kaji-ts-consumer-handoff-v1.schema.json")
 TS_HANDOFF_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_HANDOFF_SCHEMA_RELATIVE
+TS_ONBOARDING_SCHEMA_RELATIVE = Path(
+    "release/typescript-onboarding-evidence-v1.schema.json"
+)
+TS_ONBOARDING_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_ONBOARDING_SCHEMA_RELATIVE
+PUBLISHER_IDENTITY_SCHEMA_RELATIVE = Path(
+    "release/publisher-identity-receipt-v1.schema.json"
+)
+PUBLISHER_IDENTITY_SCHEMA = (
+    REPO_ROOT / "kaji" / "contracts" / PUBLISHER_IDENTITY_SCHEMA_RELATIVE
+)
+REMOVED_TTHW_CONTRACTS = (
+    Path("release/tthw-evidence-v1.schema.json"),
+    Path("release/tthw-participant.template.json"),
+)
 
 
 def test_beta_contract_defaults_are_public_and_stable() -> None:
@@ -84,6 +99,353 @@ def test_typescript_handoff_schema_is_required_valid_and_packaged_for_both_runti
         REPO_ROOT / "kaji" / "ts" / "contracts",
     ):
         assert (package_root / TS_HANDOFF_SCHEMA_RELATIVE).read_bytes() == schema_bytes
+
+
+def _onboarding_proof(manager: str) -> dict[str, object]:
+    return {
+        "manager": manager,
+        "phases": {
+            "artifactInstall": True,
+            "scaffoldInit": True,
+            "noKeyRun": True,
+            "echoSetup": True,
+            "echoRun": True,
+            "coldRun": True,
+            "warmRun": True,
+        },
+        "assertions": {
+            "noKeyText": "The mock provider has completed the tool loop.",
+            "deterministicText": "The mock provider has completed the tool loop.",
+            "turnIdPresent": True,
+            "finalSequencePositive": True,
+            "echoLifecycle": ["requested", "started", "completed"],
+            "echoLifecycleCounts": {
+                "requested": 1,
+                "started": 1,
+                "completed": 1,
+            },
+            "echoToolCallIdentityCount": 1,
+            "echoToolCallIdNonempty": True,
+            "echoResult": {"message": "hello"},
+            "echoFinalText": "The mock provider has completed the tool loop.",
+            "forbiddenTerminalEventsAbsent": True,
+            "coldWarmEqual": True,
+        },
+    }
+
+
+def _onboarding_cell(major: int, source_id: int) -> dict[str, object]:
+    commit = "a" * 40
+    run_id = 123
+    return {
+        "executionMode": "protected",
+        "sourceArtifact": {
+            "name": f"kaji-node-compat-{major}",
+            "id": source_id,
+            "digest": "sha256:" + str(major)[0] * 64,
+            "runId": run_id,
+            "runAttempt": 1,
+            "headSha": commit,
+            "receiptSha256": str(major)[-1] * 64,
+        },
+        "runtime": {"version": f"v{major}.14.0"},
+        "runner": {
+            "configuredLabel": f"ubuntu-{major}.04",
+            "environment": "github-hosted",
+            "runnerOS": "Linux",
+            "runnerArch": "X64",
+            "platformOS": "linux",
+            "platformArch": "x64",
+            "imageOS": f"ubuntu{major}",
+            "imageVersion": "20260720.1.0",
+        },
+        "invocation": {
+            "workflowRun": f"https://github.com/enkyuan/alloy/actions/runs/{run_id}",
+            "runId": run_id,
+            "runAttempt": 1,
+            "workflowRef": (
+                "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
+            ),
+            "workflowSha": commit,
+            "job": "node-compat",
+        },
+        "onboardingProofs": {
+            "npm": _onboarding_proof("npm"),
+            "bun": _onboarding_proof("bun"),
+        },
+        "timings": {
+            "npm": {"coldSetupToOutputMs": 11, "warmRunMs": 2},
+            "bun": {"coldSetupToOutputMs": 13, "warmRunMs": 3},
+        },
+        "toolchain": {
+            "python": "not-used",
+            "uv": "not-used",
+            "node": f"v{major}.14.0",
+            "npm": "11.4.2",
+            "bun": "1.3.11",
+            "typescript": "5.7.3 and 6.0.2",
+        },
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+
+
+def _onboarding_document() -> dict[str, Any]:
+    return {
+        "schemaVersion": "1.0.0",
+        "commit": "a" * 40,
+        "releaseManifestSha256": "b" * 64,
+        "packageArtifact": {
+            "name": "kaji-sdk-0.2.0-beta.9.tgz",
+            "size": 123,
+            "sha256": "c" * 64,
+        },
+        "producerArtifact": {
+            "name": "kaji-beta-artifacts",
+            "id": 456,
+            "digest": "sha256:" + "d" * 64,
+            "runId": 123,
+            "runAttempt": 1,
+            "headSha": "a" * 40,
+        },
+        "cells": [
+            _onboarding_cell(22, 2201),
+            _onboarding_cell(24, 2401),
+        ],
+    }
+
+
+def test_typescript_onboarding_schema_replaces_tthw_contract_inventory() -> None:
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="onboarding_contract_test")
+    required = checker["REQUIRED_JSON"]
+    relative = TS_ONBOARDING_SCHEMA_RELATIVE.as_posix()
+    assert relative in required
+    for removed in REMOVED_TTHW_CONTRACTS:
+        assert removed.as_posix() not in required
+        assert removed.as_posix() not in checker["DATA_DOCUMENTS"]
+    assert relative not in checker["DATA_DOCUMENTS"]
+
+    schema_bytes = TS_ONBOARDING_SCHEMA.read_bytes()
+    schema = json.loads(schema_bytes)
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    valid = _onboarding_document()
+    validator.validate(valid)
+    for package_root in (
+        REPO_ROOT / "kaji" / "contracts",
+        REPO_ROOT / "kaji" / "src" / "kaji" / "contracts",
+        REPO_ROOT / "kaji" / "ts" / "contracts",
+    ):
+        assert (
+            package_root / TS_ONBOARDING_SCHEMA_RELATIVE
+        ).read_bytes() == schema_bytes
+        for removed in REMOVED_TTHW_CONTRACTS:
+            assert not (package_root / removed).exists()
+
+    wrong_order = deepcopy(valid)
+    wrong_order["cells"].reverse()
+    extra_nested = deepcopy(valid)
+    extra_nested["cells"][0]["runner"]["unexpected"] = True
+    missing_nested = deepcopy(valid)
+    missing_nested["cells"][0]["onboardingProofs"]["npm"]["phases"].pop("echoRun")
+    boolean_id = deepcopy(valid)
+    boolean_id["producerArtifact"]["id"] = True
+    boolean_timing = deepcopy(valid)
+    boolean_timing["cells"][0]["timings"]["npm"]["warmRunMs"] = True
+    third_cell = deepcopy(valid)
+    third_cell["cells"].append(deepcopy(third_cell["cells"][1]))
+    for invalid in (
+        wrong_order,
+        extra_nested,
+        missing_nested,
+        boolean_id,
+        boolean_timing,
+        third_cell,
+    ):
+        assert not validator.is_valid(invalid)
+
+
+def _publisher_identity_receipt() -> dict[str, object]:
+    return {
+        "schemaVersion": "1.0.0",
+        "commit": "a" * 40,
+        "tag": "kaji-v0.2.0-beta.9",
+        "workflowRun": "https://github.com/enkyuan/alloy/actions/runs/123456789",
+        "workflowRunAttempt": 1,
+        "workflowPath": ".github/workflows/kaji.publish.yml",
+        "workflowSha": "a" * 40,
+        "expectedPublisher": "kaji-publisher",
+        "actualPublisher": "kaji-publisher",
+        "conclusion": "passed",
+        "exitCode": 0,
+        "failureCode": None,
+    }
+
+
+def test_publisher_identity_schema_is_required_closed_and_exactly_packaged() -> None:
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="publisher_contract_test")
+    relative = PUBLISHER_IDENTITY_SCHEMA_RELATIVE.as_posix()
+    assert relative in checker["REQUIRED_JSON"]
+    assert relative not in checker["DATA_DOCUMENTS"]
+
+    schema_bytes = PUBLISHER_IDENTITY_SCHEMA.read_bytes()
+    schema = json.loads(schema_bytes)
+    Draft202012Validator.check_schema(schema)
+    assert set(schema["required"]) == set(_publisher_identity_receipt())
+    assert schema["additionalProperties"] is False
+
+    expected_release_inventory = {
+        "github-proof-v1.schema.json",
+        "kaji-ts-consumer-handoff-v1.schema.json",
+        "publisher-identity-receipt-v1.schema.json",
+        "typescript-onboarding-evidence-v1.schema.json",
+    }
+    for package_root in (
+        REPO_ROOT / "kaji" / "contracts",
+        REPO_ROOT / "kaji" / "src" / "kaji" / "contracts",
+        REPO_ROOT / "kaji" / "ts" / "contracts",
+    ):
+        release_root = package_root / "release"
+        assert {
+            path.name for path in release_root.iterdir() if path.is_file()
+        } == expected_release_inventory
+        assert (
+            package_root / PUBLISHER_IDENTITY_SCHEMA_RELATIVE
+        ).read_bytes() == schema_bytes
+
+
+def test_publisher_identity_schema_accepts_only_closed_fail_safe_states() -> None:
+    schema = json.loads(PUBLISHER_IDENTITY_SCHEMA.read_text())
+    validator = Draft202012Validator(schema)
+    passed = _publisher_identity_receipt()
+    validator.validate(passed)
+
+    variants = []
+    for failure_code, expected, actual, exit_code in (
+        ("identity_check_incomplete", None, None, None),
+        ("expected_publisher_missing", None, None, 1),
+        ("expected_publisher_invalid", None, None, 1),
+        ("token_missing", "kaji-publisher", None, 1),
+        ("npm_whoami_failed", "kaji-publisher", None, 7),
+        ("npm_whoami_output_invalid", "kaji-publisher", None, 1),
+        ("publisher_mismatch", "kaji-publisher", "other-publisher", 1),
+    ):
+        receipt = deepcopy(passed)
+        receipt.update(
+            {
+                "expectedPublisher": expected,
+                "actualPublisher": actual,
+                "conclusion": "failed",
+                "exitCode": exit_code,
+                "failureCode": failure_code,
+            }
+        )
+        variants.append(receipt)
+    for valid in variants:
+        validator.validate(valid)
+
+    for field in passed:
+        missing = deepcopy(passed)
+        missing.pop(field)
+        assert not validator.is_valid(missing), field
+
+    for secret_field in (
+        "token",
+        "npmConfig",
+        "home",
+        "env",
+        "inheritedEnvironment",
+        "rawOutput",
+        "stdout",
+        "stderr",
+    ):
+        secret_bearing = deepcopy(passed)
+        secret_bearing[secret_field] = "must-not-be-retained"
+        assert not validator.is_valid(secret_bearing), secret_field
+
+    malformed_fields = {
+        "commit": "A" * 40,
+        "tag": "kaji-v0.2.0-beta.8",
+        "workflowRun": (
+            "https://github.com/enkyuan/alloy/actions/runs/123?token=npm_secret"
+        ),
+        "workflowRunAttempt": True,
+        "workflowPath": ".github/workflows/other.yml",
+        "workflowSha": "b" * 39,
+        "expectedPublisher": "npm_" + "a" * 36,
+        "actualPublisher": "github_pat_" + "a" * 36,
+        "conclusion": "not_run",
+        "exitCode": 256,
+        "failureCode": "arbitrary_failure",
+    }
+    for field, value in malformed_fields.items():
+        malformed = deepcopy(passed)
+        malformed[field] = value
+        assert not validator.is_valid(malformed), field
+
+    invalid_combinations = []
+    for updates in (
+        {"actualPublisher": None},
+        {"expectedPublisher": None},
+        {"exitCode": 1},
+        {"failureCode": "publisher_mismatch"},
+        {"conclusion": "failed"},
+        {
+            "conclusion": "failed",
+            "exitCode": None,
+            "failureCode": "identity_check_incomplete",
+            "actualPublisher": "kaji-publisher",
+        },
+        {
+            "conclusion": "failed",
+            "exitCode": 1,
+            "failureCode": "identity_check_incomplete",
+            "actualPublisher": None,
+        },
+        {
+            "conclusion": "failed",
+            "expectedPublisher": None,
+            "actualPublisher": None,
+            "exitCode": 1,
+            "failureCode": "token_missing",
+        },
+        {
+            "conclusion": "failed",
+            "actualPublisher": None,
+            "exitCode": 0,
+            "failureCode": "npm_whoami_failed",
+        },
+        {
+            "conclusion": "failed",
+            "actualPublisher": None,
+            "exitCode": 1,
+            "failureCode": "publisher_mismatch",
+        },
+        {
+            "conclusion": "failed",
+            "actualPublisher": "other-publisher",
+            "exitCode": 0,
+            "failureCode": "publisher_mismatch",
+        },
+        {
+            "conclusion": "failed",
+            "expectedPublisher": "kaji-publisher",
+            "actualPublisher": None,
+            "exitCode": 1,
+            "failureCode": "expected_publisher_missing",
+        },
+        {
+            "conclusion": "failed",
+            "actualPublisher": "npm_" + "a" * 36,
+            "exitCode": 1,
+            "failureCode": "publisher_mismatch",
+        },
+    ):
+        invalid = deepcopy(passed)
+        invalid.update(updates)
+        invalid_combinations.append(invalid)
+    for invalid in invalid_combinations:
+        assert not validator.is_valid(invalid)
 
 
 def test_typescript_handoff_policy_receipt_names_the_executed_regression() -> None:

@@ -51,9 +51,9 @@ REQUIRED_JSON = {
     "parity/scenarios.schema.json",
     "providers/cost-conformance.json",
     "release/github-proof-v1.schema.json",
-    "release/tthw-evidence-v1.schema.json",
+    "release/publisher-identity-receipt-v1.schema.json",
+    "release/typescript-onboarding-evidence-v1.schema.json",
     "release/kaji-ts-consumer-handoff-v1.schema.json",
-    "release/tthw-participant.template.json",
     "tools/conformance-invalid.json",
     "tools/conformance-valid.json",
     "tools/tool-schema-v1.schema.json",
@@ -61,7 +61,6 @@ REQUIRED_JSON = {
 DATA_DOCUMENTS = {
     "integrations/abi-index-v1.json",
     "parity/expected-normalized.json",
-    "release/tthw-participant.template.json",
 }
 APPROVAL_FAILURE_RETRYABILITY = {
     "APPROVAL_REJECTED": False,

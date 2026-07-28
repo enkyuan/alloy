@@ -90,7 +90,7 @@ const MANAGER_SMOKE_PHASE_SUFFIXES = [
   "lifecycle-run",
   "failure-history-run",
   "docs-getting-started-run",
-  "docs-tthw-echo-run",
+  "installed-artifact-echo-run",
   "cold-run",
   "warm-run",
 ] as const;
@@ -150,12 +150,111 @@ interface SmokeArguments {
   releaseManifest?: string;
   expectedCommit?: string;
   output?: string;
+  protected?: true;
+  configuredRunnerLabel?: "ubuntu-22.04" | "ubuntu-24.04";
+  producerArtifactId?: number;
+  producerArtifactDigest?: string;
   forHandoff?: HandoffMode;
   candidateRoot?: string;
   sourceCommit?: string;
   artifactSha256?: string;
   handoffNodeBinary?: string;
   expectedNodeMajor?: 22 | 24;
+}
+
+export interface ProducerArtifactIdentity {
+  readonly name: "kaji-beta-artifacts" | "local";
+  readonly id: number;
+  readonly digest: string;
+  readonly runId: number;
+  readonly runAttempt: number;
+  readonly headSha: string | null;
+}
+
+export interface RunnerIdentity {
+  readonly configuredLabel: "ubuntu-22.04" | "ubuntu-24.04" | "local";
+  readonly environment: "github-hosted" | "local";
+  readonly runnerOS: "Linux" | "local";
+  readonly runnerArch: "X64" | "local";
+  readonly platformOS: "linux" | NodeJS.Platform;
+  readonly platformArch: "x64" | NodeJS.Architecture;
+  readonly imageOS: "ubuntu22" | "ubuntu24" | "local";
+  readonly imageVersion: string;
+}
+
+export interface InvocationIdentity {
+  readonly workflowRun: string;
+  readonly runId: number;
+  readonly runAttempt: number;
+  readonly workflowRef: string;
+  readonly workflowSha: string | null;
+  readonly job: string;
+}
+
+export interface OrdinaryReceiptContext {
+  readonly executionMode: "protected" | "local";
+  readonly packageArtifact: {
+    readonly name: typeof PACKAGE_TARBALL;
+    readonly size: number;
+    readonly sha256: string;
+  };
+  readonly producerArtifact: ProducerArtifactIdentity;
+  readonly runner: RunnerIdentity;
+  readonly invocation: InvocationIdentity;
+}
+
+export interface ProtectedOrdinaryReceiptReviewInput {
+  readonly packageArtifactPath: string;
+  readonly expectedCommit: string;
+  readonly expectedNodeMajor: string | number;
+  readonly configuredRunnerLabel: string;
+  readonly producerArtifactId: string | number;
+  readonly producerArtifactDigest: string;
+  readonly githubServerUrl: string;
+  readonly githubRepository: string;
+  readonly githubRunId: string | number;
+  readonly githubRunAttempt: string | number;
+  readonly githubWorkflowRef: string;
+  readonly githubWorkflowSha: string;
+  readonly githubJob: string;
+  readonly runnerEnvironment: string;
+  readonly runnerOS: string;
+  readonly runnerArch: string;
+  readonly platformOS: string;
+  readonly platformArch: string;
+  readonly imageOS: string;
+  readonly imageVersion: string;
+}
+
+export interface OnboardingProof {
+  readonly manager: PackageManager;
+  readonly phases: {
+    readonly artifactInstall: true;
+    readonly scaffoldInit: true;
+    readonly noKeyRun: true;
+    readonly echoSetup: true;
+    readonly echoRun: true;
+    readonly coldRun: true;
+    readonly warmRun: true;
+  };
+  readonly assertions: {
+    readonly noKeyText: typeof EXPECTED_MOCK_REPLY;
+    readonly deterministicText: typeof EXPECTED_MOCK_REPLY;
+    readonly turnIdPresent: true;
+    readonly finalSequencePositive: true;
+    readonly echoLifecycle: readonly ["requested", "started", "completed"];
+    readonly echoLifecycleCounts: {
+      readonly requested: 1;
+      readonly started: 1;
+      readonly completed: 1;
+    };
+    readonly echoToolCallIdentityCount: 1;
+    readonly echoToolCallIdNonempty: true;
+    readonly echoResult: { readonly message: "hello" };
+    readonly echoFinalText: typeof EXPECTED_MOCK_REPLY;
+    readonly forbiddenTerminalEventsAbsent: true;
+    readonly coldWarmEqual: true;
+  };
 }
 
 export class SmokeCommandError extends Error {
@@ -268,6 +367,70 @@ interface GitHubPackageProof {
   readonly conclusion: "passed";
   readonly failureCode: null;
 }
+
+export interface OrdinaryNonPassedReceiptV2 {
+  readonly schemaVersion: 2;
+  readonly executionMode: "protected" | "local";
+  readonly commit: string | null;
+  readonly releaseManifestSha256: string | null;
+  readonly artifactSha256: Readonly<Record<string, string>>;
+  readonly runtime: { readonly version: string | null };
+  readonly artifacts: Readonly<Record<string, never>>;
+  readonly githubPackageProofs: Readonly<Record<string, never>>;
+  readonly onboardingProofs: Readonly<Record<string, never>>;
+  readonly conclusion: "failed" | "not_run";
+  readonly failureCode: string;
+  readonly failedPhase: SmokePhase | null;
+  readonly failureKind: CommandFailureKind;
+}
+
+export type OrdinaryFailedReceiptV2 = OrdinaryNonPassedReceiptV2 & {
+  readonly conclusion: "failed";
+};
+
+export type OrdinaryNotRunReceiptV2 = OrdinaryNonPassedReceiptV2 & {
+  readonly conclusion: "not_run";
+  readonly failedPhase: null;
+  readonly failureKind: "unknown";
+};
+
+export interface OrdinaryPassedReceiptV2 {
+  readonly schemaVersion: 2;
+  readonly executionMode: "protected" | "local";
+  readonly commit: string | null;
+  readonly releaseManifestSha256: string | null;
+  readonly artifactSha256: Readonly<Record<typeof PACKAGE_TARBALL, string>>;
+  readonly packageArtifact: OrdinaryReceiptContext["packageArtifact"];
+  readonly producerArtifact: ProducerArtifactIdentity;
+  readonly runner: RunnerIdentity;
+  readonly invocation: InvocationIdentity;
+  readonly runtime: { readonly version: string };
+  readonly artifacts: { readonly tarball: string; readonly package: string };
+  readonly githubPackageProofs: {
+    readonly npm: GitHubPackageProof;
+    readonly bun: GitHubPackageProof;
+  };
+  readonly onboardingProofs: { readonly npm: OnboardingProof; readonly bun: OnboardingProof };
+  readonly timings: {
+    readonly npm: { readonly coldSetupToOutputMs: number; readonly warmRunMs: number };
+    readonly bun: { readonly coldSetupToOutputMs: number; readonly warmRunMs: number };
+  };
+  readonly toolchain: {
+    readonly python: "not-used";
+    readonly uv: "not-used";
+    readonly node: string;
+    readonly npm: string;
+    readonly bun: "1.3.11";
+    readonly typescript: string;
+  };
+  readonly conclusion: "passed";
+  readonly failureCode: null;
+}
+
+export type OrdinaryReceiptV2 =
+  | OrdinaryPassedReceiptV2
+  | OrdinaryFailedReceiptV2
+  | OrdinaryNotRunReceiptV2;
 
 interface LifecycleProof {
   readonly stages: readonly string[];
@@ -403,7 +566,7 @@ const nodeBinary = process.env.NODE_BINARY ?? "node";
 const LOCAL_TIMEOUT_MS = 60_000;
 const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
-const PACKAGE_VERSION = "0.2.0-beta.8";
+const PACKAGE_VERSION = "0.2.0-beta.9";
 const PACKAGE_TARBALL = `kaji-sdk-${PACKAGE_VERSION}.tgz`;
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
 
@@ -928,6 +1091,40 @@ function parseArguments(argv: string[]): SmokeArguments {
       if (parsed.output !== undefined) throw new Error(`${argument} may be supplied once`);
       parsed.output = requiredFlagValue(argv, index, argument);
       index += 1;
+    } else if (argument === "--protected") {
+      if (parsed.protected !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.protected = true;
+    } else if (argument === "--configured-runner-label") {
+      if (parsed.configuredRunnerLabel !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (value !== "ubuntu-22.04" && value !== "ubuntu-24.04") {
+        throw new Error("--configured-runner-label must be ubuntu-22.04 or ubuntu-24.04");
+      }
+      parsed.configuredRunnerLabel = value;
+      index += 1;
+    } else if (argument === "--producer-artifact-id") {
+      if (parsed.producerArtifactId !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (!/^[1-9][0-9]*$/u.test(value)) {
+        throw new Error("--producer-artifact-id must be a positive integer");
+      }
+      const artifactId = Number(value);
+      if (!Number.isSafeInteger(artifactId)) {
+        throw new Error("--producer-artifact-id exceeds the safe integer range");
+      }
+      parsed.producerArtifactId = artifactId;
+      index += 1;
+    } else if (argument === "--producer-artifact-digest") {
+      if (parsed.producerArtifactDigest !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (!/^[0-9a-f]{64}$/u.test(value)) {
+        throw new Error("--producer-artifact-digest must be an upload-artifact SHA-256");
+      }
+      parsed.producerArtifactDigest = value;
+      index += 1;
     } else if (argument === "--for-handoff") {
       if (parsed.forHandoff !== undefined) throw new Error(`${argument} may be supplied once`);
       const value = requiredFlagValue(argv, index, argument);
@@ -976,14 +1173,34 @@ function parseArguments(argv: string[]): SmokeArguments {
       parsed.candidateRoot !== undefined ||
       parsed.sourceCommit !== undefined ||
       parsed.artifactSha256 !== undefined ||
-      parsed.handoffNodeBinary !== undefined ||
-      parsed.expectedNodeMajor !== undefined
+      parsed.handoffNodeBinary !== undefined
     ) {
       throw new Error("handoff-only flags require --for-handoff");
+    }
+    const protectedInputs = [
+      parsed.configuredRunnerLabel,
+      parsed.producerArtifactId,
+      parsed.producerArtifactDigest,
+      parsed.expectedNodeMajor,
+    ];
+    if (parsed.protected === true) {
+      if (
+        parsed.releaseManifest === undefined ||
+        parsed.expectedCommit === undefined ||
+        protectedInputs.some((value) => value === undefined)
+      ) {
+        throw new Error("protected package smoke arguments are incomplete");
+      }
+    } else if (protectedInputs.some((value) => value !== undefined)) {
+      throw new Error("protected package smoke inputs require --protected");
     }
     return parsed;
   }
   if (
+    parsed.protected !== undefined ||
+    parsed.configuredRunnerLabel !== undefined ||
+    parsed.producerArtifactId !== undefined ||
+    parsed.producerArtifactDigest !== undefined ||
     parsed.tarball === undefined ||
     parsed.sourceCommit === undefined ||
     parsed.artifactSha256 === undefined ||
@@ -1065,6 +1282,241 @@ function artifactIdentity(
     manifestSha256: sha256(manifestPath),
     artifactSha256: { [PACKAGE_TARBALL]: artifactHash },
   };
+}
+
+const PROTECTED_GITHUB_ENVIRONMENT = [
+  "GITHUB_ACTIONS",
+  "GITHUB_SERVER_URL",
+  "GITHUB_REPOSITORY",
+  "GITHUB_RUN_ID",
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_JOB",
+  "GITHUB_WORKFLOW_REF",
+  "GITHUB_WORKFLOW_SHA",
+  "GITHUB_SHA",
+  "RUNNER_ENVIRONMENT",
+  "RUNNER_OS",
+  "RUNNER_ARCH",
+  "ImageOS",
+  "ImageVersion",
+] as const;
+const PROTECTED_GITHUB_SERVER_URL = "https://github.com";
+const PROTECTED_GITHUB_REPOSITORY = "enkyuan/alloy";
+const PROTECTED_WORKFLOW_REFS = new Set([
+  "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+  "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.9",
+]);
+
+export function protectedReceiptEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): Record<(typeof PROTECTED_GITHUB_ENVIRONMENT)[number], string> {
+  const environment = Object.fromEntries(
+    PROTECTED_GITHUB_ENVIRONMENT.map((name) => {
+      const value = source[name];
+      if (value === undefined || value === "") {
+        throw new Error(`protected package smoke is missing ${name}`);
+      }
+      return [name, value];
+    }),
+  ) as Record<(typeof PROTECTED_GITHUB_ENVIRONMENT)[number], string>;
+  if (
+    environment.GITHUB_ACTIONS !== "true" ||
+    environment.GITHUB_SERVER_URL !== PROTECTED_GITHUB_SERVER_URL ||
+    environment.GITHUB_REPOSITORY !== PROTECTED_GITHUB_REPOSITORY ||
+    environment.GITHUB_RUN_ATTEMPT !== "1" ||
+    environment.GITHUB_JOB !== "node-compat" ||
+    !PROTECTED_WORKFLOW_REFS.has(environment.GITHUB_WORKFLOW_REF) ||
+    !environment.GITHUB_WORKFLOW_REF.startsWith(`${environment.GITHUB_REPOSITORY}/`) ||
+    !/^[0-9a-f]{40}$/u.test(environment.GITHUB_SHA) ||
+    environment.GITHUB_WORKFLOW_SHA !== environment.GITHUB_SHA
+  ) {
+    throw new Error("protected package smoke GitHub identity does not match policy");
+  }
+  return environment;
+}
+
+function positiveSafeInteger(value: string, label: string): number {
+  if (!/^[1-9][0-9]*$/u.test(value)) throw new Error(`${label} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${label} exceeds the safe integer range`);
+  return parsed;
+}
+
+function reviewedPositiveSafeInteger(value: string | number, label: string): number {
+  return positiveSafeInteger(String(value), label);
+}
+
+export function protectedOrdinaryReceiptContext(
+  input: ProtectedOrdinaryReceiptReviewInput,
+): OrdinaryReceiptContext {
+  const expectedCommit = sanitizeRetainedCommit(input.expectedCommit);
+  const expectedNodeMajor = Number(input.expectedNodeMajor);
+  const runId = reviewedPositiveSafeInteger(input.githubRunId, "GitHub run ID");
+  const runAttempt = reviewedPositiveSafeInteger(input.githubRunAttempt, "GitHub run attempt");
+  const producerArtifactId = reviewedPositiveSafeInteger(
+    input.producerArtifactId,
+    "producer artifact ID",
+  );
+  const expectedCell =
+    expectedNodeMajor === 22
+      ? ({ label: "ubuntu-22.04", imageOS: "ubuntu22" } as const)
+      : expectedNodeMajor === 24
+        ? ({ label: "ubuntu-24.04", imageOS: "ubuntu24" } as const)
+        : null;
+  if (
+    expectedCommit === null ||
+    expectedCell === null ||
+    input.githubServerUrl !== PROTECTED_GITHUB_SERVER_URL ||
+    input.githubRepository !== PROTECTED_GITHUB_REPOSITORY ||
+    runAttempt !== 1 ||
+    !PROTECTED_WORKFLOW_REFS.has(input.githubWorkflowRef) ||
+    !input.githubWorkflowRef.startsWith(`${input.githubRepository}/`) ||
+    input.githubWorkflowSha !== expectedCommit ||
+    input.githubJob !== "node-compat" ||
+    input.runnerEnvironment !== "github-hosted" ||
+    input.runnerOS !== "Linux" ||
+    input.runnerArch !== "X64" ||
+    input.platformOS !== "linux" ||
+    input.platformArch !== "x64" ||
+    input.configuredRunnerLabel !== expectedCell.label ||
+    input.imageOS !== expectedCell.imageOS ||
+    !/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/u.test(input.imageVersion) ||
+    !/^[0-9a-f]{64}$/u.test(input.producerArtifactDigest)
+  ) {
+    throw new Error("protected package smoke reviewed context does not match policy");
+  }
+  const packageArtifactPath = realpathSync(input.packageArtifactPath);
+  const packageArtifactSize = lstatSync(packageArtifactPath).size;
+  if (
+    basename(packageArtifactPath) !== PACKAGE_TARBALL ||
+    !Number.isSafeInteger(packageArtifactSize) ||
+    packageArtifactSize <= 0
+  ) {
+    throw new Error("reviewed npm tarball identity is invalid");
+  }
+  return {
+    executionMode: "protected",
+    packageArtifact: {
+      name: PACKAGE_TARBALL,
+      size: packageArtifactSize,
+      sha256: sha256(packageArtifactPath),
+    },
+    producerArtifact: {
+      name: "kaji-beta-artifacts",
+      id: producerArtifactId,
+      digest: `sha256:${input.producerArtifactDigest}`,
+      runId,
+      runAttempt,
+      headSha: expectedCommit,
+    },
+    runner: {
+      configuredLabel: expectedCell.label,
+      environment: "github-hosted",
+      runnerOS: "Linux",
+      runnerArch: "X64",
+      platformOS: "linux",
+      platformArch: "x64",
+      imageOS: expectedCell.imageOS,
+      imageVersion: input.imageVersion,
+    },
+    invocation: {
+      workflowRun:
+        `${PROTECTED_GITHUB_SERVER_URL}/${PROTECTED_GITHUB_REPOSITORY}` + `/actions/runs/${runId}`,
+      runId,
+      runAttempt,
+      workflowRef: input.githubWorkflowRef,
+      workflowSha: expectedCommit,
+      job: "node-compat",
+    },
+  };
+}
+
+function ordinaryReceiptContext(
+  arguments_: SmokeArguments,
+  identity: ArtifactIdentity,
+  nodeVersion: string,
+  tarball: string,
+): OrdinaryReceiptContext {
+  const packageArtifactSize = lstatSync(tarball).size;
+  const packageArtifactSha256 = sha256(tarball);
+  if (!Number.isSafeInteger(packageArtifactSize) || packageArtifactSize <= 0) {
+    throw new Error("npm tarball size must be a positive safe integer");
+  }
+  if (identity.artifactSha256[PACKAGE_TARBALL] !== packageArtifactSha256) {
+    throw new Error("npm tarball bytes differ from the retained artifact identity");
+  }
+  if (arguments_.protected !== true) {
+    return {
+      executionMode: "local",
+      packageArtifact: {
+        name: PACKAGE_TARBALL,
+        size: packageArtifactSize,
+        sha256: packageArtifactSha256,
+      },
+      producerArtifact: {
+        name: "local",
+        id: 0,
+        digest: "local",
+        runId: 0,
+        runAttempt: 0,
+        headSha: identity.commit,
+      },
+      runner: {
+        configuredLabel: "local",
+        environment: "local",
+        runnerOS: "local",
+        runnerArch: "local",
+        platformOS: process.platform,
+        platformArch: process.arch,
+        imageOS: "local",
+        imageVersion: "local",
+      },
+      invocation: {
+        workflowRun: "local",
+        runId: 0,
+        runAttempt: 0,
+        workflowRef: "local",
+        workflowSha: identity.commit,
+        job: "local",
+      },
+    };
+  }
+
+  const environment = protectedReceiptEnvironment();
+  const expectedNodeMajor = arguments_.expectedNodeMajor!;
+  const nodeMajor = Number(semverFromVersionOutput(nodeVersion, "Node").split(".", 1)[0]);
+  if (nodeMajor !== expectedNodeMajor) {
+    throw new Error("protected package smoke runner/runtime cell does not match policy");
+  }
+  if (
+    identity.commit === null ||
+    environment.GITHUB_SHA !== identity.commit ||
+    environment.GITHUB_WORKFLOW_SHA !== identity.commit
+  ) {
+    throw new Error("protected package smoke workflow SHA differs from the candidate commit");
+  }
+  return protectedOrdinaryReceiptContext({
+    packageArtifactPath: tarball,
+    expectedCommit: identity.commit,
+    expectedNodeMajor,
+    configuredRunnerLabel: arguments_.configuredRunnerLabel!,
+    producerArtifactId: arguments_.producerArtifactId!,
+    producerArtifactDigest: arguments_.producerArtifactDigest!,
+    githubServerUrl: environment.GITHUB_SERVER_URL,
+    githubRepository: environment.GITHUB_REPOSITORY,
+    githubRunId: environment.GITHUB_RUN_ID,
+    githubRunAttempt: environment.GITHUB_RUN_ATTEMPT,
+    githubWorkflowRef: environment.GITHUB_WORKFLOW_REF,
+    githubWorkflowSha: environment.GITHUB_WORKFLOW_SHA,
+    githubJob: environment.GITHUB_JOB,
+    runnerEnvironment: environment.RUNNER_ENVIRONMENT,
+    runnerOS: environment.RUNNER_OS,
+    runnerArch: environment.RUNNER_ARCH,
+    platformOS: process.platform,
+    platformArch: process.arch,
+    imageOS: environment.ImageOS,
+    imageVersion: environment.ImageVersion,
+  });
 }
 
 function stableValue(value: unknown): unknown {
@@ -1595,6 +2047,15 @@ function semverFromVersionOutput(output: string, label: string): string {
   )?.[1];
   if (version === undefined) throw new Error(`${label} emitted an invalid semantic version`);
   return version;
+}
+
+function isNormativeSemver(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u.test(
+      value,
+    )
+  );
 }
 
 export function retainedSmokeToolVersion(output: string, tool: "node" | "npm" | "bun"): string {
@@ -2458,13 +2919,14 @@ async function compileInstalledGitHubTypes(
   };
 }
 
-interface ScaffoldTiming {
+export interface ScaffoldResult {
   readonly coldSetupToOutputMs: number;
   readonly warmRunMs: number;
   readonly githubProof: GitHubPackageProof;
+  readonly onboardingProof: OnboardingProof;
 }
 
-function retainedScaffoldTiming(timing: ScaffoldTiming): {
+function retainedScaffoldTiming(timing: ScaffoldResult): {
   coldSetupToOutputMs: number;
   warmRunMs: number;
 } {
@@ -2482,11 +2944,762 @@ function retainedScaffoldTiming(timing: ScaffoldTiming): {
   };
 }
 
+function closedObject(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): asserts value is Record<string, unknown> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())
+  ) {
+    throw new Error(`${label} is not a closed object`);
+  }
+}
+
+function assertPositiveSafeInteger(value: unknown, label: string): asserts value is number {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+}
+
+function assertNonemptyString(value: unknown, label: string): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+}
+
+function assertExactJson(value: unknown, expected: unknown, label: string): void {
+  if (JSON.stringify(stableValue(value)) !== JSON.stringify(stableValue(expected))) {
+    throw new Error(`${label} differs`);
+  }
+}
+
+function assertClosedGithubPackageProof(value: unknown): asserts value is GitHubPackageProof {
+  closedObject(
+    value,
+    [
+      "schemaVersion",
+      "evidenceClass",
+      "integration",
+      "runtime",
+      "network",
+      "liveProvider",
+      "sharedAbiVersion",
+      "packageAbiSchemaVersion",
+      "packageCatalogVersion",
+      "apiFixtureVersion",
+      "sharedFixtureCaseCount",
+      "publicScenarioCount",
+      "packageCatalog",
+      "cliCopiedCatalog",
+      "esmSharedAbiMatched",
+      "cjsSharedAbiMatched",
+      "esmPackageAbiMatched",
+      "cjsPackageAbiMatched",
+      "esmClassIdentityMatched",
+      "cjsClassIdentityMatched",
+      "esmFactoryIdentityMatched",
+      "cjsFactoryIdentityMatched",
+      "esmRuntimeExports",
+      "cjsRuntimeExports",
+      "esmDeclarationExports",
+      "cjsDeclarationExports",
+      "typescriptDeclarationChecks",
+      "privateGitHubCompositionSourcesPacked",
+      "privateGitHubCompositionSourceImportsRejected",
+      "closedCallsDeniedBeforeCredentialAccess",
+      "approvalDeniedBeforeCredentialAccess",
+      "repositoryDeniedBeforeCredentialAccess",
+      "githubCatalogEventsVerified",
+      "genericSyntheticCatalogEventsVerified",
+      "githubFailureRecovery",
+      "githubObservabilitySinksVerified",
+      "unknownMutationPreserved",
+      "mutationRetries",
+      "lifecycle",
+      "policyBeforeRequest",
+      "aliasCollisionRejected",
+      "conclusion",
+      "failureCode",
+    ],
+    "GitHub package proof",
+  );
+  for (const [key, expected] of Object.entries({
+    schemaVersion: 5,
+    evidenceClass: "offline_exact_artifact_smoke",
+    integration: "github",
+    runtime: "typescript",
+    network: "blocked",
+    liveProvider: false,
+    sharedAbiVersion: "1.0.0",
+    packageAbiSchemaVersion: "1.0.0",
+    packageCatalogVersion: "0.2.0",
+    apiFixtureVersion: "1.0.0",
+    sharedFixtureCaseCount: 23,
+    publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
+    esmSharedAbiMatched: true,
+    cjsSharedAbiMatched: true,
+    esmPackageAbiMatched: true,
+    cjsPackageAbiMatched: true,
+    esmClassIdentityMatched: true,
+    cjsClassIdentityMatched: true,
+    esmFactoryIdentityMatched: true,
+    cjsFactoryIdentityMatched: true,
+    privateGitHubCompositionSourcesPacked: false,
+    privateGitHubCompositionSourceImportsRejected: true,
+    closedCallsDeniedBeforeCredentialAccess: true,
+    approvalDeniedBeforeCredentialAccess: true,
+    repositoryDeniedBeforeCredentialAccess: true,
+    githubObservabilitySinksVerified: true,
+    unknownMutationPreserved: true,
+    mutationRetries: 0,
+    aliasCollisionRejected: true,
+    conclusion: "passed",
+    failureCode: null,
+  })) {
+    if (value[key] !== expected) throw new Error(`GitHub package proof ${key} differs`);
+  }
+  assertExactJson(
+    value.packageCatalog,
+    {
+      schemaVersion: "1.0.0",
+      catalogVersion: "0.2.0",
+      toolCount: 15,
+      readToolCount: 13,
+      tools: GITHUB_TOOLS,
+      readTools: GITHUB_READ_TOOLS,
+      providerAliases: GITHUB_PROVIDER_ALIASES,
+      catalogNames: GITHUB_CATALOG_NAMES,
+    },
+    "GitHub package catalog",
+  );
+  assertExactJson(
+    value.cliCopiedCatalog,
+    {
+      manifestVersion: "0.1.0",
+      toolCount: 6,
+      readToolCount: 4,
+      tools: SHARED_GITHUB_TOOLS,
+      readTools: SHARED_GITHUB_READ_TOOLS,
+    },
+    "GitHub copied catalog",
+  );
+  const declarations = value.typescriptDeclarationChecks;
+  if (typeof declarations !== "object" || declarations === null || Array.isArray(declarations)) {
+    throw new Error("GitHub TypeScript declaration checks are invalid");
+  }
+  const currentVersion = (
+    (declarations as Record<string, unknown>).typescriptCurrent as
+      | Record<string, unknown>
+      | undefined
+  )?.version;
+  if (!isNormativeSemver(currentVersion) || currentVersion === "5.7.3") {
+    throw new Error("GitHub current TypeScript declaration version is invalid");
+  }
+  assertExactJson(
+    declarations,
+    {
+      compilerOptions: {
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        skipLibCheck: false,
+      },
+      typescript57: { version: "5.7.3", mtsImport: "passed", ctsRequire: "passed" },
+      typescriptCurrent: {
+        version: currentVersion,
+        mtsImport: "passed",
+        ctsRequire: "passed",
+      },
+    },
+    "GitHub TypeScript declaration checks",
+  );
+  assertExactJson(
+    value.esmRuntimeExports,
+    ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    "GitHub ESM runtime exports",
+  );
+  assertExactJson(
+    value.cjsRuntimeExports,
+    ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    "GitHub CJS runtime exports",
+  );
+  for (const key of ["esmDeclarationExports", "cjsDeclarationExports"] as const) {
+    assertExactJson(value[key], GITHUB_PUBLIC_SYMBOLS, `GitHub ${key}`);
+  }
+  assertExactJson(
+    value.githubCatalogEventsVerified,
+    ["requested", "started", "failed"],
+    "GitHub catalog events",
+  );
+  assertExactJson(
+    value.genericSyntheticCatalogEventsVerified,
+    ["requested", "started", "completed"],
+    "GitHub synthetic catalog events",
+  );
+  assertExactJson(
+    value.githubFailureRecovery,
+    {
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+      reason_code: "github_token_missing",
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+      doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+    },
+    "GitHub recovery proof",
+  );
+  assertExactJson(
+    value.lifecycle,
+    {
+      githubFailure: {
+        stages: ["requested", "started", "failed"],
+        providerAlias: "github_get_file",
+        catalogName: "github.get_file",
+        sameIdentityAtEveryStage: true,
+      },
+      syntheticCompletion: {
+        stages: ["requested", "started", "completed"],
+        providerAlias: "synthetic_complete",
+        catalogName: "synthetic.complete",
+        sameIdentityAtEveryStage: true,
+      },
+    },
+    "GitHub lifecycle proof",
+  );
+  assertExactJson(
+    value.policyBeforeRequest,
+    {
+      testFile: POLICY_TEST_FILE,
+      testName: POLICY_TEST_NAME,
+      tokenLookups: 0,
+      requestAttempts: 0,
+    },
+    "GitHub policy-before-request proof",
+  );
+}
+
+function assertOnboardingProof(value: unknown, manager: PackageManager): void {
+  closedObject(value, ["manager", "phases", "assertions"], `${manager} onboarding proof`);
+  if (value.manager !== manager) throw new Error(`${manager} onboarding manager differs`);
+  closedObject(
+    value.phases,
+    ["artifactInstall", "scaffoldInit", "noKeyRun", "echoSetup", "echoRun", "coldRun", "warmRun"],
+    `${manager} onboarding phases`,
+  );
+  if (Object.values(value.phases).some((phase) => phase !== true)) {
+    throw new Error(`${manager} onboarding phase did not pass`);
+  }
+  closedObject(
+    value.assertions,
+    [
+      "noKeyText",
+      "deterministicText",
+      "turnIdPresent",
+      "finalSequencePositive",
+      "echoLifecycle",
+      "echoLifecycleCounts",
+      "echoToolCallIdentityCount",
+      "echoToolCallIdNonempty",
+      "echoResult",
+      "echoFinalText",
+      "forbiddenTerminalEventsAbsent",
+      "coldWarmEqual",
+    ],
+    `${manager} onboarding assertions`,
+  );
+  closedObject(
+    value.assertions.echoLifecycleCounts,
+    ["requested", "started", "completed"],
+    `${manager} Echo lifecycle counts`,
+  );
+  closedObject(value.assertions.echoResult, ["message"], `${manager} Echo result`);
+  if (
+    value.assertions.noKeyText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.deterministicText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.turnIdPresent !== true ||
+    value.assertions.finalSequencePositive !== true ||
+    JSON.stringify(value.assertions.echoLifecycle) !==
+      JSON.stringify(["requested", "started", "completed"]) ||
+    JSON.stringify(value.assertions.echoLifecycleCounts) !==
+      JSON.stringify({ requested: 1, started: 1, completed: 1 }) ||
+    value.assertions.echoToolCallIdentityCount !== 1 ||
+    value.assertions.echoToolCallIdNonempty !== true ||
+    value.assertions.echoResult.message !== "hello" ||
+    value.assertions.echoFinalText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.forbiddenTerminalEventsAbsent !== true ||
+    value.assertions.coldWarmEqual !== true
+  ) {
+    throw new Error(`${manager} onboarding assertion did not pass`);
+  }
+}
+
+function assertTiming(value: unknown, label: string): void {
+  closedObject(value, ["coldSetupToOutputMs", "warmRunMs"], label);
+  for (const duration of Object.values(value)) {
+    if (!Number.isSafeInteger(duration) || Number(duration) < 0) {
+      throw new Error(`${label} must contain nonnegative safe integers`);
+    }
+  }
+}
+
+export function assertClosedOrdinaryReceipt(
+  value: unknown,
+  requiredMode?: "protected" | "local",
+  expectedContext?: OrdinaryReceiptContext,
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("ordinary receipt must be an object");
+  }
+  const receipt = value as Record<string, unknown>;
+  const conclusion = receipt.conclusion;
+  if (conclusion === "failed" || conclusion === "not_run") {
+    closedObject(
+      receipt,
+      [
+        "schemaVersion",
+        "executionMode",
+        "commit",
+        "releaseManifestSha256",
+        "artifactSha256",
+        "runtime",
+        "artifacts",
+        "githubPackageProofs",
+        "onboardingProofs",
+        "conclusion",
+        "failureCode",
+        "failedPhase",
+        "failureKind",
+      ],
+      "failed ordinary receipt",
+    );
+    if (
+      receipt.schemaVersion !== 2 ||
+      (receipt.executionMode !== "protected" && receipt.executionMode !== "local") ||
+      (requiredMode !== undefined && receipt.executionMode !== requiredMode)
+    ) {
+      throw new Error("failed ordinary receipt identity differs");
+    }
+    if (receipt.commit !== null && sanitizeRetainedCommit(receipt.commit) === null) {
+      throw new Error("failed ordinary receipt commit is invalid");
+    }
+    if (
+      receipt.releaseManifestSha256 !== null &&
+      sanitizeRetainedSha256(receipt.releaseManifestSha256) === null
+    ) {
+      throw new Error("failed ordinary receipt manifest digest is invalid");
+    }
+    if (
+      JSON.stringify(sanitizeRetainedArtifactSha256(receipt.artifactSha256)) !==
+      JSON.stringify(receipt.artifactSha256)
+    ) {
+      throw new Error("failed ordinary receipt artifact identity is invalid");
+    }
+    closedObject(receipt.runtime, ["version"], "failed ordinary runtime");
+    if (receipt.runtime.version !== null && !isRetainedNodeVersion(receipt.runtime.version)) {
+      throw new Error("failed ordinary receipt runtime is invalid");
+    }
+    for (const [name, claim] of [
+      ["artifacts", receipt.artifacts],
+      ["githubPackageProofs", receipt.githubPackageProofs],
+      ["onboardingProofs", receipt.onboardingProofs],
+    ] as const) {
+      closedObject(claim, [], `failed ordinary ${name}`);
+    }
+    if (
+      typeof receipt.failureCode !== "string" ||
+      !/^[a-z][a-z0-9_]{0,63}$/u.test(receipt.failureCode)
+    ) {
+      throw new Error("failed ordinary failure code is invalid");
+    }
+    if (receipt.failedPhase !== null && !isSmokePhase(receipt.failedPhase)) {
+      throw new Error("failed ordinary receipt phase is invalid");
+    }
+    if (!isCommandFailureKind(receipt.failureKind)) {
+      throw new Error("failed ordinary receipt failure kind is invalid");
+    }
+    if (
+      conclusion === "not_run" &&
+      (receipt.failedPhase !== null || receipt.failureKind !== "unknown")
+    ) {
+      throw new Error("not-run ordinary receipt retained a failure execution claim");
+    }
+    return;
+  }
+
+  closedObject(
+    receipt,
+    [
+      "schemaVersion",
+      "executionMode",
+      "commit",
+      "releaseManifestSha256",
+      "artifactSha256",
+      "packageArtifact",
+      "producerArtifact",
+      "runner",
+      "invocation",
+      "runtime",
+      "artifacts",
+      "githubPackageProofs",
+      "onboardingProofs",
+      "timings",
+      "toolchain",
+      "conclusion",
+      "failureCode",
+    ],
+    "passed ordinary receipt",
+  );
+  if (
+    receipt.schemaVersion !== 2 ||
+    receipt.conclusion !== "passed" ||
+    receipt.failureCode !== null ||
+    (receipt.executionMode !== "protected" && receipt.executionMode !== "local") ||
+    (requiredMode !== undefined && receipt.executionMode !== requiredMode)
+  ) {
+    throw new Error("passed ordinary receipt terminal identity differs");
+  }
+  if (
+    expectedContext !== undefined &&
+    (receipt.executionMode !== expectedContext.executionMode ||
+      JSON.stringify(receipt.packageArtifact) !== JSON.stringify(expectedContext.packageArtifact) ||
+      JSON.stringify(receipt.producerArtifact) !==
+        JSON.stringify(expectedContext.producerArtifact) ||
+      JSON.stringify(receipt.runner) !== JSON.stringify(expectedContext.runner) ||
+      JSON.stringify(receipt.invocation) !== JSON.stringify(expectedContext.invocation))
+  ) {
+    throw new Error("ordinary receipt differs from its reviewed inputs");
+  }
+  const mode = receipt.executionMode;
+  const commit = receipt.commit;
+  if (mode === "protected") {
+    if (sanitizeRetainedCommit(commit) === null) {
+      throw new Error("protected ordinary receipt commit is invalid");
+    }
+    if (sanitizeRetainedSha256(receipt.releaseManifestSha256) === null) {
+      throw new Error("protected ordinary receipt manifest digest is invalid");
+    }
+  } else {
+    if (commit !== null && sanitizeRetainedCommit(commit) === null) {
+      throw new Error("local ordinary receipt commit is invalid");
+    }
+    if (
+      receipt.releaseManifestSha256 !== null &&
+      sanitizeRetainedSha256(receipt.releaseManifestSha256) === null
+    ) {
+      throw new Error("local ordinary receipt manifest digest is invalid");
+    }
+  }
+  closedObject(receipt.artifactSha256, [PACKAGE_TARBALL], "ordinary artifact digests");
+  const artifactSha256 = receipt.artifactSha256[PACKAGE_TARBALL];
+  if (sanitizeRetainedSha256(artifactSha256) === null) {
+    throw new Error("ordinary npm tarball digest is invalid");
+  }
+  closedObject(receipt.packageArtifact, ["name", "size", "sha256"], "package artifact");
+  assertPositiveSafeInteger(receipt.packageArtifact.size, "package artifact size");
+  if (
+    receipt.packageArtifact.name !== PACKAGE_TARBALL ||
+    receipt.packageArtifact.sha256 !== artifactSha256
+  ) {
+    throw new Error("package artifact identity differs");
+  }
+  closedObject(
+    receipt.producerArtifact,
+    ["name", "id", "digest", "runId", "runAttempt", "headSha"],
+    "producer artifact",
+  );
+  closedObject(
+    receipt.runner,
+    [
+      "configuredLabel",
+      "environment",
+      "runnerOS",
+      "runnerArch",
+      "platformOS",
+      "platformArch",
+      "imageOS",
+      "imageVersion",
+    ],
+    "runner identity",
+  );
+  closedObject(
+    receipt.invocation,
+    ["workflowRun", "runId", "runAttempt", "workflowRef", "workflowSha", "job"],
+    "invocation identity",
+  );
+  closedObject(receipt.runtime, ["version"], "ordinary runtime");
+  if (!isRetainedNodeVersion(receipt.runtime.version)) {
+    throw new Error("ordinary runtime version is invalid");
+  }
+  const nodeMajor = Number(String(receipt.runtime.version).slice(1).split(".", 1)[0]);
+  if (mode === "protected") {
+    const cell =
+      nodeMajor === 22
+        ? { label: "ubuntu-22.04", imageOS: "ubuntu22" }
+        : nodeMajor === 24
+          ? { label: "ubuntu-24.04", imageOS: "ubuntu24" }
+          : null;
+    if (
+      cell === null ||
+      receipt.runner.configuredLabel !== cell.label ||
+      receipt.runner.environment !== "github-hosted" ||
+      receipt.runner.runnerOS !== "Linux" ||
+      receipt.runner.runnerArch !== "X64" ||
+      receipt.runner.platformOS !== "linux" ||
+      receipt.runner.platformArch !== "x64" ||
+      receipt.runner.imageOS !== cell.imageOS ||
+      typeof receipt.runner.imageVersion !== "string" ||
+      !/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/u.test(receipt.runner.imageVersion)
+    ) {
+      throw new Error("protected runner identity differs");
+    }
+    assertPositiveSafeInteger(receipt.producerArtifact.id, "producer artifact ID");
+    assertPositiveSafeInteger(receipt.producerArtifact.runId, "producer run ID");
+    assertPositiveSafeInteger(receipt.producerArtifact.runAttempt, "producer run attempt");
+    if (
+      receipt.producerArtifact.name !== "kaji-beta-artifacts" ||
+      typeof receipt.producerArtifact.digest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(receipt.producerArtifact.digest) ||
+      receipt.producerArtifact.runId !== receipt.invocation.runId ||
+      receipt.producerArtifact.runAttempt !== receipt.invocation.runAttempt ||
+      receipt.producerArtifact.runAttempt !== 1 ||
+      receipt.producerArtifact.headSha !== commit ||
+      receipt.invocation.workflowSha !== commit
+    ) {
+      throw new Error("protected producer/invocation binding differs");
+    }
+    assertPositiveSafeInteger(receipt.invocation.runId, "invocation run ID");
+    assertPositiveSafeInteger(receipt.invocation.runAttempt, "invocation run attempt");
+    assertNonemptyString(receipt.invocation.workflowRef, "invocation workflow ref");
+    assertNonemptyString(receipt.invocation.job, "invocation job");
+    if (
+      typeof receipt.invocation.workflowRun !== "string" ||
+      receipt.invocation.workflowRun !==
+        `${PROTECTED_GITHUB_SERVER_URL}/${PROTECTED_GITHUB_REPOSITORY}` +
+          `/actions/runs/${receipt.invocation.runId}` ||
+      receipt.invocation.runAttempt !== 1 ||
+      !PROTECTED_WORKFLOW_REFS.has(receipt.invocation.workflowRef) ||
+      !receipt.invocation.workflowRef.startsWith(`${PROTECTED_GITHUB_REPOSITORY}/`) ||
+      receipt.invocation.job !== "node-compat"
+    ) {
+      throw new Error("protected invocation identity differs");
+    }
+  } else if (
+    receipt.producerArtifact.name !== "local" ||
+    receipt.producerArtifact.id !== 0 ||
+    receipt.producerArtifact.digest !== "local" ||
+    receipt.producerArtifact.runId !== 0 ||
+    receipt.producerArtifact.runAttempt !== 0 ||
+    receipt.producerArtifact.headSha !== commit ||
+    receipt.runner.configuredLabel !== "local" ||
+    receipt.runner.environment !== "local" ||
+    receipt.runner.runnerOS !== "local" ||
+    receipt.runner.runnerArch !== "local" ||
+    receipt.runner.imageOS !== "local" ||
+    receipt.runner.imageVersion !== "local" ||
+    receipt.invocation.workflowRun !== "local" ||
+    receipt.invocation.runId !== 0 ||
+    receipt.invocation.runAttempt !== 0 ||
+    receipt.invocation.workflowRef !== "local" ||
+    receipt.invocation.workflowSha !== commit ||
+    receipt.invocation.job !== "local"
+  ) {
+    throw new Error("local ordinary receipt identity differs");
+  }
+  closedObject(receipt.artifacts, ["tarball", "package"], "ordinary artifact paths");
+  assertNonemptyString(receipt.artifacts.tarball, "ordinary tarball path");
+  assertNonemptyString(receipt.artifacts.package, "ordinary package path");
+  if (basename(receipt.artifacts.tarball) !== PACKAGE_TARBALL) {
+    throw new Error("ordinary tarball path has the wrong basename");
+  }
+  closedObject(receipt.githubPackageProofs, ["npm", "bun"], "GitHub package proofs");
+  if (
+    JSON.stringify(receipt.githubPackageProofs.npm) !==
+    JSON.stringify(receipt.githubPackageProofs.bun)
+  ) {
+    throw new Error("npm and Bun GitHub package proofs differ");
+  }
+  assertClosedGithubPackageProof(receipt.githubPackageProofs.npm);
+  assertClosedGithubPackageProof(receipt.githubPackageProofs.bun);
+  closedObject(receipt.onboardingProofs, ["npm", "bun"], "onboarding proofs");
+  assertOnboardingProof(receipt.onboardingProofs.npm, "npm");
+  assertOnboardingProof(receipt.onboardingProofs.bun, "bun");
+  closedObject(receipt.timings, ["npm", "bun"], "ordinary timings");
+  assertTiming(receipt.timings.npm, "npm timing");
+  assertTiming(receipt.timings.bun, "bun timing");
+  closedObject(
+    receipt.toolchain,
+    ["python", "uv", "node", "npm", "bun", "typescript"],
+    "ordinary toolchain",
+  );
+  for (const value of Object.values(receipt.toolchain)) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 80) {
+      throw new Error("ordinary toolchain value is invalid");
+    }
+  }
+  const typescriptCurrent =
+    receipt.githubPackageProofs.npm.typescriptDeclarationChecks.typescriptCurrent.version;
+  if (
+    receipt.toolchain.python !== "not-used" ||
+    receipt.toolchain.uv !== "not-used" ||
+    receipt.toolchain.node !== receipt.runtime.version ||
+    !isNormativeSemver(receipt.toolchain.npm) ||
+    receipt.toolchain.bun !== "1.3.11" ||
+    receipt.toolchain.typescript !== `5.7.3 and ${typescriptCurrent}`
+  ) {
+    throw new Error("ordinary toolchain identity differs");
+  }
+}
+
+export function assertProtectedOrdinaryReceiptForWorkflow(
+  value: unknown,
+  input: ProtectedOrdinaryReceiptReviewInput,
+): asserts value is Record<string, unknown> {
+  assertClosedOrdinaryReceipt(value, "protected", protectedOrdinaryReceiptContext(input));
+}
+
+const INSTALLED_ARTIFACT_ECHO_EVIDENCE_SOURCE = `
+const observedEchoLifecycle = result.events.flatMap((event) => {
+  const stage =
+    event.type === EventType.TOOL_CALL_REQUESTED
+      ? "requested"
+      : event.type === EventType.TOOL_CALL_STARTED
+        ? "started"
+        : event.type === EventType.TOOL_CALL_COMPLETED
+          ? "completed"
+          : null;
+  return stage === null
+    ? []
+    : [{
+        stage,
+        toolCallId: "tool_call_id" in event ? event.tool_call_id : null,
+        result: "result" in event ? event.result : null,
+      }];
+});
+console.log("KAJI_ECHO_EVIDENCE:" + JSON.stringify({
+  schemaVersion: 1,
+  lifecycleEvents: observedEchoLifecycle,
+  finalText: result.text,
+  turnId: result.turnId,
+  finalSequence: Math.max(...result.events.map((event) => event.sequence)),
+  forbiddenTerminalEventCount: result.events.filter((event) =>
+    unexpectedTerminalTypes.has(event.type),
+  ).length,
+}));
+`;
+
+export function parseInstalledArtifactEchoEvidence(
+  output: string,
+): Pick<
+  OnboardingProof["assertions"],
+  | "turnIdPresent"
+  | "finalSequencePositive"
+  | "echoLifecycle"
+  | "echoLifecycleCounts"
+  | "echoToolCallIdentityCount"
+  | "echoToolCallIdNonempty"
+  | "echoResult"
+  | "echoFinalText"
+  | "forbiddenTerminalEventsAbsent"
+> {
+  const lines = output.trim().split(/\r?\n/u);
+  if (
+    lines.length !== 2 ||
+    lines[0] !== "PASS: echo requested, started, completed, and observed" ||
+    !lines[1]?.startsWith("KAJI_ECHO_EVIDENCE:")
+  ) {
+    throw new Error("installed-artifact Echo output changed");
+  }
+  let document: unknown;
+  try {
+    document = JSON.parse(lines[1].slice("KAJI_ECHO_EVIDENCE:".length));
+  } catch {
+    throw new Error("installed-artifact Echo evidence is invalid JSON");
+  }
+  closedObject(
+    document,
+    [
+      "schemaVersion",
+      "lifecycleEvents",
+      "finalText",
+      "turnId",
+      "finalSequence",
+      "forbiddenTerminalEventCount",
+    ],
+    "installed-artifact Echo evidence",
+  );
+  if (document.schemaVersion !== 1 || !Array.isArray(document.lifecycleEvents)) {
+    throw new Error("installed-artifact Echo evidence identity differs");
+  }
+  const lifecycleEvents = document.lifecycleEvents as unknown[];
+  const stages = ["requested", "started", "completed"] as const;
+  const counts = Object.fromEntries(
+    stages.map((stage) => [
+      stage,
+      lifecycleEvents.filter(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          !Array.isArray(event) &&
+          (event as Record<string, unknown>).stage === stage,
+      ).length,
+    ]),
+  ) as Record<(typeof stages)[number], number>;
+  if (
+    lifecycleEvents.length !== 3 ||
+    stages.some((stage) => counts[stage] !== 1) ||
+    document.finalText !== EXPECTED_MOCK_REPLY ||
+    typeof document.turnId !== "string" ||
+    document.turnId.length === 0 ||
+    !Number.isSafeInteger(document.finalSequence) ||
+    Number(document.finalSequence) <= 0 ||
+    document.forbiddenTerminalEventCount !== 0
+  ) {
+    throw new Error("installed-artifact Echo evidence did not prove the expected run");
+  }
+  const toolCallIds = new Set<string>();
+  const observedStages: unknown[] = [];
+  for (const event of lifecycleEvents) {
+    closedObject(event, ["stage", "toolCallId", "result"], "installed-artifact Echo event");
+    if (
+      !stages.includes(event.stage as (typeof stages)[number]) ||
+      typeof event.toolCallId !== "string" ||
+      event.toolCallId.length === 0
+    ) {
+      throw new Error("installed-artifact Echo tool-call identity is invalid");
+    }
+    observedStages.push(event.stage);
+    toolCallIds.add(event.toolCallId);
+    if (event.stage === "completed") {
+      assertExactJson(event.result, { message: "hello" }, "installed-artifact Echo result");
+    } else if (event.result !== null) {
+      throw new Error("installed-artifact Echo nonterminal event retained a result");
+    }
+  }
+  if (toolCallIds.size !== 1) {
+    throw new Error("installed-artifact Echo tool-call identity changed");
+  }
+  if (JSON.stringify(observedStages) !== JSON.stringify(stages)) {
+    throw new Error("installed-artifact Echo lifecycle order changed");
+  }
+  return {
+    turnIdPresent: true,
+    finalSequencePositive: true,
+    echoLifecycle: ["requested", "started", "completed"],
+    echoLifecycleCounts: { requested: 1, started: 1, completed: 1 },
+    echoToolCallIdentityCount: 1,
+    echoToolCallIdNonempty: true,
+    echoResult: { message: "hello" },
+    echoFinalText: EXPECTED_MOCK_REPLY,
+    forbiddenTerminalEventsAbsent: true,
+  };
+}
+
 async function runScaffold(
   manager: PackageManager,
   tarball: string,
   nodeTypesPackage: string,
-): Promise<ScaffoldTiming> {
+): Promise<ScaffoldResult> {
   const startedNs = process.hrtime.bigint();
   const root = join(workdir, `${manager}-scaffold`);
   const bootstrap = join(root, "bootstrap");
@@ -2703,13 +3916,16 @@ async function runScaffold(
     "getting-started:no-key:typescript",
     "ts",
   );
-  const tthwEcho = markedSnippet(
-    join(repositoryRoot, "docs/kaji/tthw-evidence.md"),
+  const installedArtifactEcho = markedSnippet(
+    join(repositoryRoot, "docs/kaji/typescript-onboarding-evidence.md"),
     "tthw-echo:typescript",
     "ts",
   );
   writeFileSync(join(generated, "getting-started.mts"), gettingStarted);
-  writeFileSync(join(generated, "tthw-echo.mts"), tthwEcho);
+  writeFileSync(
+    join(generated, "installed-artifact-echo.mts"),
+    `${installedArtifactEcho}\n${INSTALLED_ARTIFACT_ECHO_EVIDENCE_SOURCE}`,
+  );
   const docsEnvironment = tokenFreeHandoffEnvironment({
     ...ownerEnvironment,
     npm_config_registry: "http://127.0.0.1:9",
@@ -2727,16 +3943,14 @@ async function runScaffold(
   if (gettingStartedOutput.trim() !== EXPECTED_MOCK_REPLY) {
     throw new Error("Getting Started no-key output changed");
   }
-  const tthwOutput = await runCommand(
-    `${manager}:docs-tthw-echo-run`,
+  const installedArtifactEchoOutput = await runCommand(
+    `${manager}:installed-artifact-echo-run`,
     docsCommand,
-    docsArgs("tthw-echo.mts"),
+    docsArgs("installed-artifact-echo.mts"),
     generated,
     docsEnvironment,
   );
-  if (tthwOutput.trim() !== "PASS: echo requested, started, completed, and observed") {
-    throw new Error("TTHW Echo output changed");
-  }
+  const echoAssertions = parseInstalledArtifactEchoEvidence(installedArtifactEchoOutput);
   const lifecycleOutput = await runCommand(
     `${manager}:lifecycle-run`,
     nodeBinary,
@@ -2771,7 +3985,29 @@ async function runScaffold(
     throw new Error("cold and warm generated scaffold outputs differed");
   }
   const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint());
-  return { coldSetupToOutputMs, warmRunMs, githubProof };
+  return {
+    coldSetupToOutputMs,
+    warmRunMs,
+    githubProof,
+    onboardingProof: {
+      manager,
+      phases: {
+        artifactInstall: true,
+        scaffoldInit: true,
+        noKeyRun: true,
+        echoSetup: true,
+        echoRun: true,
+        coldRun: true,
+        warmRun: true,
+      },
+      assertions: {
+        noKeyText: EXPECTED_MOCK_REPLY,
+        deterministicText: EXPECTED_MOCK_REPLY,
+        ...echoAssertions,
+        coldWarmEqual: true,
+      },
+    },
+  };
 }
 
 export function ordinarySuccessReceipt(
@@ -2781,8 +4017,9 @@ export function ordinarySuccessReceipt(
   nodeVersion: string,
   npmVersion: string,
   bunVersion: string,
-  npmTiming: ScaffoldTiming,
-  bunTiming: ScaffoldTiming,
+  npmTiming: ScaffoldResult,
+  bunTiming: ScaffoldResult,
+  context: OrdinaryReceiptContext,
 ): Record<string, unknown> {
   const normalizedNodeVersion = semverFromVersionOutput(nodeVersion, "Node");
   const normalizedNpmVersion = semverFromVersionOutput(npmVersion, "npm");
@@ -2794,14 +4031,27 @@ export function ordinarySuccessReceipt(
     throw new Error("npm and Bun installed-package proofs differ");
   }
   const declarations = npmTiming.githubProof.typescriptDeclarationChecks;
-  return {
-    schemaVersion: 1,
+  const artifactHash = identity.artifactSha256[PACKAGE_TARBALL];
+  if (artifactHash === undefined) {
+    throw new Error("success receipt is missing the canonical npm tarball digest");
+  }
+  const receipt = {
+    schemaVersion: 2,
+    executionMode: context.executionMode,
     commit: identity.commit,
     releaseManifestSha256: identity.manifestSha256,
     artifactSha256: identity.artifactSha256,
+    packageArtifact: context.packageArtifact,
+    producerArtifact: context.producerArtifact,
+    runner: context.runner,
+    invocation: context.invocation,
     runtime: { version: nodeVersion },
     artifacts: { tarball, package: installedPackagePath },
     githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
+    onboardingProofs: {
+      npm: npmTiming.onboardingProof,
+      bun: bunTiming.onboardingProof,
+    },
     timings: {
       npm: retainedScaffoldTiming(npmTiming),
       bun: retainedScaffoldTiming(bunTiming),
@@ -2817,6 +4067,8 @@ export function ordinarySuccessReceipt(
     conclusion: "passed",
     failureCode: null,
   };
+  assertClosedOrdinaryReceipt(receipt, context.executionMode, context);
+  return receipt;
 }
 
 export function ordinaryFailureReceipt(
@@ -2839,19 +4091,23 @@ export function ordinaryFailureReceipt(
     isCommandFailureKind(error.kind)
       ? { phase: error.phase, kind: error.kind }
       : { phase: null, kind: "unknown" as const };
-  return {
-    schemaVersion: 1,
+  const receipt: OrdinaryFailedReceiptV2 = {
+    schemaVersion: 2,
+    executionMode: arguments_.protected === true ? "protected" : "local",
     commit: retainedIdentity?.commit ?? sanitizeRetainedCommit(arguments_.expectedCommit),
     releaseManifestSha256: retainedIdentity?.manifestSha256 ?? null,
     artifactSha256: retainedIdentity?.artifactSha256 ?? {},
-    runtime: { version: isRetainedNodeVersion(nodeVersion) ? nodeVersion : process.version },
+    runtime: { version: isRetainedNodeVersion(nodeVersion) ? nodeVersion : null },
     artifacts: {},
     githubPackageProofs: {},
+    onboardingProofs: {},
     conclusion: "failed",
     failureCode: identity === null ? "artifact_identity_failed" : "node_smoke_failed",
     failedPhase: retainedFailure.phase,
     failureKind: retainedFailure.kind,
   };
+  assertClosedOrdinaryReceipt(receipt, receipt.executionMode);
+  return receipt;
 }
 
 async function main(rawArguments = process.argv.slice(2)): Promise<void> {
@@ -2880,6 +4136,7 @@ async function main(rawArguments = process.argv.slice(2)): Promise<void> {
     let receiptTarball: string | null = null;
     let installedPackagePath: string | null = null;
     let receiptNodeVersion = process.version;
+    let receiptContext: OrdinaryReceiptContext | null = null;
     let pending: PendingSmokeReceipt | null = null;
     let failure: unknown;
 
@@ -2931,6 +4188,12 @@ async function main(rawArguments = process.argv.slice(2)): Promise<void> {
       const bunVersion = retainedSmokeToolVersion(
         await runCommand("bun:version", "bun", ["--version"]),
         "bun",
+      );
+      receiptContext = ordinaryReceiptContext(
+        arguments_,
+        receiptIdentity,
+        receiptNodeVersion,
+        receiptTarball,
       );
 
       const npmEnvironment = {
@@ -3073,6 +4336,7 @@ gmailRequester.close();
           bunVersion,
           npmTiming,
           bunTiming,
+          receiptContext,
         ),
       };
     } catch (error) {
