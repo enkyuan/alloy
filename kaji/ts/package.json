@@ -13,7 +13,7 @@
     "directory": "kaji/ts"
   },
   "bin": {
-    "kaji": "./dist/cli/bin.js"
+    "kaji": "dist/cli/bin.js"
   },
   "files": [
     "LICENSE",

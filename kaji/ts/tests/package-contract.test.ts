@@ -2992,6 +2992,7 @@ console.log(JSON.stringify({
           default: "./dist/cli/package-entry-cjs.cjs",
         },
       });
+      expect(manifest.bin).toEqual({ kaji: "dist/cli/bin.js" });
       expect(paths).toContain("LICENSE");
       expect(paths).toContain("README.md");
       expect(runBytes("tar", ["-xOf", tarball, "package/LICENSE"])).toEqual(
