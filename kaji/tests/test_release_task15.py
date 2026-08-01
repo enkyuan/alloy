@@ -1034,6 +1034,14 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     assert "name: kaji-typescript-onboarding-archive-calibration" in calibration
     assert "name: kaji-typescript-onboarding-archive-calibration-initial" in calibration
 
+    import_fragment = (
+        'scripts_dir = Path("kaji/scripts").resolve(strict=True)\n'
+        "          sys.path.insert(0, str(scripts_dir))\n"
+        "          from validate_typescript_onboarding_evidence import ("
+    )
+    assert import_fragment in calibration
+    assert import_fragment in onboarding
+
     assert "environment: kaji-beta-onboarding" in onboarding
     assert "runs-on: ubuntu-24.04" in onboarding
     assert "needs.typescript-onboarding-archive-calibration.result == 'success'" in (
@@ -1069,6 +1077,30 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
         assert binding in onboarding
     assert "KAJI_TTHW_EVIDENCE_JSON" not in workflow
     assert "validate_tthw_evidence.py" not in workflow
+
+
+def test_typescript_onboarding_inline_validator_imports_from_repo_root() -> None:
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; import sys; "
+                'scripts_dir = Path("kaji/scripts").resolve(strict=True); '
+                "sys.path.insert(0, str(scripts_dir)); "
+                "from validate_typescript_onboarding_evidence import "
+                "load_authenticated_archive, recompute_and_compare, validate_document"
+            ),
+        ],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_release_runbook_orders_archive_onboarding_tag_and_publisher_approvals() -> (
