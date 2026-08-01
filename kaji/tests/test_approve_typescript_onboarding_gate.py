@@ -786,6 +786,9 @@ def test_environment_policy_drift_fails_closed(
     "mutation",
     [
         lambda identity: identity.update(can_skip_required_review=True),
+        lambda identity: identity.update(extra_field="unexpected"),
+        lambda identity: identity.pop("avatar_url"),
+        lambda identity: identity.pop("received_events_url"),
         lambda identity: identity.update(id=1),
         lambda identity: identity.update(login="other"),
         lambda identity: identity.update(node_id=""),
