@@ -4286,6 +4286,28 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert claim in normalized_onboarding_guide
 
 
+def test_release_github_scripts_parse_the_explicit_run_attempt_input() -> None:
+    rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
+    publish = _read(".github/workflows/kaji.publish.yml")
+    rehearsal_node = rehearsal.split("  node-compat:", 1)[1].split(
+        "  typescript-onboarding-archive-calibration:", 1
+    )[0]
+    publish_verify_tag = publish.split("  verify-tag:", 1)[1].split(
+        "  offline-gates:", 1
+    )[0]
+    publish_node = publish.split("  node-compat:", 1)[1].split(
+        "  typescript-onboarding-archive-calibration:", 1
+    )[0]
+
+    assert "context.runAttempt" not in rehearsal
+    assert "context.runAttempt" not in publish
+    for script_boundary in (rehearsal_node, publish_verify_tag, publish_node):
+        assert "RUN_ATTEMPT: ${{ github.run_attempt }}" in script_boundary
+        assert "const runAttempt = Number(process.env.RUN_ATTEMPT);" in script_boundary
+        assert "!Number.isSafeInteger(runAttempt)" in script_boundary
+        assert "runAttempt !== 1" in script_boundary
+
+
 def _compatibility_normalizer_script(workflow_name: str, job_name: str) -> str:
     workflow = _read(f".github/workflows/{workflow_name}")
     next_job = "node-compat"

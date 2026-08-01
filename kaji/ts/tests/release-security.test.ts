@@ -1388,9 +1388,14 @@ type SignedBetaFixture = ReturnType<typeof signedBetaFixture>;
 
 async function runSignedTagParser(
   mutate?: (fixture: SignedBetaFixture) => void,
+  runAttempt: string | null = "1",
 ): Promise<Record<string, string>> {
   const fixture = signedBetaFixture();
   mutate?.(fixture);
+  const processEnvironment: Record<string, string> = {
+    EXPECTED_TAGGER_EMAIL: fixture.expected.taggerEmail,
+  };
+  if (runAttempt !== null) processEnvironment.RUN_ATTEMPT = runAttempt;
   const step = workflowStep(
     readWorkflow("kaji.publish.yml").workflow.jobs?.["verify-tag"]!,
     "Verify exact signed annotated beta tag",
@@ -1444,7 +1449,6 @@ async function runSignedTagParser(
       repo: { owner: "enkyuan", repo: "alloy" },
       eventName: "push",
       ref: "refs/tags/kaji-v0.2.0-beta.9",
-      runAttempt: 1,
       payload: {
         repository: {
           private: false,
@@ -1458,7 +1462,7 @@ async function runSignedTagParser(
       },
       summary,
     },
-    { env: { EXPECTED_TAGGER_EMAIL: fixture.expected.taggerEmail } },
+    { env: processEnvironment },
     createHash,
   );
   return outputs;
@@ -2693,6 +2697,15 @@ describe("Kaji workflow contracts", () => {
     ]);
   });
 
+  it.each(["2", "invalid", null])(
+    "rejects signed-tag verification for non-fresh attempt %s",
+    async (runAttempt) => {
+      await expect(runSignedTagParser(undefined, runAttempt)).rejects.toThrow(
+        "publish workflow identity differs from the exact beta.9 boundary",
+      );
+    },
+  );
+
   it.each([
     [
       "unverified signature before invalid JSON",
@@ -3435,6 +3448,9 @@ describe("Kaji workflow contracts", () => {
         expect(upload, workflowName).toBeGreaterThan(finalizer);
         expect(steps[checkout]?.with?.["persist-credentials"]).toBe(false);
         expect(steps[lookup]?.with?.["github-token"]).toBe("${{ github.token }}");
+        expect(steps[lookup]?.env).toMatchObject({
+          RUN_ATTEMPT: "${{ github.run_attempt }}",
+        });
         const lookupScript = String(steps[lookup]?.with?.script ?? "");
         for (const required of [
           "getArtifact",
@@ -3445,7 +3461,9 @@ describe("Kaji workflow contracts", () => {
           "artifact.expired !== false",
           "artifact.workflow_run?.id !== context.runId",
           "artifact.workflow_run?.head_sha !== expectedCommit",
-          "context.runAttempt !== 1",
+          "const runAttempt = Number(process.env.RUN_ATTEMPT)",
+          "!Number.isSafeInteger(runAttempt)",
+          "runAttempt !== 1",
           "attempt_number: 1",
           "producerRun.run_attempt !== 1",
           "producerRun.head_sha !== expectedCommit",
@@ -3528,6 +3546,13 @@ describe("Kaji workflow contracts", () => {
       rejectMutation((candidate) => {
         candidate.env = { ...candidate.env, GITHUB_TOKEN: "${{ github.token }}" };
       });
+      rejectMutation((candidate) => {
+        const lookup = candidate.steps!.find((step) =>
+          step.uses?.startsWith("actions/github-script@"),
+        )!;
+        lookup.env = { ...lookup.env };
+        delete lookup.env.RUN_ATTEMPT;
+      });
       for (const fragment of [
         "getArtifact",
         "getWorkflowRunAttempt",
@@ -3535,7 +3560,9 @@ describe("Kaji workflow contracts", () => {
         "artifact.digest !== `sha256:${expectedDigest}`",
         "artifact.expired !== false",
         "artifact.workflow_run?.head_sha !== expectedCommit",
-        "context.runAttempt !== 1",
+        "const runAttempt = Number(process.env.RUN_ATTEMPT)",
+        "!Number.isSafeInteger(runAttempt)",
+        "runAttempt !== 1",
         "attempt_number: 1",
         "producerRun.run_attempt !== 1",
       ]) {

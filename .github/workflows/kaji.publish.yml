@@ -46,6 +46,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           EXPECTED_TAGGER_EMAIL: ${{ vars.KAJI_RELEASE_SIGNER_EMAIL }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           script: |
             const { createHash } = await import("node:crypto");
@@ -96,6 +97,7 @@ jobs:
               "X-GitHub-Api-Version": "2026-03-10",
             };
             const expectedTaggerEmail = process.env.EXPECTED_TAGGER_EMAIL;
+            const runAttempt = Number(process.env.RUN_ATTEMPT);
             if (!expectedTaggerEmail) {
               fail("KAJI_RELEASE_SIGNER_EMAIL must name the approved signed tagger");
             }
@@ -104,7 +106,8 @@ jobs:
               context.repo.repo !== "alloy" ||
               context.eventName !== "push" ||
               context.ref !== "refs/tags/kaji-v0.2.0-beta.9" ||
-              context.runAttempt !== 1
+              !Number.isSafeInteger(runAttempt) ||
+              runAttempt !== 1
             ) {
               fail("publish workflow identity differs from the exact beta.9 boundary");
             }
@@ -1185,13 +1188,15 @@ jobs:
           EXPECTED_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
           EXPECTED_ARTIFACT_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
           EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           github-token: ${{ github.token }}
           script: |
             const artifactId = Number(process.env.EXPECTED_ARTIFACT_ID);
             const expectedDigest = process.env.EXPECTED_ARTIFACT_DIGEST;
             const expectedCommit = process.env.EXPECTED_COMMIT;
-            if (context.runAttempt !== 1 ||
+            const runAttempt = Number(process.env.RUN_ATTEMPT);
+            if (!Number.isSafeInteger(runAttempt) || runAttempt !== 1 ||
                 !Number.isSafeInteger(artifactId) || artifactId <= 0 ||
                 !/^[0-9a-f]{64}$/.test(expectedDigest ?? "") ||
                 !/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {

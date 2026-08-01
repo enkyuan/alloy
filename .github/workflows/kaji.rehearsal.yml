@@ -536,13 +536,15 @@ jobs:
           EXPECTED_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
           EXPECTED_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}
           EXPECTED_COMMIT: ${{ inputs.expected-commit }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           github-token: ${{ github.token }}
           script: |
             const artifactId = Number(process.env.EXPECTED_ARTIFACT_ID);
             const expectedDigest = process.env.EXPECTED_ARTIFACT_DIGEST;
             const expectedCommit = process.env.EXPECTED_COMMIT;
-            if (context.runAttempt !== 1 ||
+            const runAttempt = Number(process.env.RUN_ATTEMPT);
+            if (!Number.isSafeInteger(runAttempt) || runAttempt !== 1 ||
                 !Number.isSafeInteger(artifactId) || artifactId <= 0 ||
                 !/^[0-9a-f]{64}$/.test(expectedDigest ?? "") ||
                 !/^[0-9a-f]{40}$/.test(expectedCommit ?? "")) {
