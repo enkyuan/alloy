@@ -547,12 +547,24 @@ def _environment_state(github: GitHub, name: str) -> ProtectedEnvironmentState:
         or reviewer.get("type") != REVIEWER_TYPE
         or set(identity)
         != {
+            "avatar_url",
+            "events_url",
+            "followers_url",
+            "following_url",
+            "gists_url",
+            "gravatar_id",
+            "html_url",
             "id",
-            "node_id",
             "login",
+            "node_id",
+            "organizations_url",
+            "received_events_url",
+            "repos_url",
+            "site_admin",
+            "starred_url",
+            "subscriptions_url",
             "type",
             "user_view_type",
-            "site_admin",
             "url",
         }
         or identity.get("login") != REVIEWER_LOGIN
@@ -561,6 +573,28 @@ def _environment_state(github: GitHub, name: str) -> ProtectedEnvironmentState:
         or identity.get("user_view_type") != "public"
         or identity.get("site_admin") is not False
         or identity.get("url") != f"https://api.github.com/users/{REVIEWER_LOGIN}"
+        or identity.get("avatar_url")
+        != f"https://avatars.githubusercontent.com/u/{REVIEWER_ID}?v=4"
+        or identity.get("gravatar_id") != ""
+        or identity.get("html_url") != f"https://github.com/{REVIEWER_LOGIN}"
+        or identity.get("followers_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/followers"
+        or identity.get("following_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/following{{/other_user}}"
+        or identity.get("gists_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/gists{{/gist_id}}"
+        or identity.get("starred_url")
+        != (f"https://api.github.com/users/{REVIEWER_LOGIN}/starred{{/owner}}{{/repo}}")
+        or identity.get("subscriptions_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/subscriptions"
+        or identity.get("organizations_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/orgs"
+        or identity.get("repos_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/repos"
+        or identity.get("events_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/events{{/privacy}}"
+        or identity.get("received_events_url")
+        != f"https://api.github.com/users/{REVIEWER_LOGIN}/received_events"
     ):
         fail(f"{name} required reviewer identity differs")
     policies = _complete_collection(

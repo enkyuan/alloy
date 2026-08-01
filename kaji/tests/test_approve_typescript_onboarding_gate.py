@@ -176,9 +176,41 @@ def _environment(name: str) -> dict[str, Any]:
                     {
                         "type": "User",
                         "reviewer": {
+                            "avatar_url": (
+                                "https://avatars.githubusercontent.com/u/90286412?v=4"
+                            ),
+                            "events_url": (
+                                "https://api.github.com/users/enkyuan/events{/privacy}"
+                            ),
+                            "followers_url": (
+                                "https://api.github.com/users/enkyuan/followers"
+                            ),
+                            "following_url": (
+                                "https://api.github.com/users/enkyuan/"
+                                "following{/other_user}"
+                            ),
+                            "gists_url": (
+                                "https://api.github.com/users/enkyuan/gists{/gist_id}"
+                            ),
+                            "gravatar_id": "",
+                            "html_url": "https://github.com/enkyuan",
                             "id": 90286412,
                             "node_id": "USER_90286412",
                             "login": "enkyuan",
+                            "organizations_url": (
+                                "https://api.github.com/users/enkyuan/orgs"
+                            ),
+                            "received_events_url": (
+                                "https://api.github.com/users/enkyuan/received_events"
+                            ),
+                            "repos_url": "https://api.github.com/users/enkyuan/repos",
+                            "starred_url": (
+                                "https://api.github.com/users/enkyuan/"
+                                "starred{/owner}{/repo}"
+                            ),
+                            "subscriptions_url": (
+                                "https://api.github.com/users/enkyuan/subscriptions"
+                            ),
                             "type": "User",
                             "user_view_type": "public",
                             "site_admin": False,
@@ -754,11 +786,45 @@ def test_environment_policy_drift_fails_closed(
     "mutation",
     [
         lambda identity: identity.update(can_skip_required_review=True),
+        lambda identity: identity.update(id=1),
+        lambda identity: identity.update(login="other"),
         lambda identity: identity.update(node_id=""),
         lambda identity: identity.update(type="Organization"),
         lambda identity: identity.update(user_view_type="private"),
         lambda identity: identity.update(site_admin=True),
         lambda identity: identity.update(url="https://api.github.com/users/other"),
+        lambda identity: identity.update(
+            avatar_url="https://avatars.githubusercontent.com/u/1?v=4"
+        ),
+        lambda identity: identity.update(
+            following_url="https://api.github.com/users/other/following{/other_user}"
+        ),
+        lambda identity: identity.update(gravatar_id="unexpected"),
+        lambda identity: identity.update(html_url="https://github.com/other"),
+        lambda identity: identity.update(
+            followers_url="https://api.github.com/users/other/followers"
+        ),
+        lambda identity: identity.update(
+            gists_url="https://api.github.com/users/other/gists{/gist_id}"
+        ),
+        lambda identity: identity.update(
+            starred_url="https://api.github.com/users/other/starred{/owner}{/repo}"
+        ),
+        lambda identity: identity.update(
+            subscriptions_url="https://api.github.com/users/other/subscriptions"
+        ),
+        lambda identity: identity.update(
+            organizations_url="https://api.github.com/users/other/orgs"
+        ),
+        lambda identity: identity.update(
+            repos_url="https://api.github.com/users/other/repos"
+        ),
+        lambda identity: identity.update(
+            events_url="https://api.github.com/users/other/events{/privacy}"
+        ),
+        lambda identity: identity.update(
+            received_events_url="https://api.github.com/users/other/received_events"
+        ),
     ],
 )
 def test_required_reviewer_identity_shape_fails_closed(
