@@ -4136,7 +4136,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("selector", "expected_contract_name"),
     [
-        ((), "BETA9_RELEASE_CONTRACT"),
+        ((), "BETA10_RELEASE_CONTRACT"),
         (
             ("--artifact-contract", "beta2-reference"),
             "BETA2_REFERENCE_RELEASE_CONTRACT",

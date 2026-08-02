@@ -78,7 +78,7 @@ class ReleaseArtifactContract:
     packages: Mapping[str, str]
 
 
-BETA9_RELEASE_CONTRACT = ReleaseArtifactContract(
+BETA10_RELEASE_CONTRACT = ReleaseArtifactContract(
     artifacts=MappingProxyType(EXPECTED_ARTIFACTS),
     packages=MappingProxyType(EXPECTED_PACKAGES),
 )
@@ -88,7 +88,7 @@ BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
 )
 RELEASE_ARTIFACT_CONTRACTS = MappingProxyType(
     {
-        "beta10": BETA9_RELEASE_CONTRACT,
+        "beta10": BETA10_RELEASE_CONTRACT,
         "beta2-reference": BETA2_REFERENCE_RELEASE_CONTRACT,
     }
 )
@@ -114,12 +114,12 @@ def verify_release_member_bytes(
     members: Mapping[str, bytes],
     expected_commit: str,
     *,
-    artifact_contract: ReleaseArtifactContract = BETA9_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA10_RELEASE_CONTRACT,
 ) -> VerifiedReleaseArtifactBytes:
     """Verify the complete reviewed release set from immutable member bytes."""
 
     if artifact_contract not in (
-        BETA9_RELEASE_CONTRACT,
+        BETA10_RELEASE_CONTRACT,
         BETA2_REFERENCE_RELEASE_CONTRACT,
     ):
         fail("unsupported release artifact contract")
@@ -247,10 +247,10 @@ def verify(
     artifacts: Path,
     expected_commit: str,
     *,
-    artifact_contract: ReleaseArtifactContract = BETA9_RELEASE_CONTRACT,
+    artifact_contract: ReleaseArtifactContract = BETA10_RELEASE_CONTRACT,
 ) -> VerifiedReleaseArtifacts:
     if artifact_contract not in (
-        BETA9_RELEASE_CONTRACT,
+        BETA10_RELEASE_CONTRACT,
         BETA2_REFERENCE_RELEASE_CONTRACT,
     ):
         fail("unsupported release artifact contract")
