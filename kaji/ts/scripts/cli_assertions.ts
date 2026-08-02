@@ -42,14 +42,13 @@ export function assertCliListOutput(output: string): void {
   }
   const github = githubRows[0]!;
   if (
-    github.stability !== "experimental" ||
+    github.stability !== "beta" ||
     github.version !== "0.1.0" ||
     JSON.stringify(github.auth) !== JSON.stringify({ kind: "env", provider: null }) ||
     JSON.stringify(github.next_commands) !==
       JSON.stringify({
-        python: "python -m kaji.cli add github --allow-experimental",
-        typescript:
-          "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
+        python: "python -m kaji.cli add github",
+        typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
       })
   ) {
     throw new Error("installed list-integrations emitted a non-canonical GitHub row");

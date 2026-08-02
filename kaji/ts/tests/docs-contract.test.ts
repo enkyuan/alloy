@@ -373,8 +373,7 @@ describe("cross-SDK release matrix docs", () => {
   it("keeps the two-entry catalog and experimental quarantine explicit", () => {
     const readme = read("kaji/ts/README.md");
     expect(readme).toContain("--allow-experimental");
-    expect(readme).toContain("`echo` is the only beta catalog entry");
-    expect(readme).toContain("`github` is the only experimental");
+    expect(readme).toContain("`echo` and `github` are beta catalog entries");
   });
 
   it("documents, typechecks, and failure-tests read-only packaged GitHub wiring", async () => {

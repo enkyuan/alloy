@@ -36,20 +36,20 @@ OpenAI is Kaji's sole beta-supported primary provider. Anthropic remains
 implemented but experimental/WIP, with no beta compatibility or
 publication-proof commitment.
 
-The echo integration is the only catalog entry inside the first beta promise.
-GitHub remains an explicit opt-in experiment.
+The echo and GitHub integrations are catalog entries inside the first beta
+promise.
 `kaji-serve`, its REST/STT surface, and its Postgres/Supabase adapters are also
 excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 
 ## Catalog Stability
 
-<!-- beta-integrations: echo -->
-<!-- experimental-integrations: github -->
+<!-- beta-integrations: echo,github -->
+<!-- experimental-integrations: -->
 
 | Integration | Stability | Runtimes |
 | --- | --- | --- |
 | echo | beta | python, typescript |
-| github | experimental | python, typescript |
+| github | beta | python, typescript |
 
 <!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,anthropic-adapter,retriever-selection,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 

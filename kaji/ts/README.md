@@ -446,8 +446,8 @@ package also exposes additional Python-only maintenance commands.
 Generated projects pin dotenvx and load `.env` from their `start` script after
 you copy `.env.example` to `.env`.
 
-`echo` is the only beta catalog entry. `github` is the only experimental
-catalog entry and requires `--allow-experimental` when copied.
+`echo` and `github` are beta catalog entries. `--allow-experimental` is
+required only for catalog entries still marked experimental.
 
 ## Global tool registry (advanced)
 

@@ -15,10 +15,10 @@ This is the catalog in TypeScript `0.2.0-beta.10` and Python `0.2.0b1`.
 WIP entries whose registry tier is `experimental` require
 `--allow-experimental` and are outside the stable beta set.
 
-| Integration | Support status                | Runtime            | Auth                    | Tools                     |
-| ----------- | ----------------------------- | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta                          | Python, TypeScript | None                    | 2                         |
-| `github`    | WIP (`experimental` registry) | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status | Runtime            | Auth                    | Tools                     |
+| ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
+| `echo`      | Beta           | Python, TypeScript | None                    | 2                         |
+| `github`    | Beta           | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
 
 The TypeScript and Python registries contain only `echo` and `github`. Their
 manifests and JSON schemas are validated, and shared entries are checked for
@@ -33,7 +33,7 @@ After [installing the TypeScript beta](/docs/install#typescript), use its local
 ```bash
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
-npm exec -- kaji add github --out ./integrations/github --allow-experimental
+npm exec -- kaji add github --out ./integrations/github
 ```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.
@@ -43,7 +43,7 @@ The Python SDK exposes the same copy workflow through its own `kaji` binary.
 
 ## GitHub
 
-The copied WIP GitHub bundle exposes four parallel-safe reads:
+The copied GitHub bundle exposes four parallel-safe reads:
 `get_file`, `get_issue`, `list_issues`, and `search_code`; and two serialized
 external effects: `create_issue` and `add_comment`. The integration namespace
 is applied before provider dispatch.
@@ -62,8 +62,8 @@ outcome. Include an application-owned marker in the issue title or body and
 reconcile that marker before retrying. Kaji does not send its internal
 idempotency key to GitHub.
 
-GitHub remains WIP; its machine registry tier is `experimental`. Local package
-and ABI checks do not establish protected keyed-API or release evidence.
+GitHub's machine registry tier is `beta`. Local package and ABI checks do not
+establish protected keyed-API or release evidence.
 
 See the [GitHub integration guide](/docs/integrations/github) for package wiring,
 token ownership, lifecycle, permissions, limits, and unsupported surfaces.

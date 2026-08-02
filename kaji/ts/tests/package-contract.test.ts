@@ -62,13 +62,13 @@ const CANONICAL_ECHO_ROW = {
 const CANONICAL_GITHUB_ROW = {
   name: "github",
   version: "0.1.0",
-  stability: "experimental",
+  stability: "beta",
   runtimes: ["python", "typescript"],
   auth: { kind: "env", provider: null },
-  experimental_opt_in_required: true,
+  experimental_opt_in_required: false,
   next_commands: {
-    python: "python -m kaji.cli add github --allow-experimental",
-    typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
+    python: "python -m kaji.cli add github",
+    typescript: "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
   },
 };
 
@@ -1254,7 +1254,6 @@ describe("npm contract artifact", () => {
       '["audit", "--production"]',
       "assertCliInitOutput(initOutput, generated)",
       "assertCliAddOutput(addOutput, echo, installedPackageRoot)",
-      "assertExperimentalDenial(denialOutput, deniedGithub)",
       "includeStderr = false",
       "includeStderr ? `${completed.stdout}\\n${completed.stderr}` : completed.stdout",
       "assertGithubCliAddOutput(githubOutput, github, installedPackageRoot)",
@@ -1284,8 +1283,7 @@ describe("npm contract artifact", () => {
       'const cli = ["--no-install", "-e", \'import("kaji-sdk/cli")\', "--"]',
       "assertCliOwnerOutput(ownerOutput)",
       '[...cli, "--no-color", "add", "echo", "--out", echo]',
-      '[...cli, "--no-color", "add", "github", "--out", deniedGithub]',
-      '[...cli, "--no-color", "add", "github", "--allow-experimental", "--out", github]',
+      '[...cli, "--no-color", "add", "github", "--out", github]',
       '[...cli, "--no-color", "list-integrations", "--json"]',
       '[...cli, "--no-color", "replay", replayFixture, "--format", "summary"]',
       'join(installedPackageRoot, "registry/echo/index.ts")',

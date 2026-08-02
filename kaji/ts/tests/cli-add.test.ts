@@ -522,15 +522,13 @@ describe("kaji add", () => {
     }
   });
 
-  it("quarantines GitHub then copies every declared owner asset with provenance", async () => {
+  it("copies every declared owner GitHub asset with provenance", async () => {
     const realRegistry = join(__dirname, "..", "registry");
     const out = join(tmp, "github");
-    expect(await add(["github", "--out", out], { registryRoot: realRegistry })).toBe(1);
-    expect(existsSync(out)).toBe(false);
 
     const logs: string[] = [];
     expect(
-      await add(["github", "--allow-experimental", "--out", out], {
+      await add(["github", "--out", out], {
         registryRoot: realRegistry,
         log: (message) => logs.push(message),
       }),
@@ -551,7 +549,7 @@ describe("kaji add", () => {
     expect(provenance).toMatchObject({
       integration: "github",
       runtime: "typescript",
-      stability: "experimental",
+      stability: "beta",
     });
     expect(provenance.abiSha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(logs.join("\n")).toContain("fine-grained token");
