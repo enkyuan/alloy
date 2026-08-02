@@ -89,7 +89,6 @@ def test_release_smoke_preserves_build_verify_install_order(
     monkeypatch.setattr(module, "installed_registry_root", lambda _venv: tmp_path)
     monkeypatch.setattr(module, "assert_init_cli_output", lambda *_args: None)
     monkeypatch.setattr(module, "assert_echo_cli_output", lambda *_args: None)
-    monkeypatch.setattr(module, "assert_experimental_denial", lambda *_args: None)
     monkeypatch.setattr(module, "assert_github_cli_output", lambda *_args: None)
     monkeypatch.setattr(module, "assert_list_integrations_output", lambda *_args: None)
     monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -155,7 +154,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     )
     assert (
         sum(command[1:4] == ["--no-color", "add", "github"] for command in commands)
-        == 4
+        == 2
     )
     assert (
         sum(command[1:4] == ["-m", "kaji.cli", "--help"] for command in commands) == 2
@@ -588,11 +587,11 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
                 },
                 {
                     "name": "github",
-                    "stability": "experimental",
+                    "stability": "beta",
                     "auth": {"kind": "env", "provider": None},
                     "next_commands": {
-                        "python": "python -m kaji.cli add github --allow-experimental",
-                        "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
+                        "python": "python -m kaji.cli add github",
+                        "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
                     },
                 },
             ]
@@ -636,9 +635,6 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         "warmRunMs",
         '"add", "echo", "--out"',
         '"add", "github", "--out"',
-        '"--allow-experimental"',
-        "include_stderr=True",
-        "assert_experimental_denial(denial_output, denied_github)",
         "assert_github_cli_output(github_output, github, registry)",
         "from kaji.integrations.registry.github.github import inspect_integration; ",
         '"assert len(inspect_integration().tools()) == 6"',

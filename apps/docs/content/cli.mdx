@@ -37,7 +37,7 @@ npm install kaji-sdk@0.2.0-beta.10 zod
 npm exec -- kaji init ./my-agent --provider mock --yes
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
-npm exec -- kaji add github --out ./integrations/github --allow-experimental
+npm exec -- kaji add github --out ./integrations/github
 npm exec -- kaji connect <oauth-integration> --principal <stable-host-principal-id>
 npm exec -- kaji disconnect <oauth-integration> --principal <stable-host-principal-id>
 npm exec -- kaji replay ./session.jsonl --format summary
@@ -49,7 +49,8 @@ destination.
 
 Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.10`; that dependency
 now resolves from npm. Experimental-registry integrations require
-`--allow-experimental`.
+`--allow-experimental`; the `0.2` catalog (`echo`, `github`) is entirely beta,
+so neither needs the flag.
 
 `connect` and `disconnect` are available for integrations whose manifest
 declares OAuth. No such integration ships in the 0.2 catalog. `replay`

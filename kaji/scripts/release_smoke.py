@@ -238,13 +238,6 @@ def assert_echo_cli_output(output: str, destination: Path, registry: Path) -> No
         raise SystemExit("FAIL: installed add did not report the Echo integration")
 
 
-def assert_experimental_denial(output: str, destination: Path) -> None:
-    if "experimental" not in output or "--allow-experimental" not in output:
-        raise SystemExit("FAIL: installed add did not explain the experimental opt-in")
-    if destination.exists():
-        raise SystemExit("FAIL: denied experimental add created its destination")
-
-
 def assert_github_cli_output(output: str, destination: Path, registry: Path) -> None:
     packaged_root = registry / "github"
     manifest = json.loads((packaged_root / "manifest.json").read_text())
@@ -305,12 +298,12 @@ def assert_list_integrations_output(output: str) -> None:
     github = by_name.get("github")
     if (
         not isinstance(github, dict)
-        or github.get("stability") != "experimental"
+        or github.get("stability") != "beta"
         or github.get("auth") != {"kind": "env", "provider": None}
         or github.get("next_commands")
         != {
-            "python": "python -m kaji.cli add github --allow-experimental",
-            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
+            "python": "python -m kaji.cli add github",
+            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
         }
     ):
         raise SystemExit(
@@ -532,27 +525,9 @@ def smoke_archives(
             )
             assert_echo_cli_output(add_output, integration, registry)
 
-            denied_github = workdir / f"denied-github-{safe_name}"
-            denial_output = run_capture(
-                [kaji, "--no-color", "add", "github", "--out", str(denied_github)],
-                cwd=artifact_workdir,
-                environment=environment,
-                expected_status=1,
-                include_stderr=True,
-            )
-            assert_experimental_denial(denial_output, denied_github)
-
             github = workdir / f"owner-{safe_name}" / "owner_integrations" / "github"
             github_output = run_capture(
-                [
-                    kaji,
-                    "--no-color",
-                    "add",
-                    "github",
-                    "--allow-experimental",
-                    "--out",
-                    str(github),
-                ],
+                [kaji, "--no-color", "add", "github", "--out", str(github)],
                 cwd=artifact_workdir,
                 environment=environment,
             )
