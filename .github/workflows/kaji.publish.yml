@@ -3435,7 +3435,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           timeout --signal=TERM --kill-after=10s 20m \
-            python3 kaji/scripts/verify_published_packages.py \
+            uv run --project kaji --no-sync python \
+            kaji/scripts/verify_published_packages.py \
             --target npm \
             --artifacts-dir .artifacts/kaji-release \
             --output .artifacts/kaji-publication-status/registry-verification.json \
@@ -3575,7 +3576,8 @@ jobs:
           fi
           CLASSIFY_STATUS=127
           if [ -f kaji/scripts/verify_published_packages.py ]; then
-            python3 kaji/scripts/verify_published_packages.py state \
+            uv run --project kaji --no-sync python \
+              kaji/scripts/verify_published_packages.py state \
               --target npm \
               --previous-state unpublished \
               --pypi "$PYPI_STATE" \

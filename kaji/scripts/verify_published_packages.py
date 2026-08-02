@@ -701,20 +701,39 @@ def _validate_provenance_statement(
     ):
         raise VerificationMismatch("attestation statement type is not SLSA v1")
     subjects = root["subject"]
-    if not isinstance(subjects, list) or len(subjects) != 1:
-        raise VerificationMismatch("attestation must have exactly one subject")
-    subject = _exact_keys(
-        subjects[0],
-        {"name", "digest"},
-        "attestation subject has an unexpected shape",
-    )
-    digest = _exact_keys(
-        subject["digest"],
-        {digest_algorithm},
-        "attestation subject digest has an unexpected shape",
-    )
+    if not isinstance(subjects, list) or not subjects:
+        raise VerificationMismatch("attestation must have at least one subject")
+    if require_npm_statement and len(subjects) != 1:
+        raise VerificationMismatch("npm attestation must have exactly one subject")
     expected_digest = hashlib.new(digest_algorithm, payload).hexdigest()
-    if subject["name"] != subject_name or digest[digest_algorithm] != expected_digest:
+    target_matches = 0
+    observed_names: set[str] = set()
+    for candidate in subjects:
+        subject = _exact_keys(
+            candidate,
+            {"name", "digest"},
+            "attestation subject has an unexpected shape",
+        )
+        name = subject["name"]
+        digest = _exact_keys(
+            subject["digest"],
+            {digest_algorithm},
+            "attestation subject digest has an unexpected shape",
+        )
+        digest_value = digest[digest_algorithm]
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in observed_names
+            or not isinstance(digest_value, str)
+            or re.fullmatch(r"[0-9a-f]+", digest_value) is None
+            or len(digest_value) != len(expected_digest)
+        ):
+            raise VerificationMismatch("attestation subject is malformed or duplicated")
+        observed_names.add(name)
+        if name == subject_name and digest_value == expected_digest:
+            target_matches += 1
+    if target_matches != 1:
         raise VerificationMismatch("attestation subject does not match npm bytes")
 
     predicate = _exact_keys(
@@ -967,11 +986,15 @@ def parse_npm_audit_output(
     if not isinstance(bundles, list):
         raise VerificationMismatch("npm signature audit bundles are malformed")
     for entry in bundles:
-        _exact_keys(
+        bundle_entry = _exact_keys(
             entry,
-            {"predicateType", "bundle"},
+            {"predicateType", "bundle", "signedAccessSignatureUrl"},
             "npm signature audit bundle entry has an unexpected shape",
         )
+        if bundle_entry["signedAccessSignatureUrl"] != "":
+            raise VerificationMismatch(
+                "npm signature audit signed access signature URL is unexpected"
+            )
     provenance = [
         entry for entry in bundles if entry["predicateType"] == SLSA_PROVENANCE_V1
     ]
