@@ -398,9 +398,11 @@ a.nav-link:hover {
 
 .heading-container {
   display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
   align-items: last baseline;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-start;
+  column-gap: 1rem;
 }
 
 .article .tagline {
@@ -412,6 +414,7 @@ a.nav-link:hover {
 }
 
 .hero-title {
+  flex-shrink: 0;
   margin-bottom: 0.5rem;
   font-size: 2rem;
   line-height: 1.15;
@@ -457,9 +460,14 @@ a.nav-link:hover {
   flex-shrink: 0;
   align-items: center;
   gap: 0.5rem;
+  padding: 0;
+  border: 0;
   color: var(--text-muted);
+  background: none;
+  cursor: pointer;
   font-family: var(--font-code);
   font-size: 0.6875rem;
+  white-space: nowrap;
   transition:
     color 150ms ease,
     transform 140ms var(--ease-out);
@@ -1362,16 +1370,18 @@ html[data-kaji-first-visit] .forged-underline::before {
   }
 }
 
-@media (max-width: 540px) {
-  .mobile-nav {
-    padding-left: 1.5rem;
-  }
-
+@media (max-width: 560px) {
   .heading-container {
     align-items: flex-start;
     flex-direction: column;
     row-gap: 8px;
     margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 540px) {
+  .mobile-nav {
+    padding-left: 1.5rem;
   }
 
   .hero-title {

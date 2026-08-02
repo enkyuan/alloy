@@ -14,8 +14,8 @@ export const navigation: NavigationSection[] = [
     items: [
       { href: "/", label: "Overview" },
       { href: "/docs", label: "Introduction" },
-      { href: "/docs/install", label: "Install", status: "wip" },
-      { href: "/docs/getting-started", label: "Getting Started", status: "wip" },
+      { href: "/docs/install", label: "Install" },
+      { href: "/docs/getting-started", label: "Getting Started" },
       { href: "/docs/cli", label: "CLI" },
       { href: "/docs/integrations", label: "Integrations" },
       { href: "/docs/architecture", label: "Architecture" },

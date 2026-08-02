@@ -27,10 +27,13 @@ installable catalog entries.
 
 ## Discover and copy
 
+After [installing the TypeScript beta](/docs/install#typescript), use its local
+`kaji` binary:
+
 ```bash
-bun kaji/ts/src/cli/bin.ts list-integrations
-bun kaji/ts/src/cli/bin.ts add echo --out ./integrations/echo
-bun kaji/ts/src/cli/bin.ts add github --out ./integrations/github --allow-experimental
+npm exec -- kaji list-integrations
+npm exec -- kaji add echo --out ./integrations/echo
+npm exec -- kaji add github --out ./integrations/github --allow-experimental
 ```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.

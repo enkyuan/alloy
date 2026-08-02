@@ -27,7 +27,7 @@ OpenAI is the sole primary model provider. Every other provider adapter is WIP; 
 - Primary and secondary CTA: install Kaji, then follow the getting-started guide.
 - The line a visitor remembers after 10 seconds: build bounded agents in Python or TypeScript.
 - Belief ladder: Kaji is embeddable; its runtime is deterministic and observable; tools and providers have explicit boundaries; the same core contract exists in both SDKs.
-- Proof on hand: checked examples and SDK-sync validation in this repository.
+- Proof on hand: the public `kaji-sdk@0.2.0-beta.10` npm artifact, checked onboarding examples, and SDK-sync validation.
 
 ## Brand Personality
 

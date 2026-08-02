@@ -1,20 +1,29 @@
 ---
 title: Install
-description: Prepare the TypeScript beta from source while protected npm publication is pending, and review the pre-1.0 compatibility boundary.
+description: Install the published TypeScript beta from npm, or prepare either SDK from source, with the pre-1.0 compatibility boundary explicit.
 ---
 
-Kaji's protected npm release candidate is TypeScript `0.2.0-beta.10`. It is not
-available from the public registry until protected publication and exact-byte
-verification succeed, so use the source checkout for now. Python wheel and
-PyPI publication are deferred for this release. Both SDKs share the
+TypeScript `0.2.0-beta.10` is public on npm as
+[`kaji-sdk`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.10). Python is
+not published to PyPI for this release; repository release gates still build
+and exercise wheel and source-distribution artifacts. Both SDKs share the
 stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
 in production.
 
 ## TypeScript
 
-The candidate declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
-as an optional peer. The public registry command will be documented after the
-npm artifact passes exact-byte verification.
+Install the exact beta with the required Zod peer and the beta-supported
+OpenAI adapter:
+
+```bash
+npm install kaji-sdk@0.2.0-beta.10 zod openai
+# or
+bun add kaji-sdk@0.2.0-beta.10 zod openai
+```
+
+The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
+as an optional peer. Omit `openai` when you only use `MockProvider` from
+`kaji-sdk/testing`.
 
 ## Source checkout
 
@@ -28,8 +37,10 @@ bun install --frozen-lockfile
 bun run --cwd kaji/ts test:quickstart
 ```
 
-The final command runs the deterministic TypeScript quickstart without a
-provider credential.
+The final command runs the repository's deterministic TypeScript quickstart
+without a provider credential. Use this path when contributing to Kaji or
+validating both SDKs together; application onboarding should use the published
+package above.
 
 ## TypeScript contract
 
@@ -54,7 +65,7 @@ Windows, other Node versions, or fully offline dependency installation.
 The TypeScript package declares a `kaji` binary:
 
 ```bash
-bunx kaji --help
+npm exec -- kaji --help
 ```
 
 The CLI scaffolds TypeScript projects and manages the packaged integration

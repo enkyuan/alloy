@@ -225,10 +225,14 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
         '{ href: "/docs/reference-service", label: "Reference Service", status: "wip" }'
         in navigation
     )
-    assert '{ href: "/docs/install", label: "Install", status: "wip" }' in navigation
+    assert '{ href: "/docs/install", label: "Install" }' in navigation
+    assert '{ href: "/docs/getting-started", label: "Getting Started" }' in navigation
+    assert (
+        '{ href: "/docs/install", label: "Install", status: "wip" }' not in navigation
+    )
     assert (
         '{ href: "/docs/getting-started", label: "Getting Started", status: "wip" }'
-        in navigation
+        not in navigation
     )
     for shell in (sidebar, mobile):
         assert '<sup class="nav-wip" aria-label="work in progress">' in shell
@@ -414,10 +418,13 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert 'mobileLinks.setAttribute("aria-hidden", String(!nextOpen));' in scripts
     assert '<span class="kaji-wordmark" aria-current="page">' in wordmark
     install_snippet = overview.split('class="install-snippet"', maxsplit=1)[1].split(
-        "</a>", maxsplit=1
+        "</button>", maxsplit=1
     )[0]
-    assert "<code>Source checkout required</code>" in install_snippet
-    assert "aria-label=" not in install_snippet
+    assert "<code>npm i kaji-sdk@0.2.0-beta.10 zod</code>" in install_snippet
+    assert 'type="button"' in install_snippet
+    assert 'aria-label="Copy npm install command"' in install_snippet
+    assert 'data-copy="npm i kaji-sdk@0.2.0-beta.10 zod"' in install_snippet
+    assert "href=" not in install_snippet
     assert (
         '<p class="sr-only" role="status" aria-live="polite" data-copy-announcer></p>'
         in scripts
@@ -458,7 +465,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert "window.innerHeight * 0.7" not in scripts
     assert "atPageEnd" not in scripts
     for toc_label in (
-        '"prepare-the-source-checkout": "Prepare source checkout"',
+        '"install-the-published-package": "Install package"',
         '"run-with-docker-compose": "Run with docker"',
         '"when-to-use-the-reference-service": "When to use"',
     ):
@@ -552,7 +559,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert ".reicon path" in styles
 
 
-def test_public_onboarding_is_source_only_before_registry_verification() -> None:
+def test_public_onboarding_uses_published_npm_beta_and_defers_pypi() -> None:
     docs_root = REPO_ROOT / "apps" / "docs"
     paths = (
         docs_root / "content" / "getting-started.mdx",
@@ -563,19 +570,47 @@ def test_public_onboarding_is_source_only_before_registry_verification() -> None
     combined = "\n".join(path.read_text() for path in paths)
     combined_compact = " ".join(combined.split())
 
-    assert "0.2.0-beta.10" in combined
-    assert "kaji-sdk@0.2.0-beta.2" not in combined
-    assert "kaji-sdk@0.2.0-beta.3" not in combined
+    assert set(re.findall(r"kaji-sdk@0\.2\.0-beta\.\d+", combined)) == {
+        "kaji-sdk@0.2.0-beta.10"
+    }
+    assert "https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.10" in combined
+    assert "npm install kaji-sdk@0.2.0-beta.10 zod openai" in combined
+    assert "bun add kaji-sdk@0.2.0-beta.10 zod openai" in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
     assert "bun install --frozen-lockfile" in combined
-    assert "Source checkout required" in combined
-    assert "not publicly available yet" in combined
-    assert "registry-byte verification" in combined_compact
+    assert "Source checkout required" not in combined
+    assert "not publicly available yet" not in combined
+    assert "public registry command remains unavailable" not in combined_compact
+    assert "registry-byte verification" not in combined_compact
     assert "PyPI" in combined
     assert "deferred" in combined
-    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", combined) is None
     assert 'pip install "kaji-sdk==0.2.0b1"' not in combined
     assert 'pip install "kaji-sdk[openai]==0.2.0b1"' not in combined
+
+
+def test_npm_install_copy_stays_after_the_final_hero_period() -> None:
+    docs_root = REPO_ROOT / "apps" / "docs"
+    overview = (docs_root / "src" / "pages" / "index.astro").read_text()
+    styles = (docs_root / "src" / "styles" / "global.css").read_text()
+
+    title_end = overview.index("</h1>")
+    copy_button = overview.index('class="install-snippet"')
+    assert title_end < copy_button
+    assert "npm i kaji-sdk@0.2.0-beta.10 zod" in overview
+    heading_rule = styles.split(".heading-container {", maxsplit=1)[1].split(
+        "}", maxsplit=1
+    )[0]
+    hero_rule = styles.split(".hero-title {", maxsplit=1)[1].split("}", maxsplit=1)[0]
+    assert "flex-wrap: nowrap" in heading_rule
+    assert "justify-content: flex-start" in heading_rule
+    assert heading_rule.index("align-items: baseline") < heading_rule.index(
+        "align-items: last baseline"
+    )
+    assert "flex-shrink: 0" in hero_rule
+    narrow_heading = styles.split("@media (max-width: 560px) {", maxsplit=1)[1].split(
+        "@media", maxsplit=1
+    )[0]
+    assert "flex-direction: column" in narrow_heading
 
 
 def test_exact_installed_python_quickstart_runs() -> None:
@@ -800,8 +835,14 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
 
     getting_started = paths[0].read_text()
     assert "0.2.0-beta.10" in getting_started
-    assert "bun install --frozen-lockfile" in getting_started
-    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", getting_started) is None
+    assert "npm install kaji-sdk@0.2.0-beta.10 zod" in getting_started
+    assert "npm install --save-dev tsx@4.22.4" in getting_started
+    assert "npm exec -- tsx kaji.mts" in getting_started
+    assert "npm exec -- tsx agent.mts" in getting_started
+    assert "node kaji.mts" not in getting_started
+    assert "node agent.mts" not in getting_started
+    assert "git clone https://github.com/enkyuan/alloy.git" not in getting_started
+    assert "bun install --frozen-lockfile" not in getting_started
     assert 'risk="read"' in getting_started
     assert 'risk: "read"' in getting_started
     assert "principal_id=" in getting_started
@@ -1006,13 +1047,11 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
     }
     combined = "\n".join(documents.values())
     assert "kaji-sdk==0.2.0b1" in combined
-    assert "kaji-sdk@0.2.0-beta.10" in combined
-    assert "kaji-sdk@0.2.0-beta.2" not in combined
-    assert "kaji-sdk@0.2.0-beta.3" not in combined
+    assert set(re.findall(r"kaji-sdk@0\.2\.0-beta\.\d+", combined)) == {
+        "kaji-sdk@0.2.0-beta.10"
+    }
 
-    unpinned_typescript = re.compile(
-        r"(?:npm install|bun add)\s+kaji-sdk(?!@0\.2\.0-beta\.8)(?:\s|$)"
-    )
+    unpinned_typescript = re.compile(r"(?:npm install|bun add)\s+kaji-sdk(?:\s|$)")
     assert re.search(r"pip install [^\n`]*kaji-sdk", combined) is None
     assert unpinned_typescript.search(combined) is None
     assert (
@@ -1029,7 +1068,8 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
     assert "0.2.0-beta.10" in public_docs
-    assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", public_docs) is None
+    assert "npm install kaji-sdk@0.2.0-beta.10 zod openai" in public_docs
+    assert "bun add kaji-sdk@0.2.0-beta.10 zod openai" in public_docs
     assert re.search(r"pip install [^\n`]*kaji-sdk", public_docs) is None
     typescript_readme = documents[REPO_ROOT / "kaji" / "ts" / "README.md"]
     assert "npm install kaji-sdk@0.2.0-beta.10" in typescript_readme

@@ -2,7 +2,7 @@
 import Footer from "@/components/site/footer.astro";
 import Demo from "@/components/site/demo.astro";
 import Base from "@/layouts/base.astro";
-import { ArrowRight } from "reicon";
+import { ArrowRight, Copy } from "reicon";
 
 const headings = [
   { depth: 2, slug: "what-is-kaji", text: "What is Kaji?" },
@@ -14,6 +14,10 @@ const arrowIcon = ArrowRight.toSvg({
   size: 14,
   color: "currentColor",
   className: "quickstart-icon",
+});
+const copyIcon = Copy.toSvg({
+  size: 14,
+  color: "currentColor",
 });
 ---
 
@@ -30,10 +34,15 @@ const arrowIcon = ArrowRight.toSvg({
           Build agents<span class="hero-stop">.</span><br />
           In <span class="forged-underline">your runtime.</span>
         </h1>
-        <a class="install-snippet" href="/docs/install">
-          <code>Source checkout required</code>
-          <span aria-hidden="true"><Fragment set:html={arrowIcon} /></span>
-        </a>
+        <button
+          class="install-snippet"
+          type="button"
+          aria-label="Copy npm install command"
+          data-copy="npm i kaji-sdk@0.2.0-beta.10 zod"
+        >
+          <code>npm i kaji-sdk@0.2.0-beta.10 zod</code>
+          <Fragment set:html={copyIcon} />
+        </button>
       </div>
       <p class="tagline">
         Kaji is an embeddable TypeScript agent runtime with event-sourced sessions, bounded tool
@@ -83,17 +92,18 @@ const arrowIcon = ArrowRight.toSvg({
       <div class="runtime-options">
         <div>
           <h3>TypeScript</h3>
-          <code>bun install --frozen-lockfile</code>
+          <code>npm install kaji-sdk@0.2.0-beta.10 zod openai</code>
         </div>
         <div>
-          <h3>Python source setup</h3>
+          <h3>Python (repository checkout)</h3>
           <code>uv sync --project kaji</code>
         </div>
       </div>
       <p>
-        The npm and PyPI packages are not publicly available yet. Start with the deterministic mock
-        provider from this checkout, then configure OpenAI, the stable live-provider adapter. Every
-        other adapter remains WIP.
+        TypeScript <code>0.2.0-beta.10</code> is public on npm. Start with the deterministic mock
+        provider, then configure OpenAI, the stable live-provider adapter. Every other adapter
+        remains WIP. Python onboarding still requires a repository checkout; PyPI publication is
+        deferred.
       </p>
     </section>
 

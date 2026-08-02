@@ -7,10 +7,17 @@ Start with the first error you can reproduce, then apply the matching fix.
 
 ## Cannot find package `kaji-sdk`
 
-TypeScript `0.2.0-beta.10` is the protected npm release candidate. A registry
-`404` is expected until protected publication and exact-byte verification
-succeed. Use the [source-checkout setup](/docs/install#source-checkout) for
-now. Python is unavailable from PyPI for this release.
+TypeScript `0.2.0-beta.10` is public on npm. Verify the exact version and then
+install it with its required peer:
+
+```bash
+npm view kaji-sdk@0.2.0-beta.10 version
+npm install kaji-sdk@0.2.0-beta.10 zod
+```
+
+If the first command returns `404`, check `npm config get registry`, your
+proxy, and any corporate registry mirror before changing the package name or
+version. Python remains unavailable from PyPI for this release.
 
 ## Cannot find package `openai`
 
@@ -19,7 +26,8 @@ project that already has an installable Kaji artifact, add the OpenAI client
 within the declared peer range:
 
 ```bash
-bun add "openai@>=4 <8"
+npm install "openai@>=4 <8"
+# or: bun add "openai@>=4 <8"
 ```
 
 If you only use `MockProvider` from `kaji-sdk/testing`, you can omit `openai`.
