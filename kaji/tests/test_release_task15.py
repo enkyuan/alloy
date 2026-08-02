@@ -3894,7 +3894,7 @@ def test_gh_attestation_accepts_batch_statement_with_one_exact_target() -> None:
         subject_name="kaji-sdk-0.2.0-beta.10.tgz",
         digest_algorithm="sha256",
     )
-    statement["subject"].append(  # type: ignore[union-attr]
+    cast(list[dict[str, object]], statement["subject"]).append(
         {
             "name": "manifest.json",
             "digest": {"sha256": hashlib.sha256(b"manifest").hexdigest()},
