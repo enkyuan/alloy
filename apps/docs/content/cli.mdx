@@ -3,9 +3,9 @@ title: CLI
 description: Use the CLI embedded in the TypeScript SDK to scaffold projects, copy integrations, and replay event logs.
 ---
 
-The TypeScript package declares a `kaji` binary, but its npm package remains
-unavailable until protected registry-byte verification succeeds. Run it from
-the source checkout. The Python SDK and WIP standalone package use the same
+The public TypeScript package declares a `kaji` binary. Install
+`kaji-sdk@0.2.0-beta.10` in your project, then invoke that local binary through
+your package manager. The Python SDK and WIP standalone package use the same
 binary name, but their command sets differ.
 
 ## Command surfaces
@@ -29,27 +29,27 @@ Use the selected package's `--help` output as the exact flag reference.
 
 ## TypeScript SDK CLI
 
-From the repository root, invoke the embedded CLI source to scaffold TypeScript
+Install the public package, then use its embedded CLI to scaffold TypeScript
 projects, manage the packaged registry, and render stored event logs:
 
 ```bash
-bun kaji/ts/src/cli/bin.ts init ./my-agent --provider mock --yes
-bun kaji/ts/src/cli/bin.ts list-integrations
-bun kaji/ts/src/cli/bin.ts add echo --out ./integrations/echo
-bun kaji/ts/src/cli/bin.ts add github --out ./integrations/github --allow-experimental
-bun kaji/ts/src/cli/bin.ts connect <oauth-integration> --principal <stable-host-principal-id>
-bun kaji/ts/src/cli/bin.ts disconnect <oauth-integration> --principal <stable-host-principal-id>
-bun kaji/ts/src/cli/bin.ts replay ./session.jsonl --format summary
+npm install kaji-sdk@0.2.0-beta.10 zod
+npm exec -- kaji init ./my-agent --provider mock --yes
+npm exec -- kaji list-integrations
+npm exec -- kaji add echo --out ./integrations/echo
+npm exec -- kaji add github --out ./integrations/github --allow-experimental
+npm exec -- kaji connect <oauth-integration> --principal <stable-host-principal-id>
+npm exec -- kaji disconnect <oauth-integration> --principal <stable-host-principal-id>
+npm exec -- kaji replay ./session.jsonl --format summary
 ```
 
 `init` takes a positional destination and accepts `--provider`, `--yes`, and
 `--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
 destination.
 
-Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.10`. Until protected
-publication completes, scaffold inspection is source-only; installing that
-dependency through npm or Bun will return `404`. Experimental-registry
-integrations require `--allow-experimental`.
+Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.10`; that dependency
+now resolves from npm. Experimental-registry integrations require
+`--allow-experimental`.
 
 `connect` and `disconnect` are available for integrations whose manifest
 declares OAuth. No such integration ships in the 0.2 catalog. `replay`

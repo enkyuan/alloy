@@ -12,9 +12,13 @@ own stable request identity headers.
 
 ## Read-only investigation agent
 
-Use the [source checkout setup](/docs/install#source-checkout), then export
+Install the public TypeScript beta and OpenAI peer, then export
 `OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` with your environment
 tooling. Replace `owner/repo` with every exact repository the agent may read.
+
+```bash
+npm install kaji-sdk@0.2.0-beta.10 zod openai
+```
 
 {/* docs-test:github-read-only:start */}
 

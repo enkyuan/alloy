@@ -43,6 +43,7 @@ const [
   pythonExports,
   architecture,
   gettingStarted,
+  troubleshooting,
   navigationSource,
   sidebar,
   mobileNavigation,
@@ -67,6 +68,7 @@ const [
   read("kaji/src/kaji/__init__.py"),
   read("apps/docs/content/architecture.mdx"),
   read("apps/docs/content/getting-started.mdx"),
+  read("apps/docs/content/troubleshooting.mdx"),
   read("apps/docs/src/data/navigation.ts"),
   read("apps/docs/src/components/navigation/sidebar.astro"),
   read("apps/docs/src/components/navigation/mobile.astro"),
@@ -78,6 +80,29 @@ const pythonVersion = pythonProject.match(/^version = "([^"]+)"$/m)?.[1];
 if (pythonVersion === undefined) fail("Python package version could not be read");
 requireText(install, `\`${pythonVersion}\``, "install guide");
 requireText(install, `\`${typescriptPackage.version}\``, "install guide");
+const npmPackageUrl = `https://www.npmjs.com/package/kaji-sdk/v/${typescriptPackage.version}`;
+const npmOpenaiInstall = `npm install kaji-sdk@${typescriptPackage.version} zod openai`;
+const bunOpenaiInstall = `bun add kaji-sdk@${typescriptPackage.version} zod openai`;
+requireText(install, npmPackageUrl, "install guide npm package link");
+requireText(gettingStarted, npmPackageUrl, "getting-started npm package link");
+requireText(install, npmOpenaiInstall, "install guide npm command");
+requireText(install, bunOpenaiInstall, "install guide Bun command");
+requireText(landingPage, npmOpenaiInstall, "landing install command");
+requireText(
+  gettingStarted,
+  `npm install kaji-sdk@${typescriptPackage.version} zod`,
+  "published-package tutorial",
+);
+requireText(gettingStarted, "npm install --save-dev tsx@4.22.4", "pinned TypeScript runner");
+requireText(gettingStarted, "npm exec -- tsx kaji.mts", "no-key TypeScript command");
+requireText(gettingStarted, "npm exec -- tsx agent.mts", "OpenAI TypeScript command");
+requireText(troubleshooting, 'npm install "openai@>=4 <8"', "OpenAI peer repair command");
+requireText(cli, "npm exec -- kaji", "published TypeScript CLI command");
+requireText(
+  integrations,
+  "npm exec -- kaji list-integrations",
+  "published integration CLI command",
+);
 
 for (const runtime of Object.values(featureTiers.cliCommands)) {
   for (const command of [...runtime.stable, ...runtime.experimental]) {
@@ -157,6 +182,23 @@ const displayedFiles = [
 const displayedSources = await Promise.all(
   displayedFiles.map(async (path) => [relative(root, path), await readFile(path, "utf8")]),
 );
+const obsoletePublicationClaims = [
+  "Source checkout required",
+  "The npm and PyPI packages are not publicly available yet",
+  "protected npm release candidate",
+  "public registry command remains unavailable",
+  "public registry command will be documented",
+  "npm package remains unavailable",
+  "scaffold inspection is source-only",
+  "dependency through npm or Bun will return `404`",
+  "Use the source-checkout setup",
+  "Prepare the TypeScript beta from source",
+];
+for (const [path, source] of displayedSources) {
+  for (const claim of obsoletePublicationClaims) {
+    if (source.includes(claim)) fail(`${path} still contains obsolete publication claim ${claim}`);
+  }
+}
 
 const contentRoot = join(root, "apps/docs/content");
 const contentFiles = (await sourceFiles(contentRoot)).filter((path) => path.endsWith(".mdx"));
@@ -188,6 +230,14 @@ for (const href of navigationDocsHrefs) {
 if (new Set(navigationHrefs).size !== navigationHrefs.length) {
   fail("navigation contains a duplicate href");
 }
+for (const route of ["/docs/install", "/docs/getting-started"]) {
+  const item = navigationSource.match(
+    new RegExp(`\\{\\s*href:\\s*"${route.replaceAll("/", "\\/")}"[^}]*\\}`, "u"),
+  )?.[0];
+  if (item === undefined) fail(`navigation is missing ${route}`);
+  if (item.includes('status: "wip"')) fail(`${route} still has a WIP navigation status`);
+}
+requireText(sidebar, `v${typescriptPackage.version}`, "sidebar package version");
 
 function headingSlug(text) {
   return text
@@ -274,7 +324,6 @@ if (!/\bpyyaml\b/iu.test(pythonProject)) {
 if (/audio\s*→\s*STT\s*→\s*\[runtime/iu.test(architecture)) {
   fail("architecture claims an end-to-end voice pipeline that is not composed");
 }
-requireText(gettingStarted, "git clone https://github.com/enkyuan/alloy.git", "source tutorial");
 requireText(docsLibrary, "${entry.body}", "full-document Markdown generation");
 requireText(llmsFullRoute, "docMarkdown(entry)", "llms-full route");
 

@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Prepare the Kaji TypeScript beta from source, define a typed tool, and inspect an agent turn end to end.
+description: Install the published Kaji TypeScript beta, define a typed tool, and inspect an agent turn end to end.
 ---
 
 This tutorial builds one TypeScript agent in six steps. You will first verify
@@ -9,18 +9,23 @@ tool.
 
 <Steps>
   <Step>
-    ### Prepare the source checkout
+    ### Install the published package
 
     ```bash
-    git clone https://github.com/enkyuan/alloy.git
-    cd alloy
-    bun install --frozen-lockfile
+    mkdir kaji-quickstart
+    cd kaji-quickstart
+    npm init -y
+    npm install kaji-sdk@0.2.0-beta.10 zod
+    npm install --save-dev tsx@4.22.4
     ```
 
-    TypeScript `0.2.0-beta.10` is the protected npm release candidate, but the
-    public registry command remains unavailable until registry-byte
-    verification succeeds. Python wheel and PyPI publication are deferred for
-    this release. You do not need a provider key for the first run.
+    [`kaji-sdk@0.2.0-beta.10`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.10)
+    is public on npm. The pinned `tsx` development dependency runs TypeScript
+    consistently across the supported Node 22 and 24 lines. If this project
+    uses Bun, replace both install commands with
+    `bun add kaji-sdk@0.2.0-beta.10 zod`; Bun runs `.mts` files directly. Python
+    is not published to PyPI for this release. You do not need a provider key
+    for the first run.
 
   </Step>
 
@@ -44,7 +49,8 @@ tool.
     Save the example as `kaji.mts`, then run it:
 
     ```bash
-    bun kaji.mts
+    npm exec -- tsx kaji.mts
+    # or: bun kaji.mts
     ```
 
     It prints `The mock provider has completed the tool loop.`
@@ -101,7 +107,8 @@ tool.
     running the live-provider example:
 
     ```bash
-    bun add "openai@>=4 <8"
+    npm install "openai@>=4 <8"
+    # or: bun add "openai@>=4 <8"
     export OPENAI_API_KEY=sk-...
     ```
 
@@ -182,10 +189,11 @@ tool.
     }
     ```
 
-    Run the completed example from the repository root:
+    Run the completed example from the quickstart directory:
 
     ```bash
-    bun kaji/ts/agent.mts
+    npm exec -- tsx agent.mts
+    # or: bun agent.mts
     ```
 
     `turn()` records the user message, calls the provider, validates and
