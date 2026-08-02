@@ -270,7 +270,7 @@ describe("kaji list-integrations", () => {
     expect(stderr.join("\n")).toMatch(/INTEGRATION_SCHEMA_INVALID at \/:/);
   });
 
-  it("lists the packaged GitHub bundle as experimental", async () => {
+  it("lists the packaged GitHub bundle as beta", async () => {
     const lines: string[] = [];
     const code = await listIntegrations([], {
       registryRoot: join(here, "..", "registry"),
@@ -278,10 +278,10 @@ describe("kaji list-integrations", () => {
     });
 
     expect(code).toBe(0);
-    expect(lines).toContain("github  [experimental]  v0.1.0  auth=env  runtimes=python,typescript");
-    expect(lines).toContain("  python: python -m kaji.cli add github --allow-experimental");
+    expect(lines).toContain("github  [beta]  v0.1.0  auth=env  runtimes=python,typescript");
+    expect(lines).toContain("  python: python -m kaji.cli add github");
     expect(lines).toContain(
-      "  typescript: bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github --allow-experimental",
+      "  typescript: bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
     );
   });
 });

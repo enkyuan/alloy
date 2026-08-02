@@ -132,7 +132,7 @@ async def test_production_integration_closes_its_owned_http_once(
     http.aclose.assert_awaited_once_with()
 
 
-def test_github_manifest_is_experimental_and_declares_native_owner_bundles() -> None:
+def test_github_manifest_is_beta_and_declares_native_owner_bundles() -> None:
     python = json.loads(
         (ROOT / "kaji/src/kaji/integrations/registry/github/manifest.json").read_text()
     )
@@ -147,7 +147,7 @@ def test_github_manifest_is_experimental_and_declares_native_owner_bundles() -> 
     for index in (python_index, typescript_index):
         assert index["integrations"]["github"] == {
             "manifest": "github/manifest.json",
-            "stability": "experimental",
+            "stability": "beta",
             "runtimes": ["python", "typescript"],
         }
     assert python["tools"] == ABI["tools"]

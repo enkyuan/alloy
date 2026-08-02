@@ -2727,15 +2727,6 @@ function assertCliAddOutput(
   }
 }
 
-function assertExperimentalDenial(output: string, destination: string): void {
-  if (!output.includes("experimental") || !output.includes("--allow-experimental")) {
-    throw new Error("installed add did not explain the experimental opt-in");
-  }
-  if (existsSync(destination)) {
-    throw new Error("denied experimental add created its destination");
-  }
-}
-
 function assertGithubCliAddOutput(
   output: string,
   destination: string,
@@ -3793,24 +3784,11 @@ async function runScaffold(
   );
   assertCliAddOutput(addOutput, echo, installedPackageRoot);
 
-  const deniedGithub = join(root, "denied-github");
-  const denialOutput = await runCommand(
-    `${manager}:cli-add`,
-    cliCommand,
-    [...cli, "--no-color", "add", "github", "--out", deniedGithub],
-    nestedWorkdir,
-    ownerEnvironment,
-    LOCAL_TIMEOUT_MS,
-    1,
-    true,
-  );
-  assertExperimentalDenial(denialOutput, deniedGithub);
-
   const github = join(bootstrap, "owner-integrations/github");
   const githubOutput = await runCommand(
     `${manager}:cli-add`,
     cliCommand,
-    [...cli, "--no-color", "add", "github", "--allow-experimental", "--out", github],
+    [...cli, "--no-color", "add", "github", "--out", github],
     nestedWorkdir,
     ownerEnvironment,
   );

@@ -81,7 +81,7 @@ def test_list_integrations_prints_echo() -> None:
     assert rc == 0
     assert "echo" in out.getvalue()
     assert "github" in out.getvalue()
-    assert "experimental" in out.getvalue()
+    assert "beta" in out.getvalue()
 
 
 def test_list_integrations_json_emits_valid_object() -> None:
@@ -195,16 +195,10 @@ def test_default_destination_is_provider_scoped(tmp_path: Path, monkeypatch) -> 
     assert not (tmp_path / "integrations/echo.py").exists()
 
 
-def test_github_requires_opt_in_then_copies_the_python_owner_bundle(
+def test_github_copies_the_python_owner_bundle(
     tmp_path: Path,
 ) -> None:
     destination = tmp_path / "github"
-    denied = StringIO()
-    with patch("sys.stderr", denied):
-        assert main(["add", "github", "--out", str(destination)]) == 1
-    assert not destination.exists()
-    assert "--allow-experimental" in denied.getvalue()
-
     output = StringIO()
     with patch("sys.stdout", output):
         assert (
@@ -212,7 +206,6 @@ def test_github_requires_opt_in_then_copies_the_python_owner_bundle(
                 [
                     "add",
                     "github",
-                    "--allow-experimental",
                     "--out",
                     str(destination),
                 ]
@@ -236,7 +229,7 @@ def test_github_requires_opt_in_then_copies_the_python_owner_bundle(
     )
     assert provenance["integration"] == "github"
     assert provenance["runtime"] == "python"
-    assert provenance["stability"] == "experimental"
+    assert provenance["stability"] == "beta"
     assert len(provenance["abiSha256"]) == 64
     assert "fine-grained token" in output.getvalue()
 
