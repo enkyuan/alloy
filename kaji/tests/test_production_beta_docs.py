@@ -563,7 +563,7 @@ def test_public_onboarding_is_source_only_before_registry_verification() -> None
     combined = "\n".join(path.read_text() for path in paths)
     combined_compact = " ".join(combined.split())
 
-    assert "0.2.0-beta.9" in combined
+    assert "0.2.0-beta.10" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
     assert "kaji-sdk@0.2.0-beta.3" not in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
@@ -799,7 +799,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
         assert stale not in combined
 
     getting_started = paths[0].read_text()
-    assert "0.2.0-beta.9" in getting_started
+    assert "0.2.0-beta.10" in getting_started
     assert "bun install --frozen-lockfile" in getting_started
     assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", getting_started) is None
     assert 'risk="read"' in getting_started
@@ -1006,7 +1006,7 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
     }
     combined = "\n".join(documents.values())
     assert "kaji-sdk==0.2.0b1" in combined
-    assert "kaji-sdk@0.2.0-beta.9" in combined
+    assert "kaji-sdk@0.2.0-beta.10" in combined
     assert "kaji-sdk@0.2.0-beta.2" not in combined
     assert "kaji-sdk@0.2.0-beta.3" not in combined
 
@@ -1028,11 +1028,11 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         for path in documents
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
-    assert "0.2.0-beta.9" in public_docs
+    assert "0.2.0-beta.10" in public_docs
     assert re.search(r"(?:npm install|bun add)\s+kaji-sdk@", public_docs) is None
     assert re.search(r"pip install [^\n`]*kaji-sdk", public_docs) is None
     typescript_readme = documents[REPO_ROOT / "kaji" / "ts" / "README.md"]
-    assert "npm install kaji-sdk@0.2.0-beta.9" in typescript_readme
+    assert "npm install kaji-sdk@0.2.0-beta.10" in typescript_readme
 
 
 def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:

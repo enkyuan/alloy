@@ -21,10 +21,10 @@ the full five-step developer path and scope definition.
 ## Install
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.9 zod openai        # OpenAI
+npm install kaji-sdk@0.2.0-beta.10 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.9 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
-# or: bun add kaji-sdk@0.2.0-beta.9 zod openai
+npm install kaji-sdk@0.2.0-beta.10 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+# or: bun add kaji-sdk@0.2.0-beta.10 zod openai
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`

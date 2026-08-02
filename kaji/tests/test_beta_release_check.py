@@ -607,7 +607,7 @@ if name == "uv":
 if name == "npm" and args and args[0] == "pack":
     destination = Path(args[args.index("--pack-destination") + 1])
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "kaji-sdk-0.2.0-beta.9.tgz").write_bytes(b"npm")
+    (destination / "kaji-sdk-0.2.0-beta.10.tgz").write_bytes(b"npm")
 """
     for name in ("bun", "node", "npm", "uv"):
         executable = binaries / name
@@ -801,7 +801,7 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.9.tgz",
+                "file": "kaji-sdk-0.2.0-beta.10.tgz",
                 "sha256": "d" * 64,
             },
         },
@@ -1183,7 +1183,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
                 "private": True,
                 "type": "module",
                 "dependencies": {
-                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.9.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.10.tgz",
                     "zod": "4.4.3",
                 },
             }
@@ -1197,13 +1197,13 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
             "": {
                 "name": "kaji-installed-release-runtime",
                 "dependencies": {
-                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.9.tgz",
+                    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.10.tgz",
                     "zod": "4.4.3",
                 },
             },
             "node_modules/kaji-sdk": {
-                "version": "0.2.0-beta.9",
-                "resolved": "file:kaji-sdk-0.2.0-beta.9.tgz",
+                "version": "0.2.0-beta.10",
+                "resolved": "file:kaji-sdk-0.2.0-beta.10.tgz",
                 "integrity": "sha512-template",
             },
             "node_modules/zod": {
@@ -1214,7 +1214,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         },
     }
     lock.write_text(json.dumps(template))
-    tarball = tmp_path / "kaji-sdk-0.2.0-beta.9.tgz"
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.10.tgz"
     tarball.write_bytes(b"verified tarball bytes")
     consumer = tmp_path / "consumer"
     consumer.mkdir()
@@ -1247,7 +1247,7 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
     assert lock["lockfileVersion"] == 3
     assert lock["packages"][""]["dependencies"] == manifest["dependencies"]
     assert lock["packages"]["node_modules/kaji-sdk"]["resolved"] == (
-        "file:kaji-sdk-0.2.0-beta.9.tgz"
+        "file:kaji-sdk-0.2.0-beta.10.tgz"
     )
     for name, package in lock["packages"].items():
         if not name or name == "node_modules/kaji-sdk":
@@ -1378,7 +1378,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     module = _load_root_script("installed_release_runtime.py")
     wheel = tmp_path / "kaji_sdk-0.2.0b1-py3-none-any.whl"
     sdist = tmp_path / "kaji_sdk-0.2.0b1.tar.gz"
-    tarball = tmp_path / "kaji-sdk-0.2.0-beta.9.tgz"
+    tarball = tmp_path / "kaji-sdk-0.2.0-beta.10.tgz"
     for path in (wheel, sdist, tarball):
         path.write_bytes(b"artifact")
 
@@ -3591,7 +3591,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.9.tgz",
+                "file": "kaji-sdk-0.2.0-beta.10.tgz",
                 "sha256": "d" * 64,
             },
         },
@@ -3863,7 +3863,7 @@ def test_soak_report_reuses_complete_performance_provenance(
                 "sha256": "d" * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.9.tgz",
+                "file": "kaji-sdk-0.2.0-beta.10.tgz",
                 "sha256": "e" * 64,
             },
         },

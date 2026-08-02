@@ -5,8 +5,28 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.10] - 2026-08-01
+
+- Recovered from immutable beta.9 publish run `30726249929`, which failed
+  closed before `npm publish` because npm 11.16 reported setup-node's
+  deprecated `always-auth=false` user setting on stderr.
+- Removed that single deprecated setup-node entry before the first
+  credentialed action while preserving the closed `npm whoami` stdout,
+  stderr, identity, timeout, and receipt checks.
+- Advanced the npm candidate, installed-runtime, evidence, provenance,
+  registry-byte, documentation, and protected-release identities to beta.10.
+  Python `0.2.0b1` remains evidence-only and PyPI publication remains deferred.
+
 ## [0.2.0-beta.9] - 2026-07-27
 
+- Signed tag `kaji-v0.2.0-beta.9` triggered protected run `30726249929` at
+  `9215c8c28b359c94ae8d85f0786fe4b4e7407123`; offline, compatibility,
+  performance, onboarding, provider, supply-chain, and registry-preflight
+  evidence passed.
+- The publisher failed closed with `npm_whoami_output_invalid` before its
+  carrier, tag, registry, or `npm publish` steps. npm and PyPI remained absent;
+  the tag, artifacts, and receipts are immutable incident history and cannot
+  be reused for beta.10.
 - Replaced the retired five-participant onboarding policy with deterministic,
   exact-artifact npm and Bun install, scaffold, no-key, Echo lifecycle, cold,
   and warm proof on GitHub-hosted Linux/x64: Node 22 on `ubuntu-22.04` and
@@ -19,7 +39,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   performance and soak receipts, keyed provider proof, artifact binding, and
   every protected approval gate unchanged.
 - Bound release, installed-runtime, evidence, provenance, and registry-byte
-  verification to the new beta.9 identity. Publication remains npm-only;
+  verification to the beta.9 identity. Publication remained npm-only;
   Python `0.2.0b1` is evidence-only and PyPI publication remains deferred.
 
 ## [0.2.0-beta.8] - 2026-07-27

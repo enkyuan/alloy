@@ -18,7 +18,7 @@ SCRIPTS = REPO_ROOT / "kaji" / "scripts"
 APPROVER = SCRIPTS / "approve_typescript_onboarding_gate.py"
 RUN_ID = 123
 COMMIT = "a" * 40
-TAG = "kaji-v0.2.0-beta.9"
+TAG = "kaji-v0.2.0-beta.10"
 PRODUCER_ID = 456
 NODE22_ID = 2201
 NODE24_ID = 2401
@@ -91,7 +91,7 @@ def _raw_args(
         if mode == "rehearsal"
         else (
             "enkyuan/alloy/.github/workflows/kaji.publish.yml"
-            "@refs/tags/kaji-v0.2.0-beta.9"
+            "@refs/tags/kaji-v0.2.0-beta.10"
         )
     )
     paths: dict[int, Path] = {}
@@ -412,13 +412,13 @@ def _approval(mode: str) -> list[dict[str, Any]]:
     ]
 
 
-def test_policy_constants_are_fixed_to_the_reviewed_beta9_transaction() -> None:
+def test_policy_constants_are_fixed_to_the_reviewed_beta10_transaction() -> None:
     module = _load_script()
 
     assert module.REPOSITORY == "enkyuan/alloy"
     assert module.API_VERSION == "2026-03-10"
     assert module.RUN_ATTEMPT == 1
-    assert module.TAG == "kaji-v0.2.0-beta.9"
+    assert module.TAG == "kaji-v0.2.0-beta.10"
     assert module.ONBOARDING_ENVIRONMENT == "kaji-beta-onboarding"
     assert module.PROVIDER_ENVIRONMENT == "kaji-beta"
     assert module.PUBLISH_ENVIRONMENT == "kaji-beta-publish"

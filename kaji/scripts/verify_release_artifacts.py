@@ -17,12 +17,12 @@ from typing import Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.9.tgz": ("typescript", "0.2.0-beta.9"),
+    "kaji-sdk-0.2.0-beta.10.tgz": ("typescript", "0.2.0-beta.10"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
     "python": "0.2.0b1",
-    "typescript": "0.2.0-beta.9",
+    "typescript": "0.2.0-beta.10",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
@@ -88,7 +88,7 @@ BETA2_REFERENCE_RELEASE_CONTRACT = ReleaseArtifactContract(
 )
 RELEASE_ARTIFACT_CONTRACTS = MappingProxyType(
     {
-        "beta9": BETA9_RELEASE_CONTRACT,
+        "beta10": BETA9_RELEASE_CONTRACT,
         "beta2-reference": BETA2_REFERENCE_RELEASE_CONTRACT,
     }
 )
@@ -320,7 +320,7 @@ def main() -> None:
     parser.add_argument(
         "--artifact-contract",
         choices=tuple(RELEASE_ARTIFACT_CONTRACTS),
-        default="beta9",
+        default="beta10",
     )
     args = parser.parse_args()
     if args.expected_commit is None:

@@ -1,7 +1,7 @@
 # TypeScript onboarding evidence
 
 This policy records deterministic onboarding proof for the exact
-`kaji-sdk-0.2.0-beta.9.tgz` release candidate. It runs from the candidate
+`kaji-sdk-0.2.0-beta.10.tgz` release candidate. It runs from the candidate
 artifact rather than a source checkout and is required in both the rehearsal
 and tag-triggered protected release workflows.
 
