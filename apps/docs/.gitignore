@@ -1,6 +1,7 @@
 # Astro build and generated types
 .astro/
 dist/
+.source/
 
 # superpowers skill cache (dev-only, not committed)
 /docs/superpowers
