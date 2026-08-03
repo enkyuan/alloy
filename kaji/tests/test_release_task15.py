@@ -823,6 +823,8 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "  publication-incident:", 1
     )[0]
     assert "    if: ${{ always() }}" in publication_status
+    assert publication_status.count("uv run --project kaji --no-sync python") == 2
+    assert "python3 kaji/scripts/verify_published_packages.py" not in publication_status
     assert "      - name: Reduce monotonic publication state\n" in publication_status
     classifier = publication_status.split(
         "      - name: Reduce monotonic publication state\n", 1
@@ -3273,6 +3275,7 @@ def _task7_npm_audit(
                     {
                         "predicateType": "https://slsa.dev/provenance/v1",
                         "bundle": _task7_sigstore_bundle(statement),
+                        "signedAccessSignatureUrl": "",
                     },
                     {
                         "predicateType": (
@@ -3288,6 +3291,7 @@ def _task7_npm_audit(
                                 ),
                             }
                         ),
+                        "signedAccessSignatureUrl": "",
                     },
                 ],
             }
@@ -3692,6 +3696,12 @@ def test_npm_shasum_is_mandatory_canonical_sha1(shasum: object) -> None:
                 {"bundle": {"truthy": True}}
             ),
         ),
+        (
+            "nonempty-signed-access-signature-url",
+            lambda audit: audit["verified"][0]["attestationBundles"][0].update(
+                {"signedAccessSignatureUrl": "https://attacker.example/signature"}
+            ),
+        ),
     ],
 )
 def test_npm11_audit_contract_selects_only_the_exact_target_provenance(
@@ -3874,6 +3884,40 @@ def test_zero_exit_gh_json_rejects_wrong_subject_or_certificate_identity(
             workflow_run_attempt=1,
             require_npm_statement=False,
         )
+
+
+def test_gh_attestation_accepts_batch_statement_with_one_exact_target() -> None:
+    verifier = _load_root_script("verify_published_packages.py")
+    payload = b"npm-tarball"
+    statement = _task7_provenance_statement(
+        payload,
+        subject_name="kaji-sdk-0.2.0-beta.10.tgz",
+        digest_algorithm="sha256",
+    )
+    cast(list[dict[str, object]], statement["subject"]).append(
+        {
+            "name": "manifest.json",
+            "digest": {"sha256": hashlib.sha256(b"manifest").hexdigest()},
+        }
+    )
+
+    evidence = verifier.validate_gh_attestation_output(
+        _task7_gh_output(statement),
+        payload=payload,
+        subject_name="kaji-sdk-0.2.0-beta.10.tgz",
+        digest_algorithm="sha256",
+        repository="enkyuan/alloy",
+        commit="a" * 40,
+        tag="kaji-v0.2.0-beta.10",
+        workflow_path=".github/workflows/kaji.publish.yml",
+        workflow_sha="a" * 40,
+        workflow_run_id=123,
+        workflow_run_attempt=1,
+        require_npm_statement=False,
+    )
+
+    assert evidence["statement"]["name"] == "kaji-sdk-0.2.0-beta.10.tgz"
+    assert evidence["statement"]["digest"] == hashlib.sha256(payload).hexdigest()
 
 
 def test_release_composite_actions_are_sha_pinned() -> None:
