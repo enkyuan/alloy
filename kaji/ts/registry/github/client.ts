@@ -1,4 +1,13 @@
 // This is YOUR GitHub integration client. Edit it.
+//
+// This client implements all 15 GitHub routes, but index.ts in this directory
+// (the CLI-copied registry bundle) only registers 6 as tools. The other 9
+// (get_commit, get_pull_request, list_pull_request_files, list_check_runs,
+// get_workflow_run, list_workflow_jobs, list_file_commits, get_release,
+// list_deployments) are exposed separately via the npm package surface at
+// ts/src/integrations/github.ts + package-tools.ts, which composes the
+// CLI-copied 6 with these 9 for the full 15-tool catalog. See
+// ts/tests/github-registry.test.ts for coverage of both surfaces.
 
 import { Buffer } from "node:buffer";
 
