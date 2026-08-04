@@ -15,16 +15,22 @@ This is the catalog in TypeScript `0.2.0-beta.10` and Python `0.2.0b1`.
 WIP entries whose registry tier is `experimental` require
 `--allow-experimental` and are outside the stable beta set.
 
-| Integration | Support status | Runtime            | Auth                    | Tools                     |
-| ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta           | Python, TypeScript | None                    | 2                         |
-| `gmail`     | Experimental   | Python, TypeScript | Google OAuth grant      | 3                         |
-| `github`    | Beta           | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status       | Runtime            | Auth                    | Tools                     |
+| ----------- | -------------------- | ------------------ | ----------------------- | ------------------------- |
+| `echo`      | Beta                 | Python, TypeScript | None                    | 2                         |
+| `gmail`     | WIP (`experimental`) | Python, TypeScript | Google OAuth grant      | 3                         |
+| `github`    | Beta                 | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
 
 The TypeScript and Python registries contain `echo`, `gmail`, and `github`. Their
 manifests and JSON schemas are validated, and shared entries are checked for
 cross-SDK ABI parity. Source modules outside this index are not discoverable or
 installable catalog entries.
+
+The **Runtime** column lists the runtimes each integration has a working
+implementation for — not where it is published. The TypeScript package is on
+npm; the Python package's publication to PyPI is deferred, so `Python` here
+means the in-repo implementation exists and passes cross-SDK parity, not that a
+`pip install` is available yet.
 
 ## Discover and copy
 
