@@ -5,6 +5,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- Experimental `gmail` registry integration with three tools: `list_messages`,
+  `get_message` (base64url MIME decode, bounded), and `send_message` (an
+  external-effect write guarded by the `gmail_mutation_unknown` recovery path).
+  Copy it into your project with `kaji add gmail --allow-experimental`; scopes
+  are `gmail.readonly` and `gmail.send`.
+- `list_messages` pagination: pass `page_token` from a prior result's
+  `next_page_token` to page through a mailbox.
+- A shared `gmail-api-conformance-v1.json` fixture drives both the TypeScript
+  and Python Gmail clients, enforcing identical normalization across the two
+  SDKs (the same mechanism that guards `github`).
+
+### Fixed
+
+- Gmail Python normalizers now classify a malformed provider-returned message id
+  as a transient read (retryable), matching the TypeScript client, instead of a
+  non-retryable policy rejection.
+
 ## [0.2.0-beta.10] - 2026-08-01
 
 - Recovered from immutable beta.9 publish run `30726249929`, which failed
