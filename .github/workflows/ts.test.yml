@@ -127,6 +127,9 @@ jobs:
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
 
+      - name: Lint published package (publint + attw)
+        run: bun run lint:package
+
       - name: Build, pack, and test installed package
         run: bun run build && bun scripts/smoke_package.mts
 

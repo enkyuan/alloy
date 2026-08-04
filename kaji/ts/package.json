@@ -9,7 +9,7 @@
   "license": "FSL-1.1-ALv2",
   "repository": {
     "type": "git",
-    "url": "https://github.com/enkyuan/alloy.git",
+    "url": "git+https://github.com/enkyuan/alloy.git",
     "directory": "kaji/ts"
   },
   "bin": {
@@ -133,6 +133,7 @@
     "lint": "oxlint src tests scripts registry",
     "format": "oxfmt --write \"**/*.ts\"",
     "format:check": "oxfmt --check \"**/*.ts\"",
+    "lint:package": "bun run build && publint run . --strict && attw --pack --profile node16",
     "parity": "uv run --project .. python ../scripts/check_sdk_parity.py",
     "test": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run \"$@\"' --",
     "test:coverage": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run --coverage --coverage.include=\"src/**/*.ts\" --coverage.include=\"registry/**/*.ts\" --coverage.exclude=\"src/**/*.d.ts\" --coverage.exclude=\"registry/**/tests/**/*.test.ts\" --coverage.reporter=text --coverage.reporter=json-summary --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80 \"$@\"' --",
