@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "outcomes": [
+    { "name": "success", "expected": "success" },
+    { "name": "missing_auth", "expected": "INTEGRATION_AUTH_REQUIRED" },
+    { "name": "rate_limit", "expected": "INTEGRATION_RATE_LIMITED" },
+    { "name": "approval_rejected", "expected": "APPROVAL_REJECTED" },
+    { "name": "connection_lost_after_dispatch", "expected": "unknown" }
+  ]
+}

@@ -29,7 +29,13 @@
     "registry/github/index.ts",
     "registry/github/manifest.json",
     "registry/github/owner-fixtures.json",
-    "registry/github/tests/github.test.ts"
+    "registry/github/tests/github.test.ts",
+    "registry/gmail/LICENSE",
+    "registry/gmail/client.ts",
+    "registry/gmail/index.ts",
+    "registry/gmail/manifest.json",
+    "registry/gmail/owner-fixtures.json",
+    "registry/gmail/tests/gmail.test.ts"
   ],
   "type": "module",
   "sideEffects": false,

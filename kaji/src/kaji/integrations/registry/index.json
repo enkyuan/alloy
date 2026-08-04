@@ -7,6 +7,11 @@
       "stability": "beta",
       "runtimes": ["python", "typescript"]
     },
+    "gmail": {
+      "manifest": "gmail/manifest.json",
+      "stability": "experimental",
+      "runtimes": ["python", "typescript"]
+    },
     "github": {
       "manifest": "github/manifest.json",
       "stability": "beta",
