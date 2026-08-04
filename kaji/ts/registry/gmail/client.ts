@@ -22,6 +22,7 @@ const MAX_HEADER_VALUE_BYTES = 2 * 1024;
 const MAX_RAW_MESSAGE_BYTES = 1024 * 1024;
 const MAX_MODEL_RESULT_BYTES = 60 * 1024;
 const MAX_TOKEN_CHARACTERS = 4_096;
+const MAX_PAGE_TOKEN_BYTES = 2_048;
 const MAX_PART_DEPTH = 10;
 // Header names we surface, lowercased. Everything else is dropped as noise.
 const SURFACED_HEADERS = new Set(["from", "to", "cc", "subject", "date"]);
@@ -251,10 +252,12 @@ function routeFor(options: RequestJsonOptions): Route {
   const queryKeys = new Set(Object.keys(query ?? {}));
   if (method === "GET" && !mutation && path === base) {
     if (query === undefined || body !== undefined) throw policyError();
-    for (const key of queryKeys) if (key !== "q" && key !== "maxResults") throw policyError();
+    for (const key of queryKeys)
+      if (key !== "q" && key !== "maxResults" && key !== "pageToken") throw policyError();
     if (!queryKeys.has("maxResults")) throw policyError();
     policyInteger(query.maxResults, 1, 100);
     if (query.q !== undefined) policyString(query.q, 1, 1_024);
+    if (query.pageToken !== undefined) policyString(query.pageToken, 1, MAX_PAGE_TOKEN_BYTES);
     return "list_messages";
   }
   if (method === "POST" && mutation && path === `${base}/send`) {
@@ -305,12 +308,14 @@ export class GmailClient {
 
   async listMessages(
     context: ToolExecutionContext,
-    input: Readonly<{ query?: string; maxResults?: number }>,
+    input: Readonly<{ query?: string; maxResults?: number; pageToken?: string }>,
   ): Promise<unknown> {
     const maxResults = input.maxResults ?? 10;
     policyInteger(maxResults, 1, 100);
     const query: Record<string, string | number> = { maxResults };
     if (input.query !== undefined) query.q = policyString(input.query, 1, 1_024);
+    if (input.pageToken !== undefined)
+      query.pageToken = policyString(input.pageToken, 1, MAX_PAGE_TOKEN_BYTES);
     return this.requestJson(context, {
       method: "GET",
       path: "/gmail/v1/users/me/messages",
@@ -451,6 +456,9 @@ export class GmailClient {
     if (root.resultSizeEstimate !== undefined) {
       result.result_size_estimate = providerInteger(root.resultSizeEstimate);
     }
+    if (root.nextPageToken !== undefined) {
+      result.next_page_token = providerCharacterString(root.nextPageToken, 1, MAX_PAGE_TOKEN_BYTES);
+    }
     if (serializedBytes(result) > MAX_LIST_RESULT_BYTES) throw new ProviderShapeError();
     return result;
   }
@@ -474,7 +482,10 @@ export class GmailClient {
     const result = {
       id: providerMessageId(root.id),
       thread_id: providerMessageId(root.threadId),
-      snippet: truncateUtf8(providerCharacterString(root.snippet ?? "", 0, MAX_RAW_MESSAGE_BYTES), 1_024),
+      snippet: truncateUtf8(
+        providerCharacterString(root.snippet ?? "", 0, MAX_RAW_MESSAGE_BYTES),
+        1_024,
+      ),
       headers,
       body: text,
       body_truncated: truncated,

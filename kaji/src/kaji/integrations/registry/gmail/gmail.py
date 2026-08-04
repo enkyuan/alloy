@@ -27,6 +27,7 @@ class _GmailClientLike(Protocol):
         *,
         query: str | None = None,
         max_results: int = 10,
+        page_token: str | None = None,
     ) -> Mapping[str, object]: ...
     async def get_message(
         self,
@@ -58,7 +59,11 @@ def _specs() -> tuple[ToolSpec, ...]:
     return (
         ToolSpec(
             name="list_messages",
-            description="List messages in the authenticated user's mailbox.",
+            description=(
+                "List messages in the authenticated user's mailbox. Pass "
+                "`page_token` from a prior result's `next_page_token` to page "
+                "through results."
+            ),
             parameters=_parameters(
                 {
                     "query": {
@@ -71,6 +76,11 @@ def _specs() -> tuple[ToolSpec, ...]:
                         "minimum": 1,
                         "maximum": 100,
                         "default": 10,
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2_048,
                     },
                 },
                 [],

@@ -1,0 +1,750 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/integrations/gmail-api-conformance-v1.json",
+  "version": "1.0.0",
+  "token": "fixture-token",
+  "cases": [
+    {
+      "name": "list messages",
+      "operation": "list_messages",
+      "input": {
+        "query": "from:alice",
+        "maxResults": 5
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {
+            "content-type": "application/json"
+          },
+          "json": {
+            "messages": [
+              {
+                "id": "abc123",
+                "threadId": "thread1"
+              },
+              {
+                "id": "def456",
+                "threadId": "thread2"
+              }
+            ],
+            "resultSizeEstimate": 2,
+            "nextPageToken": "CURSOR_2"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=5&q=from%3Aalice",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "messages": [
+            {
+              "id": "abc123",
+              "thread_id": "thread1"
+            },
+            {
+              "id": "def456",
+              "thread_id": "thread2"
+            }
+          ],
+          "result_size_estimate": 2,
+          "next_page_token": "CURSOR_2"
+        }
+      }
+    },
+    {
+      "name": "list messages empty",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "resultSizeEstimate": 0
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "messages": [],
+          "result_size_estimate": 0
+        }
+      }
+    },
+    {
+      "name": "list messages with pagination",
+      "operation": "list_messages",
+      "input": {
+        "maxResults": 1,
+        "pageToken": "PREV_CURSOR"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "messages": [
+              {
+                "id": "m1",
+                "threadId": "t1"
+              }
+            ],
+            "nextPageToken": "NEXT_PAGE_42",
+            "resultSizeEstimate": 50
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=1&pageToken=PREV_CURSOR",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "messages": [
+            {
+              "id": "m1",
+              "thread_id": "t1"
+            }
+          ],
+          "next_page_token": "NEXT_PAGE_42",
+          "result_size_estimate": 50
+        }
+      }
+    },
+    {
+      "name": "get message text plain",
+      "operation": "get_message",
+      "input": {
+        "messageId": "abc123"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "id": "abc123",
+            "threadId": "thread1",
+            "snippet": "hello there",
+            "payload": {
+              "headers": [
+                {
+                  "name": "From",
+                  "value": "alice@example.com"
+                },
+                {
+                  "name": "Subject",
+                  "value": "Hi"
+                },
+                {
+                  "name": "X-Noise",
+                  "value": "dropped"
+                }
+              ],
+              "mimeType": "multipart/alternative",
+              "parts": [
+                {
+                  "mimeType": "text/html",
+                  "body": {
+                    "data": "PHA-aWdub3JlZDwvcD4"
+                  }
+                },
+                {
+                  "mimeType": "text/plain",
+                  "body": {
+                    "data": "cGxhaW4gYm9keQ"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages/abc123?format=full",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "body": "plain body",
+          "body_truncated": false,
+          "headers": {
+            "from": "alice@example.com",
+            "subject": "Hi"
+          },
+          "id": "abc123",
+          "snippet": "hello there",
+          "thread_id": "thread1"
+        }
+      }
+    },
+    {
+      "name": "get message no text part",
+      "operation": "get_message",
+      "input": {
+        "messageId": "noBody01"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "id": "noBody01",
+            "threadId": "noBody01",
+            "payload": {
+              "mimeType": "text/html",
+              "body": {
+                "data": "PHA-b25seSBodG1sPC9wPg"
+              }
+            }
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages/noBody01?format=full",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "body": "",
+          "body_truncated": false,
+          "headers": {},
+          "id": "noBody01",
+          "snippet": "",
+          "thread_id": "noBody01"
+        }
+      }
+    },
+    {
+      "name": "send message",
+      "operation": "send_message",
+      "input": {
+        "raw": "RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NCg0KSGk"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "id": "sent1",
+            "threadId": "thread9"
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/gmail/v1/users/me/messages/send",
+          "body": "{\"raw\":\"RnJvbTogbWVAZXhhbXBsZS5jb20NClRvOiB5b3VAZXhhbXBsZS5jb20NCg0KSGk\"}"
+        }
+      ],
+      "expected": {
+        "result": {
+          "id": "sent1",
+          "thread_id": "thread9"
+        }
+      }
+    },
+    {
+      "name": "401 requires authentication",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 401,
+          "headers": {},
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_AUTH_REQUIRED",
+          "outcome": "failed",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "permission 403 is not rate limit",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 403,
+          "headers": {},
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "rate limited read retries once",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 429,
+          "headers": {
+            "retry-after": "1"
+          },
+          "json": {}
+        },
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "messages": [
+              {
+                "id": "abc123",
+                "threadId": "thread1"
+              }
+            ]
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        },
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "result": {
+          "messages": [
+            {
+              "id": "abc123",
+              "thread_id": "thread1"
+            }
+          ]
+        }
+      },
+      "expected_sleeps": [
+        1000
+      ]
+    },
+    {
+      "name": "404 is confirmed read failure",
+      "operation": "get_message",
+      "input": {
+        "messageId": "missing01"
+      },
+      "responses": [
+        {
+          "status": 404,
+          "headers": {},
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages/missing01?format=full",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": false
+        }
+      }
+    },
+    {
+      "name": "429 mutation is not retried",
+      "operation": "send_message",
+      "input": {
+        "raw": "RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk"
+      },
+      "responses": [
+        {
+          "status": 429,
+          "headers": {
+            "retry-after": "1"
+          },
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/gmail/v1/users/me/messages/send",
+          "body": "{\"raw\":\"RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk\"}"
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_RATE_LIMITED",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "malformed JSON read is certified read failure",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": "{not json"
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "malformed JSON after POST is unknown",
+      "operation": "send_message",
+      "input": {
+        "raw": "RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": "{not json"
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/gmail/v1/users/me/messages/send",
+          "body": "{\"raw\":\"RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk\"}"
+        }
+      ],
+      "expected": {
+        "exception": "unknown"
+      }
+    },
+    {
+      "name": "5xx read is transient",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 503,
+          "headers": {},
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "5xx mutation is unknown",
+      "operation": "send_message",
+      "input": {
+        "raw": "RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk"
+      },
+      "responses": [
+        {
+          "status": 500,
+          "headers": {},
+          "json": {}
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/gmail/v1/users/me/messages/send",
+          "body": "{\"raw\":\"RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk\"}"
+        }
+      ],
+      "expected": {
+        "exception": "unknown"
+      }
+    },
+    {
+      "name": "connection loss after write dispatch is unknown",
+      "operation": "send_message",
+      "input": {
+        "raw": "RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk"
+      },
+      "responses": [
+        {
+          "transport_error": "connection"
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "POST",
+          "path_and_query": "/gmail/v1/users/me/messages/send",
+          "body": "{\"raw\":\"RnJvbTogbWVAZXhhbXBsZS5jb20NCg0KSGk\"}"
+        }
+      ],
+      "expected": {
+        "exception": "unknown"
+      }
+    },
+    {
+      "name": "malformed base64 body is transient read",
+      "operation": "get_message",
+      "input": {
+        "messageId": "bad64"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "id": "bad64",
+            "threadId": "bad64",
+            "payload": {
+              "mimeType": "text/plain",
+              "body": {
+                "data": "@@@not-base64@@@"
+              }
+            }
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages/bad64?format=full",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "mime depth bomb is transient read",
+      "operation": "get_message",
+      "input": {
+        "messageId": "deepbomb"
+      },
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "id": "deepbomb",
+            "threadId": "deepbomb",
+            "payload": {
+              "mimeType": "multipart/mixed",
+              "parts": [
+                {
+                  "mimeType": "multipart/mixed",
+                  "parts": [
+                    {
+                      "mimeType": "multipart/mixed",
+                      "parts": [
+                        {
+                          "mimeType": "multipart/mixed",
+                          "parts": [
+                            {
+                              "mimeType": "multipart/mixed",
+                              "parts": [
+                                {
+                                  "mimeType": "multipart/mixed",
+                                  "parts": [
+                                    {
+                                      "mimeType": "multipart/mixed",
+                                      "parts": [
+                                        {
+                                          "mimeType": "multipart/mixed",
+                                          "parts": [
+                                            {
+                                              "mimeType": "multipart/mixed",
+                                              "parts": [
+                                                {
+                                                  "mimeType": "multipart/mixed",
+                                                  "parts": [
+                                                    {
+                                                      "mimeType": "multipart/mixed",
+                                                      "parts": [
+                                                        {
+                                                          "mimeType": "multipart/mixed",
+                                                          "parts": [
+                                                            {
+                                                              "mimeType": "text/plain",
+                                                              "body": {
+                                                                "data": "ZGVlcA"
+                                                              }
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages/deepbomb?format=full",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "non-object list is transient read",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": [
+            1,
+            2,
+            3
+          ]
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    },
+    {
+      "name": "bad provider message id is transient read",
+      "operation": "list_messages",
+      "input": {},
+      "responses": [
+        {
+          "status": 200,
+          "headers": {},
+          "json": {
+            "messages": [
+              {
+                "id": "not/valid",
+                "threadId": "t"
+              }
+            ]
+          }
+        }
+      ],
+      "expected_requests": [
+        {
+          "method": "GET",
+          "path_and_query": "/gmail/v1/users/me/messages?maxResults=10",
+          "body": null
+        }
+      ],
+      "expected": {
+        "error": {
+          "code": "INTEGRATION_API_ERROR",
+          "outcome": "failed",
+          "retryable": true
+        }
+      }
+    }
+  ]
+}

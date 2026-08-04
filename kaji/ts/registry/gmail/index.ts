@@ -12,10 +12,7 @@ import { createGmailRequester } from "kaji-sdk/integrations";
 
 import { GmailClient } from "./client";
 
-export type SharedGmailClient = Pick<
-  GmailClient,
-  "listMessages" | "getMessage" | "sendMessage"
->;
+export type SharedGmailClient = Pick<GmailClient, "listMessages" | "getMessage" | "sendMessage">;
 
 function parameters(
   properties: Readonly<Record<string, unknown>>,
@@ -34,11 +31,13 @@ function specs(): readonly ToolSpec[] {
   return [
     {
       name: "list_messages",
-      description: "List messages in the authenticated user's mailbox.",
+      description:
+        "List messages in the authenticated user's mailbox. Pass `page_token` from a prior result's `next_page_token` to page through results.",
       parameters: parameters(
         {
           query: { type: "string", minLength: 1, maxLength: 1_024 },
           max_results: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+          page_token: { type: "string", minLength: 1, maxLength: 2_048 },
         },
         [],
       ),
@@ -91,6 +90,7 @@ function handler(client: SharedGmailClient, name: string): ToolHandler {
           await client.listMessages(context, {
             ...(args.query === undefined ? {} : { query: args.query as string }),
             ...(args.max_results === undefined ? {} : { maxResults: args.max_results as number }),
+            ...(args.page_token === undefined ? {} : { pageToken: args.page_token as string }),
           }),
         );
       case "get_message":

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
@@ -46,10 +47,14 @@ class ScriptedRequester implements FixedOriginRequester {
     });
     const response = this.responses.shift()!;
     if (response.transport_error === "connection") throw new Error("private connection detail");
+    const bytes =
+      "body" in response
+        ? new TextEncoder().encode((response.body as string | undefined) ?? "")
+        : new TextEncoder().encode(JSON.stringify(response.json));
     return {
       status: response.status as number,
       headers: Object.freeze({ ...(response.headers as Record<string, string> | undefined) }),
-      bytes: new TextEncoder().encode(JSON.stringify(response.json)),
+      bytes,
     };
   }
 }
@@ -87,7 +92,7 @@ describe("GmailClient", () => {
             { id: "def456", threadId: "thread2" },
           ],
           resultSizeEstimate: 2,
-          nextPageToken: "should-be-dropped",
+          nextPageToken: "CURSOR_2",
         },
       },
     ]);
@@ -98,10 +103,41 @@ describe("GmailClient", () => {
         { id: "def456", thread_id: "thread2" },
       ],
       result_size_estimate: 2,
+      next_page_token: "CURSOR_2",
     });
     expect(http.requests[0]!.path_and_query).toBe(
       "/gmail/v1/users/me/messages?maxResults=5&q=from%3Aalice",
     );
+  });
+
+  it("pages: sends page_token and surfaces next_page_token", async () => {
+    const { gmail, http } = client([
+      {
+        status: 200,
+        json: {
+          messages: [{ id: "m1", threadId: "t1" }],
+          nextPageToken: "NEXT_PAGE_42",
+          resultSizeEstimate: 50,
+        },
+      },
+    ]);
+    const result = await gmail.listMessages(context(), { maxResults: 1, pageToken: "PREV_CURSOR" });
+    expect(result).toEqual({
+      messages: [{ id: "m1", thread_id: "t1" }],
+      result_size_estimate: 50,
+      next_page_token: "NEXT_PAGE_42",
+    });
+    expect(http.requests[0]!.path_and_query).toBe(
+      "/gmail/v1/users/me/messages?maxResults=1&pageToken=PREV_CURSOR",
+    );
+  });
+
+  it("rejects an over-long page_token before HTTP", async () => {
+    const { gmail, http } = client([]);
+    await expect(
+      gmail.listMessages(context(), { pageToken: "x".repeat(2049) }),
+    ).rejects.toBeInstanceOf(IntegrationPolicyError);
+    expect(http.requests).toHaveLength(0);
   });
 
   it("decodes the text/plain body in get_message", async () => {
@@ -138,6 +174,27 @@ describe("GmailClient", () => {
     });
   });
 
+  it("truncates an oversize text/plain body and flags it", async () => {
+    // > MAX_BODY_BYTES (48 KiB) must be capped, with body_truncated: true.
+    const big = "x".repeat(50 * 1024);
+    const { gmail } = client([
+      {
+        status: 200,
+        json: {
+          id: "bigbody0",
+          threadId: "bigbody0",
+          payload: { mimeType: "text/plain", body: { data: b64url(big) } },
+        },
+      },
+    ]);
+    const result = (await gmail.getMessage(context(), { messageId: "bigbody0" })) as {
+      body: string;
+      body_truncated: boolean;
+    };
+    expect(result.body_truncated).toBe(true);
+    expect(Buffer.byteLength(result.body, "utf8")).toBe(48 * 1024);
+  });
+
   it("returns ids and sends raw in send_message", async () => {
     const raw = b64url("From: me@example.com\r\nTo: you@example.com\r\n\r\nHi");
     const { gmail, http } = client([{ status: 200, json: { id: "sent1", threadId: "thread9" } }]);
@@ -166,16 +223,16 @@ describe("GmailClient", () => {
 
   it("rejects an invalid message id with a policy error", async () => {
     const { gmail } = client([]);
-    await expect(gmail.getMessage(context(), { messageId: "not/a/valid/id" })).rejects.toBeInstanceOf(
-      IntegrationPolicyError,
-    );
+    await expect(
+      gmail.getMessage(context(), { messageId: "not/a/valid/id" }),
+    ).rejects.toBeInstanceOf(IntegrationPolicyError);
   });
 
   it("rejects non-base64url raw with a policy error", async () => {
     const { gmail } = client([]);
-    await expect(gmail.sendMessage(context(), { raw: "!!! not base64 !!!" })).rejects.toBeInstanceOf(
-      IntegrationPolicyError,
-    );
+    await expect(
+      gmail.sendMessage(context(), { raw: "!!! not base64 !!!" }),
+    ).rejects.toBeInstanceOf(IntegrationPolicyError);
   });
 
   it("surfaces auth-required on 401", async () => {
@@ -216,5 +273,87 @@ describe("GmailClient", () => {
       IntegrationRateLimitedError,
     );
     expect(http.requests).toHaveLength(1);
+  });
+
+  // Header-injection (\r\n), empty/whitespace, overlong, lone-surrogate, and
+  // non-string tokens must all fail as auth-required BEFORE any HTTP call.
+  it.each([
+    ["empty", ""],
+    ["whitespace", "   "],
+    ["header injection", "a\r\nb"],
+    ["overlong", "x".repeat(4097)],
+    ["lone low surrogate", "\udc00"],
+    ["high surrogate then ascii", "\ud800a"],
+    ["non-string", 7 as unknown as string],
+  ])("rejects an invalid token before HTTP: %s", async (_name, token) => {
+    const { gmail, http } = client([{ status: 200, json: { messages: [] } }], {
+      tokenFor: async () => token,
+    });
+    await expect(gmail.listMessages(context(), {})).rejects.toBeInstanceOf(
+      IntegrationAuthRequiredError,
+    );
+    expect(http.requests).toHaveLength(0);
+  });
+});
+
+interface ConformanceCase {
+  readonly name: string;
+  readonly operation: "list_messages" | "get_message" | "send_message";
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly responses: readonly Readonly<Record<string, unknown>>[];
+  readonly expected_requests: readonly unknown[];
+  readonly expected: Readonly<Record<string, unknown>>;
+  readonly expected_sleeps?: readonly number[];
+}
+
+const conformanceFixture = JSON.parse(
+  readFileSync(
+    new URL("../../contracts/integrations/gmail-api-conformance-v1.json", import.meta.url),
+    "utf8",
+  ),
+) as { readonly token: string; readonly cases: readonly ConformanceCase[] };
+
+async function invokeConformance(gmail: GmailClient, testCase: ConformanceCase): Promise<unknown> {
+  if (testCase.operation === "list_messages") {
+    return gmail.listMessages(
+      context(),
+      testCase.input as { query?: string; maxResults?: number; pageToken?: string },
+    );
+  }
+  if (testCase.operation === "get_message") {
+    return gmail.getMessage(context(), testCase.input as { messageId: string });
+  }
+  return gmail.sendMessage(context(), testCase.input as { raw: string });
+}
+
+function normalizedError(error: unknown): Record<string, unknown> {
+  const value = error as Record<string, unknown>;
+  if (value.reason_code === "gmail_mutation_unknown") return { exception: "unknown" };
+  return {
+    error: { code: value.error_code, outcome: value.outcome, retryable: value.retryable },
+  };
+}
+
+describe("shared Gmail client conformance", () => {
+  // The same fixture drives kaji/tests/test_gmail_client.py; both SDKs must
+  // normalize identically. This is the cross-language parity gate.
+  it.each(conformanceFixture.cases)("normalizes $name", async (testCase) => {
+    const sleeps: number[] = [];
+    const { gmail, http } = client(testCase.responses, {
+      tokenFor: async () => conformanceFixture.token,
+      sleeps,
+    });
+
+    let actual: Record<string, unknown>;
+    try {
+      actual = { result: await invokeConformance(gmail, testCase) };
+    } catch (error) {
+      expect(String(error).toLowerCase()).not.toContain("private");
+      actual = normalizedError(error);
+    }
+
+    expect(actual).toEqual(testCase.expected);
+    expect(http.requests).toEqual(testCase.expected_requests);
+    expect(sleeps).toEqual(testCase.expected_sleeps ?? []);
   });
 });

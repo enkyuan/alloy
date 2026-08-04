@@ -35,6 +35,7 @@ _MAX_BODY_BYTES = 48 * 1024
 _MAX_HEADER_VALUE_BYTES = 2 * 1024
 _MAX_RAW_MESSAGE_BYTES = 1_048_576
 _MAX_TOKEN_CHARACTERS = 4_096
+_MAX_PAGE_TOKEN_BYTES = 2_048
 _MESSAGE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 # base64url alphabet (RFC 4648 §5), unpadded — provider payloads must match exactly.
 _BASE64URL = re.compile(r"[A-Za-z0-9_-]*")
@@ -88,8 +89,17 @@ def _rate_error() -> IntegrationRateLimitedError:
 
 
 def _require_message_id(value: object) -> str:
+    # Caller-supplied id: a bad value is caller error -> policy.
     if not isinstance(value, str) or not _MESSAGE_ID.fullmatch(value):
         raise _policy_error()
+    return value
+
+
+def _provider_message_id(value: object) -> str:
+    # Provider-returned id: a bad value is a provider-shape problem -> transient
+    # read, matching the TypeScript client's providerMessageId().
+    if not isinstance(value, str) or not _MESSAGE_ID.fullmatch(value):
+        raise _ProviderShapeError()
     return value
 
 
@@ -200,10 +210,14 @@ def _b64url_decode(value: str) -> bytes:
         raise _ProviderShapeError() from None
 
 
-def _validate_list_input(query: object, page_size: object) -> None:
+def _validate_list_input(
+    query: object, page_size: object, page_token: object = None
+) -> None:
     _policy_integer(page_size, minimum=1, maximum=100)
     if query is not None:
         _policy_string(query, minimum=1, maximum=1_024)
+    if page_token is not None:
+        _policy_string(page_token, minimum=1, maximum=_MAX_PAGE_TOKEN_BYTES)
 
 
 def _validate_raw_message(raw: object) -> str:
@@ -234,9 +248,11 @@ def _route_for(
 ) -> _Route:
     base = "/gmail/v1/users/me/messages"
     if method == "GET" and not mutation and path == base:
-        if query is None or set(query) - {"q", "maxResults"} or body is not None:
+        if query is None or set(query) - {"q", "maxResults", "pageToken"} or body is not None:
             raise _policy_error()
-        _validate_list_input(query.get("q"), query.get("maxResults"))
+        _validate_list_input(
+            query.get("q"), query.get("maxResults"), query.get("pageToken")
+        )
         return "list_messages"
     if method == "POST" and mutation and path == base + "/send":
         if query is not None or body is None or set(body) != {"raw"}:
@@ -275,11 +291,14 @@ class GmailClient:
         *,
         query: str | None = None,
         max_results: int = 10,
+        page_token: str | None = None,
     ) -> Mapping[str, object]:
-        _validate_list_input(query, max_results)
+        _validate_list_input(query, max_results, page_token)
         request_query: dict[str, str | int] = {"maxResults": max_results}
         if query is not None:
             request_query["q"] = query
+        if page_token is not None:
+            request_query["pageToken"] = page_token
         return cast(
             Mapping[str, object],
             await self.request_json(
@@ -481,14 +500,19 @@ class GmailClient:
             message = _object(value)
             items.append(
                 {
-                    "id": _require_message_id(message.get("id")),
-                    "thread_id": _require_message_id(message.get("threadId")),
+                    "id": _provider_message_id(message.get("id")),
+                    "thread_id": _provider_message_id(message.get("threadId")),
                 }
             )
         result: dict[str, object] = {"messages": items}
         estimate = root.get("resultSizeEstimate")
         if estimate is not None:
             result["result_size_estimate"] = _provider_integer(estimate)
+        next_page_token = root.get("nextPageToken")
+        if next_page_token is not None:
+            result["next_page_token"] = _provider_character_string(
+                next_page_token, minimum=1, maximum=_MAX_PAGE_TOKEN_BYTES
+            )
         try:
             return durable_json_snapshot(
                 result, subject="tool_result", max_bytes=_MAX_LIST_RESULT_BYTES
@@ -513,8 +537,8 @@ class GmailClient:
                 )
         body_text, truncated = self._extract_body(payload)
         return {
-            "id": _require_message_id(root.get("id")),
-            "thread_id": _require_message_id(root.get("threadId")),
+            "id": _provider_message_id(root.get("id")),
+            "thread_id": _provider_message_id(root.get("threadId")),
             "snippet": _truncate_utf8(
                 _provider_character_string(
                     root.get("snippet", ""), maximum=_MAX_RAW_MESSAGE_BYTES
@@ -570,8 +594,8 @@ class GmailClient:
     def _normalize_send(self, document: object) -> object:
         message = _object(document)
         return {
-            "id": _require_message_id(message.get("id")),
-            "thread_id": _require_message_id(message.get("threadId")),
+            "id": _provider_message_id(message.get("id")),
+            "thread_id": _provider_message_id(message.get("threadId")),
         }
 
 
