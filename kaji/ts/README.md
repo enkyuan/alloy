@@ -290,6 +290,44 @@ integration, so close it only after active tool work has settled. See the
 [GitHub integration guide](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/integrations/github.mdx)
 for the 15-tool catalog, mutation policy, limits, and unsupported surfaces.
 
+### Gmail integration (experimental)
+
+Gmail ships as an **experimental** catalog entry. Unlike `github`, it has no
+`kaji-sdk/integrations/gmail` package subpath. You copy its source into your
+project and own it:
+
+```bash
+npm exec -- kaji add gmail --allow-experimental --out ./integrations/gmail
+```
+
+The copied `index.ts` exports `createGmailIntegration({ tokenFor })`, where
+`tokenFor` is a lazy callback that returns the OAuth access token for the
+`gmail.readonly` and `gmail.send` scopes. Wire it into `AgentBuilder` exactly
+like the GitHub integration:
+
+```ts
+import { createGmailIntegration } from "./integrations/gmail";
+
+const gmail = createGmailIntegration({
+  tokenFor: async (context) => {
+    if (context.signal.aborted) throw context.signal.reason;
+    const token = process.env.GMAIL_ACCESS_TOKEN;
+    if (!token) throw new Error("GMAIL_ACCESS_TOKEN is required");
+    return token;
+  },
+});
+// ...builder.integration(gmail)... then gmail.close() after tool work settles.
+```
+
+It exposes three tools: `list_messages` (with `page_token`/`next_page_token`
+pagination), `get_message` (first `text/plain` body, decoded and bounded), and
+`send_message`, an external-effect write whose ambiguous failures surface the
+`gmail_mutation_unknown` recovery reason rather than risking a silent double
+send. The client is fixed to `https://gmail.googleapis.com`, rejects redirects,
+and bounds every response. See the
+[Gmail integration guide](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/integrations/index.mdx)
+for scopes, the `kaji connect gmail` grant flow, and limits.
+
 `deadlineAtMs` is an absolute Unix epoch value; use `deadlineAfter()` when the
 caller has a duration. An earlier caller deadline can tighten, but never extend,
 the configured 120-second whole-turn default covering queue wait, provider open

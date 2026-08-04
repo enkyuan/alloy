@@ -382,7 +382,6 @@ for (const [path, source] of displayedSources) {
   }
 }
 
-requireText(integrations, "No Gmail manifest, client, or tool bundle", "integration status");
 console.log(
   `OK: docs match SDK ${pythonVersion} / ${typescriptPackage.version}, ` +
     `${documentedEventTypes.size} event types, ${catalog.size} integrations, and ` +

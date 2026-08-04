@@ -41,11 +41,6 @@ MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_GENERATED_METADATA_BYTES = 1024 * 1024
-GITHUB_MANIFEST_PATH = f"{registry_root}/github/manifest.json"
-GITHUB_OWNER_FIXTURE_RELATIVE_PATH = "tests/test_github.py"
-GITHUB_OWNER_FIXTURE_PATH = (
-    f"{registry_root}/github/{GITHUB_OWNER_FIXTURE_RELATIVE_PATH}"
-)
 
 
 def fail(message: str) -> None:
@@ -103,19 +98,34 @@ def manifest_declared_owner_fixture_paths(
     *,
     prefix: str = "",
 ) -> set[str]:
-    """Return the exact packaged owner fixture when its manifest declares it."""
-    manifest_path = f"{prefix}{GITHUB_MANIFEST_PATH}"
-    fixture_path = f"{prefix}{GITHUB_OWNER_FIXTURE_PATH}"
-    if manifest_path not in paths or fixture_path not in paths:
-        return set()
-    try:
-        manifest = json.loads(read_bytes(manifest_path))
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        fail("GitHub registry manifest is not valid JSON")
-    files = manifest.get("files") if isinstance(manifest, dict) else None
-    if not isinstance(files, list) or GITHUB_OWNER_FIXTURE_RELATIVE_PATH not in files:
-        return set()
-    return {fixture_path}
+    """Return each packaged owner fixture that its integration manifest declares.
+
+    Every registry integration may ship exactly one owner fixture, named
+    `tests/test_<name>.py` after the integration. It is allowed in the
+    wheel/sdist only when the integration's own `manifest.json` lists that exact
+    relative path in its `files` array. Any other test file is forbidden even if
+    the manifest declares it, so a stray test can never be smuggled in.
+    """
+    registry_prefix = f"{prefix}{registry_root}/"
+    allowed: set[str] = set()
+    for path in paths:
+        if not path.startswith(registry_prefix) or not path.endswith("/manifest.json"):
+            continue
+        name = path[len(registry_prefix) : -len("/manifest.json")]
+        if "/" in name:
+            continue
+        owner_relative = f"tests/test_{name}.py"
+        fixture_path = f"{registry_prefix}{name}/{owner_relative}"
+        if fixture_path not in paths:
+            continue
+        try:
+            manifest = json.loads(read_bytes(path))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            fail(f"{name} registry manifest is not valid JSON")
+        files = manifest.get("files") if isinstance(manifest, dict) else None
+        if isinstance(files, list) and owner_relative in files:
+            allowed.add(fixture_path)
+    return allowed
 
 
 def forbidden_artifacts(

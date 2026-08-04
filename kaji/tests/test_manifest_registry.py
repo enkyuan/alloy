@@ -95,7 +95,7 @@ def _write_registry_case(root: Path, case: dict[str, Any]) -> str:
 
 def test_list_integrations_includes_known_names() -> None:
     names = list_integrations()
-    assert names == ["echo", "github"]
+    assert names == ["echo", "github", "gmail"]
 
 
 def test_load_manifest_returns_parsed_manifest() -> None:

@@ -273,7 +273,7 @@ def test_sdk_integration_registry_uses_the_closed_allowlist() -> None:
         if path.is_dir() and path.name != "__pycache__"
     }
 
-    assert shipped == {"echo", "github"}
+    assert shipped == {"echo", "github", "gmail"}
 
 
 def test_sdk_does_not_ship_removed_tooldefinition_surface() -> None:

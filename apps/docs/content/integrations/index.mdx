@@ -15,15 +15,22 @@ This is the catalog in TypeScript `0.2.0-beta.10` and Python `0.2.0b1`.
 WIP entries whose registry tier is `experimental` require
 `--allow-experimental` and are outside the stable beta set.
 
-| Integration | Support status | Runtime            | Auth                    | Tools                     |
-| ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta           | Python, TypeScript | None                    | 2                         |
-| `github`    | Beta           | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status       | Runtime            | Auth                    | Tools                     |
+| ----------- | -------------------- | ------------------ | ----------------------- | ------------------------- |
+| `echo`      | Beta                 | Python, TypeScript | None                    | 2                         |
+| `gmail`     | WIP (`experimental`) | Python, TypeScript | Google OAuth grant      | 3                         |
+| `github`    | Beta                 | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
 
-The TypeScript and Python registries contain only `echo` and `github`. Their
+The TypeScript and Python registries contain `echo`, `gmail`, and `github`. Their
 manifests and JSON schemas are validated, and shared entries are checked for
 cross-SDK ABI parity. Source modules outside this index are not discoverable or
 installable catalog entries.
+
+The **Runtime** column lists the runtimes each integration has a working
+implementation for, not where it is published. The TypeScript package is on
+npm; the Python package's publication to PyPI is deferred, so `Python` here
+means the in-repo implementation exists and passes cross-SDK parity, not that a
+`pip install` is available yet.
 
 ## Discover and copy
 
@@ -34,6 +41,7 @@ After [installing the TypeScript beta](/docs/install#typescript), use its local
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
 npm exec -- kaji add github --out ./integrations/github
+npm exec -- kaji add gmail --allow-experimental --out ./integrations/gmail
 ```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.
@@ -68,13 +76,23 @@ establish protected keyed-API or release evidence.
 See the [GitHub integration guide](/docs/integrations/github) for package wiring,
 token ownership, lifecycle, permissions, limits, and unsupported surfaces.
 
-## Gmail status
+## Gmail
 
-No Gmail manifest, client, or tool bundle is shipped in either registry. The
-SDKs contain shared Google OAuth, macOS Keychain, fixed-origin, and
-recovery-contract primitives. Those primitives, together with the presence of
-`connect` and `disconnect` commands, do not make `kaji add gmail` or
-`kaji connect gmail` valid.
+The copied Gmail bundle exposes two parallel-safe reads, `list_messages` and
+`get_message`, and one serialized external effect, `send_message`. The
+integration namespace is applied before provider dispatch.
+
+Gmail authenticates with a Google OAuth grant rather than a static token. Run
+`kaji connect gmail --principal <id>` to store a refresh grant, then wire the
+integration's `token_for` callback to the OAuth client's access-token accessor.
+The scopes are `gmail.readonly` and `gmail.send`. Its client is fixed to
+`https://gmail.googleapis.com`, rejects redirects, bounds response headers and
+bodies, decodes base64url message payloads, and treats a connection loss after
+send dispatch as an unknown outcome.
+
+Gmail's machine registry tier is `experimental`; `kaji add gmail` requires
+`--allow-experimental`. Local package and ABI checks do not establish protected
+keyed-API or release evidence.
 
 See [integration recovery](/docs/integrations/recovery-v1) for the closed error
-vocabulary, including the Gmail rows reserved by the shared contract.
+vocabulary, including the Gmail rows.
