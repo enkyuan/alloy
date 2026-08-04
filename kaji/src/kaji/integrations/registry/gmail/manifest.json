@@ -1,0 +1,92 @@
+{
+  "name": "gmail",
+  "version": "0.1.0",
+  "namespace": "gmail",
+  "description": "Mailbox-scoped Gmail read and send tools for the authenticated user.",
+  "auth": {
+    "kind": "oauth",
+    "provider": "google",
+    "clientIdEnv": "GOOGLE_CLIENT_ID",
+    "clientSecretEnv": "GOOGLE_CLIENT_SECRET",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send"
+    ],
+    "docs": "https://developers.google.com/gmail/api/auth/scopes"
+  },
+  "files": [
+    "gmail.py",
+    "client.py",
+    "tests/test_gmail.py",
+    "owner-fixtures.json",
+    "LICENSE"
+  ],
+  "tools": [
+    {
+      "name": "list_messages",
+      "description": "List messages in the authenticated user's mailbox.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "get_message",
+      "description": "Get a message from the authenticated user's mailbox.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": ["message_id"],
+        "additionalProperties": false
+      },
+      "risk": "read",
+      "parallel_safe": true,
+      "timeout_ms": 10000
+    },
+    {
+      "name": "send_message",
+      "description": "Send an email as the authenticated user. `raw` is the complete RFC 2822 message, base64url-encoded.",
+      "parameters": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "raw": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1048576
+          }
+        },
+        "required": ["raw"],
+        "additionalProperties": false
+      },
+      "risk": "external_effect",
+      "parallel_safe": false,
+      "timeout_ms": 15000
+    }
+  ]
+}

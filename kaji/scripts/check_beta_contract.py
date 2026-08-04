@@ -44,6 +44,7 @@ REQUIRED_JSON = {
     "integrations/abi-index-v1.json",
     "integrations/copy-provenance-v1.schema.json",
     "integrations/echo-tool-abi-v1.json",
+    "integrations/gmail-tool-abi-v1.json",
     "integrations/github-tool-abi-v1.json",
     "integrations/github-tool-abi-typescript-v1.json",
     "parity/expected-normalized.json",

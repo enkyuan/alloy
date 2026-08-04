@@ -93,7 +93,8 @@ def test_list_integrations_json_emits_valid_object() -> None:
     names = {entry["name"] for entry in parsed}
     assert "echo" in names
     assert "github" in names
-    assert {"gmail", "gcal"}.isdisjoint(names)
+    assert "gmail" in names
+    assert "gcal" not in names
     echo = next(entry for entry in parsed if entry["name"] == "echo")
     assert list(echo) == [
         "name",

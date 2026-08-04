@@ -500,11 +500,11 @@ describe("kaji add", () => {
     expect(existsSync(join(out, "index.ts"))).toBe(true);
   });
 
-  it("does not ship unindexed Python-only integrations in the real TS registry", () => {
+  it("ships indexed integrations but not unindexed ones in the real TS registry", () => {
     const realRegistry = join(__dirname, "..", "registry");
     expect(existsSync(join(realRegistry, "gcal"))).toBe(false);
     expect(existsSync(join(realRegistry, "github"))).toBe(true);
-    expect(existsSync(join(realRegistry, "gmail"))).toBe(false);
+    expect(existsSync(join(realRegistry, "gmail"))).toBe(true);
   });
 
   it("uses a provider-scoped default destination", async () => {

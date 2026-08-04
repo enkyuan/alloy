@@ -44,12 +44,13 @@ excluded from the 0.2 SDK beta promise. It has no hosted agent worker.
 ## Catalog Stability
 
 <!-- beta-integrations: echo,github -->
-<!-- experimental-integrations: -->
+<!-- experimental-integrations: gmail -->
 
 | Integration | Stability | Runtimes |
 | --- | --- | --- |
 | echo | beta | python, typescript |
 | github | beta | python, typescript |
+| gmail | experimental | python, typescript |
 
 <!-- beta-experimental: python-redis-event-history,voice-tts,rag-retrieval,native-gemini-kimi,anthropic-adapter,retriever-selection,distributed-session-serialization,exactly-once-external-side-effects,unbounded-cross-process-replay,durable-snapshotting -->
 
