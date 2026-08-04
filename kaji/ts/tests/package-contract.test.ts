@@ -1115,7 +1115,7 @@ describe("npm contract artifact", () => {
     expect(manifest.devDependencies.typescript57).toBe("npm:typescript@5.7.3");
     expect(manifest.repository).toEqual({
       type: "git",
-      url: "https://github.com/enkyuan/alloy.git",
+      url: "git+https://github.com/enkyuan/alloy.git",
       directory: "kaji/ts",
     });
     expect(manifest.homepage).toBe(
