@@ -415,11 +415,15 @@ function redirectedInit(
   if (status === 303 || ((status === 301 || status === 302) && method === "POST")) {
     method = "GET";
     body = undefined;
+    // headers.delete() mutates the live keys() iterator; snapshot before iterating.
+    // oxlint-disable-next-line no-useless-spread
     for (const name of [...headers.keys()]) {
       if (name.toLowerCase().startsWith("content-")) headers.delete(name);
     }
   }
   if (crossOrigin) {
+    // headers.delete() mutates the live keys() iterator; snapshot before iterating.
+    // oxlint-disable-next-line no-useless-spread
     for (const name of [...headers.keys()]) {
       const normalized = name.toLowerCase();
       if (secrets.has(normalized) || looksCredentialBearing(normalized)) headers.delete(name);

@@ -726,8 +726,8 @@ export class AgentRuntime {
     const fallback = this.defaultContext;
     if (context !== undefined) assertNoRemovedDeadline(context);
     const metadata = {
-      ...(fallback?.metadata ?? {}),
-      ...(context?.metadata ?? {}),
+      ...fallback?.metadata,
+      ...context?.metadata,
     };
     const principalId = context?.principalId ?? fallback?.principalId;
     const requestId = context?.requestId ?? fallback?.requestId ?? this.idFactory.next("request");
