@@ -498,9 +498,9 @@ export class ToolPlanner {
       }
     }
 
-    const slots: Array<TerminalDraft | { readonly recordingError: unknown }> = new Array(
-      calls.length,
-    );
+    const slots: Array<TerminalDraft | { readonly recordingError: unknown }> = Array.from({
+      length: calls.length,
+    });
     let index = 0;
     while (index < planned.length) {
       const item = planned[index]!;

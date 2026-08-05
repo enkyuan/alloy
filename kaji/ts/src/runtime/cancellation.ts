@@ -202,6 +202,9 @@ export class DeadlineCancellationScope {
         try {
           await this.finishClose();
         } catch (closeError) {
+          // These throws in finally are deliberate error-precedence: a contract violation
+          // during close must win over any provider error (preserved as its .cause), and a
+          // close error with no provider error to preserve must still surface. Do not "fix".
           if (closeError instanceof ProviderCancellationContractViolation) {
             this.transferred = true;
             if (providerError !== undefined && closeError.cause === undefined) {
@@ -210,8 +213,10 @@ export class DeadlineCancellationScope {
                 configurable: true,
               });
             }
+            // oxlint-disable-next-line no-unsafe-finally
             throw closeError;
           }
+          // oxlint-disable-next-line no-unsafe-finally
           if (providerError === undefined) throw closeError;
         }
       }

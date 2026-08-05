@@ -38,7 +38,7 @@ export class RingBufferSubscription<
     if (!Number.isInteger(afterSequence) || afterSequence < 0) {
       throw new RangeError("afterSequence must be a non-negative integer");
     }
-    this.buffer = new Array(capacity);
+    this.buffer = Array.from({ length: capacity });
     this.lastSequence = afterSequence;
   }
 
@@ -182,6 +182,8 @@ export class EventBus<
 
   close(): void {
     for (const subscribers of this.subscribers.values()) {
+      // subscriber.close() runs onReturn, which deletes from this same Set; snapshot before iterating.
+      // oxlint-disable-next-line no-useless-spread
       for (const subscriber of [...subscribers]) subscriber.close();
     }
     this.subscribers.clear();
