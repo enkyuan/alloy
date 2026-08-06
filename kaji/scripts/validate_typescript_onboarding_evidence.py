@@ -33,7 +33,7 @@ SCHEMA_PATH = (
     / "release"
     / "typescript-onboarding-evidence-v1.schema.json"
 )
-TARBALL = "kaji-sdk-0.2.0-beta.10.tgz"
+TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
 PRODUCER_NAME = "kaji-beta-artifacts"
 SOURCE_NAMES = {
     22: "kaji-node-compat-22",
@@ -56,7 +56,7 @@ WORKFLOW_RUN = re.compile(
 )
 WORKFLOW_REFS = {
     "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
-    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.10",
+    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
 }
 STATIC_RUNNER_POLICIES = {
     major: {

@@ -4,7 +4,7 @@ description: Use the CLI embedded in the TypeScript SDK to scaffold projects, co
 ---
 
 The public TypeScript package declares a `kaji` binary. Install
-`kaji-sdk@0.2.0-beta.10` in your project, then invoke that local binary through
+`kaji-sdk@0.2.0-beta.11` in your project, then invoke that local binary through
 your package manager. The Python SDK and WIP standalone package use the same
 binary name, but their command sets differ.
 
@@ -33,7 +33,7 @@ Install the public package, then use its embedded CLI to scaffold TypeScript
 projects, manage the packaged registry, and render stored event logs:
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.10 zod
+npm install kaji-sdk@0.2.0-beta.11 zod
 npm exec -- kaji init ./my-agent --provider mock --yes
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
@@ -47,7 +47,7 @@ npm exec -- kaji replay ./session.jsonl --format summary
 `--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
 destination.
 
-Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.10`; that dependency
+Generated projects pin dotenvx and `kaji-sdk@0.2.0-beta.11`; that dependency
 now resolves from npm. Experimental-registry integrations require
 `--allow-experimental`; the `0.2` catalog (`echo`, `github`) is entirely beta,
 so neither needs the flag.

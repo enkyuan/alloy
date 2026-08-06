@@ -105,16 +105,16 @@ jobs:
               context.repo.owner !== "enkyuan" ||
               context.repo.repo !== "alloy" ||
               context.eventName !== "push" ||
-              context.ref !== "refs/tags/kaji-v0.2.0-beta.10" ||
+              context.ref !== "refs/tags/kaji-v0.2.0-beta.11" ||
               !Number.isSafeInteger(runAttempt) ||
               runAttempt !== 1
             ) {
-              fail("publish workflow identity differs from the exact beta.10 boundary");
+              fail("publish workflow identity differs from the exact beta.11 boundary");
             }
             if (context.payload.repository?.private !== false) {
               fail("npm provenance requires the source repository to remain public");
             }
-            const tagName = "kaji-v0.2.0-beta.10";
+            const tagName = "kaji-v0.2.0-beta.11";
             const ref = await github.rest.git.getRef({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -192,7 +192,7 @@ jobs:
             }
             const objectMatch = /^object ([0-9a-f]{40})$/.exec(headers[0]);
             const typeMatch = /^type commit$/.exec(headers[1]);
-            const tagMatch = /^tag (kaji-v0\.2\.0-beta\.10)$/.exec(headers[2]);
+            const tagMatch = /^tag (kaji-v0\.2\.0-beta\.11)$/.exec(headers[2]);
             const taggerMatch =
               /^tagger (.+) <([^<>\n]+)> ([1-9][0-9]*) ([+-])([0-9]{2})([0-9]{2})$/.exec(
                 headers[3],
@@ -255,7 +255,7 @@ jobs:
               !/^sha256:[0-9a-f]{64}$/.test(authorization.candidateArtifact.digest) ||
               !/^sha256:[0-9a-f]{64}$/.test(authorization.evidenceArtifact.digest) ||
               !/^[0-9a-f]{64}$/.test(authorization.releaseManifestSha256) ||
-              authorization.npmTarball.name !== "kaji-sdk-0.2.0-beta.10.tgz" ||
+              authorization.npmTarball.name !== "kaji-sdk-0.2.0-beta.11.tgz" ||
               !/^[0-9a-f]{64}$/.test(authorization.npmTarball.sha256) ||
               canonicalize(authorization) + "\n" !== body
             ) {
@@ -331,7 +331,7 @@ jobs:
               fail("signed beta tag commit is not contained in the default branch");
             }
 
-            scalarOutput("tag-name", tagName, /^kaji-v0\.2\.0-beta\.10$/);
+            scalarOutput("tag-name", tagName, /^kaji-v0\.2\.0-beta\.11$/);
             scalarOutput("tag-object", tagObject, /^[0-9a-f]{40}$/);
             scalarOutput("commit", releaseCommit, /^[0-9a-f]{40}$/);
             scalarOutput("authorization-sha256", authorizationSha256, /^[0-9a-f]{64}$/);
@@ -350,7 +350,7 @@ jobs:
             scalarOutput("evidence-artifact-name", authorization.evidenceArtifact.name, /^kaji-release-candidate-evidence$/);
             scalarOutput("evidence-artifact-digest", authorization.evidenceArtifact.digest, /^sha256:[0-9a-f]{64}$/);
             scalarOutput("release-manifest-sha256", authorization.releaseManifestSha256, /^[0-9a-f]{64}$/);
-            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^kaji-sdk-0\.2\.0-beta\.10\.tgz$/);
+            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^kaji-sdk-0\.2\.0-beta\.11\.tgz$/);
             scalarOutput("npm-tarball-sha256", authorization.npmTarball.sha256, /^[0-9a-f]{64}$/);
             core.summary
               .addHeading("Verified immutable beta authorization", 2)
@@ -614,7 +614,7 @@ jobs:
           destination = Path(sys.argv[2])
           expected = {
               "SHA256SUMS",
-              "kaji-sdk-0.2.0-beta.10.tgz",
+              "kaji-sdk-0.2.0-beta.11.tgz",
               "kaji_sdk-0.2.0b1-py3-none-any.whl",
               "kaji_sdk-0.2.0b1.tar.gz",
               "manifest.json",
@@ -680,7 +680,7 @@ jobs:
           for filename in \
             kaji_sdk-0.2.0b1-py3-none-any.whl \
             kaji_sdk-0.2.0b1.tar.gz \
-            kaji-sdk-0.2.0-beta.10.tgz \
+            kaji-sdk-0.2.0-beta.11.tgz \
             manifest.json \
             SHA256SUMS; do
             cp "$signed/$filename" "$carrier/$filename"
@@ -721,11 +721,11 @@ jobs:
           name: kaji-authorized-rehearsal-source
           path: |
             .artifacts/kaji-authorized-rehearsal/source.zip
-            .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.10.tgz
+            .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.11.tgz
             .artifacts/kaji-authorized-rehearsal-evidence/source.zip
             .artifacts/kaji-authorized-rehearsal-node-22/source.zip
             .artifacts/kaji-authorized-rehearsal-node-24/source.zip
-            .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.10.tgz
+            .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.11.tgz
             .artifacts/kaji-offline-evidence/signed-source-carrier.json
           if-no-files-found: error
       - name: Upload offline gate/test summary
@@ -1021,7 +1021,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.10.tgz"] and
+                    keys == ["kaji-sdk-0.2.0-beta.11.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1243,7 +1243,7 @@ jobs:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
           bun kaji/ts/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
           --protected
@@ -1259,7 +1259,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
           KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
-          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
           KAJI_COMPAT_RUNNER_LABEL: ${{ matrix.runner }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
@@ -1372,9 +1372,9 @@ jobs:
       EXPECTED_PRODUCER_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
       EXPECTED_PRODUCER_ACTION_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
       EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.publish.yml
-      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.10
+      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11
       EXPECTED_EVENT: push
-      EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.10
+      EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.11
     steps:
       - name: Initialize claim-free calibration status
         id: initialize
@@ -1692,9 +1692,9 @@ jobs:
       EXPECTED_PRODUCER_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
       EXPECTED_PRODUCER_ACTION_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
       EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.publish.yml
-      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.10
+      EXPECTED_WORKFLOW_REF: enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11
       EXPECTED_EVENT: push
-      EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.10
+      EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.11
     steps:
       - name: Initialize claim-free onboarding status
         id: initialize
@@ -2227,7 +2227,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit }}
           EXPECTED_EVENT: push
-          EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.10
+          EXPECTED_HEAD_BRANCH: kaji-v0.2.0-beta.11
           EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.publish.yml
           PRODUCER_ID: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-id }}
           PRODUCER_DIGEST: ${{ needs.typescript-onboarding-evidence.outputs.producer-artifact-digest }}
@@ -2448,7 +2448,7 @@ jobs:
         run: |
           bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
           python3 kaji/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Validate one canonical current-run evidence set
@@ -2500,8 +2500,8 @@ jobs:
           --signed-release-manifest-sha256 "${{ needs.verify-tag.outputs.release-manifest-sha256 }}"
           --signed-npm-tarball-name "${{ needs.verify-tag.outputs.npm-tarball-name }}"
           --signed-npm-tarball-sha256 "${{ needs.verify-tag.outputs.npm-tarball-sha256 }}"
-          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.10.tgz
-          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.10.tgz
+          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.11.tgz
+          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.11.tgz
           --workspace "$GITHUB_WORKSPACE"
           --output .artifacts/kaji-evidence/release-evidence-validation.json
       - name: Generate SBOM
@@ -2518,7 +2518,7 @@ jobs:
           subject-path: |
             .artifacts/kaji-release/kaji_sdk-0.2.0b1-py3-none-any.whl
             .artifacts/kaji-release/kaji_sdk-0.2.0b1.tar.gz
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
             .artifacts/kaji-release/manifest.json
             .artifacts/kaji-release/SHA256SUMS
             .artifacts/kaji-evidence/offline-gates.log
@@ -2672,12 +2672,12 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.10 \
+            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
             200)
-              echo "npm beta 0.2.0-beta.10 already exists; aborting publication" >&2
+              echo "npm beta 0.2.0-beta.11 already exists; aborting publication" >&2
               exit 1
               ;;
             404)
@@ -2725,7 +2725,7 @@ jobs:
           artifact_name="kaji-publisher-identity-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           echo "artifact-name=$artifact_name" >>"$GITHUB_OUTPUT"
           [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-          [ "$RELEASE_TAG" = "kaji-v0.2.0-beta.10" ]
+          [ "$RELEASE_TAG" = "kaji-v0.2.0-beta.11" ]
           [ "$GITHUB_SERVER_URL" = "https://github.com" ]
           [ "$GITHUB_REPOSITORY" = "enkyuan/alloy" ]
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]{0,15}$ ]]
@@ -2835,7 +2835,7 @@ jobs:
         run: |
           bun run --cwd kaji/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
       - name: Verify exact npm publisher identity
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -3088,12 +3088,12 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.10 \
+            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
             200)
-              echo "npm beta 0.2.0-beta.10 already exists; aborting publication" >&2
+              echo "npm beta 0.2.0-beta.11 already exists; aborting publication" >&2
               exit 1
               ;;
             404)
@@ -3112,7 +3112,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$NODE_AUTH_TOKEN"
-          npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
+          npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -3135,7 +3135,7 @@ jobs:
         id: initial-status
         env:
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
-          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.10' }}
+          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.11' }}
           NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
           PUBLISHER_OUTPUT: ${{ needs.publish-npm.outputs.expected-publisher }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
@@ -3282,7 +3282,7 @@ jobs:
           PUBLISHER_ARTIFACT_NAME: ${{ needs.publish-npm.outputs.publisher-artifact-name }}
           PUBLISHER_ARTIFACT_DIGEST: ${{ needs.publish-npm.outputs.publisher-artifact-digest }}
           EXPECTED_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
-          EXPECTED_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.10' }}
+          EXPECTED_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.11' }}
           EXPECTED_WORKFLOW_PATH: .github/workflows/kaji.publish.yml
         run: |
           set -euo pipefail
@@ -3291,7 +3291,7 @@ jobs:
           [[ "$PUBLISHER_ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           [ "$PUBLISHER_ARTIFACT_NAME" = \
             "kaji-publisher-identity-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" ]
-          [ "$EXPECTED_TAG" = "kaji-v0.2.0-beta.10" ]
+          [ "$EXPECTED_TAG" = "kaji-v0.2.0-beta.11" ]
           [ "$EXPECTED_WORKFLOW_PATH" = ".github/workflows/kaji.publish.yml" ]
           [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           run_metadata="$RUNNER_TEMP/kaji-publisher-workflow-run.json"
@@ -3306,7 +3306,7 @@ jobs:
             --arg commit "$EXPECTED_COMMIT" \
             '.id == $runId and .run_attempt == 1 and .event == "push" and
              .path == ".github/workflows/kaji.publish.yml" and
-             .head_branch == "kaji-v0.2.0-beta.10" and .head_sha == $commit' \
+             .head_branch == "kaji-v0.2.0-beta.11" and .head_sha == $commit' \
             "$run_metadata" >/dev/null
           gh api \
             --header "Accept: application/vnd.github+json" \
@@ -3324,7 +3324,7 @@ jobs:
              .expired == false and .size_in_bytes > 0 and .url == $apiUrl and
              .archive_download_url == ($apiUrl + "/zip") and
              .workflow_run.id == $runId and
-             .workflow_run.head_branch == "kaji-v0.2.0-beta.10" and
+             .workflow_run.head_branch == "kaji-v0.2.0-beta.11" and
              .workflow_run.head_sha == $commit' \
             "$artifact_metadata" >/dev/null
       - name: Download exact publisher identity artifact
@@ -3453,7 +3453,7 @@ jobs:
         if: ${{ always() && github.run_attempt == 1 }}
         env:
           RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit || github.sha }}
-          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.10' }}
+          RELEASE_TAG: ${{ needs.verify-tag.outputs.tag-name || 'kaji-v0.2.0-beta.11' }}
           NPM_PUBLISH_RESULT: ${{ needs.publish-npm.result }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
           PUBLISHER_OUTPUT: ${{ needs.publish-npm.outputs.expected-publisher }}
@@ -3514,13 +3514,13 @@ jobs:
             NPM_BODY="$RUNNER_TEMP/kaji-npm-classification.json"
             NPM_METADATA="$RUNNER_TEMP/kaji-npm-classification.metadata"
             if fetch_classification_json \
-              https://registry.npmjs.org/kaji-sdk/0.2.0-beta.10 \
+              https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
               "$NPM_BODY" "$NPM_METADATA" 262144; then
               case "$FETCH_HTTP_STATUS" in
                 200)
                   if jq --exit-status \
                     'type == "object" and .name == "kaji-sdk" and
-                     .version == "0.2.0-beta.10"' \
+                     .version == "0.2.0-beta.11"' \
                     "$NPM_BODY" >/dev/null 2>&1; then
                     NPM_STATE=present
                   fi
@@ -3906,7 +3906,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --tag "$EXPECTED_TAG"
           --title "Kaji $EXPECTED_TAG"
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.10.tgz
+          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
           .artifacts/kaji-release/manifest.json
           .artifacts/kaji-release/SHA256SUMS
           .artifacts/kaji-evidence/offline-gates.log
@@ -3930,6 +3930,6 @@ jobs:
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.10.tgz
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.10.tgz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.11.tgz
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.11.tgz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

@@ -281,7 +281,7 @@ function localReceiptContext(commit: string | null): OrdinaryReceiptContext {
   return {
     executionMode: "local",
     packageArtifact: {
-      name: "kaji-sdk-0.2.0-beta.10.tgz",
+      name: "kaji-sdk-0.2.0-beta.11.tgz",
       size: 4096,
       sha256: "c".repeat(64),
     },
@@ -410,9 +410,9 @@ describe("npm contract artifact", () => {
         {
           commit: "a".repeat(40),
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": "c".repeat(64) },
+          artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": "c".repeat(64) },
         },
-        "/artifacts/kaji-sdk-0.2.0-beta.10.tgz",
+        "/artifacts/kaji-sdk-0.2.0-beta.11.tgz",
         "/tmp/node_modules/kaji-sdk",
         "v24.4.0",
         "11.4.2",
@@ -451,9 +451,9 @@ describe("npm contract artifact", () => {
           {
             commit: "a".repeat(40),
             manifestSha256: "b".repeat(64),
-            artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": "c".repeat(64) },
+            artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": "c".repeat(64) },
           },
-          "/artifacts/kaji-sdk-0.2.0-beta.10.tgz",
+          "/artifacts/kaji-sdk-0.2.0-beta.11.tgz",
           "/tmp/node_modules/kaji-sdk",
           "v24.4.0",
           "11.4.2",
@@ -477,7 +477,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-sdk-0.2.0-beta.10.tgz",
+        name: "kaji-sdk-0.2.0-beta.11.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -512,9 +512,9 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": "c".repeat(64) },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
-      "/artifacts/kaji-sdk-0.2.0-beta.10.tgz",
+      "/artifacts/kaji-sdk-0.2.0-beta.11.tgz",
       "/tmp/node_modules/kaji-sdk",
       "v24.4.0",
       "11.4.2",
@@ -528,7 +528,7 @@ describe("npm contract artifact", () => {
       schemaVersion: 2,
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-sdk-0.2.0-beta.10.tgz",
+        name: "kaji-sdk-0.2.0-beta.11.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -659,7 +659,7 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": "c".repeat(64) },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
       "v24.4.0",
     );
@@ -688,7 +688,7 @@ describe("npm contract artifact", () => {
       ["githubPackageProofs", { npm: typedGitHubPackageProof }],
       ["timings", { npm: { coldSetupToOutputMs: 1, warmRunMs: 1 } }],
       ["toolchain", { node: "v24.4.0" }],
-      ["packageArtifact", { name: "kaji-sdk-0.2.0-beta.10.tgz" }],
+      ["packageArtifact", { name: "kaji-sdk-0.2.0-beta.11.tgz" }],
     ] as const) {
       const candidate = structuredClone(failed) as Record<string, unknown>;
       candidate[key] = claim;
@@ -738,7 +738,7 @@ describe("npm contract artifact", () => {
 
   it("uses the production workflow finalizer path with exact trusted inputs and bytes", () => {
     const root = mkdtempSync(join(tmpdir(), "kaji-protected-receipt-review-"));
-    const tarball = join(root, "kaji-sdk-0.2.0-beta.10.tgz");
+    const tarball = join(root, "kaji-sdk-0.2.0-beta.11.tgz");
     const bytes = Buffer.from("reviewed candidate package bytes");
     writeFileSync(tarball, bytes);
     const packageSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -768,7 +768,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-sdk-0.2.0-beta.10.tgz",
+        name: "kaji-sdk-0.2.0-beta.11.tgz",
         size: bytes.length,
         sha256: packageSha256,
       },
@@ -804,7 +804,7 @@ describe("npm contract artifact", () => {
         {
           commit,
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": packageSha256 },
+          artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": packageSha256 },
         },
         tarball,
         "/tmp/node_modules/kaji-sdk",
@@ -969,9 +969,9 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.10.tgz");
-    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.10");
-    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.10.tgz");
+    expect(manifest.dependencies["kaji-sdk"]).toBe("file:kaji-sdk-0.2.0-beta.11.tgz");
+    expect(lock.packages["node_modules/kaji-sdk"].version).toBe("0.2.0-beta.11");
+    expect(lock.packages["node_modules/kaji-sdk"].resolved).toBe("file:kaji-sdk-0.2.0-beta.11.tgz");
     expect(manifest.dependencies["kaji-sdk"]).not.toBe("file:kaji-sdk-0.2.0-beta.2.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
@@ -1537,7 +1537,7 @@ describe("npm contract artifact", () => {
       identity: {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": "c".repeat(64) },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
       installedPackagePath: "/private/secret/sk-package-canary/node_modules/kaji-sdk",
@@ -1598,7 +1598,7 @@ describe("npm contract artifact", () => {
         manifestSha256: unsafeCanary,
         artifactSha256: {
           [`${unsafeCanary}.tgz`]: "c".repeat(64),
-          "kaji-sdk-0.2.0-beta.10.tgz": unsafeCanary,
+          "kaji-sdk-0.2.0-beta.11.tgz": unsafeCanary,
         },
       },
       `v24.0.0\n${unsafeCanary}`,
@@ -1706,7 +1706,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1766,7 +1766,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-sdk-0.2.0-beta.10.tgz": artifactHash },
+        artifactSha256: { "kaji-sdk-0.2.0-beta.11.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -2981,7 +2981,7 @@ console.log(JSON.stringify({
 
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
-      expect(manifest.version).toBe("0.2.0-beta.10");
+      expect(manifest.version).toBe("0.2.0-beta.11");
       expect(packed[0]!.filename).toBe(`kaji-sdk-${manifest.version}.tgz`);
       expect(packed[0]!.filename).not.toBe("kaji-sdk-0.2.0-beta.2.tgz");
       expect(manifest.license).toBe("FSL-1.1-ALv2");

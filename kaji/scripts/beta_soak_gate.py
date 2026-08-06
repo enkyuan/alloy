@@ -21,7 +21,7 @@ BUDGETS = json.loads((ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_t
 ]
 EXPECTED_ARTIFACTS = {
     "python": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "typescript": "kaji-sdk-0.2.0-beta.10.tgz",
+    "typescript": "kaji-sdk-0.2.0-beta.11.tgz",
 }
 
 

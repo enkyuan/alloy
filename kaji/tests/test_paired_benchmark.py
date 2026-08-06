@@ -172,7 +172,7 @@ def _identity(commit: str, prefix: str) -> dict[str, Any]:
                 "sha256": chr(ord(prefix) + 2) * 64,
             },
             "typescript": {
-                "file": "kaji-sdk-0.2.0-beta.10.tgz",
+                "file": "kaji-sdk-0.2.0-beta.11.tgz",
                 "sha256": chr(ord(prefix) + 3) * 64,
             },
         },
@@ -376,7 +376,7 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
         },
     }
     assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.2.tgz"
-    assert pair.IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.10.tgz"
+    assert pair.IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.11.tgz"
     assert "resolved" not in json.dumps(anchor).lower()
 
 
@@ -397,7 +397,7 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
     _write_release_artifacts(
         candidate,
         commit=candidate_commit,
-        typescript_version="0.2.0-beta.10",
+        typescript_version="0.2.0-beta.11",
     )
 
     monkeypatch.setattr(
@@ -456,7 +456,7 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
         candidate,
         expected_commit=candidate_commit,
     ) as installed:
-        assert installed.release.npm_tarball.name == "kaji-sdk-0.2.0-beta.10.tgz"
+        assert installed.release.npm_tarball.name == "kaji-sdk-0.2.0-beta.11.tgz"
 
     with pytest.raises(SystemExit, match="artifact file set mismatch"):
         with pair.installed_release_runtime(

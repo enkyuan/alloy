@@ -65,8 +65,8 @@ Complete these once before creating the release tag:
 4. Configure all three environments with required reviewer `enkyuan`,
    `prevent_self_review=false`, and `can_admins_bypass=false`.
    `kaji-beta-onboarding` and `kaji-beta` permit only `main` and
-   `kaji-v0.2.0-beta.10`; `kaji-beta-publish` permits only
-   `kaji-v0.2.0-beta.10`. Configure `OPENAI_API_KEY` only in `kaji-beta`, and
+   `kaji-v0.2.0-beta.11`; `kaji-beta-publish` permits only
+   `kaji-v0.2.0-beta.11`. Configure `OPENAI_API_KEY` only in `kaji-beta`, and
    configure `KAJI_NPM_PUBLISHER` only for the final publisher boundary. Audit
    the complete reviewer and custom branch-policy state without reading any
    secret:
@@ -79,7 +79,7 @@ Complete these once before creating the release tag:
 5. Confirm the exact first-publication registry state. The protected workflow
    fails closed unless the stable `tiny-tarball@1.0.0` npm control is an exact
    200 JSON document, the `kaji-sdk` packument is an exact 404 JSON object
-   `{"error":"Not found"}`, and the exact beta.10 endpoint is an exact 404 JSON
+   `{"error":"Not found"}`, and the exact beta.11 endpoint is an exact 404 JSON
    string `"Not Found"`. It binds every response to its original HTTPS URL,
    forbids redirects, bounds the body, and requires a JSON content type. Do not
    infer absence from npm CLI error text or a substring match. The PyPI beta
@@ -89,7 +89,7 @@ Complete these once before creating the release tag:
    Immutable beta.9 run `30726249929` failed closed before `npm publish` when
    npm 11.16 warned about setup-node's deprecated `always-auth=false` setting;
    npm and PyPI remained absent. Do not rerun that workflow or reuse its tag.
-   Before beta.10 tag creation, the operator must explicitly confirm that a
+   Before beta.11 tag creation, the operator must explicitly confirm that a
    fresh `NPM_TOKEN` is stored only in `kaji-beta-publish`. Do not inspect,
    copy, or test the secret locally. Do not run a local credential preflight;
    the protected `publish-npm` job removes
@@ -136,7 +136,7 @@ later run is not acceptable evidence.
 ### Rehearse the exact reviewed `main`
 
 1. Set `REVIEWED_COMMIT` to the exact reviewed 40-lowercase-hex commit. Require
-   remote `main` to equal it, recheck npm beta.10 and PyPI absence, and audit all
+   remote `main` to equal it, recheck npm beta.11 and PyPI absence, and audit all
    three protected environments:
 
    ```bash
@@ -233,21 +233,21 @@ later run is not acceptable evidence.
    and verify both artifacts by exact ID. These immutable rehearsal identities,
    not a later rebuild or same-named artifact, form the tag authorization.
 
-### Bind the signed beta.10 tag to the rehearsal
+### Bind the signed beta.11 tag to the rehearsal
 
 The authorization object has no optional or extra fields. Serialize it with
 recursively lexicographically sorted keys, compact `,`/`:` separators, ASCII
 JSON, and exactly one terminal LF:
 
 ```json
-{"candidateArtifact":{"digest":"sha256:<64 lowercase hex>","id":456,"name":"kaji-beta-artifacts"},"commit":"<40 lowercase hex>","evidenceArtifact":{"digest":"sha256:<64 lowercase hex>","id":789,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.10.tgz","sha256":"<64 lowercase hex>"},"rehearsal":{"runAttempt":1,"runId":123,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<same commit>"},"releaseManifestSha256":"<64 lowercase hex>","schemaVersion":"1.0.0"}
+{"candidateArtifact":{"digest":"sha256:<64 lowercase hex>","id":456,"name":"kaji-beta-artifacts"},"commit":"<40 lowercase hex>","evidenceArtifact":{"digest":"sha256:<64 lowercase hex>","id":789,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.11.tgz","sha256":"<64 lowercase hex>"},"rehearsal":{"runAttempt":1,"runId":123,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<same commit>"},"releaseManifestSha256":"<64 lowercase hex>","schemaVersion":"1.0.0"}
 ```
 
 The exact message is that one compact line plus one LF, with no CR, BOM,
 leading/trailing space, second LF, or signature text. Hash those exact message
 bytes, including the LF, as the authorization SHA-256. Require the commit and
 workflow SHA to equal `REVIEWED_COMMIT`, run attempt 1, distinct positive-safe
-artifact IDs, fixed artifact names, and the exact beta.10 tarball name.
+artifact IDs, fixed artifact names, and the exact beta.11 tarball name.
 
 Stop here until the operator explicitly confirms a fresh `NPM_TOKEN` is stored
 only in `kaji-beta-publish`. Do not inspect or test the secret. After that
@@ -306,7 +306,7 @@ print(hashlib.sha256(raw).hexdigest())
 PY
 )"
 
-TAG=kaji-v0.2.0-beta.10
+TAG=kaji-v0.2.0-beta.11
 git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE" \
   "$TAG" "$REVIEWED_COMMIT"
 ```
@@ -319,7 +319,7 @@ message bytes before that marker byte-for-byte with the unchanged
 
 ```bash
 set -euo pipefail
-: "${TAG:?create the local beta.10 tag first}"
+: "${TAG:?create the local beta.11 tag first}"
 : "${AUTHORIZATION_FILE:?retain the exact authorization-message path}"
 : "${AUTHORIZATION_SHA256:?retain the validated authorization digest}"
 
