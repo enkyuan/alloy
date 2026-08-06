@@ -4,46 +4,48 @@
 
 ```
 .
+├── pyproject.toml            # `uv` workspace root (Python SDK + serve)
+├── uv.lock                   # single workspace lockfile
 ├── kaji/
-│   ├── src/kaji/        # the `kaji` SDK (Python)
-│   ├── pyproject.toml   # `kaji-sdk` project metadata
-│   ├── serve/           # `kaji-serve` -- REST + Soniox STT (path-depends on ..)
-│   └── ts/              # `kaji-sdk` -- TypeScript SDK
+│   └── packages/
+│       ├── python/           # the `kaji` SDK (Python), src at src/kaji/
+│       ├── serve/            # `kaji-serve` -- REST + Soniox STT
+│       └── typescript/       # `kaji-sdk` -- TypeScript SDK
 └── docker/
-    ├── kaji/        # Postgres and Supabase for kaji-serve
-    └── ryo/        # docker stack for the ryo product
+    ├── kaji/                 # Postgres and Supabase for kaji-serve
+    └── ryo/                  # docker stack for the ryo product
 ```
 
 ## FastAPI Backend Setup
 
-The reference service is the `kaji-serve` distribution. Run these from
-`kaji/serve/`; it pulls in the `kaji` SDK via a path dependency
-(`..`).
+The reference service is the `kaji-serve` distribution. It is a member of the
+`uv` workspace rooted at the repository root and resolves the `kaji` SDK as a
+workspace dependency.
 
 ### 1. Install dependencies with uv
 
 ```bash
-cd kaji/serve
+# from the repository root
 uv sync
 ```
 
 ### 2. Set up environment
 
 ```bash
-cp ../../.env.example .env
+cp .env.example .env
 # Edit .env with your database credentials and API keys
 ```
 
 ### 3. Run migrations
 
 ```bash
-uv run alembic upgrade head
+uv run --package kaji-serve alembic upgrade head
 ```
 
 ### 4. Start development server
 
 ```bash
-uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+uv run --package kaji-serve uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```
 
 API docs: `http://localhost:8080/api/v1/docs`
@@ -73,11 +75,13 @@ tool worker.
 ## Running Tests
 
 ```bash
-# Core SDK tests (from kaji/ -- no database needed)
-cd kaji && uv run pytest tests/
+# from the repository root -- run uv sync once first
 
-# Reference service tests (from kaji/serve/ -- DB tests need Postgres)
-cd kaji/serve && uv run pytest tests/
+# Core SDK tests (no database needed)
+uv run --package kaji-sdk pytest tests/
+
+# Reference service tests (DB tests need Postgres)
+uv run --package kaji-serve pytest tests/
 ```
 
 ## Quick Start
@@ -86,6 +90,6 @@ cd kaji/serve && uv run pytest tests/
 # Option 1: infrastructure + API (from docker/kaji/)
 cd docker/kaji && docker compose up -d
 
-# Option 2: API server directly (from kaji/serve/; requires its dependencies)
-cd kaji/serve && cp ../../.env.example .env && uv run uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
+# Option 2: API server directly (from the repo root; requires its dependencies)
+cp .env.example .env && uv run --package kaji-serve uvicorn kaji_serve.server.app:app --reload --host 0.0.0.0 --port 8080
 ```

@@ -33,7 +33,7 @@ from process_runner import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SDK = ROOT / "kaji"
-TYPESCRIPT = ROOT / "kaji" / "ts"
+TYPESCRIPT = ROOT / "kaji" / "packages" / "typescript"
 SCRIPTS = ROOT / "kaji" / "scripts"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 
@@ -126,7 +126,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "python",
             "kaji/scripts/check_beta_contract.py",
         ),
@@ -139,7 +139,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "python",
             "kaji/scripts/sync_beta_contracts.py",
             "--check",
@@ -152,7 +152,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "python",
             "kaji/scripts/sync_integration_contracts.py",
             "--check",
@@ -165,7 +165,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "python",
             "kaji/scripts/check_integration_abi.py",
             "--explain",
@@ -179,7 +179,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "--no-sync",
             "python",
             "kaji/scripts/check_sdk_parity.py",
@@ -194,7 +194,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "--no-sync",
             "python",
             "kaji/scripts/run_beta_benchmarks.py",
@@ -209,7 +209,7 @@ SHARED_GATES = (
             "uv",
             "run",
             "--project",
-            "kaji",
+            "kaji/packages/python",
             "--no-sync",
             "python",
             "kaji/scripts/integration_benchmark.py",
@@ -227,10 +227,10 @@ PYTHON_CI_GATE = Gate(
         "uv",
         "run",
         "--project",
-        "kaji",
+        "kaji/packages/python",
         "--no-sync",
         "pytest",
-        "kaji/tests",
+        "kaji/packages/python/tests",
         "-m",
         "not integration",
         "--cov-fail-under=80",
@@ -244,12 +244,14 @@ CI_GATES = (
     Gate(
         "TypeScript build (offline)",
         ROOT,
-        offline_command("bun", "run", "--cwd", "kaji/ts", "build"),
+        offline_command("bun", "run", "--cwd", "kaji/packages/typescript", "build"),
     ),
     Gate(
         "TypeScript tests (offline)",
         ROOT,
-        offline_command("bun", "run", "--cwd", "kaji/ts", "test:coverage"),
+        offline_command(
+            "bun", "run", "--cwd", "kaji/packages/typescript", "test:coverage"
+        ),
         LOCAL_ORCHESTRATOR_BUDGET,
     ),
 )
@@ -416,6 +418,8 @@ def run_common_checks(environment: dict[str, str]) -> None:
         [
             "uv",
             "run",
+            "--project",
+            "packages/python",
             "python",
             "scripts/check_types.py",
             "--output-format",
@@ -427,13 +431,29 @@ def run_common_checks(environment: dict[str, str]) -> None:
     run_in_dir(
         "Python lint",
         SDK,
-        ["uv", "run", "ruff", "check", "src", "tests"],
+        [
+            "uv",
+            "run",
+            "--project",
+            "packages/python",
+            "ruff",
+            "check",
+            "packages/python/src",
+            "packages/python/tests",
+        ],
         environment,
     )
     run_in_dir(
         "Python artifact smoke",
         SDK,
-        ["uv", "run", "python", "scripts/release_smoke.py"],
+        [
+            "uv",
+            "run",
+            "--project",
+            "packages/python",
+            "python",
+            "scripts/release_smoke.py",
+        ],
         environment,
         RELEASE_COMMAND_BUDGET,
     )
@@ -486,7 +506,7 @@ def package_metadata_command(
         "uv",
         "run",
         "--project",
-        "kaji",
+        "kaji/packages/python",
         "python",
         "kaji/scripts/verify_package_metadata.py",
     ]
@@ -519,13 +539,32 @@ def run_release_checks(environment: dict[str, str]) -> None:
         run_in_dir(
             "Python format",
             SDK,
-            ["uv", "run", "ruff", "format", "--check", "src", "tests"],
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/python",
+                "ruff",
+                "format",
+                "--check",
+                "packages/python/src",
+                "packages/python/tests",
+            ],
             environment,
         )
         run_in_dir(
             "Python lint (release)",
             SDK,
-            ["uv", "run", "ruff", "check", "src", "tests"],
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/python",
+                "ruff",
+                "check",
+                "packages/python/src",
+                "packages/python/tests",
+            ],
             environment,
         )
         run_in_dir(
@@ -534,6 +573,8 @@ def run_release_checks(environment: dict[str, str]) -> None:
             [
                 "uv",
                 "run",
+                "--project",
+                "packages/python",
                 "python",
                 "scripts/check_types.py",
                 "--output-format",
@@ -545,18 +586,35 @@ def run_release_checks(environment: dict[str, str]) -> None:
         run_in_dir(
             "Python tests (release)",
             SDK,
-            ["uv", "run", "pytest", "--cov-fail-under=80"],
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/python",
+                "pytest",
+                "packages/python/tests",
+                "--cov-fail-under=80",
+            ],
             environment,
         )
         run_in_dir(
             "Python release artifacts",
             SDK,
-            ["uv", "run", "python", "scripts/release_smoke.py"],
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/python",
+                "python",
+                "scripts/release_smoke.py",
+            ],
             environment,
             RELEASE_COMMAND_BUDGET,
         )
         distributions = sorted(
-            path for path in (SDK / "dist").iterdir() if not path.name.startswith(".")
+            path
+            for path in (SDK / "packages" / "python" / "dist").iterdir()
+            if not path.name.startswith(".")
         )
         if not distributions:
             fail("Python release produced no distributions")
@@ -566,6 +624,8 @@ def run_release_checks(environment: dict[str, str]) -> None:
             [
                 "uv",
                 "run",
+                "--project",
+                "packages/python",
                 "twine",
                 "check",
                 *(str(path) for path in distributions),
@@ -591,6 +651,8 @@ def run_release_checks(environment: dict[str, str]) -> None:
             [
                 "uv",
                 "export",
+                "--project",
+                "packages/python",
                 "--locked",
                 "--no-dev",
                 "--no-emit-project",
@@ -608,6 +670,8 @@ def run_release_checks(environment: dict[str, str]) -> None:
             [
                 "uv",
                 "run",
+                "--project",
+                "packages/python",
                 "pip-audit",
                 "--require-hashes",
                 "--requirement",
@@ -620,10 +684,12 @@ def run_release_checks(environment: dict[str, str]) -> None:
             [
                 "uv",
                 "run",
+                "--project",
+                "packages/python",
                 "pip-audit",
                 "--require-hashes",
                 "--requirement",
-                "build-requirements.txt",
+                "packages/python/build-requirements.txt",
             ],
             cwd=SDK,
             environment=environment,
@@ -655,7 +721,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "uv",
                 "run",
                 "--project",
-                "kaji",
+                "kaji/packages/python",
                 "python",
                 "kaji/scripts/verify_npm_package.py",
                 str(tarball),
@@ -672,7 +738,15 @@ def run_release_checks(environment: dict[str, str]) -> None:
         run_in_dir(
             "Reverify final Python artifacts",
             SDK,
-            ["uv", "run", "python", "scripts/verify_archives.py", "dist"],
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/python",
+                "python",
+                "scripts/verify_archives.py",
+                "packages/python/dist",
+            ],
             environment,
         )
 

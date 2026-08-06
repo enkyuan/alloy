@@ -23,8 +23,9 @@ from process_runner import (
 )
 
 
-SDK_ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = SDK_ROOT / "scripts"
+KAJI_ROOT = Path(__file__).resolve().parents[1]
+SDK_ROOT = KAJI_ROOT / "packages" / "python"
+SCRIPTS = KAJI_ROOT / "scripts"
 import verify_release_artifacts  # noqa: E402
 
 EXPECTED_MOCK_REPLY = "mock"

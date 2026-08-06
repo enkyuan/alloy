@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Route planner fan-out through the bounded tool execution controller.
 files:
-  - "kaji/src/kaji/runtime/agents/planner.py"
+  - "kaji/packages/python/src/kaji/runtime/agents/planner.py"
 rule:
   any:
     - pattern: asyncio.gather($$$ARGS)

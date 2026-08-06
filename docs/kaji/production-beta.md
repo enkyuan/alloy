@@ -345,7 +345,7 @@ inject scoped implementations through `AgentBuilder.clock()` and
 The local release rehearsal is necessary but not sufficient:
 
 ```bash
-uv run --project kaji python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release
 ```
 
 Promotion additionally requires evidence from the exact release commit for:

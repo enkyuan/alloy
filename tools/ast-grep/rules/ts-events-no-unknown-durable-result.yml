@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Durable event result fields must use the bounded JSON schema, never z.unknown().
 files:
-  - "kaji/ts/src/events/**/*.ts"
+  - "kaji/packages/typescript/src/events/**/*.ts"
 rule:
   all:
     - pattern: z.unknown()

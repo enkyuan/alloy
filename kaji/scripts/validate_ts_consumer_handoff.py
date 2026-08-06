@@ -117,7 +117,9 @@ SCHEMA_PATH = (
     Path(__file__).resolve().parents[1]
     / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
 )
-TRUSTED_LICENSE_PATH = Path(__file__).resolve().parents[1] / "ts/LICENSE"
+TRUSTED_LICENSE_PATH = (
+    Path(__file__).resolve().parents[1] / "packages/typescript/LICENSE"
+)
 
 
 class ValidationError(Exception):

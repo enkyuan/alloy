@@ -8,7 +8,7 @@ LABEL build.commit="${BUILD_COMMIT}"
 
 ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
-    UV_PROJECT_ENVIRONMENT=/app/kaji/serve/.venv
+    UV_PROJECT_ENVIRONMENT=/app/kaji/packages/serve/.venv
 
 WORKDIR /app
 
@@ -18,19 +18,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the monorepo. kaji/serve has a path dependency on the Kaji root, so both must be present.
+# Copy the monorepo. kaji-serve is a uv workspace member; the workspace root
+# (pyproject.toml + uv.lock) plus the kaji-sdk member must all be present.
 COPY . .
 
 # Install. Frozen = lockfile must already exist and resolve; no remote re-resolution.
 # --no-dev = skip the [dependency-groups].dev group; the image is for runtime.
-RUN cd kaji/serve && uv sync --frozen --no-dev
+# Run from the workspace root and select the serve member by name.
+RUN uv sync --frozen --no-dev --package kaji-serve
 
 # --- Stage 2: slim runtime ----------------------------------------------
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/kaji/serve/.venv/bin:${PATH}"
+    PATH="/app/kaji/packages/serve/.venv/bin:${PATH}"
 
 # Runtime system deps (psql client for entrypoint waits, curl for healthcheck).
 RUN apt-get update && apt-get install -y --no-install-recommends \

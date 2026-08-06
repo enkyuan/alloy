@@ -3,8 +3,8 @@ language: TypeScript
 severity: error
 message: Named external-effect tools must be non-parallel and send_draft must bind a closed body schema.
 files:
-  - "kaji/ts/registry/github/**/*.ts"
-  - "kaji/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/packages/typescript/registry/github/**/*.ts"
+  - "kaji/packages/python/src/kaji/integrations/registry/github/**/*.ts"
 rule:
   all:
     - kind: object

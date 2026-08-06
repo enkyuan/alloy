@@ -41,7 +41,7 @@ EXPECTED_FIXED_BUILD_TOOLS = {
     "setuptools": "83.0.0",
     "uv": "0.11.25",
 }
-EXPECTED_BUILD_AUDIT = "kaji/build-requirements.txt"
+EXPECTED_BUILD_AUDIT = "kaji/packages/python/build-requirements.txt"
 ENTRY_KEYS = {
     "commit",
     "contractVersion",

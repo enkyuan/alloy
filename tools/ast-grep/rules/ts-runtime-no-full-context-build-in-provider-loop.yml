@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Runtime provider iterations must use projection-indexed context, not full-scan helpers.
 files:
-  - "kaji/ts/src/runtime/runtime.ts"
+  - "kaji/packages/typescript/src/runtime/runtime.ts"
 rule:
   all:
     - any:

@@ -29,7 +29,7 @@ from verify_release_artifacts import (
 
 ROOT = Path(__file__).resolve().parents[2]
 SDK = ROOT / "kaji"
-TS = ROOT / "kaji" / "ts"
+TS = ROOT / "kaji" / "packages" / "typescript"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
 TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"
 TS_CONSUMER = Path(__file__).with_name("installed-typescript-runtime")

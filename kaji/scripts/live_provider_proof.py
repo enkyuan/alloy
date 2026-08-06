@@ -26,7 +26,14 @@ from process_runner import (
 
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_provider_proof.py"
-TYPESCRIPT_RUNNER = ROOT / "kaji" / "ts" / "scripts" / "installed-provider-proof.mts"
+TYPESCRIPT_RUNNER = (
+    ROOT
+    / "kaji"
+    / "packages"
+    / "typescript"
+    / "scripts"
+    / "installed-provider-proof.mts"
+)
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 KEYED_PROOF_BUDGET = CommandBudget(timeout_seconds=180, terminate_grace_seconds=1)
 PROVIDER_KEYS = {

@@ -104,7 +104,7 @@ current macOS host only; it does not replace protected evidence below.
 Use the root wrapper as the default local gate before a beta checkpoint:
 
 ```bash
-uv run --project kaji python kaji/scripts/beta_release_check.py
+uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py
 ```
 
 The wrapper runs the non-keyed local checks below and fails clearly when
@@ -122,11 +122,11 @@ TypeScript optional provider imports, and cancellation error shape.
 
 | Gate                      | Command or workflow                                                             | Required for beta                                                   | Current evidence                       |
 | ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| Offline release rehearsal | `uv run --project kaji python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Offline release rehearsal | `uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
 
 <!-- beta-parity-scenarios: 67 -->
 
-| Cross-SDK behavioral parity | `uv run --project kaji python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
+| Cross-SDK behavioral parity | `uv run --project kaji/packages/python python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
 | Shared schemas and registry | `gate / kaji` / `beta release gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |

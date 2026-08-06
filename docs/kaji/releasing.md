@@ -72,7 +72,7 @@ Complete these once before creating the release tag:
    secret:
 
    ```bash
-   uv run --project kaji --no-sync python \
+   uv run --project kaji/packages/python --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
    ```
 
@@ -114,7 +114,7 @@ From a clean, real Git checkout with its `.git` metadata present, using Bun
 1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters, run:
 
 ```bash
-uv run --project kaji python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release
 ```
 
 Source archives are unsupported because the release gate must bind artifacts
@@ -142,7 +142,7 @@ later run is not acceptable evidence.
    ```bash
    test "$(gh api repos/enkyuan/alloy/commits/main --jq .sha)" \
      = "$REVIEWED_COMMIT"
-   uv run --project kaji --no-sync python \
+   uv run --project kaji/packages/python --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
    ```
 
@@ -197,7 +197,7 @@ later run is not acceptable evidence.
    read-only rehearsal audit and dry run:
 
    ```bash
-   uv run --project kaji --no-sync python \
+   uv run --project kaji/packages/python --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py gate \
      --mode rehearsal \
      --run-id "$REHEARSAL_RUN_ID" \
@@ -264,7 +264,7 @@ set -euo pipefail
 : "${REVIEWED_COMMIT:?set the exact rehearsed commit}"
 
 AUTHORIZATION_SHA256="$(
-  uv run --project kaji --no-sync python - "$AUTHORIZATION_FILE" <<'PY'
+  uv run --project kaji/packages/python --no-sync python - "$AUTHORIZATION_FILE" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -323,7 +323,7 @@ set -euo pipefail
 : "${AUTHORIZATION_FILE:?retain the exact authorization-message path}"
 : "${AUTHORIZATION_SHA256:?retain the validated authorization digest}"
 
-uv run --project kaji --no-sync python - \
+uv run --project kaji/packages/python --no-sync python - \
   "$TAG" "$REVIEWED_COMMIT" "$AUTHORIZATION_FILE" \
   "$AUTHORIZATION_SHA256" <<'PY'
 import hashlib
@@ -409,7 +409,7 @@ reuse this tag after it is pushed.
    publish run's exact IDs, digests, and raw ZIPs:
 
    ```bash
-   uv run --project kaji --no-sync python \
+   uv run --project kaji/packages/python --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py gate \
      --mode publish \
      --run-id "$PUBLISH_RUN_ID" \

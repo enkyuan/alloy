@@ -3,9 +3,9 @@ language: Python
 severity: error
 message: Accumulate streamed tool arguments in LinearStringParts, never repeated string concatenation.
 files:
-  - "kaji/src/kaji/runtime/providers/openai.py"
-  - "kaji/src/kaji/runtime/providers/anthropic.py"
-  - "kaji/src/kaji/runtime/providers/kimi.py"
+  - "kaji/packages/python/src/kaji/runtime/providers/openai.py"
+  - "kaji/packages/python/src/kaji/runtime/providers/anthropic.py"
+  - "kaji/packages/python/src/kaji/runtime/providers/kimi.py"
 rule:
   all:
     - any:

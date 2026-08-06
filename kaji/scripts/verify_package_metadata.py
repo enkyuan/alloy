@@ -75,8 +75,8 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
-    sdk = repo / "kaji"
-    ts = repo / "kaji/ts"
+    sdk = repo / "kaji/packages/python"
+    ts = repo / "kaji/packages/typescript"
     artifacts = args.artifacts_dir
     if not artifacts.is_absolute():
         artifacts = repo / artifacts
@@ -156,7 +156,7 @@ def main() -> None:
     if typescript_metadata.get("peerDependencies", {}).get("zod") != ">=4.3 <5":
         fail("Zod 4 peer ownership is not declared")
 
-    uv_lock = (sdk / "uv.lock").read_text()
+    uv_lock = (repo / "uv.lock").read_text()
     if not re.search(
         rf'\[\[package\]\]\s+name = "{re.escape(PYTHON_PROJECT)}"\s+'
         rf'version = "{re.escape(python_version)}"',
@@ -272,7 +272,7 @@ def main() -> None:
             "uv": actual_tools["uv"],
         },
         "buildAudit": {
-            "file": "kaji/build-requirements.txt",
+            "file": "kaji/packages/python/build-requirements.txt",
             "sha256": sha256(build_audit),
         },
         "packages": {

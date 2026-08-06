@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Commit runtime events through the canonical EventCommitter, never its store or bus directly.
 files:
-  - "kaji/ts/src/runtime/**/*.ts"
+  - "kaji/packages/typescript/src/runtime/**/*.ts"
 rule:
   any:
     - pattern: this.store.append($EVENT)

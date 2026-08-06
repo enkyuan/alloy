@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Classes that own a pooled HTTPS Agent must destroy it.
 files:
-  - "kaji/ts/src/integrations/fixed-origin.ts"
+  - "kaji/packages/typescript/src/integrations/fixed-origin.ts"
 rule:
   all:
     - kind: class_declaration

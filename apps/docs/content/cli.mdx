@@ -80,12 +80,12 @@ source checkout, its `kaji` CLI scaffolds Python projects, generates Python or
 TypeScript OpenAPI handlers, and manages the Python registry:
 
 ```bash
-uv run --project kaji kaji init ./my-agent --provider mock --yes
-uv run --project kaji kaji gen --spec openapi.json --out tools/ --lang python
-uv run --project kaji kaji list-integrations
-uv run --project kaji kaji add echo --out ./integrations
-uv run --project kaji kaji info --json
-uv run --project kaji kaji doctor
+uv run --project kaji/packages/python kaji init ./my-agent --provider mock --yes
+uv run --project kaji/packages/python kaji gen --spec openapi.json --out tools/ --lang python
+uv run --project kaji/packages/python kaji list-integrations
+uv run --project kaji/packages/python kaji add echo --out ./integrations
+uv run --project kaji/packages/python kaji info --json
+uv run --project kaji/packages/python kaji doctor
 ```
 
 Its `init` writes `agent.py` and `.env.example`. The `gen`, `info`, `secret`,

@@ -117,7 +117,7 @@ The Python distribution is unavailable from PyPI for this release. In a source
 checkout, install the provider extra through the project environment:
 
 ```bash
-uv sync --project kaji --extra openai
+uv sync --project kaji/packages/python --extra openai
 ```
 
 ### Control top-level import loading
@@ -131,5 +131,5 @@ you need to control that first-access cost.
 Run the CLI through the project environment:
 
 ```bash
-uv run --project kaji kaji --help
+uv run --project kaji/packages/python kaji --help
 ```

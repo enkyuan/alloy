@@ -36,13 +36,13 @@ def run_workflow_checks(environment: dict[str, str], *, include_gate: bool) -> N
     )
     run_in_dir(
         "Python lockfile freshness",
-        ROOT / "kaji",
+        ROOT,
         ["uv", "lock", "--check"],
         environment,
     )
     run_in_dir(
         "Frozen Python dependencies",
-        ROOT / "kaji",
+        ROOT,
         ["uv", "sync", "--frozen"],
         environment,
         PACKAGE_ORCHESTRATOR_BUDGET,
@@ -61,7 +61,7 @@ def run_workflow_checks(environment: dict[str, str], *, include_gate: bool) -> N
             "bun",
             "run",
             "--cwd",
-            "kaji/ts",
+            "kaji/packages/typescript",
             "test",
             "--",
             "tests/release-security.test.ts",

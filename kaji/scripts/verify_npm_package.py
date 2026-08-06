@@ -99,7 +99,7 @@ def expected_package_bytes(ts_root: Path) -> tuple[dict[str, object], dict[str, 
 
 
 def verify_npm_tarball(tarball: Path, repo: Path) -> None:
-    ts_root = repo / "kaji/ts"
+    ts_root = repo / "kaji/packages/typescript"
     canonical_contracts_root = repo / "kaji/contracts"
     if not tarball.is_file():
         fail(f"npm tarball does not exist: {tarball}")

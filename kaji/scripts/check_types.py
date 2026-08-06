@@ -9,7 +9,7 @@ from process_runner import LOCAL_COMMAND_BUDGET, CommandExitError, run_checked
 
 
 def main() -> int:
-    sdk_root = Path(__file__).resolve().parents[1]
+    sdk_root = Path(__file__).resolve().parents[1] / "packages" / "python"
     ty_binary = sdk_root / ".venv" / "bin" / "ty"
     command = [str(ty_binary)] if ty_binary.exists() else ["ty"]
 

@@ -26,6 +26,7 @@ from typing import Any
 wheel = Path()
 sdist = Path()
 sdk_root = Path()
+py_pkg_root = Path()
 contracts_dir = Path()
 license_bytes = b""
 readme_bytes = b""
@@ -57,6 +58,7 @@ def load_archives(dist_dir: Path) -> None:
     global project
     global project_name
     global project_version
+    global py_pkg_root
     global pyproject
     global readme_bytes
     global sdk_root
@@ -80,10 +82,14 @@ def load_archives(dist_dir: Path) -> None:
     wheel = wheel_candidate
     sdist = sdist_candidate
     sdk_root = Path(__file__).resolve().parents[1]
+    # Contracts stay at kaji/contracts (shared canonical spine).
     contracts_dir = sdk_root / "contracts"
-    license_bytes = (sdk_root / "LICENSE").read_bytes()
-    readme_bytes = (sdk_root / "README.md").read_bytes()
-    pyproject = tomllib.loads((sdk_root / "pyproject.toml").read_text())
+    # The Python SDK package moved to kaji/packages/python; its packaging inputs
+    # (LICENSE/README/pyproject/build-requirements/src) live there now.
+    py_pkg_root = sdk_root / "packages" / "python"
+    license_bytes = (py_pkg_root / "LICENSE").read_bytes()
+    readme_bytes = (py_pkg_root / "README.md").read_bytes()
+    pyproject = tomllib.loads((py_pkg_root / "pyproject.toml").read_text())
     project = pyproject["project"]
     project_name = project["name"]
     project_version = project["version"]
@@ -449,9 +455,9 @@ def verify_archives() -> None:
     if project_name != "kaji-sdk":
         fail(f"unexpected Python project name: {project_name}")
     egg_info = f"src/{wheel_distribution}.egg-info"
-    package_root = sdk_root / "src" / "kaji"
+    package_root = py_pkg_root / "src" / "kaji"
     expected_source_bytes = {
-        path.relative_to(sdk_root / "src").as_posix(): path.read_bytes()
+        path.relative_to(py_pkg_root / "src").as_posix(): path.read_bytes()
         for path in package_root.rglob("*")
         if path.is_file()
         and path.name != ".DS_Store"
@@ -732,7 +738,7 @@ def verify_archives() -> None:
             fail(f"unexpected directories in sdist: {unexpected_dirs[:10]}")
 
         for relative in checkout_metadata:
-            if sdist_bytes(relative) != (sdk_root / relative).read_bytes():
+            if sdist_bytes(relative) != (py_pkg_root / relative).read_bytes():
                 fail(f"sdist checkout metadata differs from source: {relative}")
 
         packaged_contracts = {
