@@ -1,5 +1,6 @@
 {
   "include": ["src", "tests", "examples"],
+  "exclude": ["examples/agentos"],
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",

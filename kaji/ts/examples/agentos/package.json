@@ -1,0 +1,29 @@
+{
+  "name": "kaji-agentos-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Interop example: run isolated code execution in an agentOS VM, driven by a kaji-sdk agent. NOT part of the published kaji-sdk package.",
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "scripts": {
+    "start": "node --import tsx exec-agent.ts"
+  },
+  "dependencies": {
+    "kaji-sdk": "file:../..",
+    "@rivet-dev/agentos-core": "0.2.15",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}
