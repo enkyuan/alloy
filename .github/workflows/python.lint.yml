@@ -42,7 +42,11 @@ jobs:
           # checkers (ty, pyrefly, pyright) don't execute the redirector, so
           # they can only resolve `import kaji.X` against an on-disk kaji/
           # directory. The wheel install creates one in site-packages.
-          sync-args: "--frozen --no-editable"
+          # Select the kaji-sdk workspace member so its dev group (pytest,
+          # jsonschema test extras, etc.) is installed — ty checks src/ AND
+          # tests/, so it must resolve the test-only imports. A bare root sync
+          # only pulls the root project's dev group under the uv workspace.
+          sync-args: "--frozen --no-editable --package kaji-sdk"
 
       - name: Type check
         # Direct venv invocation (NOT `uv run`) — `uv run` re-syncs the venv
