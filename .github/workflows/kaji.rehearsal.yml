@@ -43,12 +43,12 @@ jobs:
           node-version: "24"
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/ts
+          working-directory: kaji/packages/typescript
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.14"
       - name: Run offline release gates and retain the actual summary
         id: offline
@@ -58,7 +58,7 @@ jobs:
         run: |
           mkdir -p .artifacts/kaji-offline-evidence
           set +e
-          uv run --project kaji python kaji/scripts/beta_release_check.py --release \
+          uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release \
             > >(tee .artifacts/kaji-offline-evidence/offline-gates.log) 2>&1
           status=$?
           set -e
@@ -145,7 +145,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: ${{ matrix.python-version }}
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -163,7 +163,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/release_smoke.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/release_smoke.py
           --artifacts-dir .artifacts/kaji-release
           --expected-commit "$EXPECTED_COMMIT"
           --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
@@ -323,7 +323,7 @@ jobs:
                     providerAlias: "synthetic_complete", catalogName: "synthetic.complete",
                     sameIdentityAtEveryStage: true}
                 },
-                policyBeforeRequest: {testFile: "kaji/ts/tests/github-registry.test.ts",
+                policyBeforeRequest: {testFile: "kaji/packages/typescript/tests/github-registry.test.ts",
                   testName: "rejects approval for github_create_issue before token or HTTP",
                   tokenLookups: 0, requestAttempts: 0},
                 aliasCollisionRejected: true, conclusion: "passed", failureCode: null
@@ -526,7 +526,7 @@ jobs:
       - id: setup_bun
         uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/ts
+          working-directory: kaji/packages/typescript
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Resolve exact producer artifact by ID
@@ -590,7 +590,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
-          bun kaji/ts/scripts/smoke_package.mts
+          bun kaji/packages/typescript/scripts/smoke_package.mts
           .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
@@ -633,7 +633,7 @@ jobs:
             const {
               assertClosedOrdinaryReceipt,
               assertProtectedOrdinaryReceiptForWorkflow,
-            } = await import("./kaji/ts/scripts/smoke_package.mts");
+            } = await import("./kaji/packages/typescript/scripts/smoke_package.mts");
             const required = (name) => {
               const value = process.env[name];
               if (!value) throw new Error("missing trusted receipt input: " + name);
@@ -691,7 +691,7 @@ jobs:
           KAJI_CLOSED_RECEIPT="$receipt" bun --eval '
             const { readFileSync } = await import("node:fs");
             const { assertClosedOrdinaryReceipt } =
-              await import("./kaji/ts/scripts/smoke_package.mts");
+              await import("./kaji/packages/typescript/scripts/smoke_package.mts");
             assertClosedOrdinaryReceipt(
               JSON.parse(readFileSync(process.env.KAJI_CLOSED_RECEIPT, "utf8")),
               "protected",
@@ -761,7 +761,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.14"
           sync-args: --frozen
       - name: Resolve exact current-run onboarding archives
@@ -874,7 +874,7 @@ jobs:
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
           set +e
-          uv run --project kaji --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
+          uv run --project kaji/packages/python --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
           status=$?
           set -e
           printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
@@ -889,7 +889,7 @@ jobs:
         run: |
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          uv run --project kaji --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          uv run --project kaji/packages/python --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
           import json
           from pathlib import Path
           import sys
@@ -1081,7 +1081,7 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.14"
           sync-args: --frozen
       - name: Resolve exact current-run onboarding archives independently
@@ -1179,7 +1179,7 @@ jobs:
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
           set +e
-          uv run --project kaji --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
+          uv run --project kaji/packages/python --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
           status=$?
           set -e
           printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
@@ -1196,7 +1196,7 @@ jobs:
           candidate="$KAJI_JOB_ROOT/work/candidate"
           mkdir -p "$candidate"
           unzip -q "$KAJI_JOB_ROOT/work/archives/producer.zip" -d "$candidate"
-          uv run --project kaji --no-sync python kaji/scripts/verify_release_artifacts.py             --artifacts-dir "$candidate" --expected-commit "$EXPECTED_COMMIT"
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/verify_release_artifacts.py             --artifacts-dir "$candidate" --expected-commit "$EXPECTED_COMMIT"
       - name: Independently validate and recompute protected onboarding evidence
         id: aggregate_validation
         if: ${{ steps.candidate_verification.outcome == 'success' }}
@@ -1207,7 +1207,7 @@ jobs:
         run: |
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          uv run --project kaji --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          uv run --project kaji/packages/python --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
           import json
           from pathlib import Path
           import sys
@@ -1439,7 +1439,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.14"
           sync-args: --frozen
       - id: download
@@ -1458,7 +1458,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/live_provider_proof.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/live_provider_proof.py
           --protected --artifacts-dir .artifacts/kaji-release
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Normalize terminal provider evidence
@@ -1553,7 +1553,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.14"
           sync-args: --frozen
       - name: Authenticate exact onboarding artifact bindings before downloads
@@ -1744,7 +1744,7 @@ jobs:
           --expected-commit "${{ inputs.expected-commit }}"
       - name: Validate one canonical current-run candidate evidence set
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/validate_release_evidence.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/validate_release_evidence.py
           --mode rehearsal
           --artifacts-dir .artifacts/kaji-release
           --producer-archive .artifacts/kaji-raw/producer.zip

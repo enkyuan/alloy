@@ -251,7 +251,7 @@ finite non-integral values remain valid. Check an existing stored-event log
 without modifying it before promotion:
 
 ```console
-uv run --project kaji python kaji/scripts/check_event_migration.py path/to/events.jsonl
+uv run --project kaji/packages/python python kaji/scripts/check_event_migration.py path/to/events.jsonl
 ```
 
 The preflight reports every incompatible line with

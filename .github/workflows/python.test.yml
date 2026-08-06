@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "kaji/**"
-      - "kaji/serve/**"
+      - "kaji/packages/serve/**"
       - "kaji/contracts/**"
       - "kaji/scripts/**"
       - "kaji/benchmarks/**"
@@ -15,7 +15,7 @@ on:
       - "sgconfig.yml"
       - "package.json"
       - "bun.lock"
-      - "kaji/uv.lock"
+      - "uv.lock"
       - ".github/actions/setup-python-uv/**"
       - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/python.lint.yml"
@@ -33,7 +33,7 @@ on:
   pull_request:
     paths:
       - "kaji/**"
-      - "kaji/serve/**"
+      - "kaji/packages/serve/**"
       - "kaji/contracts/**"
       - "kaji/scripts/**"
       - "kaji/benchmarks/**"
@@ -43,7 +43,7 @@ on:
       - "sgconfig.yml"
       - "package.json"
       - "bun.lock"
-      - "kaji/uv.lock"
+      - "uv.lock"
       - ".github/actions/setup-python-uv/**"
       - ".github/actions/setup-bun-cache/**"
       - ".github/workflows/python.lint.yml"
@@ -79,17 +79,17 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/ts
+          working-directory: kaji/packages/typescript
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
 
       - name: Run quickstart smoke
-        run: uv run pytest tests/test_quickstart.py -q
+        run: uv run --project packages/python pytest packages/python/tests/test_quickstart.py -q
 
       - name: Run non-network tests
-        run: uv run pytest tests/ -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
+        run: uv run --project packages/python pytest packages/python/tests -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -116,16 +116,16 @@ jobs:
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: ${{ matrix.python-version }}
 
       - name: Build, verify, and install wheel and sdist
         run: |
-          uv run --no-sync python scripts/release_smoke.py
-          uv run --no-sync python scripts/verify_archives.py
+          uv run --project packages/python --no-sync python scripts/release_smoke.py
+          uv run --project packages/python --no-sync python scripts/verify_archives.py packages/python/dist
 
   serve:
-    name: kaji/serve
+    name: kaji/packages/serve
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -150,13 +150,13 @@ jobs:
       POSTGRES_DB: postgres
     defaults:
       run:
-        working-directory: kaji/serve
+        working-directory: kaji/packages/serve
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji/serve
+          working-directory: .
 
       - name: Run tests
         run: uv run pytest tests/ --cov=kaji_serve --cov-report=xml --cov-fail-under=35
@@ -165,5 +165,5 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-serve
-          path: kaji/serve/coverage.xml
+          path: kaji/packages/serve/coverage.xml
           retention-days: 7

@@ -52,14 +52,14 @@ SAMPLE_FAILURE_MARKER = re.compile(
     rb"variant=(replay|indexed) status=(-?(?:0|[1-9][0-9]{0,9}))"
 )
 SOURCE_TREE_ROOTS = (
-    Path("kaji/src/kaji"),
-    Path("kaji/ts/src"),
+    Path("kaji/packages/python/src/kaji"),
+    Path("kaji/packages/typescript/src"),
 )
 SOURCE_INPUTS = (
     Path("kaji/benchmarks/python/runtime_benchmark.py"),
-    Path("kaji/ts/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/packages/typescript/benchmarks/runtime-benchmark.ts"),
     Path("kaji/benchmarks/python/runtime_soak.py"),
-    Path("kaji/ts/benchmarks/runtime-soak.ts"),
+    Path("kaji/packages/typescript/benchmarks/runtime-soak.ts"),
     Path("kaji/scripts/beta_benchmark_gate.py"),
     Path("kaji/scripts/run_beta_benchmarks.py"),
     Path("kaji/scripts/beta_soak_gate.py"),
@@ -73,9 +73,9 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     Path("kaji/scripts/verify_release_artifacts.py"),
     Path("kaji/benchmarks/beta-budgets.json"),
-    Path("kaji/pyproject.toml"),
-    Path("kaji/ts/package.json"),
-    Path("kaji/ts/tsconfig.json"),
+    Path("kaji/packages/python/pyproject.toml"),
+    Path("kaji/packages/typescript/package.json"),
+    Path("kaji/packages/typescript/tsconfig.json"),
 )
 
 
@@ -94,7 +94,10 @@ def _command_version(command: list[str]) -> str:
 
 def _lock_hash() -> str:
     digest = hashlib.sha256()
-    for relative in ("bun.lock", "kaji/uv.lock"):
+    # TODO(migration): re-baseline kaji/benchmarks/beta-baseline.json —
+    # the Python lock moved to the workspace-root uv.lock, so both the hashed
+    # relative path and its bytes changed; the stored dependencyLockHash is stale.
+    for relative in ("bun.lock", "uv.lock"):
         path = ROOT / relative
         digest.update(relative.encode())
         digest.update(b"\0")
@@ -227,7 +230,12 @@ def _runtime_command(
         str(
             installed.typescript_benchmark
             if installed is not None
-            else ROOT / "kaji" / "ts" / "benchmarks" / "runtime-benchmark.ts"
+            else ROOT
+            / "kaji"
+            / "packages"
+            / "typescript"
+            / "benchmarks"
+            / "runtime-benchmark.ts"
         ),
         *common,
     ]

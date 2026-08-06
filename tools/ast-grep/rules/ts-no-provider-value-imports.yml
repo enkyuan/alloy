@@ -3,7 +3,7 @@ language: TypeScript
 message: Keep provider SDK packages optional; use import type at the top level and dynamic import() for runtime loading.
 severity: error
 files:
-  - "kaji/ts/src/**/*.ts"
+  - "kaji/packages/typescript/src/**/*.ts"
 rule:
   any:
     - pattern: import $X from "openai"

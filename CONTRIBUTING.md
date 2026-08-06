@@ -10,9 +10,11 @@ From the repository root:
 
 ```bash
 bun install
-uv sync --project kaji
-uv sync --project kaji/serve
+uv sync
 ```
+
+Kaji Python is now a `uv` workspace -- run `uv sync` at the repo root, and
+select members with `--package kaji-sdk` / `--package kaji-serve`.
 
 Go services manage dependencies through the `go.mod` in each service. Copy an
 `.env.example` only for a service you intend to run; ordinary SDK tests do not
@@ -24,7 +26,7 @@ commands and generated TypeScript starters.
 | Area                       | Paths                            | Guide                                        |
 | -------------------------- | -------------------------------- | -------------------------------------------- |
 | Ryo services and studio    | `ryo/*`, `apps/web`              | [`ryo/README.md`](ryo/README.md)             |
-| Kaji SDKs and service      | `kaji`, `kaji/ts`, `kaji/serve`  | [`kaji/README.md`](kaji/README.md)           |
+| Kaji SDKs and service      | `kaji/packages/{python,typescript,serve}` | [`kaji/README.md`](kaji/README.md)  |
 | Kaji CLI and docs site     | `apps/cli`, `apps/docs`          | [`apps/README.md`](apps/README.md)           |
 | Shared TypeScript packages | `packages/ui`, `packages/shared` | [`packages/README.md`](packages/README.md)   |
 | Kaji release contracts     | `kaji/contracts`, `docs/kaji`    | [`docs/kaji/README.md`](docs/kaji/README.md) |
@@ -38,9 +40,9 @@ request, run every row that corresponds to a changed path.
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/cli`                             | `bun --filter @kaji/cli format:check && bun --filter @kaji/cli lint && bun --filter @kaji/cli typecheck && bun --filter @kaji/cli test && bun --filter @kaji/cli smoke` |
 | `apps/docs`                            | `bun --filter @kaji/docs format:check && bun --filter @kaji/docs lint && bun --filter @kaji/docs typecheck && bun --filter @kaji/docs build`                            |
-| `kaji/ts`                              | `cd kaji/ts && bun run format:check && bun run lint && bun run typecheck && bun run test`                                                                               |
-| `kaji`                                 | `cd kaji && uv run ruff format --check . && uv run ruff check src tests && .venv/bin/ty check && uv run pytest -m "not integration"`                                    |
-| `kaji/serve`                           | `cd kaji/serve && uv run ruff format --check . && uv run ruff check src tests alembic && uv run pytest`                                                                 |
+| `kaji/packages/typescript`             | `bun --filter kaji-sdk format:check && bun --filter kaji-sdk lint && bun --filter kaji-sdk typecheck && bun --filter kaji-sdk test`                                     |
+| `kaji/packages/python`                 | `uv run --package kaji-sdk ruff format --check . && uv run --package kaji-sdk ruff check src tests && uv run --package kaji-sdk ty check && uv run --package kaji-sdk pytest -m "not integration"` |
+| `kaji/packages/serve`                  | `uv run --package kaji-serve ruff format --check . && uv run --package kaji-serve ruff check src tests alembic && uv run --package kaji-serve pytest`                   |
 | `packages/ui`                          | `bun --filter @kaji/ui format:check && bun --filter @kaji/ui typecheck`                                                                                                 |
 | `packages/shared`                      | `bun --filter @kaji/shared format:check`, then typecheck `apps/web`, `apps/cli`, and `packages/ui`                                                                      |
 | `ryo/api` or `ryo/consumer`            | Run `gofmt -l .` (expect no output), then `go vet ./...` and `go test ./... -race -count=1` from that service directory                                                 |

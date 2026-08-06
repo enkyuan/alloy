@@ -1,0 +1,4348 @@
+import {
+  closeSync,
+  cpSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  lstatSync,
+  mkdtempSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { assertCliListOutput } from "./cli_assertions";
+import {
+  classifyCommandFailure,
+  CommandError,
+  CommandExitError,
+  type CommandFailureKind,
+  runCommand as runBoundedCommand,
+} from "./command";
+
+const PACKAGE_MANAGERS = ["npm", "bun"] as const;
+const INSTALL_STAGES = ["package", "bootstrap", "generated"] as const;
+const HANDOFF_PHASES = [
+  "handoff:npm-install",
+  "handoff:bun-install",
+  "handoff:typescript57-version",
+  "handoff:typescriptCurrent-version",
+  "handoff:typescript57-esm",
+  "handoff:typescript57-cjs",
+  "handoff:typescriptCurrent-esm",
+  "handoff:typescriptCurrent-cjs",
+  "handoff:npm-github-proof",
+  "handoff:bun-github-proof",
+  "handoff:archive-list",
+  "handoff:archive-types",
+  "handoff:archive-extract",
+  "handoff:policy-before-token",
+  "handoff:node-version",
+  "handoff:npm-version",
+  "handoff:node-esm",
+  "handoff:node-commonjs",
+] as const;
+const STATIC_SMOKE_PHASES = [
+  "npm:pack",
+  "node:version",
+  "npm:version",
+  "bun:version",
+  "npm:audit",
+  "bun:audit",
+  "exports:esm",
+  "exports:cjs",
+  "cli:help",
+  "cli:help-cjs",
+  "docs:compile-typescript-current",
+  "docs:run",
+  "workspace:cleanup",
+] as const;
+const MANAGER_SMOKE_PHASE_SUFFIXES = [
+  "package-install",
+  "bootstrap-install",
+  "generated-install",
+  "cli-init",
+  "cli-owner-conflict",
+  "cli-owner-qualified",
+  "cli-add",
+  "cli-inspect",
+  "github-package-proof",
+  "cli-list",
+  "cli-replay",
+  "compile-typescript-5.7",
+  "compile-typescript-current",
+  "github-types-compiler-version-5.7",
+  "github-types-compiler-version-current",
+  "github-types-esm-typescript-5.7",
+  "github-types-esm-typescript-current",
+  "github-types-cjs-typescript-5.7",
+  "github-types-cjs-typescript-current",
+  "lifecycle-run",
+  "failure-history-run",
+  "docs-getting-started-run",
+  "installed-artifact-echo-run",
+  "cold-run",
+  "warm-run",
+] as const;
+const COMMAND_FAILURE_KINDS = [
+  "unsupported_host",
+  "start",
+  "exit",
+  "timeout",
+  "output_limit",
+  "cleanup",
+  "capture",
+  "shutting_down",
+  "unknown",
+] as const satisfies readonly CommandFailureKind[];
+const INSTALLED_GITHUB_PROOF_FAILURE_CODES = [
+  "arguments_incomplete",
+  "arguments_invalid",
+  "environment_not_isolated",
+  "proof_failed",
+] as const;
+
+type PackageManager = (typeof PACKAGE_MANAGERS)[number];
+type InstallStage = (typeof INSTALL_STAGES)[number];
+type HandoffMode = "artifact-contract" | "node";
+type HandoffPhase = (typeof HANDOFF_PHASES)[number];
+type InstalledGitHubProofFailureCode = (typeof INSTALLED_GITHUB_PROOF_FAILURE_CODES)[number];
+type SmokePhase =
+  | (typeof STATIC_SMOKE_PHASES)[number]
+  | `${PackageManager}:${(typeof MANAGER_SMOKE_PHASE_SUFFIXES)[number]}`
+  | HandoffPhase;
+const SMOKE_PHASES = new Set<string>([
+  ...STATIC_SMOKE_PHASES,
+  ...HANDOFF_PHASES,
+  ...PACKAGE_MANAGERS.flatMap((manager) =>
+    MANAGER_SMOKE_PHASE_SUFFIXES.map((suffix) => `${manager}:${suffix}`),
+  ),
+]);
+interface PackageManifest {
+  version: string;
+  peerDependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
+}
+interface LocalDependencyManifest {
+  name: string;
+  version: string;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+}
+interface ArtifactIdentity {
+  commit: string | null;
+  manifestSha256: string | null;
+  artifactSha256: Record<string, string>;
+}
+interface SmokeArguments {
+  tarball?: string;
+  releaseManifest?: string;
+  expectedCommit?: string;
+  output?: string;
+  protected?: true;
+  configuredRunnerLabel?: "ubuntu-22.04" | "ubuntu-24.04";
+  producerArtifactId?: number;
+  producerArtifactDigest?: string;
+  forHandoff?: HandoffMode;
+  candidateRoot?: string;
+  sourceCommit?: string;
+  artifactSha256?: string;
+  handoffNodeBinary?: string;
+  expectedNodeMajor?: 22 | 24;
+}
+
+export interface ProducerArtifactIdentity {
+  readonly name: "kaji-beta-artifacts" | "local";
+  readonly id: number;
+  readonly digest: string;
+  readonly runId: number;
+  readonly runAttempt: number;
+  readonly headSha: string | null;
+}
+
+export interface RunnerIdentity {
+  readonly configuredLabel: "ubuntu-22.04" | "ubuntu-24.04" | "local";
+  readonly environment: "github-hosted" | "local";
+  readonly runnerOS: "Linux" | "local";
+  readonly runnerArch: "X64" | "local";
+  readonly platformOS: "linux" | NodeJS.Platform;
+  readonly platformArch: "x64" | NodeJS.Architecture;
+  readonly imageOS: "ubuntu22" | "ubuntu24" | "local";
+  readonly imageVersion: string;
+}
+
+export interface InvocationIdentity {
+  readonly workflowRun: string;
+  readonly runId: number;
+  readonly runAttempt: number;
+  readonly workflowRef: string;
+  readonly workflowSha: string | null;
+  readonly job: string;
+}
+
+export interface OrdinaryReceiptContext {
+  readonly executionMode: "protected" | "local";
+  readonly packageArtifact: {
+    readonly name: typeof PACKAGE_TARBALL;
+    readonly size: number;
+    readonly sha256: string;
+  };
+  readonly producerArtifact: ProducerArtifactIdentity;
+  readonly runner: RunnerIdentity;
+  readonly invocation: InvocationIdentity;
+}
+
+export interface ProtectedOrdinaryReceiptReviewInput {
+  readonly packageArtifactPath: string;
+  readonly expectedCommit: string;
+  readonly expectedNodeMajor: string | number;
+  readonly configuredRunnerLabel: string;
+  readonly producerArtifactId: string | number;
+  readonly producerArtifactDigest: string;
+  readonly githubServerUrl: string;
+  readonly githubRepository: string;
+  readonly githubRunId: string | number;
+  readonly githubRunAttempt: string | number;
+  readonly githubWorkflowRef: string;
+  readonly githubWorkflowSha: string;
+  readonly githubJob: string;
+  readonly runnerEnvironment: string;
+  readonly runnerOS: string;
+  readonly runnerArch: string;
+  readonly platformOS: string;
+  readonly platformArch: string;
+  readonly imageOS: string;
+  readonly imageVersion: string;
+}
+
+export interface OnboardingProof {
+  readonly manager: PackageManager;
+  readonly phases: {
+    readonly artifactInstall: true;
+    readonly scaffoldInit: true;
+    readonly noKeyRun: true;
+    readonly echoSetup: true;
+    readonly echoRun: true;
+    readonly coldRun: true;
+    readonly warmRun: true;
+  };
+  readonly assertions: {
+    readonly noKeyText: typeof EXPECTED_MOCK_REPLY;
+    readonly deterministicText: typeof EXPECTED_MOCK_REPLY;
+    readonly turnIdPresent: true;
+    readonly finalSequencePositive: true;
+    readonly echoLifecycle: readonly ["requested", "started", "completed"];
+    readonly echoLifecycleCounts: {
+      readonly requested: 1;
+      readonly started: 1;
+      readonly completed: 1;
+    };
+    readonly echoToolCallIdentityCount: 1;
+    readonly echoToolCallIdNonempty: true;
+    readonly echoResult: { readonly message: "hello" };
+    readonly echoFinalText: typeof EXPECTED_MOCK_REPLY;
+    readonly forbiddenTerminalEventsAbsent: true;
+    readonly coldWarmEqual: true;
+  };
+}
+
+export class SmokeCommandError extends Error {
+  constructor(
+    readonly phase: SmokePhase,
+    readonly kind: CommandFailureKind,
+  ) {
+    super("package smoke command failed");
+  }
+}
+
+export function elapsedMilliseconds(startedNs: bigint, endedNs: bigint): number {
+  const elapsedNs = endedNs - startedNs;
+  if (elapsedNs < 0n) throw new RangeError("monotonic clock moved backwards");
+  const elapsedMs = (elapsedNs + 999_999n) / 1_000_000n;
+  if (elapsedMs > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new RangeError("elapsed milliseconds exceed Number.MAX_SAFE_INTEGER");
+  }
+  return Number(elapsedMs);
+}
+
+interface GitHubPackageProof {
+  readonly schemaVersion: 5;
+  readonly evidenceClass: "offline_exact_artifact_smoke";
+  readonly integration: "github";
+  readonly runtime: "typescript";
+  readonly network: "blocked";
+  readonly liveProvider: false;
+  readonly sharedAbiVersion: "1.0.0";
+  readonly packageAbiSchemaVersion: "1.0.0";
+  readonly packageCatalogVersion: "0.2.0";
+  readonly apiFixtureVersion: "1.0.0";
+  readonly sharedFixtureCaseCount: number;
+  readonly publicScenarioCount: number;
+  readonly packageCatalog: {
+    readonly schemaVersion: "1.0.0";
+    readonly catalogVersion: "0.2.0";
+    readonly toolCount: 15;
+    readonly readToolCount: 13;
+    readonly tools: readonly string[];
+    readonly readTools: readonly string[];
+    readonly providerAliases: readonly string[];
+    readonly catalogNames: readonly string[];
+  };
+  readonly cliCopiedCatalog: {
+    readonly manifestVersion: "0.1.0";
+    readonly toolCount: 6;
+    readonly readToolCount: 4;
+    readonly tools: readonly string[];
+    readonly readTools: readonly string[];
+  };
+  readonly esmSharedAbiMatched: true;
+  readonly cjsSharedAbiMatched: true;
+  readonly esmPackageAbiMatched: true;
+  readonly cjsPackageAbiMatched: true;
+  readonly esmClassIdentityMatched: true;
+  readonly cjsClassIdentityMatched: true;
+  readonly esmFactoryIdentityMatched: true;
+  readonly cjsFactoryIdentityMatched: true;
+  readonly esmRuntimeExports: readonly [
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly cjsRuntimeExports: readonly [
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly esmDeclarationExports: readonly [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly cjsDeclarationExports: readonly [
+    "CreateGitHubIntegrationOptions",
+    "GitHubIntegration",
+    "createGithubIntegration",
+    "inspectIntegration",
+  ];
+  readonly typescriptDeclarationChecks: TypeScriptDeclarationChecks;
+  readonly privateGitHubCompositionSourcesPacked: false;
+  readonly privateGitHubCompositionSourceImportsRejected: true;
+  readonly closedCallsDeniedBeforeCredentialAccess: true;
+  readonly approvalDeniedBeforeCredentialAccess: true;
+  readonly repositoryDeniedBeforeCredentialAccess: true;
+  readonly githubCatalogEventsVerified: readonly ["requested", "started", "failed"];
+  readonly genericSyntheticCatalogEventsVerified: readonly ["requested", "started", "completed"];
+  readonly githubFailureRecovery: {
+    readonly error_code: "INTEGRATION_AUTH_REQUIRED";
+    readonly reason_code: "github_token_missing";
+    readonly recovery_code: "CONFIGURE_GITHUB_TOKEN";
+    readonly doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token";
+  };
+  readonly githubObservabilitySinksVerified: true;
+  readonly unknownMutationPreserved: true;
+  readonly mutationRetries: 0;
+  readonly lifecycle: {
+    readonly githubFailure: LifecycleProof;
+    readonly syntheticCompletion: LifecycleProof;
+  };
+  readonly policyBeforeRequest: {
+    readonly testFile: "kaji/packages/typescript/tests/github-registry.test.ts";
+    readonly testName: "rejects approval for github_create_issue before token or HTTP";
+    readonly tokenLookups: 0;
+    readonly requestAttempts: 0;
+  };
+  readonly aliasCollisionRejected: true;
+  readonly conclusion: "passed";
+  readonly failureCode: null;
+}
+
+export interface OrdinaryNonPassedReceiptV2 {
+  readonly schemaVersion: 2;
+  readonly executionMode: "protected" | "local";
+  readonly commit: string | null;
+  readonly releaseManifestSha256: string | null;
+  readonly artifactSha256: Readonly<Record<string, string>>;
+  readonly runtime: { readonly version: string | null };
+  readonly artifacts: Readonly<Record<string, never>>;
+  readonly githubPackageProofs: Readonly<Record<string, never>>;
+  readonly onboardingProofs: Readonly<Record<string, never>>;
+  readonly conclusion: "failed" | "not_run";
+  readonly failureCode: string;
+  readonly failedPhase: SmokePhase | null;
+  readonly failureKind: CommandFailureKind;
+}
+
+export type OrdinaryFailedReceiptV2 = OrdinaryNonPassedReceiptV2 & {
+  readonly conclusion: "failed";
+};
+
+export type OrdinaryNotRunReceiptV2 = OrdinaryNonPassedReceiptV2 & {
+  readonly conclusion: "not_run";
+  readonly failedPhase: null;
+  readonly failureKind: "unknown";
+};
+
+export interface OrdinaryPassedReceiptV2 {
+  readonly schemaVersion: 2;
+  readonly executionMode: "protected" | "local";
+  readonly commit: string | null;
+  readonly releaseManifestSha256: string | null;
+  readonly artifactSha256: Readonly<Record<typeof PACKAGE_TARBALL, string>>;
+  readonly packageArtifact: OrdinaryReceiptContext["packageArtifact"];
+  readonly producerArtifact: ProducerArtifactIdentity;
+  readonly runner: RunnerIdentity;
+  readonly invocation: InvocationIdentity;
+  readonly runtime: { readonly version: string };
+  readonly artifacts: { readonly tarball: string; readonly package: string };
+  readonly githubPackageProofs: {
+    readonly npm: GitHubPackageProof;
+    readonly bun: GitHubPackageProof;
+  };
+  readonly onboardingProofs: { readonly npm: OnboardingProof; readonly bun: OnboardingProof };
+  readonly timings: {
+    readonly npm: { readonly coldSetupToOutputMs: number; readonly warmRunMs: number };
+    readonly bun: { readonly coldSetupToOutputMs: number; readonly warmRunMs: number };
+  };
+  readonly toolchain: {
+    readonly python: "not-used";
+    readonly uv: "not-used";
+    readonly node: string;
+    readonly npm: string;
+    readonly bun: "1.3.11";
+    readonly typescript: string;
+  };
+  readonly conclusion: "passed";
+  readonly failureCode: null;
+}
+
+export type OrdinaryReceiptV2 =
+  | OrdinaryPassedReceiptV2
+  | OrdinaryFailedReceiptV2
+  | OrdinaryNotRunReceiptV2;
+
+interface LifecycleProof {
+  readonly stages: readonly string[];
+  readonly providerAlias: string;
+  readonly catalogName: string;
+  readonly sameIdentityAtEveryStage: true;
+}
+
+interface TypeScriptDeclarationChecks {
+  readonly compilerOptions: {
+    readonly module: "NodeNext";
+    readonly moduleResolution: "NodeNext";
+    readonly skipLibCheck: false;
+  };
+  readonly typescript57: {
+    readonly version: "5.7.3";
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
+  readonly typescriptCurrent: {
+    readonly version: string;
+    readonly mtsImport: "passed";
+    readonly ctsRequire: "passed";
+  };
+}
+
+const GITHUB_PUBLIC_SCENARIOS = [
+  "conditional-exports",
+  "class-identity",
+  "private-source-containment",
+  "declaration-privacy",
+  "catalog-inspection",
+  "public-registration",
+  "closed-lifecycle",
+  "repository-policy",
+  "observability-sinks",
+  "approval-rejection",
+  "validation-failure",
+  "execution-failure",
+  "synthetic-completed-event",
+  "mock-provider-loop",
+  "alias-collision",
+] as const;
+const GITHUB_TOOLS = [
+  "add_comment",
+  "create_issue",
+  "get_file",
+  "get_issue",
+  "list_issues",
+  "search_code",
+  "get_commit",
+  "get_pull_request",
+  "list_pull_request_files",
+  "list_check_runs",
+  "get_workflow_run",
+  "list_workflow_jobs",
+  "list_file_commits",
+  "get_release",
+  "list_deployments",
+] as const;
+const GITHUB_READ_TOOLS = GITHUB_TOOLS.filter(
+  (name) => name !== "add_comment" && name !== "create_issue",
+);
+const SHARED_GITHUB_TOOLS = GITHUB_TOOLS.slice(0, 6);
+const SHARED_GITHUB_READ_TOOLS = GITHUB_READ_TOOLS.slice(0, 4);
+const GITHUB_PROVIDER_ALIASES = GITHUB_TOOLS.map((name) => `github_${name}`);
+const GITHUB_CATALOG_NAMES = GITHUB_TOOLS.map((name) => `github.${name}`);
+const GITHUB_PUBLIC_SYMBOLS = [
+  "CreateGitHubIntegrationOptions",
+  "GitHubIntegration",
+  "createGithubIntegration",
+  "inspectIntegration",
+] as const;
+const ARTIFACT_SUBCHECKS = [
+  "safe-packlist",
+  "source-byte-equality",
+  "export-targets",
+  "declarations",
+  "typescript-5.7.3-mts",
+  "typescript-5.7.3-cts",
+  "typescript-current-mts",
+  "typescript-current-cts",
+  "npm-install",
+  "bun-install",
+  "public-github-surface",
+  "typescript-catalog-15-13",
+  "shared-python-catalog-6-4",
+  "lifecycle-identity",
+  "policy-before-token",
+  "packaged-license",
+] as const;
+const NODE_HANDOFF_CHECKS = [
+  "npm-install",
+  "esm-import",
+  "commonjs-require",
+  "catalog-15-13",
+] as const;
+const LICENSE_ID = "FSL-1.1-ALv2";
+const POLICY_TEST_FILE = "kaji/packages/typescript/tests/github-registry.test.ts";
+const POLICY_TEST_NAME = "rejects approval for github_create_issue before token or HTTP";
+const PRIVATE_GITHUB_COMPOSITION_PATHS = [
+  "registry/github/package-tools.ts",
+  "registry/github/package.ts",
+  "registry/github/package-internal.ts",
+  "src/integrations/github.ts",
+  "src/integrations/github-package-internal.ts",
+] as const;
+const EXPECTED_GITHUB_SOURCE_MAPS = [
+  "dist/integrations/github.js.map",
+  "dist/integrations/github.cjs.map",
+] as const;
+const PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES = [
+  "export interface PackageGitHubRuntime",
+  "export function createPackageGitHubToolBindings(",
+  "readonly createRequester: (observability:",
+  "readonly createClient: (options: GitHubClientOptions)",
+  "runtime: PackageGitHubRuntime = productionRuntime",
+  "Preserve the client construction failure that prevented ownership transfer.",
+] as const;
+
+interface SourceMapDocument {
+  readonly sources?: unknown;
+  readonly sourcesContent?: unknown;
+}
+
+const scriptRoot = dirname(fileURLToPath(import.meta.url));
+const packageRoot = resolve(scriptRoot, "..");
+const repositoryRoot = resolve(packageRoot, "../../..");
+const INSTALLED_GITHUB_SMOKE = resolve(scriptRoot, "installed-github-smoke.mts");
+let workdir = "";
+let installRoot = "";
+const nodeBinary = process.env.NODE_BINARY ?? "node";
+const LOCAL_TIMEOUT_MS = 60_000;
+const PACKAGE_TIMEOUT_MS = 300_000;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
+const PACKAGE_VERSION = "0.2.0-beta.11";
+const PACKAGE_TARBALL = `kaji-sdk-${PACKAGE_VERSION}.tgz`;
+const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
+
+function markedSnippet(path: string, name: string, language: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const marker = (edge: "start" | "end") =>
+    `(?:<!-- ${escaped}:${edge} -->|\\{/\\* ${escaped}:${edge} \\*/\\})`;
+  const pattern = new RegExp(
+    `${marker("start")}\\s*\`{3}${language}\\n([\\s\\S]*?)\\n[ \\t]*\`{3}\\s*` + marker("end"),
+    "gu",
+  );
+  const matches = [...readFileSync(path, "utf8").matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`expected exactly one ${name} block in ${path}`);
+  }
+  return matches[0]?.[1] ?? "";
+}
+const GITHUB_ESM_TYPES_SOURCE = `import {
+  Integration,
+  type CliApprovalInput,
+  type CliApprovalOptions,
+  type CliApprovalOutput,
+} from "kaji-sdk";
+import {
+  GitHubIntegration,
+  createGithubIntegration,
+  inspectIntegration,
+  type CreateGitHubIntegrationOptions,
+} from "kaji-sdk/integrations/github";
+
+const options: CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "installed-type-proof",
+  repositories: [],
+  toolExposure: "read-only",
+};
+const direct: GitHubIntegration = new GitHubIntegration(options);
+const created: GitHubIntegration = createGithubIntegration(options);
+const inspected: GitHubIntegration = inspectIntegration();
+const roots: Integration[] = [direct, created, inspected];
+const approvalInput: CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
+void roots;
+void approvalOptions;
+direct.close();
+created.close();
+inspected.close();
+`;
+const GITHUB_CJS_TYPES_SOURCE = `import sdk = require("kaji-sdk");
+import github = require("kaji-sdk/integrations/github");
+
+const options: github.CreateGitHubIntegrationOptions = {
+  tokenFor: async () => "installed-type-proof",
+  repositories: [],
+  toolExposure: "read-only",
+};
+const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
+const created: github.GitHubIntegration = github.createGithubIntegration(options);
+const inspected: github.GitHubIntegration = github.inspectIntegration();
+const roots: sdk.Integration[] = [direct, created, inspected];
+const approvalInput: sdk.CliApprovalInput = {
+  readableEnded: false,
+  destroyed: false,
+  on(_event, _listener) {
+    return this;
+  },
+  once(_event, _listener) {
+    return this;
+  },
+  removeListener(_event, _listener) {
+    return this;
+  },
+  pause() {
+    return this;
+  },
+  resume() {
+    return this;
+  },
+};
+const approvalOutput: sdk.CliApprovalOutput = {
+  write(_chunk) {
+    return true;
+  },
+};
+const approvalOptions: sdk.CliApprovalOptions = {
+  input: approvalInput,
+  output: approvalOutput,
+  label: "installed-type-proof",
+};
+void roots;
+void approvalOptions;
+direct.close();
+created.close();
+inspected.close();
+`;
+const GITHUB_TYPES_COMPILER_OPTIONS = {
+  module: "NodeNext",
+  moduleResolution: "NodeNext",
+  noEmit: true,
+  skipLibCheck: false,
+  strict: true,
+  target: "ES2022",
+  types: [],
+} as const;
+const GITHUB_TYPE_CONSUMERS = [
+  {
+    module: "esm",
+    source: "github-types.mts",
+    config: "tsconfig.github-types-esm.json",
+  },
+  {
+    module: "cjs",
+    source: "github-types.cts",
+    config: "tsconfig.github-types-cjs.json",
+  },
+] as const;
+const REPLAY_FIXTURE =
+  JSON.stringify({
+    id: "artifact-event",
+    version: "1.0",
+    timestamp: 0,
+    type: "session.created",
+    session_id: "artifact-session",
+    sequence: 1,
+  }) + "\n";
+const LIFECYCLE_SMOKE_SOURCE = `import {
+  AgentBuilder,
+  InMemoryEventStore,
+  type TurnAccounting,
+} from "kaji-sdk";
+import { MockProvider } from "kaji-sdk/testing";
+
+const graceMs = 10_000;
+const sessionId = "installed-purge-session";
+const store = new InMemoryEventStore({ maxSessions: 1, maxEventsPerSession: 100 });
+const runtime = new AgentBuilder().provider(new MockProvider()).build({ store });
+let failed = false;
+let failure: unknown;
+try {
+  const result = await runtime.turn("Exercise explicit lifecycle cleanup.", { sessionId });
+  const accounting: TurnAccounting = result.accounting;
+  if (
+    accounting.providerIterations !== 1 ||
+    accounting.usage !== null ||
+    accounting.usageComplete ||
+    accounting.costUsd !== null ||
+    accounting.costComplete ||
+    !Object.isFrozen(accounting)
+  ) {
+    throw new Error("installed lifecycle fixture received invalid turn accounting");
+  }
+} catch (error) {
+  failed = true;
+  failure = error;
+} finally {
+  try {
+    const activeTools = await runtime.drainTools(graceMs);
+    const activeProviders = await runtime.drainProviders(graceMs);
+    if (activeTools.length > 0 || activeProviders.length > 0) {
+      throw new Error("installed lifecycle fixture did not drain owned work");
+    }
+    await runtime.purgeSession(sessionId);
+  } catch (error) {
+    if (!failed) {
+      failed = true;
+      failure = error;
+    }
+  } finally {
+    runtime.close();
+  }
+}
+if (failed) throw failure;
+if ((await store.getEvents(sessionId)).length !== 0) {
+  throw new Error("installed lifecycle fixture retained purged history");
+}
+console.log("lifecycle_purge=ok");
+`;
+const FAILURE_HISTORY_SMOKE_SOURCE = `import {
+  AgentBuilder,
+  EventType,
+  InMemoryEventStore,
+  type AgentRuntime,
+  type ModelProvider,
+  type ModelResponse,
+  type ModelResponseChunk,
+  type StoredKajiEvent,
+} from "kaji-sdk";
+
+async function pageHistory(
+  runtime: AgentRuntime,
+  sessionId: string,
+  limit = 2,
+): Promise<StoredKajiEvent[]> {
+  const events: StoredKajiEvent[] = [];
+  let afterSequence = 0;
+  for (;;) {
+    const page = await runtime.history(sessionId, { afterSequence, limit });
+    if (page.length === 0) return events;
+    const nextSequence = page.at(-1)!.sequence;
+    if (nextSequence <= afterSequence) throw new Error("history cursor did not advance");
+    events.push(...page);
+    afterSequence = nextSequence;
+  }
+}
+
+const SAFE_FIELDS = [
+  "tool_name",
+  "tool_call_id",
+  "error_code",
+  "phase",
+  "retryable",
+  "outcome",
+  "reason_code",
+  "recovery_code",
+  "doc_url",
+] as const;
+
+function safeJournalEvidence(event: StoredKajiEvent): Record<string, unknown> {
+  const safe: Record<string, unknown> = { sequence: event.sequence, type: event.type };
+  if (event.turn_id !== undefined) safe.turn_id = event.turn_id;
+  for (const field of SAFE_FIELDS) {
+    const value = Reflect.get(event, field);
+    if (value !== undefined) safe[field] = value;
+  }
+  return safe;
+}
+
+const sessionId = "installed-failure-history-session";
+const promptCanary = "installed-private-prompt-canary";
+const argumentCanary = "installed-private-argument-canary";
+const resultCanary = "installed-private-result-canary";
+const providerSecret = "installed-private-provider-canary";
+const providerError = new Error(providerSecret);
+let providerCalls = 0;
+const provider: ModelProvider = {
+  async generate(): Promise<ModelResponse> {
+    return { content: "", toolCalls: [] };
+  },
+  async *generateStream(): AsyncGenerator<ModelResponseChunk> {
+    providerCalls += 1;
+    if (providerCalls === 1) {
+      yield {
+        delta: "",
+        toolCalls: [
+          {
+            id: "installed-journal-call",
+            name: "journal_probe",
+            args: { value: argumentCanary },
+          },
+        ],
+      };
+      return;
+    }
+    throw providerError;
+  },
+};
+const store = new InMemoryEventStore({ maxSessions: 1, maxEventsPerSession: 100 });
+const runtime = new AgentBuilder()
+  .provider(provider)
+  .integration({
+    register(registry) {
+      registry.register(
+        {
+          name: "journal_probe",
+          description: "Return installed journal proof",
+          parameters: {},
+          risk: "read",
+        },
+        async () => ({ value: resultCanary }),
+      );
+    },
+  })
+  .defaultContext({ principalId: "installed-journal-test" })
+  .build({ store });
+
+let proofFailure: unknown;
+try {
+  let caught: unknown;
+  try {
+    await runtime.turn(promptCanary, { sessionId });
+  } catch (error) {
+    caught = error;
+  }
+  if (caught !== providerError) {
+    throw new Error("provider failure identity was not preserved");
+  }
+  const events = await pageHistory(runtime, sessionId);
+  if (!events.some((event) => event.type === EventType.TOOL_CALL_COMPLETED)) {
+    throw new Error("installed failure history omitted completed tool work");
+  }
+  const failure = events.find((event) => event.type === EventType.AGENT_TURN_FAILED);
+  if (failure === undefined) throw new Error("installed failure history omitted turn failure");
+  if ("error_code" in failure || "recovery_code" in failure) {
+    throw new Error("generic provider failure unexpectedly exposed a durable recovery code");
+  }
+  if (JSON.stringify(failure).includes(providerSecret)) {
+    throw new Error("installed failure history retained the private provider exception");
+  }
+  const safeEvidence = events.map(safeJournalEvidence);
+  const safeJson = JSON.stringify(safeEvidence);
+  for (const canary of [promptCanary, argumentCanary, resultCanary, providerSecret]) {
+    if (safeJson.includes(canary)) {
+      throw new Error("installed safe journal evidence leaked privileged content");
+    }
+  }
+} catch (error) {
+  proofFailure = error;
+} finally {
+  try {
+    const activeTools = await runtime.drainTools(10_000);
+    const activeProviders = await runtime.drainProviders(10_000);
+    if (activeTools.length > 0 || activeProviders.length > 0) {
+      throw new Error("installed failure-history fixture did not drain owned work");
+    }
+    await runtime.purgeSession(sessionId);
+  } catch (error) {
+    proofFailure ??= error;
+  } finally {
+    runtime.close();
+  }
+}
+if (proofFailure !== undefined) throw proofFailure;
+if ((await runtime.history(sessionId)).length !== 0) {
+  throw new Error("installed failure-history fixture retained purged history");
+}
+console.log("failure_history=ok");
+`;
+const LEGACY_LEDGER_TYPES_SOURCE = `import {
+  InMemoryToolIdempotencyLedger,
+  type ToolIdempotencyLedger,
+} from "kaji-sdk";
+
+const backing = new InMemoryToolIdempotencyLedger();
+const legacyLedger: ToolIdempotencyLedger = {
+  claim: (...args) => backing.claim(...args),
+  complete: (...args) => backing.complete(...args),
+  retryableFailure: (...args) => backing.retryableFailure(...args),
+  unknownOutcome: (...args) => backing.unknownOutcome(...args),
+  releaseCompleted: (...args) => backing.releaseCompleted(...args),
+};
+void legacyLedger;
+`;
+const baseEnvironment: NodeJS.ProcessEnv = {
+  ...process.env,
+  npm_config_audit: "false",
+  npm_config_fund: "false",
+  npm_config_update_notifier: "false",
+};
+const HANDOFF_ENVIRONMENT_KEYS = [
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "PATH",
+  "SSL_CERT_DIR",
+  "SSL_CERT_FILE",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "BUN_CONFIG_REGISTRY",
+  "BUN_INSTALL_CACHE_DIR",
+  "NO_COLOR",
+  "npm_config_audit",
+  "npm_config_cache",
+  "npm_config_fund",
+  "npm_config_registry",
+  "npm_config_update_notifier",
+  "npm_config_userconfig",
+] as const;
+const PROTECTED_HANDOFF_TOKENS = [
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "NODE_AUTH_TOKEN",
+  "NPM_TOKEN",
+] as const;
+
+function tokenFreeHandoffEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const environment = Object.fromEntries(
+    HANDOFF_ENVIRONMENT_KEYS.flatMap((name) =>
+      source[name] === undefined ? [] : [[name, source[name]]],
+    ),
+  );
+  for (const name of PROTECTED_HANDOFF_TOKENS) delete environment[name];
+  return environment;
+}
+
+function sha256(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function sanitizeRetainedCommit(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{40}$/.test(value) ? value : null;
+}
+
+function sanitizeRetainedSha256(value: unknown): string | null {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+function sanitizeRetainedArtifactSha256(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const hash = sanitizeRetainedSha256((value as Record<string, unknown>)[PACKAGE_TARBALL]);
+  return hash === null ? {} : { [PACKAGE_TARBALL]: hash };
+}
+
+function isRetainedNodeVersion(value: unknown): value is string {
+  return typeof value === "string" && /^v(?:22|24)\.[0-9]+\.[0-9]+$/.test(value);
+}
+
+function isSmokePhase(value: unknown): value is SmokePhase {
+  return typeof value === "string" && SMOKE_PHASES.has(value);
+}
+
+function isCommandFailureKind(value: unknown): value is CommandFailureKind {
+  return typeof value === "string" && (COMMAND_FAILURE_KINDS as readonly string[]).includes(value);
+}
+
+function filesBelow(directory: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...filesBelow(path));
+    else if (entry.isFile()) files.push(path);
+  }
+  return files;
+}
+
+function parseSourceMap(path: string): SourceMapDocument {
+  const document = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    throw new Error(`packed source map is not a JSON object: ${path}`);
+  }
+  return document as SourceMapDocument;
+}
+
+function isGitHubSourceMap(path: string, document: SourceMapDocument): boolean {
+  if (/^dist\/integrations\/github(?:\.[^/]+)*\.map$/.test(path)) return true;
+  return (
+    Array.isArray(document.sources) &&
+    document.sources.some(
+      (source) =>
+        typeof source === "string" &&
+        /(?:^|\/)(?:src\/integrations\/github(?:-package-internal)?|registry\/github\/[^/]+)\.ts$/.test(
+          source.replaceAll("\\", "/"),
+        ),
+    )
+  );
+}
+
+function inspectPrivateGitHubCompositionSources(installedPackageRoot: string): boolean {
+  const standaloneSourcePacked = PRIVATE_GITHUB_COMPOSITION_PATHS.some((path) =>
+    existsSync(join(installedPackageRoot, path)),
+  );
+  const sourceMaps = filesBelow(join(installedPackageRoot, "dist"))
+    .filter((path) => path.endsWith(".map"))
+    .map((absolutePath) => {
+      const path = absolutePath.slice(installedPackageRoot.length + 1).replaceAll("\\", "/");
+      const document = parseSourceMap(absolutePath);
+      return { path, document, encoded: JSON.stringify(document) };
+    });
+  const githubSourceMaps = sourceMaps.filter(({ path, document }) =>
+    isGitHubSourceMap(path, document),
+  );
+  for (const expected of EXPECTED_GITHUB_SOURCE_MAPS) {
+    if (!githubSourceMaps.some(({ path }) => path === expected)) {
+      throw new Error(`installed package is missing GitHub source map ${expected}`);
+    }
+  }
+  return (
+    standaloneSourcePacked ||
+    githubSourceMaps.some(({ document }) => {
+      if (!Object.hasOwn(document, "sourcesContent")) return false;
+      return (
+        !Array.isArray(document.sourcesContent) ||
+        document.sourcesContent.some((source) => typeof source === "string")
+      );
+    }) ||
+    sourceMaps.some(({ encoded }) =>
+      PRIVATE_GITHUB_COMPOSITION_SOURCE_CANARIES.some((canary) => encoded.includes(canary)),
+    )
+  );
+}
+
+function parseArguments(argv: string[]): SmokeArguments {
+  const parsed: SmokeArguments = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index]!;
+    if (argument === "--release-manifest") {
+      if (parsed.releaseManifest !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.releaseManifest = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--expected-commit") {
+      if (parsed.expectedCommit !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.expectedCommit = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--output") {
+      if (parsed.output !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.output = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--protected") {
+      if (parsed.protected !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.protected = true;
+    } else if (argument === "--configured-runner-label") {
+      if (parsed.configuredRunnerLabel !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (value !== "ubuntu-22.04" && value !== "ubuntu-24.04") {
+        throw new Error("--configured-runner-label must be ubuntu-22.04 or ubuntu-24.04");
+      }
+      parsed.configuredRunnerLabel = value;
+      index += 1;
+    } else if (argument === "--producer-artifact-id") {
+      if (parsed.producerArtifactId !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (!/^[1-9][0-9]*$/u.test(value)) {
+        throw new Error("--producer-artifact-id must be a positive integer");
+      }
+      const artifactId = Number(value);
+      if (!Number.isSafeInteger(artifactId)) {
+        throw new Error("--producer-artifact-id exceeds the safe integer range");
+      }
+      parsed.producerArtifactId = artifactId;
+      index += 1;
+    } else if (argument === "--producer-artifact-digest") {
+      if (parsed.producerArtifactDigest !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (!/^[0-9a-f]{64}$/u.test(value)) {
+        throw new Error("--producer-artifact-digest must be an upload-artifact SHA-256");
+      }
+      parsed.producerArtifactDigest = value;
+      index += 1;
+    } else if (argument === "--for-handoff") {
+      if (parsed.forHandoff !== undefined) throw new Error(`${argument} may be supplied once`);
+      const value = requiredFlagValue(argv, index, argument);
+      if (value !== "artifact-contract" && value !== "node") {
+        throw new Error("--for-handoff must be artifact-contract or node");
+      }
+      parsed.forHandoff = value;
+      index += 1;
+    } else if (argument === "--candidate-root") {
+      if (parsed.candidateRoot !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.candidateRoot = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--source-commit") {
+      if (parsed.sourceCommit !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.sourceCommit = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--artifact-sha256") {
+      if (parsed.artifactSha256 !== undefined) throw new Error(`${argument} may be supplied once`);
+      parsed.artifactSha256 = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--node-binary") {
+      if (parsed.handoffNodeBinary !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      parsed.handoffNodeBinary = requiredFlagValue(argv, index, argument);
+      index += 1;
+    } else if (argument === "--expected-node-major") {
+      if (parsed.expectedNodeMajor !== undefined)
+        throw new Error(`${argument} may be supplied once`);
+      const value = Number(requiredFlagValue(argv, index, argument));
+      if (value !== 22 && value !== 24) {
+        throw new Error("--expected-node-major must be 22 or 24");
+      }
+      parsed.expectedNodeMajor = value;
+      index += 1;
+    } else if (argument.startsWith("--") || parsed.tarball !== undefined) {
+      throw new Error(`unexpected package smoke argument: ${argument}`);
+    } else {
+      parsed.tarball = argument;
+    }
+  }
+  if ((parsed.releaseManifest === undefined) !== (parsed.expectedCommit === undefined)) {
+    throw new Error("--release-manifest and --expected-commit must be supplied together");
+  }
+  if (parsed.forHandoff === undefined) {
+    if (
+      parsed.candidateRoot !== undefined ||
+      parsed.sourceCommit !== undefined ||
+      parsed.artifactSha256 !== undefined ||
+      parsed.handoffNodeBinary !== undefined
+    ) {
+      throw new Error("handoff-only flags require --for-handoff");
+    }
+    const protectedInputs = [
+      parsed.configuredRunnerLabel,
+      parsed.producerArtifactId,
+      parsed.producerArtifactDigest,
+      parsed.expectedNodeMajor,
+    ];
+    if (parsed.protected === true) {
+      if (
+        parsed.releaseManifest === undefined ||
+        parsed.expectedCommit === undefined ||
+        protectedInputs.some((value) => value === undefined)
+      ) {
+        throw new Error("protected package smoke arguments are incomplete");
+      }
+    } else if (protectedInputs.some((value) => value !== undefined)) {
+      throw new Error("protected package smoke inputs require --protected");
+    }
+    return parsed;
+  }
+  if (
+    parsed.protected !== undefined ||
+    parsed.configuredRunnerLabel !== undefined ||
+    parsed.producerArtifactId !== undefined ||
+    parsed.producerArtifactDigest !== undefined ||
+    parsed.tarball === undefined ||
+    parsed.sourceCommit === undefined ||
+    parsed.artifactSha256 === undefined ||
+    parsed.output === undefined ||
+    parsed.releaseManifest !== undefined ||
+    parsed.expectedCommit !== undefined ||
+    sanitizeRetainedCommit(parsed.sourceCommit) === null ||
+    !/^[0-9a-f]{64}$/.test(parsed.artifactSha256)
+  ) {
+    throw new Error("incomplete or invalid supplied-tarball handoff arguments");
+  }
+  if (
+    parsed.forHandoff === "artifact-contract" &&
+    (parsed.candidateRoot === undefined ||
+      parsed.handoffNodeBinary !== undefined ||
+      parsed.expectedNodeMajor !== undefined)
+  ) {
+    throw new Error("artifact-contract requires only --candidate-root");
+  }
+  if (
+    parsed.forHandoff === "node" &&
+    (parsed.candidateRoot !== undefined ||
+      parsed.handoffNodeBinary === undefined ||
+      parsed.expectedNodeMajor === undefined)
+  ) {
+    throw new Error("node handoff requires --node-binary and --expected-node-major");
+  }
+  return parsed;
+}
+
+function requiredFlagValue(argv: string[], index: number, flag: string): string {
+  const value = argv[index + 1];
+  if (value === undefined || value === "" || value.startsWith("--")) {
+    throw new Error(`${flag} requires a value`);
+  }
+  return value;
+}
+
+function requestedOutput(argv: string[]): string | undefined {
+  const index = argv.indexOf("--output");
+  const output = index === -1 ? undefined : argv[index + 1];
+  if (output === undefined || output === "" || output.startsWith("--")) return undefined;
+  return output;
+}
+
+function artifactIdentity(
+  tarball: string,
+  releaseManifest: string | undefined,
+  expectedCommit: string | undefined,
+): ArtifactIdentity {
+  const artifactHash = sha256(tarball);
+  if (releaseManifest === undefined || expectedCommit === undefined) {
+    return {
+      commit:
+        sanitizeRetainedCommit(process.env.KAJI_RELEASE_COMMIT) ??
+        sanitizeRetainedCommit(process.env.GITHUB_SHA),
+      manifestSha256: null,
+      artifactSha256: { [PACKAGE_TARBALL]: artifactHash },
+    };
+  }
+  const commit = sanitizeRetainedCommit(expectedCommit);
+  if (basename(tarball) !== PACKAGE_TARBALL) {
+    throw new Error("release manifest requires the canonical npm tarball filename");
+  }
+  const manifestPath = resolve(releaseManifest);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    commit?: unknown;
+    artifacts?: Array<{ file?: unknown; sha256?: unknown }>;
+  };
+  if (commit === null || manifest.commit !== commit) {
+    throw new Error("release manifest commit differs from the expected commit");
+  }
+  const entry = manifest.artifacts?.find((candidate) => candidate.file === PACKAGE_TARBALL);
+  if (entry?.sha256 !== artifactHash) {
+    throw new Error("supplied npm tarball differs from its release manifest identity");
+  }
+  return {
+    commit,
+    manifestSha256: sha256(manifestPath),
+    artifactSha256: { [PACKAGE_TARBALL]: artifactHash },
+  };
+}
+
+const PROTECTED_GITHUB_ENVIRONMENT = [
+  "GITHUB_ACTIONS",
+  "GITHUB_SERVER_URL",
+  "GITHUB_REPOSITORY",
+  "GITHUB_RUN_ID",
+  "GITHUB_RUN_ATTEMPT",
+  "GITHUB_JOB",
+  "GITHUB_WORKFLOW_REF",
+  "GITHUB_WORKFLOW_SHA",
+  "GITHUB_SHA",
+  "RUNNER_ENVIRONMENT",
+  "RUNNER_OS",
+  "RUNNER_ARCH",
+  "ImageOS",
+  "ImageVersion",
+] as const;
+const PROTECTED_GITHUB_SERVER_URL = "https://github.com";
+const PROTECTED_GITHUB_REPOSITORY = "enkyuan/alloy";
+const PROTECTED_WORKFLOW_REFS = new Set([
+  "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
+  "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
+]);
+
+export function protectedReceiptEnvironment(
+  source: NodeJS.ProcessEnv = process.env,
+): Record<(typeof PROTECTED_GITHUB_ENVIRONMENT)[number], string> {
+  const environment = Object.fromEntries(
+    PROTECTED_GITHUB_ENVIRONMENT.map((name) => {
+      const value = source[name];
+      if (value === undefined || value === "") {
+        throw new Error(`protected package smoke is missing ${name}`);
+      }
+      return [name, value];
+    }),
+  ) as Record<(typeof PROTECTED_GITHUB_ENVIRONMENT)[number], string>;
+  if (
+    environment.GITHUB_ACTIONS !== "true" ||
+    environment.GITHUB_SERVER_URL !== PROTECTED_GITHUB_SERVER_URL ||
+    environment.GITHUB_REPOSITORY !== PROTECTED_GITHUB_REPOSITORY ||
+    environment.GITHUB_RUN_ATTEMPT !== "1" ||
+    environment.GITHUB_JOB !== "node-compat" ||
+    !PROTECTED_WORKFLOW_REFS.has(environment.GITHUB_WORKFLOW_REF) ||
+    !environment.GITHUB_WORKFLOW_REF.startsWith(`${environment.GITHUB_REPOSITORY}/`) ||
+    !/^[0-9a-f]{40}$/u.test(environment.GITHUB_SHA) ||
+    environment.GITHUB_WORKFLOW_SHA !== environment.GITHUB_SHA
+  ) {
+    throw new Error("protected package smoke GitHub identity does not match policy");
+  }
+  return environment;
+}
+
+function positiveSafeInteger(value: string, label: string): number {
+  if (!/^[1-9][0-9]*$/u.test(value)) throw new Error(`${label} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new Error(`${label} exceeds the safe integer range`);
+  return parsed;
+}
+
+function reviewedPositiveSafeInteger(value: string | number, label: string): number {
+  return positiveSafeInteger(String(value), label);
+}
+
+export function protectedOrdinaryReceiptContext(
+  input: ProtectedOrdinaryReceiptReviewInput,
+): OrdinaryReceiptContext {
+  const expectedCommit = sanitizeRetainedCommit(input.expectedCommit);
+  const expectedNodeMajor = Number(input.expectedNodeMajor);
+  const runId = reviewedPositiveSafeInteger(input.githubRunId, "GitHub run ID");
+  const runAttempt = reviewedPositiveSafeInteger(input.githubRunAttempt, "GitHub run attempt");
+  const producerArtifactId = reviewedPositiveSafeInteger(
+    input.producerArtifactId,
+    "producer artifact ID",
+  );
+  const expectedCell =
+    expectedNodeMajor === 22
+      ? ({ label: "ubuntu-22.04", imageOS: "ubuntu22" } as const)
+      : expectedNodeMajor === 24
+        ? ({ label: "ubuntu-24.04", imageOS: "ubuntu24" } as const)
+        : null;
+  if (
+    expectedCommit === null ||
+    expectedCell === null ||
+    input.githubServerUrl !== PROTECTED_GITHUB_SERVER_URL ||
+    input.githubRepository !== PROTECTED_GITHUB_REPOSITORY ||
+    runAttempt !== 1 ||
+    !PROTECTED_WORKFLOW_REFS.has(input.githubWorkflowRef) ||
+    !input.githubWorkflowRef.startsWith(`${input.githubRepository}/`) ||
+    input.githubWorkflowSha !== expectedCommit ||
+    input.githubJob !== "node-compat" ||
+    input.runnerEnvironment !== "github-hosted" ||
+    input.runnerOS !== "Linux" ||
+    input.runnerArch !== "X64" ||
+    input.platformOS !== "linux" ||
+    input.platformArch !== "x64" ||
+    input.configuredRunnerLabel !== expectedCell.label ||
+    input.imageOS !== expectedCell.imageOS ||
+    !/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/u.test(input.imageVersion) ||
+    !/^[0-9a-f]{64}$/u.test(input.producerArtifactDigest)
+  ) {
+    throw new Error("protected package smoke reviewed context does not match policy");
+  }
+  const packageArtifactPath = realpathSync(input.packageArtifactPath);
+  const packageArtifactSize = lstatSync(packageArtifactPath).size;
+  if (
+    basename(packageArtifactPath) !== PACKAGE_TARBALL ||
+    !Number.isSafeInteger(packageArtifactSize) ||
+    packageArtifactSize <= 0
+  ) {
+    throw new Error("reviewed npm tarball identity is invalid");
+  }
+  return {
+    executionMode: "protected",
+    packageArtifact: {
+      name: PACKAGE_TARBALL,
+      size: packageArtifactSize,
+      sha256: sha256(packageArtifactPath),
+    },
+    producerArtifact: {
+      name: "kaji-beta-artifacts",
+      id: producerArtifactId,
+      digest: `sha256:${input.producerArtifactDigest}`,
+      runId,
+      runAttempt,
+      headSha: expectedCommit,
+    },
+    runner: {
+      configuredLabel: expectedCell.label,
+      environment: "github-hosted",
+      runnerOS: "Linux",
+      runnerArch: "X64",
+      platformOS: "linux",
+      platformArch: "x64",
+      imageOS: expectedCell.imageOS,
+      imageVersion: input.imageVersion,
+    },
+    invocation: {
+      workflowRun:
+        `${PROTECTED_GITHUB_SERVER_URL}/${PROTECTED_GITHUB_REPOSITORY}` + `/actions/runs/${runId}`,
+      runId,
+      runAttempt,
+      workflowRef: input.githubWorkflowRef,
+      workflowSha: expectedCommit,
+      job: "node-compat",
+    },
+  };
+}
+
+function ordinaryReceiptContext(
+  arguments_: SmokeArguments,
+  identity: ArtifactIdentity,
+  nodeVersion: string,
+  tarball: string,
+): OrdinaryReceiptContext {
+  const packageArtifactSize = lstatSync(tarball).size;
+  const packageArtifactSha256 = sha256(tarball);
+  if (!Number.isSafeInteger(packageArtifactSize) || packageArtifactSize <= 0) {
+    throw new Error("npm tarball size must be a positive safe integer");
+  }
+  if (identity.artifactSha256[PACKAGE_TARBALL] !== packageArtifactSha256) {
+    throw new Error("npm tarball bytes differ from the retained artifact identity");
+  }
+  if (arguments_.protected !== true) {
+    return {
+      executionMode: "local",
+      packageArtifact: {
+        name: PACKAGE_TARBALL,
+        size: packageArtifactSize,
+        sha256: packageArtifactSha256,
+      },
+      producerArtifact: {
+        name: "local",
+        id: 0,
+        digest: "local",
+        runId: 0,
+        runAttempt: 0,
+        headSha: identity.commit,
+      },
+      runner: {
+        configuredLabel: "local",
+        environment: "local",
+        runnerOS: "local",
+        runnerArch: "local",
+        platformOS: process.platform,
+        platformArch: process.arch,
+        imageOS: "local",
+        imageVersion: "local",
+      },
+      invocation: {
+        workflowRun: "local",
+        runId: 0,
+        runAttempt: 0,
+        workflowRef: "local",
+        workflowSha: identity.commit,
+        job: "local",
+      },
+    };
+  }
+
+  const environment = protectedReceiptEnvironment();
+  const expectedNodeMajor = arguments_.expectedNodeMajor!;
+  const nodeMajor = Number(semverFromVersionOutput(nodeVersion, "Node").split(".", 1)[0]);
+  if (nodeMajor !== expectedNodeMajor) {
+    throw new Error("protected package smoke runner/runtime cell does not match policy");
+  }
+  if (
+    identity.commit === null ||
+    environment.GITHUB_SHA !== identity.commit ||
+    environment.GITHUB_WORKFLOW_SHA !== identity.commit
+  ) {
+    throw new Error("protected package smoke workflow SHA differs from the candidate commit");
+  }
+  return protectedOrdinaryReceiptContext({
+    packageArtifactPath: tarball,
+    expectedCommit: identity.commit,
+    expectedNodeMajor,
+    configuredRunnerLabel: arguments_.configuredRunnerLabel!,
+    producerArtifactId: arguments_.producerArtifactId!,
+    producerArtifactDigest: arguments_.producerArtifactDigest!,
+    githubServerUrl: environment.GITHUB_SERVER_URL,
+    githubRepository: environment.GITHUB_REPOSITORY,
+    githubRunId: environment.GITHUB_RUN_ID,
+    githubRunAttempt: environment.GITHUB_RUN_ATTEMPT,
+    githubWorkflowRef: environment.GITHUB_WORKFLOW_REF,
+    githubWorkflowSha: environment.GITHUB_WORKFLOW_SHA,
+    githubJob: environment.GITHUB_JOB,
+    runnerEnvironment: environment.RUNNER_ENVIRONMENT,
+    runnerOS: environment.RUNNER_OS,
+    runnerArch: environment.RUNNER_ARCH,
+    platformOS: process.platform,
+    platformArch: process.arch,
+    imageOS: environment.ImageOS,
+    imageVersion: environment.ImageVersion,
+  });
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, child]) => [key, stableValue(child)]),
+  );
+}
+
+function writeAtomicReceipt(output: string, encoded: string): void {
+  const path = resolve(output);
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = join(dirname(path), `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporary, "wx", 0o600);
+    writeFileSync(descriptor, encoded, "utf8");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(temporary, path);
+    const directoryDescriptor = openSync(dirname(path), "r");
+    try {
+      fsyncSync(directoryDescriptor);
+    } finally {
+      closeSync(directoryDescriptor);
+    }
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    rmSync(temporary, { force: true });
+    throw error;
+  }
+}
+
+function emitReceipt(receipt: Record<string, unknown>, output: string | undefined): void {
+  const encoded = `${JSON.stringify(receipt)}\n`;
+  if (output !== undefined) writeAtomicReceipt(output, encoded);
+  process.stdout.write(encoded);
+}
+
+function emitHandoffReceipt(receipt: Record<string, unknown>, output: string): void {
+  const encoded = `${JSON.stringify(stableValue(receipt), null, 2)}\n`;
+  writeAtomicReceipt(output, encoded);
+  process.stdout.write(encoded);
+}
+
+export interface PendingSmokeReceipt {
+  readonly kind: "ordinary" | "handoff";
+  readonly receipt: Record<string, unknown>;
+  readonly output: string | undefined;
+  readonly diagnostics?: readonly string[];
+}
+
+export interface SmokeFinalizerDependencies {
+  readonly removeWorkspace: (path: string) => void;
+  readonly emitOrdinary: (receipt: Record<string, unknown>, output: string | undefined) => void;
+  readonly emitHandoff: (receipt: Record<string, unknown>, output: string) => void;
+  readonly writeDiagnostic: (value: string) => void;
+}
+
+const smokeFinalizerDependencies: SmokeFinalizerDependencies = {
+  removeWorkspace: (path) => {
+    if (path !== "") rmSync(path, { recursive: true, force: true });
+  },
+  emitOrdinary: emitReceipt,
+  emitHandoff: emitHandoffReceipt,
+  writeDiagnostic: (value) => process.stdout.write(value),
+};
+
+export function finalizeSmokeRun(
+  workspace: string,
+  pending: PendingSmokeReceipt | null,
+  cleanupFailureReceipt: PendingSmokeReceipt | null,
+  dependencies: SmokeFinalizerDependencies = smokeFinalizerDependencies,
+): void {
+  try {
+    dependencies.removeWorkspace(workspace);
+  } catch {
+    if (cleanupFailureReceipt?.kind === "ordinary") {
+      dependencies.emitOrdinary(cleanupFailureReceipt.receipt, cleanupFailureReceipt.output);
+    }
+    throw new SmokeCommandError("workspace:cleanup", "cleanup");
+  }
+  if (pending === null) return;
+  for (const diagnostic of pending.diagnostics ?? []) {
+    dependencies.writeDiagnostic(`${diagnostic}\n`);
+  }
+  if (pending.kind === "ordinary") {
+    dependencies.emitOrdinary(pending.receipt, pending.output);
+  } else {
+    dependencies.emitHandoff(pending.receipt, pending.output!);
+  }
+}
+
+function githubProofEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const allowed = [
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "PATH",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+  ];
+  const proof = Object.fromEntries(
+    allowed.flatMap((name) => (environment[name] === undefined ? [] : [[name, environment[name]]])),
+  );
+  return {
+    ...proof,
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
+    NO_COLOR: "1",
+  };
+}
+
+function assertGithubPackageProof(
+  output: string,
+  installedPackageRoot: string,
+  typescriptDeclarationChecks: TypeScriptDeclarationChecks,
+): GitHubPackageProof {
+  let document: unknown;
+  try {
+    document = JSON.parse(output);
+  } catch {
+    throw new Error("GitHub package proof emitted invalid JSON");
+  }
+  const sharedAbi = JSON.parse(
+    readFileSync(
+      join(installedPackageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+      "utf8",
+    ),
+  ) as {
+    version: "1.0.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
+  const apiFixture = JSON.parse(
+    readFileSync(
+      join(installedPackageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+      "utf8",
+    ),
+  ) as { version: "1.0.0"; cases: readonly unknown[] };
+  const packageAbi = JSON.parse(
+    readFileSync(
+      join(installedPackageRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+      "utf8",
+    ),
+  ) as {
+    schema_version: "1.0.0";
+    catalog_version: "0.2.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
+  const copiedManifest = JSON.parse(
+    readFileSync(join(installedPackageRoot, "registry/github/manifest.json"), "utf8"),
+  ) as {
+    version: "0.1.0";
+    tools: ReadonlyArray<{ risk?: unknown }>;
+  };
+  const privateGitHubCompositionSourcesPacked =
+    inspectPrivateGitHubCompositionSources(installedPackageRoot);
+  if (privateGitHubCompositionSourcesPacked) {
+    throw new Error("installed package contains private GitHub composition source");
+  }
+  const expected: GitHubPackageProof = {
+    schemaVersion: 5,
+    evidenceClass: "offline_exact_artifact_smoke",
+    integration: "github",
+    runtime: "typescript",
+    network: "blocked",
+    liveProvider: false,
+    sharedAbiVersion: sharedAbi.version,
+    packageAbiSchemaVersion: packageAbi.schema_version,
+    packageCatalogVersion: packageAbi.catalog_version,
+    apiFixtureVersion: apiFixture.version,
+    sharedFixtureCaseCount: apiFixture.cases.length,
+    publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
+    packageCatalog: {
+      schemaVersion: packageAbi.schema_version,
+      catalogVersion: packageAbi.catalog_version,
+      toolCount: packageAbi.tools.length as 15,
+      readToolCount: packageAbi.tools.filter((tool) => tool.risk === "read").length as 13,
+      tools: packageAbi.tools.map((tool) => Reflect.get(tool, "name") as string),
+      readTools: packageAbi.tools
+        .filter((tool) => tool.risk === "read")
+        .map((tool) => Reflect.get(tool, "name") as string),
+      providerAliases: GITHUB_PROVIDER_ALIASES,
+      catalogNames: GITHUB_CATALOG_NAMES,
+    },
+    cliCopiedCatalog: {
+      manifestVersion: copiedManifest.version,
+      toolCount: copiedManifest.tools.length as 6,
+      readToolCount: copiedManifest.tools.filter((tool) => tool.risk === "read").length as 4,
+      tools: copiedManifest.tools.map((tool) => Reflect.get(tool, "name") as string),
+      readTools: copiedManifest.tools
+        .filter((tool) => tool.risk === "read")
+        .map((tool) => Reflect.get(tool, "name") as string),
+    },
+    esmSharedAbiMatched: true,
+    cjsSharedAbiMatched: true,
+    esmPackageAbiMatched: true,
+    cjsPackageAbiMatched: true,
+    esmClassIdentityMatched: true,
+    cjsClassIdentityMatched: true,
+    esmFactoryIdentityMatched: true,
+    cjsFactoryIdentityMatched: true,
+    esmRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    cjsRuntimeExports: ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    esmDeclarationExports: [
+      "CreateGitHubIntegrationOptions",
+      "GitHubIntegration",
+      "createGithubIntegration",
+      "inspectIntegration",
+    ],
+    cjsDeclarationExports: [
+      "CreateGitHubIntegrationOptions",
+      "GitHubIntegration",
+      "createGithubIntegration",
+      "inspectIntegration",
+    ],
+    typescriptDeclarationChecks,
+    privateGitHubCompositionSourcesPacked,
+    privateGitHubCompositionSourceImportsRejected: true,
+    closedCallsDeniedBeforeCredentialAccess: true,
+    approvalDeniedBeforeCredentialAccess: true,
+    repositoryDeniedBeforeCredentialAccess: true,
+    githubCatalogEventsVerified: ["requested", "started", "failed"],
+    genericSyntheticCatalogEventsVerified: ["requested", "started", "completed"],
+    githubFailureRecovery: {
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+      reason_code: "github_token_missing",
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+      doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+    },
+    githubObservabilitySinksVerified: true,
+    unknownMutationPreserved: true,
+    mutationRetries: 0,
+    lifecycle: {
+      githubFailure: {
+        stages: ["requested", "started", "failed"],
+        providerAlias: "github_get_file",
+        catalogName: "github.get_file",
+        sameIdentityAtEveryStage: true,
+      },
+      syntheticCompletion: {
+        stages: ["requested", "started", "completed"],
+        providerAlias: "synthetic_complete",
+        catalogName: "synthetic.complete",
+        sameIdentityAtEveryStage: true,
+      },
+    },
+    policyBeforeRequest: {
+      testFile: POLICY_TEST_FILE,
+      testName: POLICY_TEST_NAME,
+      tokenLookups: 0,
+      requestAttempts: 0,
+    },
+    aliasCollisionRejected: true,
+    conclusion: "passed",
+    failureCode: null,
+  };
+  if (
+    typeof document !== "object" ||
+    document === null ||
+    Array.isArray(document) ||
+    JSON.stringify(document) !== JSON.stringify(expected)
+  ) {
+    throw new Error("GitHub package proof receipt is invalid");
+  }
+  return document as GitHubPackageProof;
+}
+
+async function runCommand(
+  phase: SmokePhase,
+  command: string,
+  args: string[],
+  cwd = installRoot,
+  environment: NodeJS.ProcessEnv = baseEnvironment,
+  timeoutMs = LOCAL_TIMEOUT_MS,
+  expectedStatus = 0,
+  includeStderr = false,
+): Promise<string> {
+  try {
+    const completed = await runBoundedCommand({
+      command,
+      args,
+      cwd,
+      env: environment,
+      timeoutMs,
+      maxOutputBytes: MAX_OUTPUT_BYTES,
+      check: false,
+    });
+    if (completed.status !== expectedStatus) {
+      if (
+        phase === "npm:github-package-proof" ||
+        phase === "bun:github-package-proof" ||
+        phase === "handoff:npm-github-proof" ||
+        phase === "handoff:bun-github-proof"
+      ) {
+        const code = safeGitHubProofFailureCode(completed.stderr);
+        process.stderr.write(`package smoke child failure at ${phase}: code=${code}\n`);
+      } else if (phase.startsWith("handoff:")) {
+        const diagnostic = safeHandoffDiagnostic(completed.stderr);
+        if (diagnostic !== "") {
+          process.stderr.write(`package smoke child stderr at ${phase}: ${diagnostic}\n`);
+        }
+      }
+      throw new CommandExitError(completed.status);
+    }
+    return includeStderr ? `${completed.stdout}\n${completed.stderr}` : completed.stdout;
+  } catch (error) {
+    if (error instanceof CommandError) {
+      throw new SmokeCommandError(phase, classifyCommandFailure(error));
+    }
+    throw error;
+  }
+}
+
+export function safeGitHubProofFailureCode(output: string): InstalledGitHubProofFailureCode {
+  for (const match of output.matchAll(
+    /^installed GitHub package proof failed at [a-z][a-z-]* code=([a-z_]+)\r?$/gmu,
+  )) {
+    const code = match[1]!;
+    if (INSTALLED_GITHUB_PROOF_FAILURE_CODES.includes(code as InstalledGitHubProofFailureCode)) {
+      return code as InstalledGitHubProofFailureCode;
+    }
+  }
+  return "proof_failed";
+}
+
+function safeHandoffDiagnostic(output: string): string {
+  const printable = [...output]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+    })
+    .join("");
+  return printable
+    .replaceAll(/(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/giu, "[redacted-token]")
+    .replaceAll(
+      /("(?:authorization|password|secret|token)"\s*:\s*")(?:(?:\\.)|[^"\\\r\n])*"/giu,
+      '$1[redacted]"',
+    )
+    .replaceAll(/\b(authorization\s*[:=]\s*)[^\r\n]*/giu, "$1[redacted]")
+    .replaceAll(/\b(authorization|password|secret|token)(\s*[:=]\s*)\S+/giu, "$1$2[redacted]")
+    .trim()
+    .slice(-4_096);
+}
+
+async function runHandoffCommand(
+  phase: HandoffPhase,
+  command: string,
+  args: string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv = baseEnvironment,
+  timeoutMs = PACKAGE_TIMEOUT_MS,
+): Promise<string> {
+  const executable = basename(command);
+  if (
+    (executable === "npm" && args[0] === "pack") ||
+    (executable === "bun" && args[0] === "run" && args[1] === "build") ||
+    args.some((argument, index) => argument === "npm" && args[index + 1] === "pack")
+  ) {
+    throw new Error("supplied-tarball handoff cannot build or pack");
+  }
+  const childEnvironment = tokenFreeHandoffEnvironment(environment);
+  if (PROTECTED_HANDOFF_TOKENS.some((name) => name in childEnvironment)) {
+    throw new Error("supplied-tarball handoff child environment retained a protected token");
+  }
+  return runCommand(phase, command, args, cwd, childEnvironment, timeoutMs);
+}
+
+function handoffDependencyClosure(
+  tarball: string,
+  vendorRoot: string,
+): {
+  dependencies: Record<string, string>;
+  installArgs: string[];
+} {
+  const packages = new Map<string, string>();
+  const visit = (name: string, requestedPath: string): void => {
+    const path = realpathSync(requestedPath);
+    const existing = packages.get(name);
+    if (existing !== undefined) {
+      if (existing !== path) {
+        throw new Error(`handoff dependency graph has conflicting local copies of ${name}`);
+      }
+      return;
+    }
+    const manifest = JSON.parse(
+      readFileSync(join(path, "package.json"), "utf8"),
+    ) as LocalDependencyManifest;
+    if (
+      manifest.name !== name ||
+      semverFromVersionOutput(manifest.version, name) !== manifest.version
+    ) {
+      throw new Error(`handoff dependency identity changed for ${name}`);
+    }
+    packages.set(name, path);
+    const nodeModules = name.startsWith("@") ? dirname(dirname(path)) : dirname(path);
+    for (const dependency of Object.keys(manifest.dependencies ?? {}).sort()) {
+      visit(dependency, join(nodeModules, dependency));
+    }
+    for (const peer of Object.keys(manifest.peerDependencies ?? {}).sort()) {
+      if (manifest.peerDependenciesMeta?.[peer]?.optional !== true) {
+        visit(peer, join(nodeModules, peer));
+      }
+    }
+  };
+  for (const name of ["zod", "ajv", "ajv-formats", "openai", "@anthropic-ai/sdk", "@types/node"]) {
+    visit(name, join(packageRoot, "node_modules", name));
+  }
+  mkdirSync(vendorRoot, { recursive: true });
+  const mirrored = [...packages]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([name, source]) => {
+      const path = join(vendorRoot, ...name.split("/"));
+      mkdirSync(dirname(path), { recursive: true });
+      cpSync(source, path, { recursive: true, dereference: true, errorOnExist: true });
+      return { name, path };
+    });
+  const mirroredPaths = new Map(mirrored.map(({ name, path }) => [name, path]));
+  for (const { name, path } of mirrored) {
+    const manifestPath = join(path, "package.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    const dependencies = manifest.dependencies as Record<string, string> | undefined;
+    if (dependencies !== undefined) {
+      for (const dependency of Object.keys(dependencies)) {
+        const dependencyPath = mirroredPaths.get(dependency);
+        if (dependencyPath === undefined) {
+          throw new Error(`handoff runtime closure omitted ${name} dependency ${dependency}`);
+        }
+        dependencies[dependency] = `file:${dependencyPath}`;
+      }
+    }
+    delete manifest.devDependencies;
+    delete manifest.optionalDependencies;
+    delete manifest.peerDependencies;
+    delete manifest.peerDependenciesMeta;
+    delete manifest.workspaces;
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+  }
+  const local = mirrored.map(({ name, path }) => [name, `file:${path}`] as const);
+  return {
+    dependencies: Object.fromEntries([["kaji-sdk", `file:${tarball}`], ...local]),
+    installArgs: [tarball, ...local.map(([, spec]) => spec)],
+  };
+}
+
+function assertRealInstalledCopy(root: string): string {
+  const path = join(root, "node_modules/kaji-sdk");
+  const stat = lstatSync(path);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error("supplied artifact was not installed as a real package directory");
+  }
+  const real = realpathSync(path);
+  const boundary = realpathSync(root);
+  const relation = relative(boundary, real);
+  if (
+    relation.startsWith("..") ||
+    resolve(boundary, relation) !== real ||
+    real === realpathSync(packageRoot)
+  ) {
+    throw new Error("supplied artifact resolved through a link or workspace package");
+  }
+  const manifest = JSON.parse(readFileSync(join(real, "package.json"), "utf8")) as {
+    name?: unknown;
+  };
+  if (manifest.name !== "kaji-sdk") throw new Error("installed package identity changed");
+  return real;
+}
+
+async function installHandoffArtifact(
+  manager: PackageManager,
+  root: string,
+  tarball: string,
+): Promise<string> {
+  mkdirSync(root, { recursive: true });
+  const closure = handoffDependencyClosure(tarball, join(root, "third-party"));
+  const overrides = Object.fromEntries(
+    Object.entries(closure.dependencies).filter(([name]) => name !== "kaji-sdk"),
+  );
+  writeFileSync(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: `kaji-handoff-${manager}`,
+      version: "1.0.0",
+      private: true,
+      ...(manager === "bun" ? { dependencies: closure.dependencies, overrides } : {}),
+    }),
+  );
+  const userConfig = join(root, ".npmrc-handoff");
+  writeFileSync(userConfig, "");
+  const environment = {
+    ...baseEnvironment,
+    npm_config_userconfig: userConfig,
+    npm_config_registry: "http://127.0.0.1:9",
+    npm_config_cache: join(root, ".npm-cache"),
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
+    BUN_INSTALL_CACHE_DIR: join(root, ".bun-cache"),
+  };
+  if (manager === "npm") {
+    await runHandoffCommand(
+      `handoff:${manager}-install`,
+      "npm",
+      ["install", "--ignore-scripts", "--offline", "--install-links=false", ...closure.installArgs],
+      root,
+      environment,
+    );
+  } else {
+    await runHandoffCommand(
+      `handoff:${manager}-install`,
+      process.execPath,
+      ["install", "--production", "--ignore-scripts", "--omit=dev", "--offline"],
+      root,
+      environment,
+    );
+  }
+  return assertRealInstalledCopy(root);
+}
+
+function semverFromVersionOutput(output: string, label: string): string {
+  const version = /^(?:Version |v)?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/u.exec(
+    output.trim(),
+  )?.[1];
+  if (version === undefined) throw new Error(`${label} emitted an invalid semantic version`);
+  return version;
+}
+
+function isNormativeSemver(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+(?:[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u.test(
+      value,
+    )
+  );
+}
+
+export function retainedSmokeToolVersion(output: string, tool: "node" | "npm" | "bun"): string {
+  const retained = output.trim();
+  const label = tool === "node" ? "Node" : tool === "bun" ? "Bun" : "npm";
+  const phase = `${tool}:version` as const;
+  try {
+    const normalized = semverFromVersionOutput(retained, label);
+    if (retained !== (tool === "node" ? `v${normalized}` : normalized)) {
+      throw new Error("unexpected version prefix");
+    }
+    if (tool === "node" && !isRetainedNodeVersion(retained)) {
+      throw new Error("unsupported Node major");
+    }
+  } catch {
+    throw new SmokeCommandError(phase, "capture");
+  }
+  return retained;
+}
+
+async function compileHandoffGitHubTypes(
+  root: string,
+  runtimeBinary: string,
+): Promise<TypeScriptDeclarationChecks> {
+  writeGitHubTypeConsumerFixtures(root);
+  const compilers = [
+    {
+      name: "typescript57",
+      binary: realpathSync(join(packageRoot, "node_modules/typescript57/bin/tsc")),
+      extraArgs: ["--ignoreDeprecations", "5.0"],
+    },
+    {
+      name: "typescriptCurrent",
+      binary: realpathSync(join(packageRoot, "node_modules/typescript/bin/tsc")),
+      extraArgs: [] as string[],
+    },
+  ] as const;
+  const versions = new Map<string, string>();
+  for (const compiler of compilers) {
+    versions.set(
+      compiler.name,
+      semverFromVersionOutput(
+        await runHandoffCommand(
+          `handoff:${compiler.name}-version`,
+          runtimeBinary,
+          [compiler.binary, "--version"],
+          root,
+        ),
+        compiler.name,
+      ),
+    );
+    for (const consumer of GITHUB_TYPE_CONSUMERS) {
+      await runHandoffCommand(
+        `handoff:${compiler.name}-${consumer.module}`,
+        runtimeBinary,
+        [compiler.binary, "--project", consumer.config, "--noEmit", ...compiler.extraArgs],
+        root,
+      );
+    }
+  }
+  const minimumVersion = versions.get("typescript57");
+  const currentVersion = versions.get("typescriptCurrent");
+  if (minimumVersion !== "5.7.3" || currentVersion === undefined || currentVersion === "5.7.3") {
+    throw new Error("handoff TypeScript compiler matrix changed");
+  }
+  return {
+    compilerOptions: {
+      module: "NodeNext",
+      moduleResolution: "NodeNext",
+      skipLibCheck: false,
+    },
+    typescript57: { version: "5.7.3", mtsImport: "passed", ctsRequire: "passed" },
+    typescriptCurrent: {
+      version: currentVersion,
+      mtsImport: "passed",
+      ctsRequire: "passed",
+    },
+  };
+}
+
+async function runInstalledHandoffProof(
+  manager: PackageManager,
+  tarball: string,
+  runtimeBinary: string,
+): Promise<{ packageRoot: string; proof: GitHubPackageProof }> {
+  const root = join(workdir, `handoff-${manager}`);
+  const installedPackageRoot = await installHandoffArtifact(manager, root, tarball);
+  const declarationChecks = await compileHandoffGitHubTypes(root, runtimeBinary);
+  const checksPath = join(root, "typescript-declaration-checks.json");
+  writeFileSync(checksPath, JSON.stringify(declarationChecks));
+  const runner = join(root, "installed-github-smoke.mts");
+  copyFileSync(INSTALLED_GITHUB_SMOKE, runner);
+  const output = await runHandoffCommand(
+    `handoff:${manager}-github-proof`,
+    runtimeBinary,
+    [
+      "--experimental-strip-types",
+      runner,
+      "--sandbox-root",
+      root,
+      "--package-root",
+      installedPackageRoot,
+      "--typescript-declaration-checks",
+      checksPath,
+    ],
+    root,
+    githubProofEnvironment(baseEnvironment),
+  );
+  return {
+    packageRoot: installedPackageRoot,
+    proof: assertGithubPackageProof(output, installedPackageRoot, declarationChecks),
+  };
+}
+
+function checkedArchiveName(raw: string): string {
+  const name = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (
+    name.length === 0 ||
+    name.startsWith("/") ||
+    !name.startsWith("package/") ||
+    name.includes("\\") ||
+    [...name].some((character) => character.charCodeAt(0) > 0x7f)
+  ) {
+    throw new Error("supplied tarball contains an unsafe archive path");
+  }
+  const parts = name.split("/");
+  if (parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("supplied tarball contains a noncanonical archive path");
+  }
+  return name;
+}
+
+function assertNoLinksBelow(root: string): void {
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+      throw new Error("supplied tarball extracted a link or special file");
+    }
+    if (stat.isDirectory()) assertNoLinksBelow(path);
+  }
+}
+
+async function extractCheckedArchive(tarball: string): Promise<{
+  root: string;
+  members: string[];
+  membersSha256: string;
+}> {
+  const list = (await runHandoffCommand("handoff:archive-list", "tar", ["-tzf", tarball], workdir))
+    .split("\n")
+    .filter(Boolean);
+  const verbose = (
+    await runHandoffCommand("handoff:archive-types", "tar", ["-tvzf", tarball], workdir)
+  )
+    .split("\n")
+    .filter(Boolean);
+  if (list.length === 0 || list.length > 4096 || verbose.length !== list.length) {
+    throw new Error("supplied tarball has an invalid member set");
+  }
+  if (verbose.some((line) => !["-", "d"].includes(line[0] ?? ""))) {
+    throw new Error("supplied tarball contains a link or special member");
+  }
+  const checked = list.map(checkedArchiveName);
+  if (new Set(checked).size !== checked.length) {
+    throw new Error("supplied tarball contains duplicate archive members");
+  }
+  const members = checked.sort((left, right) =>
+    Buffer.compare(Buffer.from(left, "ascii"), Buffer.from(right, "ascii")),
+  );
+  const root = join(workdir, "archive");
+  mkdirSync(root);
+  await runHandoffCommand("handoff:archive-extract", "tar", ["-xzf", tarball, "-C", root], workdir);
+  assertNoLinksBelow(root);
+  return {
+    root,
+    members,
+    membersSha256: createHash("sha256")
+      .update(members.map((name) => `${name}\n`).join(""), "ascii")
+      .digest("hex"),
+  };
+}
+
+function exportTargets(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return [];
+  return Object.values(value).flatMap(exportTargets);
+}
+
+function sourceByteEquality(
+  archiveRoot: string,
+  members: readonly string[],
+  candidateRoot: string,
+): void {
+  const candidatePackageRoot = realpathSync(join(candidateRoot, "kaji/packages/typescript"));
+  const candidateDist = realpathSync(join(candidatePackageRoot, "dist"));
+  const archiveDistFiles = members.filter(
+    (name) => name.startsWith("package/dist/") && lstatSync(join(archiveRoot, name)).isFile(),
+  );
+  const candidateDistFiles = filesBelow(candidateDist)
+    .map((path) => `package/dist/${relative(candidateDist, path).replaceAll("\\", "/")}`)
+    .sort((left, right) => Buffer.compare(Buffer.from(left, "ascii"), Buffer.from(right, "ascii")));
+  if (JSON.stringify(archiveDistFiles) !== JSON.stringify(candidateDistFiles)) {
+    throw new Error("supplied artifact dist member set differs from the staged build");
+  }
+  for (const member of archiveDistFiles) {
+    const relativeDist = member.slice("package/dist/".length);
+    if (
+      !readFileSync(join(archiveRoot, member)).equals(
+        readFileSync(join(candidateDist, relativeDist)),
+      )
+    ) {
+      throw new Error(`supplied artifact byte mismatch: ${member}`);
+    }
+  }
+}
+
+function exactCatalogs(proof: GitHubPackageProof): void {
+  if (
+    JSON.stringify(proof.packageCatalog.tools) !== JSON.stringify(GITHUB_TOOLS) ||
+    JSON.stringify(proof.packageCatalog.readTools) !== JSON.stringify(GITHUB_READ_TOOLS) ||
+    JSON.stringify(proof.packageCatalog.providerAliases) !==
+      JSON.stringify(GITHUB_PROVIDER_ALIASES) ||
+    JSON.stringify(proof.packageCatalog.catalogNames) !== JSON.stringify(GITHUB_CATALOG_NAMES) ||
+    JSON.stringify(proof.cliCopiedCatalog.tools) !== JSON.stringify(SHARED_GITHUB_TOOLS) ||
+    JSON.stringify(proof.cliCopiedCatalog.readTools) !== JSON.stringify(SHARED_GITHUB_READ_TOOLS)
+  ) {
+    throw new Error("installed handoff catalog or alias surface changed");
+  }
+}
+
+async function proveCandidatePolicy(candidateRoot: string): Promise<void> {
+  const candidatePackageRoot = realpathSync(join(candidateRoot, "kaji/packages/typescript"));
+  await runHandoffCommand(
+    "handoff:policy-before-token",
+    process.execPath,
+    ["test", "tests/github-registry.test.ts", "-t", POLICY_TEST_NAME],
+    candidatePackageRoot,
+    githubProofEnvironment(baseEnvironment),
+  );
+}
+
+async function runArtifactContractHandoff(
+  arguments_: SmokeArguments & {
+    tarball: string;
+    candidateRoot: string;
+    sourceCommit: string;
+    artifactSha256: string;
+  },
+): Promise<Record<string, unknown>> {
+  const archive = await extractCheckedArchive(arguments_.tarball);
+  const packedRoot = join(archive.root, "package");
+  const packedManifest = JSON.parse(readFileSync(join(packedRoot, "package.json"), "utf8")) as {
+    name?: unknown;
+    license?: unknown;
+    exports?: unknown;
+  };
+  if (
+    packedManifest.name !== "kaji-sdk" ||
+    packedManifest.license !== LICENSE_ID ||
+    typeof packedManifest.exports !== "object" ||
+    packedManifest.exports === null ||
+    Array.isArray(packedManifest.exports)
+  ) {
+    throw new Error("supplied tarball package metadata is invalid");
+  }
+  const targets = exportTargets(packedManifest.exports);
+  if (
+    targets.length === 0 ||
+    new Set(targets).size !== targets.length ||
+    targets.some(
+      (target) =>
+        !target.startsWith("./dist/") ||
+        target.includes("\\") ||
+        target
+          .slice(2)
+          .split("/")
+          .some((part) => part === "" || part === "." || part === "..") ||
+        !lstatSync(join(packedRoot, target)).isFile(),
+    )
+  ) {
+    throw new Error("supplied tarball export targets are missing or unsafe");
+  }
+  sourceByteEquality(archive.root, archive.members, arguments_.candidateRoot);
+  await proveCandidatePolicy(arguments_.candidateRoot);
+
+  const runtimeBinary = process.env.NODE_BINARY ?? "node";
+  const npm = await runInstalledHandoffProof("npm", arguments_.tarball, runtimeBinary);
+  const bun = await runInstalledHandoffProof("bun", arguments_.tarball, runtimeBinary);
+  exactCatalogs(npm.proof);
+  exactCatalogs(bun.proof);
+  if (JSON.stringify(npm.proof) !== JSON.stringify(bun.proof)) {
+    throw new Error("npm and Bun installed package proofs diverged");
+  }
+  const proof = npm.proof;
+  if (
+    proof.schemaVersion !== 5 ||
+    proof.policyBeforeRequest.testFile !== POLICY_TEST_FILE ||
+    proof.policyBeforeRequest.testName !== POLICY_TEST_NAME ||
+    proof.policyBeforeRequest.tokenLookups !== 0 ||
+    proof.policyBeforeRequest.requestAttempts !== 0 ||
+    !proof.unknownMutationPreserved ||
+    proof.mutationRetries !== 0
+  ) {
+    throw new Error("TypeScript package proof is downgraded or lacks policy evidence");
+  }
+  for (const declaration of ["dist/integrations/github.d.ts", "dist/integrations/github.d.cts"]) {
+    const source = readFileSync(join(packedRoot, declaration), "utf8");
+    if (GITHUB_PUBLIC_SYMBOLS.some((symbol) => !source.includes(symbol))) {
+      throw new Error("GitHub declaration omits a public package symbol");
+    }
+  }
+  const licenseSha256 = createHash("sha256")
+    .update(readFileSync(join(packedRoot, "LICENSE")))
+    .digest("hex");
+  return {
+    id: "artifact-contract",
+    result: "passed",
+    sourceCommit: arguments_.sourceCommit,
+    artifactSha256: arguments_.artifactSha256,
+    evidence: {
+      subchecks: ARTIFACT_SUBCHECKS.map((id) => ({ id, result: "passed" })),
+      packlist: {
+        memberCount: archive.members.length,
+        membersSha256: archive.membersSha256,
+      },
+      package: {
+        exports: packedManifest.exports,
+        publicSymbols: GITHUB_PUBLIC_SYMBOLS,
+      },
+      typescript: {
+        minimumVersion: proof.typescriptDeclarationChecks.typescript57.version,
+        currentVersion: proof.typescriptDeclarationChecks.typescriptCurrent.version,
+      },
+      installs: {
+        npm: { artifactSha256: arguments_.artifactSha256, realCopy: true },
+        bun: { artifactSha256: arguments_.artifactSha256, realCopy: true },
+      },
+      catalogs: {
+        typescript: {
+          schemaVersion: proof.packageCatalog.schemaVersion,
+          catalogVersion: proof.packageCatalog.catalogVersion,
+          totalCount: proof.packageCatalog.toolCount,
+          readCount: proof.packageCatalog.readToolCount,
+          tools: proof.packageCatalog.tools,
+          readTools: proof.packageCatalog.readTools,
+        },
+        shared: {
+          manifestVersion: proof.cliCopiedCatalog.manifestVersion,
+          totalCount: proof.cliCopiedCatalog.toolCount,
+          readCount: proof.cliCopiedCatalog.readToolCount,
+          tools: proof.cliCopiedCatalog.tools,
+          readTools: proof.cliCopiedCatalog.readTools,
+        },
+      },
+      lifecycle: proof.lifecycle,
+      policy: proof.policyBeforeRequest,
+      license: { id: LICENSE_ID, sha256: licenseSha256 },
+    },
+  };
+}
+
+interface NodeFixtureResult {
+  releaseName: string;
+  nodeVersion: string;
+  importKind: "esm" | "commonjs";
+  packageRealpath: string;
+  artifactSha256: string;
+  toolCount: number;
+  readToolCount: number;
+  tools: string[];
+  readTools: string[];
+}
+
+function nodeFixtureSource(kind: "esm" | "commonjs", artifactSha256: string): string {
+  if (kind === "esm") {
+    return `import { realpathSync } from "node:fs";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { inspectIntegration } from "kaji-sdk/integrations/github";
+const entry = fileURLToPath(import.meta.resolve("kaji-sdk"));
+const integration = inspectIntegration();
+const tools = integration.tools().map(([spec]) => spec);
+integration.close();
+console.log(JSON.stringify({
+  releaseName: process.release.name,
+  nodeVersion: process.versions.node,
+  importKind: "esm",
+  packageRealpath: realpathSync(dirname(dirname(entry))),
+  artifactSha256: ${JSON.stringify(artifactSha256)},
+  toolCount: tools.length,
+  readToolCount: tools.filter((spec) => spec.risk === "read").length,
+  tools: tools.map((spec) => spec.name),
+  readTools: tools.filter((spec) => spec.risk === "read").map((spec) => spec.name),
+}));
+`;
+  }
+  return `const { realpathSync } = require("node:fs");
+const { dirname } = require("node:path");
+const { inspectIntegration } = require("kaji-sdk/integrations/github");
+const entry = require.resolve("kaji-sdk");
+const integration = inspectIntegration();
+const tools = integration.tools().map(([spec]) => spec);
+integration.close();
+console.log(JSON.stringify({
+  releaseName: process.release.name,
+  nodeVersion: process.versions.node,
+  importKind: "commonjs",
+  packageRealpath: realpathSync(dirname(dirname(entry))),
+  artifactSha256: ${JSON.stringify(artifactSha256)},
+  toolCount: tools.length,
+  readToolCount: tools.filter((spec) => spec.risk === "read").length,
+  tools: tools.map((spec) => spec.name),
+  readTools: tools.filter((spec) => spec.risk === "read").map((spec) => spec.name),
+}));
+`;
+}
+
+function parseNodeFixture(output: string, kind: "esm" | "commonjs"): NodeFixtureResult {
+  let value: unknown;
+  try {
+    value = JSON.parse(output.trim());
+  } catch {
+    throw new Error(`${kind} Node handoff fixture emitted invalid JSON`);
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${kind} Node handoff fixture emitted a non-object`);
+  }
+  return value as NodeFixtureResult;
+}
+
+async function runNodeHandoff(
+  arguments_: SmokeArguments & {
+    tarball: string;
+    sourceCommit: string;
+    artifactSha256: string;
+    handoffNodeBinary: string;
+    expectedNodeMajor: 22 | 24;
+  },
+): Promise<Record<string, unknown>> {
+  if (!arguments_.handoffNodeBinary.startsWith("/")) {
+    throw new Error("--node-binary must be an explicit absolute binary path");
+  }
+  const runtimeBinary = realpathSync(arguments_.handoffNodeBinary);
+  const nodeVersion = semverFromVersionOutput(
+    await runHandoffCommand("handoff:node-version", runtimeBinary, ["--version"], workdir),
+    "Node",
+  );
+  if (Number(nodeVersion.split(".", 1)[0]) !== arguments_.expectedNodeMajor) {
+    throw new Error("explicit Node binary major differs from --expected-node-major");
+  }
+  const npmVersion = semverFromVersionOutput(
+    await runHandoffCommand("handoff:npm-version", "npm", ["--version"], workdir),
+    "npm",
+  );
+  const installRoot = join(workdir, `node-${arguments_.expectedNodeMajor}`);
+  const installedPackageRoot = await installHandoffArtifact("npm", installRoot, arguments_.tarball);
+  const esmPath = join(installRoot, "handoff.mjs");
+  const cjsPath = join(installRoot, "handoff.cjs");
+  writeFileSync(esmPath, nodeFixtureSource("esm", arguments_.artifactSha256));
+  writeFileSync(cjsPath, nodeFixtureSource("commonjs", arguments_.artifactSha256));
+  const esm = parseNodeFixture(
+    await runHandoffCommand("handoff:node-esm", runtimeBinary, [esmPath], installRoot),
+    "esm",
+  );
+  const commonjs = parseNodeFixture(
+    await runHandoffCommand("handoff:node-commonjs", runtimeBinary, [cjsPath], installRoot),
+    "commonjs",
+  );
+  for (const [kind, result] of [
+    ["esm", esm],
+    ["commonjs", commonjs],
+  ] as const) {
+    if (
+      result.releaseName !== "node" ||
+      result.nodeVersion !== nodeVersion ||
+      result.importKind !== kind ||
+      realpathSync(result.packageRealpath) !== installedPackageRoot ||
+      result.artifactSha256 !== arguments_.artifactSha256 ||
+      result.toolCount !== 15 ||
+      result.readToolCount !== 13 ||
+      JSON.stringify(result.tools) !== JSON.stringify(GITHUB_TOOLS) ||
+      JSON.stringify(result.readTools) !== JSON.stringify(GITHUB_READ_TOOLS)
+    ) {
+      throw new Error(`${kind} Node handoff fixture did not prove the supplied package`);
+    }
+  }
+  return {
+    id: `node-${arguments_.expectedNodeMajor}`,
+    result: "passed",
+    sourceCommit: arguments_.sourceCommit,
+    artifactSha256: arguments_.artifactSha256,
+    evidence: {
+      nodeMajor: arguments_.expectedNodeMajor,
+      nodeVersion,
+      npmVersion,
+      installedArtifactSha256: arguments_.artifactSha256,
+      realCopy: true,
+      checks: NODE_HANDOFF_CHECKS.map((id) => ({ id, result: "passed" })),
+    },
+  };
+}
+
+async function runSuppliedTarballHandoff(arguments_: SmokeArguments): Promise<PendingSmokeReceipt> {
+  const requested = arguments_.tarball!;
+  const requestedStat = lstatSync(resolve(requested));
+  if (requestedStat.isSymbolicLink() || !requestedStat.isFile() || requestedStat.size < 1) {
+    throw new Error("supplied npm tarball must be one non-empty regular file");
+  }
+  const tarball = realpathSync(requested);
+  const digest = sha256(tarball);
+  if (digest !== arguments_.artifactSha256) {
+    throw new Error("supplied npm tarball SHA-256 differs before install");
+  }
+  if (arguments_.forHandoff === "artifact-contract") {
+    return {
+      kind: "handoff",
+      output: arguments_.output!,
+      receipt: await runArtifactContractHandoff({
+        ...arguments_,
+        tarball,
+        candidateRoot: arguments_.candidateRoot!,
+        sourceCommit: arguments_.sourceCommit!,
+        artifactSha256: digest,
+      }),
+    };
+  }
+  return {
+    kind: "handoff",
+    output: arguments_.output!,
+    receipt: await runNodeHandoff({
+      ...arguments_,
+      tarball,
+      sourceCommit: arguments_.sourceCommit!,
+      artifactSha256: digest,
+      handoffNodeBinary: arguments_.handoffNodeBinary!,
+      expectedNodeMajor: arguments_.expectedNodeMajor!,
+    }),
+  };
+}
+
+function readManifest(path: string): PackageManifest {
+  return JSON.parse(readFileSync(path, "utf8")) as PackageManifest;
+}
+
+function assertGeneratedVersions(
+  generated: PackageManifest & { dependencies?: Record<string, string> },
+  installed: PackageManifest,
+): void {
+  const expected = {
+    "kaji-sdk": installed.version,
+    zod: installed.peerDependencies.zod,
+  };
+  if (JSON.stringify(generated.dependencies) !== JSON.stringify(expected)) {
+    throw new Error("generated mock dependency versions do not match installed package metadata");
+  }
+  if (generated.dependencies?.["kaji-sdk"] !== PACKAGE_VERSION) {
+    throw new Error("generated scaffold did not use the exact installed prerelease version");
+  }
+  if (generated.dependencies["kaji-sdk"].startsWith("^") || "openai" in generated.dependencies) {
+    throw new Error("generated mock scaffold added an unrequested provider or version caret");
+  }
+  if (generated.devDependencies.typescript57 !== "npm:typescript@5.7.3") {
+    throw new Error("generated scaffold did not pin the TypeScript 5.7.3 compiler alias");
+  }
+  if (generated.devDependencies["@types/node"] !== installed.devDependencies["@types/node"]) {
+    throw new Error("generated scaffold did not use the installed @types/node range");
+  }
+  if (
+    generated.devDependencies["@dotenvx/dotenvx"] !== installed.devDependencies["@dotenvx/dotenvx"]
+  ) {
+    throw new Error("generated scaffold did not use the installed dotenvx version");
+  }
+  const currentCompiler = generated.devDependencies.typescript;
+  if (typeof currentCompiler !== "string" || !currentCompiler.includes("6.")) {
+    throw new Error("generated scaffold did not declare the current TypeScript 6.x compiler");
+  }
+}
+
+function assertScaffoldOutput(output: string): { text: string; finalSequence: number } {
+  const fields = new Map(
+    output
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => line.split("=", 2) as [string, string]),
+  );
+  if (fields.get("text") !== EXPECTED_MOCK_REPLY) {
+    throw new Error("generated scaffold omitted the exact deterministic mock reply");
+  }
+  if (!fields.get("turn_id")) {
+    throw new Error("generated scaffold omitted a non-empty turn id");
+  }
+  const sequence = Number(fields.get("final_sequence"));
+  if (!Number.isSafeInteger(sequence) || sequence <= 0) {
+    throw new Error("generated scaffold omitted a positive final sequence");
+  }
+  return { text: EXPECTED_MOCK_REPLY, finalSequence: sequence };
+}
+
+function assertLifecycleOutput(output: string): void {
+  const fields = new Map(
+    output
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => line.split("=", 2) as [string, string]),
+  );
+  if (fields.get("lifecycle_purge") !== "ok") {
+    throw new Error("installed lifecycle fixture did not prove explicit purge");
+  }
+}
+
+function assertFailureHistoryOutput(output: string): void {
+  const fields = new Map(
+    output
+      .split("\n")
+      .filter((line) => line.includes("="))
+      .map((line) => line.split("=", 2) as [string, string]),
+  );
+  if (fields.get("failure_history") !== "ok") {
+    throw new Error("installed failure-history fixture did not prove recovery and purge");
+  }
+}
+
+function assertCliInitOutput(output: string, generated: string): void {
+  for (const name of ["package.json", "tsconfig.json", "agent.ts", ".env.example"]) {
+    const path = join(generated, name);
+    if (!existsSync(path) || !output.includes(`wrote ${path}`)) {
+      throw new Error("installed init did not report and write every scaffold file");
+    }
+  }
+}
+
+function assertCliOwnerOutput(output: string): void {
+  if (!output.split("\n").includes(`kaji (kaji-sdk) ${PACKAGE_VERSION}`)) {
+    throw new Error("qualified TypeScript CLI owner/version mismatch");
+  }
+}
+
+function createConflictingKajiFixture(root: string): string {
+  const fixture = join(root, "conflicting-kaji-cli");
+  mkdirSync(fixture, { recursive: true });
+  writeFileSync(
+    join(fixture, "package.json"),
+    JSON.stringify({
+      name: "conflicting-kaji-cli",
+      version: "9.9.9",
+      bin: { kaji: "./kaji.mjs" },
+    }),
+  );
+  writeFileSync(
+    join(fixture, "kaji.mjs"),
+    '#!/usr/bin/env node\nconsole.log("kaji (conflicting fixture) 9.9.9");\n',
+    { mode: 0o755 },
+  );
+  return fixture;
+}
+
+function assertCliAddOutput(
+  output: string,
+  destination: string,
+  installedPackageRoot: string,
+): void {
+  const copied = join(destination, "index.ts");
+  const packaged = join(installedPackageRoot, "registry/echo/index.ts");
+  if (!existsSync(copied) || !readFileSync(copied).equals(readFileSync(packaged))) {
+    throw new Error("installed add did not copy the packaged Echo asset");
+  }
+  if (!output.includes(`Wrote 1 file(s) to ${realpathSync(destination)}`)) {
+    throw new Error("installed add did not report the copied Echo asset");
+  }
+}
+
+function assertGithubCliAddOutput(
+  output: string,
+  destination: string,
+  installedPackageRoot: string,
+): void {
+  const packagedRoot = join(installedPackageRoot, "registry/github");
+  const manifest = JSON.parse(readFileSync(join(packagedRoot, "manifest.json"), "utf8")) as {
+    files: string[];
+  };
+  for (const name of manifest.files) {
+    const copied = join(destination, name);
+    const packaged = join(packagedRoot, name);
+    if (!existsSync(copied) || !readFileSync(copied).equals(readFileSync(packaged))) {
+      throw new Error("installed add did not copy the packaged GitHub assets");
+    }
+  }
+  const provenance = JSON.parse(
+    readFileSync(join(destination, ".kaji-integration-provenance.json"), "utf8"),
+  ) as {
+    integration?: string;
+    runtime?: string;
+    abiSha256?: string | null;
+    files?: Record<string, string>;
+  };
+  if (
+    provenance.integration !== "github" ||
+    provenance.runtime !== "typescript" ||
+    !provenance.abiSha256 ||
+    JSON.stringify(Object.keys(provenance.files ?? {}).sort()) !==
+      JSON.stringify([...manifest.files].sort())
+  ) {
+    throw new Error("installed GitHub provenance is incomplete");
+  }
+  if (!output.includes(`Wrote ${manifest.files.length} file(s) to ${realpathSync(destination)}`)) {
+    throw new Error("installed add did not report the copied GitHub assets");
+  }
+}
+
+function assertCliReplayOutput(output: string): void {
+  if (
+    !/^Session session_[a-f0-9]{16}\s+turns=0\s+tool_calls=0\s+errors=0, seq=1-1$/u.test(
+      output.trim(),
+    ) ||
+    output.includes("\u001b[")
+  ) {
+    throw new Error("installed replay did not render the canonical JSONL fixture");
+  }
+}
+
+function assertRootDeclarationsVendorNeutral(installedPackageRoot: string): void {
+  for (const declarationFile of ["index.d.ts", "index.d.cts"]) {
+    const declaration = readFileSync(join(installedPackageRoot, "dist", declarationFile), "utf8");
+    const approvalOptionsBlock = /interface CliApprovalOptions \{[\s\S]*?^\}/mu.exec(
+      declaration,
+    )?.[0];
+    if (approvalOptionsBlock === undefined) {
+      throw new Error(`root ${declarationFile} is missing CliApprovalOptions`);
+    }
+    for (const ambientStream of ["NodeJS.ReadableStream", "NodeJS.WritableStream"]) {
+      if (approvalOptionsBlock.includes(ambientStream)) {
+        throw new Error(
+          `root ${declarationFile} CliApprovalOptions references ambient ${ambientStream}`,
+        );
+      }
+    }
+    if (
+      /from ["']openai["']/.test(declaration) ||
+      /from ["']@anthropic-ai\/sdk["']/.test(declaration) ||
+      declaration.includes("Promise<OpenAI>") ||
+      declaration.includes("Promise<Anthropic>")
+    ) {
+      throw new Error(`root ${declarationFile} references an optional provider peer`);
+    }
+  }
+}
+
+async function install(
+  manager: PackageManager,
+  stage: InstallStage,
+  cwd: string,
+  packages: string[],
+  environment: NodeJS.ProcessEnv,
+): Promise<void> {
+  if (manager === "npm") {
+    await runCommand(
+      `${manager}:${stage}-install`,
+      "npm",
+      ["install", "--ignore-scripts", ...packages],
+      cwd,
+      environment,
+      PACKAGE_TIMEOUT_MS,
+    );
+  } else {
+    await runCommand(
+      `${manager}:${stage}-install`,
+      "bun",
+      packages.length === 0
+        ? ["install", "--ignore-scripts"]
+        : ["add", "--ignore-scripts", ...packages],
+      cwd,
+      environment,
+      PACKAGE_TIMEOUT_MS,
+    );
+  }
+}
+
+function writeGitHubTypeConsumerFixtures(generated: string): void {
+  writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE);
+  writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE);
+  for (const consumer of GITHUB_TYPE_CONSUMERS) {
+    writeFileSync(
+      join(generated, consumer.config),
+      JSON.stringify(
+        {
+          compilerOptions: GITHUB_TYPES_COMPILER_OPTIONS,
+          files: [consumer.source],
+        },
+        null,
+        2,
+      ),
+    );
+  }
+}
+
+async function compileInstalledGitHubTypes(
+  manager: PackageManager,
+  generated: string,
+): Promise<TypeScriptDeclarationChecks> {
+  writeGitHubTypeConsumerFixtures(generated);
+  const compilers = [
+    {
+      alias: "typescript57",
+      line: "5.7",
+      extraArgs: ["--ignoreDeprecations", "5.0"],
+    },
+    { alias: "typescript", line: "current", extraArgs: [] },
+  ] as const;
+  const compilerVersions = new Map<string, string>();
+  for (const compiler of compilers) {
+    const tsc = join(generated, `node_modules/${compiler.alias}/bin/tsc`);
+    if (!existsSync(tsc)) throw new Error(`generated scaffold is missing ${compiler.alias}`);
+    const versionOutput = (
+      await runCommand(
+        `${manager}:github-types-compiler-version-${compiler.line}`,
+        nodeBinary,
+        [tsc, "--version"],
+        generated,
+      )
+    ).trim();
+    const compilerVersion = /^Version (\d+\.\d+\.\d+(?:[-+].+)?)$/.exec(versionOutput)?.[1];
+    if (compilerVersion === undefined) {
+      throw new Error(`generated scaffold has an invalid ${compiler.alias} version`);
+    }
+    compilerVersions.set(compiler.alias, compilerVersion);
+    for (const consumer of GITHUB_TYPE_CONSUMERS) {
+      await runCommand(
+        `${manager}:github-types-${consumer.module}-typescript-${compiler.line}`,
+        nodeBinary,
+        [tsc, "--project", consumer.config, "--noEmit", ...compiler.extraArgs],
+        generated,
+      );
+    }
+  }
+  const typescript57Version = compilerVersions.get("typescript57");
+  const typescriptCurrentVersion = compilerVersions.get("typescript");
+  if (typescript57Version !== "5.7.3" || typescriptCurrentVersion === undefined) {
+    throw new Error("generated scaffold compiler versions do not match the supported matrix");
+  }
+  return {
+    compilerOptions: {
+      module: GITHUB_TYPES_COMPILER_OPTIONS.module,
+      moduleResolution: GITHUB_TYPES_COMPILER_OPTIONS.moduleResolution,
+      skipLibCheck: GITHUB_TYPES_COMPILER_OPTIONS.skipLibCheck,
+    },
+    typescript57: { version: typescript57Version, mtsImport: "passed", ctsRequire: "passed" },
+    typescriptCurrent: {
+      version: typescriptCurrentVersion,
+      mtsImport: "passed",
+      ctsRequire: "passed",
+    },
+  };
+}
+
+export interface ScaffoldResult {
+  readonly coldSetupToOutputMs: number;
+  readonly warmRunMs: number;
+  readonly githubProof: GitHubPackageProof;
+  readonly onboardingProof: OnboardingProof;
+}
+
+function retainedScaffoldTiming(timing: ScaffoldResult): {
+  coldSetupToOutputMs: number;
+  warmRunMs: number;
+} {
+  if (
+    !Number.isSafeInteger(timing.coldSetupToOutputMs) ||
+    timing.coldSetupToOutputMs < 0 ||
+    !Number.isSafeInteger(timing.warmRunMs) ||
+    timing.warmRunMs < 0
+  ) {
+    throw new RangeError("retained scaffold timings must be nonnegative safe integers");
+  }
+  return {
+    coldSetupToOutputMs: timing.coldSetupToOutputMs,
+    warmRunMs: timing.warmRunMs,
+  };
+}
+
+function closedObject(
+  value: unknown,
+  keys: readonly string[],
+  label: string,
+): asserts value is Record<string, unknown> {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort())
+  ) {
+    throw new Error(`${label} is not a closed object`);
+  }
+}
+
+function assertPositiveSafeInteger(value: unknown, label: string): asserts value is number {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+    throw new Error(`${label} must be a positive safe integer`);
+  }
+}
+
+function assertNonemptyString(value: unknown, label: string): asserts value is string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+}
+
+function assertExactJson(value: unknown, expected: unknown, label: string): void {
+  if (JSON.stringify(stableValue(value)) !== JSON.stringify(stableValue(expected))) {
+    throw new Error(`${label} differs`);
+  }
+}
+
+function assertClosedGithubPackageProof(value: unknown): asserts value is GitHubPackageProof {
+  closedObject(
+    value,
+    [
+      "schemaVersion",
+      "evidenceClass",
+      "integration",
+      "runtime",
+      "network",
+      "liveProvider",
+      "sharedAbiVersion",
+      "packageAbiSchemaVersion",
+      "packageCatalogVersion",
+      "apiFixtureVersion",
+      "sharedFixtureCaseCount",
+      "publicScenarioCount",
+      "packageCatalog",
+      "cliCopiedCatalog",
+      "esmSharedAbiMatched",
+      "cjsSharedAbiMatched",
+      "esmPackageAbiMatched",
+      "cjsPackageAbiMatched",
+      "esmClassIdentityMatched",
+      "cjsClassIdentityMatched",
+      "esmFactoryIdentityMatched",
+      "cjsFactoryIdentityMatched",
+      "esmRuntimeExports",
+      "cjsRuntimeExports",
+      "esmDeclarationExports",
+      "cjsDeclarationExports",
+      "typescriptDeclarationChecks",
+      "privateGitHubCompositionSourcesPacked",
+      "privateGitHubCompositionSourceImportsRejected",
+      "closedCallsDeniedBeforeCredentialAccess",
+      "approvalDeniedBeforeCredentialAccess",
+      "repositoryDeniedBeforeCredentialAccess",
+      "githubCatalogEventsVerified",
+      "genericSyntheticCatalogEventsVerified",
+      "githubFailureRecovery",
+      "githubObservabilitySinksVerified",
+      "unknownMutationPreserved",
+      "mutationRetries",
+      "lifecycle",
+      "policyBeforeRequest",
+      "aliasCollisionRejected",
+      "conclusion",
+      "failureCode",
+    ],
+    "GitHub package proof",
+  );
+  for (const [key, expected] of Object.entries({
+    schemaVersion: 5,
+    evidenceClass: "offline_exact_artifact_smoke",
+    integration: "github",
+    runtime: "typescript",
+    network: "blocked",
+    liveProvider: false,
+    sharedAbiVersion: "1.0.0",
+    packageAbiSchemaVersion: "1.0.0",
+    packageCatalogVersion: "0.2.0",
+    apiFixtureVersion: "1.0.0",
+    sharedFixtureCaseCount: 23,
+    publicScenarioCount: GITHUB_PUBLIC_SCENARIOS.length,
+    esmSharedAbiMatched: true,
+    cjsSharedAbiMatched: true,
+    esmPackageAbiMatched: true,
+    cjsPackageAbiMatched: true,
+    esmClassIdentityMatched: true,
+    cjsClassIdentityMatched: true,
+    esmFactoryIdentityMatched: true,
+    cjsFactoryIdentityMatched: true,
+    privateGitHubCompositionSourcesPacked: false,
+    privateGitHubCompositionSourceImportsRejected: true,
+    closedCallsDeniedBeforeCredentialAccess: true,
+    approvalDeniedBeforeCredentialAccess: true,
+    repositoryDeniedBeforeCredentialAccess: true,
+    githubObservabilitySinksVerified: true,
+    unknownMutationPreserved: true,
+    mutationRetries: 0,
+    aliasCollisionRejected: true,
+    conclusion: "passed",
+    failureCode: null,
+  })) {
+    if (value[key] !== expected) throw new Error(`GitHub package proof ${key} differs`);
+  }
+  assertExactJson(
+    value.packageCatalog,
+    {
+      schemaVersion: "1.0.0",
+      catalogVersion: "0.2.0",
+      toolCount: 15,
+      readToolCount: 13,
+      tools: GITHUB_TOOLS,
+      readTools: GITHUB_READ_TOOLS,
+      providerAliases: GITHUB_PROVIDER_ALIASES,
+      catalogNames: GITHUB_CATALOG_NAMES,
+    },
+    "GitHub package catalog",
+  );
+  assertExactJson(
+    value.cliCopiedCatalog,
+    {
+      manifestVersion: "0.1.0",
+      toolCount: 6,
+      readToolCount: 4,
+      tools: SHARED_GITHUB_TOOLS,
+      readTools: SHARED_GITHUB_READ_TOOLS,
+    },
+    "GitHub copied catalog",
+  );
+  const declarations = value.typescriptDeclarationChecks;
+  if (typeof declarations !== "object" || declarations === null || Array.isArray(declarations)) {
+    throw new Error("GitHub TypeScript declaration checks are invalid");
+  }
+  const currentVersion = (
+    (declarations as Record<string, unknown>).typescriptCurrent as
+      | Record<string, unknown>
+      | undefined
+  )?.version;
+  if (!isNormativeSemver(currentVersion) || currentVersion === "5.7.3") {
+    throw new Error("GitHub current TypeScript declaration version is invalid");
+  }
+  assertExactJson(
+    declarations,
+    {
+      compilerOptions: {
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        skipLibCheck: false,
+      },
+      typescript57: { version: "5.7.3", mtsImport: "passed", ctsRequire: "passed" },
+      typescriptCurrent: {
+        version: currentVersion,
+        mtsImport: "passed",
+        ctsRequire: "passed",
+      },
+    },
+    "GitHub TypeScript declaration checks",
+  );
+  assertExactJson(
+    value.esmRuntimeExports,
+    ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    "GitHub ESM runtime exports",
+  );
+  assertExactJson(
+    value.cjsRuntimeExports,
+    ["GitHubIntegration", "createGithubIntegration", "inspectIntegration"],
+    "GitHub CJS runtime exports",
+  );
+  for (const key of ["esmDeclarationExports", "cjsDeclarationExports"] as const) {
+    assertExactJson(value[key], GITHUB_PUBLIC_SYMBOLS, `GitHub ${key}`);
+  }
+  assertExactJson(
+    value.githubCatalogEventsVerified,
+    ["requested", "started", "failed"],
+    "GitHub catalog events",
+  );
+  assertExactJson(
+    value.genericSyntheticCatalogEventsVerified,
+    ["requested", "started", "completed"],
+    "GitHub synthetic catalog events",
+  );
+  assertExactJson(
+    value.githubFailureRecovery,
+    {
+      error_code: "INTEGRATION_AUTH_REQUIRED",
+      reason_code: "github_token_missing",
+      recovery_code: "CONFIGURE_GITHUB_TOKEN",
+      doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
+    },
+    "GitHub recovery proof",
+  );
+  assertExactJson(
+    value.lifecycle,
+    {
+      githubFailure: {
+        stages: ["requested", "started", "failed"],
+        providerAlias: "github_get_file",
+        catalogName: "github.get_file",
+        sameIdentityAtEveryStage: true,
+      },
+      syntheticCompletion: {
+        stages: ["requested", "started", "completed"],
+        providerAlias: "synthetic_complete",
+        catalogName: "synthetic.complete",
+        sameIdentityAtEveryStage: true,
+      },
+    },
+    "GitHub lifecycle proof",
+  );
+  assertExactJson(
+    value.policyBeforeRequest,
+    {
+      testFile: POLICY_TEST_FILE,
+      testName: POLICY_TEST_NAME,
+      tokenLookups: 0,
+      requestAttempts: 0,
+    },
+    "GitHub policy-before-request proof",
+  );
+}
+
+function assertOnboardingProof(value: unknown, manager: PackageManager): void {
+  closedObject(value, ["manager", "phases", "assertions"], `${manager} onboarding proof`);
+  if (value.manager !== manager) throw new Error(`${manager} onboarding manager differs`);
+  closedObject(
+    value.phases,
+    ["artifactInstall", "scaffoldInit", "noKeyRun", "echoSetup", "echoRun", "coldRun", "warmRun"],
+    `${manager} onboarding phases`,
+  );
+  if (Object.values(value.phases).some((phase) => phase !== true)) {
+    throw new Error(`${manager} onboarding phase did not pass`);
+  }
+  closedObject(
+    value.assertions,
+    [
+      "noKeyText",
+      "deterministicText",
+      "turnIdPresent",
+      "finalSequencePositive",
+      "echoLifecycle",
+      "echoLifecycleCounts",
+      "echoToolCallIdentityCount",
+      "echoToolCallIdNonempty",
+      "echoResult",
+      "echoFinalText",
+      "forbiddenTerminalEventsAbsent",
+      "coldWarmEqual",
+    ],
+    `${manager} onboarding assertions`,
+  );
+  closedObject(
+    value.assertions.echoLifecycleCounts,
+    ["requested", "started", "completed"],
+    `${manager} Echo lifecycle counts`,
+  );
+  closedObject(value.assertions.echoResult, ["message"], `${manager} Echo result`);
+  if (
+    value.assertions.noKeyText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.deterministicText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.turnIdPresent !== true ||
+    value.assertions.finalSequencePositive !== true ||
+    JSON.stringify(value.assertions.echoLifecycle) !==
+      JSON.stringify(["requested", "started", "completed"]) ||
+    JSON.stringify(value.assertions.echoLifecycleCounts) !==
+      JSON.stringify({ requested: 1, started: 1, completed: 1 }) ||
+    value.assertions.echoToolCallIdentityCount !== 1 ||
+    value.assertions.echoToolCallIdNonempty !== true ||
+    value.assertions.echoResult.message !== "hello" ||
+    value.assertions.echoFinalText !== EXPECTED_MOCK_REPLY ||
+    value.assertions.forbiddenTerminalEventsAbsent !== true ||
+    value.assertions.coldWarmEqual !== true
+  ) {
+    throw new Error(`${manager} onboarding assertion did not pass`);
+  }
+}
+
+function assertTiming(value: unknown, label: string): void {
+  closedObject(value, ["coldSetupToOutputMs", "warmRunMs"], label);
+  for (const duration of Object.values(value)) {
+    if (!Number.isSafeInteger(duration) || Number(duration) < 0) {
+      throw new Error(`${label} must contain nonnegative safe integers`);
+    }
+  }
+}
+
+export function assertClosedOrdinaryReceipt(
+  value: unknown,
+  requiredMode?: "protected" | "local",
+  expectedContext?: OrdinaryReceiptContext,
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("ordinary receipt must be an object");
+  }
+  const receipt = value as Record<string, unknown>;
+  const conclusion = receipt.conclusion;
+  if (conclusion === "failed" || conclusion === "not_run") {
+    closedObject(
+      receipt,
+      [
+        "schemaVersion",
+        "executionMode",
+        "commit",
+        "releaseManifestSha256",
+        "artifactSha256",
+        "runtime",
+        "artifacts",
+        "githubPackageProofs",
+        "onboardingProofs",
+        "conclusion",
+        "failureCode",
+        "failedPhase",
+        "failureKind",
+      ],
+      "failed ordinary receipt",
+    );
+    if (
+      receipt.schemaVersion !== 2 ||
+      (receipt.executionMode !== "protected" && receipt.executionMode !== "local") ||
+      (requiredMode !== undefined && receipt.executionMode !== requiredMode)
+    ) {
+      throw new Error("failed ordinary receipt identity differs");
+    }
+    if (receipt.commit !== null && sanitizeRetainedCommit(receipt.commit) === null) {
+      throw new Error("failed ordinary receipt commit is invalid");
+    }
+    if (
+      receipt.releaseManifestSha256 !== null &&
+      sanitizeRetainedSha256(receipt.releaseManifestSha256) === null
+    ) {
+      throw new Error("failed ordinary receipt manifest digest is invalid");
+    }
+    if (
+      JSON.stringify(sanitizeRetainedArtifactSha256(receipt.artifactSha256)) !==
+      JSON.stringify(receipt.artifactSha256)
+    ) {
+      throw new Error("failed ordinary receipt artifact identity is invalid");
+    }
+    closedObject(receipt.runtime, ["version"], "failed ordinary runtime");
+    if (receipt.runtime.version !== null && !isRetainedNodeVersion(receipt.runtime.version)) {
+      throw new Error("failed ordinary receipt runtime is invalid");
+    }
+    for (const [name, claim] of [
+      ["artifacts", receipt.artifacts],
+      ["githubPackageProofs", receipt.githubPackageProofs],
+      ["onboardingProofs", receipt.onboardingProofs],
+    ] as const) {
+      closedObject(claim, [], `failed ordinary ${name}`);
+    }
+    if (
+      typeof receipt.failureCode !== "string" ||
+      !/^[a-z][a-z0-9_]{0,63}$/u.test(receipt.failureCode)
+    ) {
+      throw new Error("failed ordinary failure code is invalid");
+    }
+    if (receipt.failedPhase !== null && !isSmokePhase(receipt.failedPhase)) {
+      throw new Error("failed ordinary receipt phase is invalid");
+    }
+    if (!isCommandFailureKind(receipt.failureKind)) {
+      throw new Error("failed ordinary receipt failure kind is invalid");
+    }
+    if (
+      conclusion === "not_run" &&
+      (receipt.failedPhase !== null || receipt.failureKind !== "unknown")
+    ) {
+      throw new Error("not-run ordinary receipt retained a failure execution claim");
+    }
+    return;
+  }
+
+  closedObject(
+    receipt,
+    [
+      "schemaVersion",
+      "executionMode",
+      "commit",
+      "releaseManifestSha256",
+      "artifactSha256",
+      "packageArtifact",
+      "producerArtifact",
+      "runner",
+      "invocation",
+      "runtime",
+      "artifacts",
+      "githubPackageProofs",
+      "onboardingProofs",
+      "timings",
+      "toolchain",
+      "conclusion",
+      "failureCode",
+    ],
+    "passed ordinary receipt",
+  );
+  if (
+    receipt.schemaVersion !== 2 ||
+    receipt.conclusion !== "passed" ||
+    receipt.failureCode !== null ||
+    (receipt.executionMode !== "protected" && receipt.executionMode !== "local") ||
+    (requiredMode !== undefined && receipt.executionMode !== requiredMode)
+  ) {
+    throw new Error("passed ordinary receipt terminal identity differs");
+  }
+  if (
+    expectedContext !== undefined &&
+    (receipt.executionMode !== expectedContext.executionMode ||
+      JSON.stringify(receipt.packageArtifact) !== JSON.stringify(expectedContext.packageArtifact) ||
+      JSON.stringify(receipt.producerArtifact) !==
+        JSON.stringify(expectedContext.producerArtifact) ||
+      JSON.stringify(receipt.runner) !== JSON.stringify(expectedContext.runner) ||
+      JSON.stringify(receipt.invocation) !== JSON.stringify(expectedContext.invocation))
+  ) {
+    throw new Error("ordinary receipt differs from its reviewed inputs");
+  }
+  const mode = receipt.executionMode;
+  const commit = receipt.commit;
+  if (mode === "protected") {
+    if (sanitizeRetainedCommit(commit) === null) {
+      throw new Error("protected ordinary receipt commit is invalid");
+    }
+    if (sanitizeRetainedSha256(receipt.releaseManifestSha256) === null) {
+      throw new Error("protected ordinary receipt manifest digest is invalid");
+    }
+  } else {
+    if (commit !== null && sanitizeRetainedCommit(commit) === null) {
+      throw new Error("local ordinary receipt commit is invalid");
+    }
+    if (
+      receipt.releaseManifestSha256 !== null &&
+      sanitizeRetainedSha256(receipt.releaseManifestSha256) === null
+    ) {
+      throw new Error("local ordinary receipt manifest digest is invalid");
+    }
+  }
+  closedObject(receipt.artifactSha256, [PACKAGE_TARBALL], "ordinary artifact digests");
+  const artifactSha256 = receipt.artifactSha256[PACKAGE_TARBALL];
+  if (sanitizeRetainedSha256(artifactSha256) === null) {
+    throw new Error("ordinary npm tarball digest is invalid");
+  }
+  closedObject(receipt.packageArtifact, ["name", "size", "sha256"], "package artifact");
+  assertPositiveSafeInteger(receipt.packageArtifact.size, "package artifact size");
+  if (
+    receipt.packageArtifact.name !== PACKAGE_TARBALL ||
+    receipt.packageArtifact.sha256 !== artifactSha256
+  ) {
+    throw new Error("package artifact identity differs");
+  }
+  closedObject(
+    receipt.producerArtifact,
+    ["name", "id", "digest", "runId", "runAttempt", "headSha"],
+    "producer artifact",
+  );
+  closedObject(
+    receipt.runner,
+    [
+      "configuredLabel",
+      "environment",
+      "runnerOS",
+      "runnerArch",
+      "platformOS",
+      "platformArch",
+      "imageOS",
+      "imageVersion",
+    ],
+    "runner identity",
+  );
+  closedObject(
+    receipt.invocation,
+    ["workflowRun", "runId", "runAttempt", "workflowRef", "workflowSha", "job"],
+    "invocation identity",
+  );
+  closedObject(receipt.runtime, ["version"], "ordinary runtime");
+  if (!isRetainedNodeVersion(receipt.runtime.version)) {
+    throw new Error("ordinary runtime version is invalid");
+  }
+  const nodeMajor = Number(String(receipt.runtime.version).slice(1).split(".", 1)[0]);
+  if (mode === "protected") {
+    const cell =
+      nodeMajor === 22
+        ? { label: "ubuntu-22.04", imageOS: "ubuntu22" }
+        : nodeMajor === 24
+          ? { label: "ubuntu-24.04", imageOS: "ubuntu24" }
+          : null;
+    if (
+      cell === null ||
+      receipt.runner.configuredLabel !== cell.label ||
+      receipt.runner.environment !== "github-hosted" ||
+      receipt.runner.runnerOS !== "Linux" ||
+      receipt.runner.runnerArch !== "X64" ||
+      receipt.runner.platformOS !== "linux" ||
+      receipt.runner.platformArch !== "x64" ||
+      receipt.runner.imageOS !== cell.imageOS ||
+      typeof receipt.runner.imageVersion !== "string" ||
+      !/^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$/u.test(receipt.runner.imageVersion)
+    ) {
+      throw new Error("protected runner identity differs");
+    }
+    assertPositiveSafeInteger(receipt.producerArtifact.id, "producer artifact ID");
+    assertPositiveSafeInteger(receipt.producerArtifact.runId, "producer run ID");
+    assertPositiveSafeInteger(receipt.producerArtifact.runAttempt, "producer run attempt");
+    if (
+      receipt.producerArtifact.name !== "kaji-beta-artifacts" ||
+      typeof receipt.producerArtifact.digest !== "string" ||
+      !/^sha256:[0-9a-f]{64}$/u.test(receipt.producerArtifact.digest) ||
+      receipt.producerArtifact.runId !== receipt.invocation.runId ||
+      receipt.producerArtifact.runAttempt !== receipt.invocation.runAttempt ||
+      receipt.producerArtifact.runAttempt !== 1 ||
+      receipt.producerArtifact.headSha !== commit ||
+      receipt.invocation.workflowSha !== commit
+    ) {
+      throw new Error("protected producer/invocation binding differs");
+    }
+    assertPositiveSafeInteger(receipt.invocation.runId, "invocation run ID");
+    assertPositiveSafeInteger(receipt.invocation.runAttempt, "invocation run attempt");
+    assertNonemptyString(receipt.invocation.workflowRef, "invocation workflow ref");
+    assertNonemptyString(receipt.invocation.job, "invocation job");
+    if (
+      typeof receipt.invocation.workflowRun !== "string" ||
+      receipt.invocation.workflowRun !==
+        `${PROTECTED_GITHUB_SERVER_URL}/${PROTECTED_GITHUB_REPOSITORY}` +
+          `/actions/runs/${receipt.invocation.runId}` ||
+      receipt.invocation.runAttempt !== 1 ||
+      !PROTECTED_WORKFLOW_REFS.has(receipt.invocation.workflowRef) ||
+      !receipt.invocation.workflowRef.startsWith(`${PROTECTED_GITHUB_REPOSITORY}/`) ||
+      receipt.invocation.job !== "node-compat"
+    ) {
+      throw new Error("protected invocation identity differs");
+    }
+  } else if (
+    receipt.producerArtifact.name !== "local" ||
+    receipt.producerArtifact.id !== 0 ||
+    receipt.producerArtifact.digest !== "local" ||
+    receipt.producerArtifact.runId !== 0 ||
+    receipt.producerArtifact.runAttempt !== 0 ||
+    receipt.producerArtifact.headSha !== commit ||
+    receipt.runner.configuredLabel !== "local" ||
+    receipt.runner.environment !== "local" ||
+    receipt.runner.runnerOS !== "local" ||
+    receipt.runner.runnerArch !== "local" ||
+    receipt.runner.imageOS !== "local" ||
+    receipt.runner.imageVersion !== "local" ||
+    receipt.invocation.workflowRun !== "local" ||
+    receipt.invocation.runId !== 0 ||
+    receipt.invocation.runAttempt !== 0 ||
+    receipt.invocation.workflowRef !== "local" ||
+    receipt.invocation.workflowSha !== commit ||
+    receipt.invocation.job !== "local"
+  ) {
+    throw new Error("local ordinary receipt identity differs");
+  }
+  closedObject(receipt.artifacts, ["tarball", "package"], "ordinary artifact paths");
+  assertNonemptyString(receipt.artifacts.tarball, "ordinary tarball path");
+  assertNonemptyString(receipt.artifacts.package, "ordinary package path");
+  if (basename(receipt.artifacts.tarball) !== PACKAGE_TARBALL) {
+    throw new Error("ordinary tarball path has the wrong basename");
+  }
+  closedObject(receipt.githubPackageProofs, ["npm", "bun"], "GitHub package proofs");
+  if (
+    JSON.stringify(receipt.githubPackageProofs.npm) !==
+    JSON.stringify(receipt.githubPackageProofs.bun)
+  ) {
+    throw new Error("npm and Bun GitHub package proofs differ");
+  }
+  assertClosedGithubPackageProof(receipt.githubPackageProofs.npm);
+  assertClosedGithubPackageProof(receipt.githubPackageProofs.bun);
+  closedObject(receipt.onboardingProofs, ["npm", "bun"], "onboarding proofs");
+  assertOnboardingProof(receipt.onboardingProofs.npm, "npm");
+  assertOnboardingProof(receipt.onboardingProofs.bun, "bun");
+  closedObject(receipt.timings, ["npm", "bun"], "ordinary timings");
+  assertTiming(receipt.timings.npm, "npm timing");
+  assertTiming(receipt.timings.bun, "bun timing");
+  closedObject(
+    receipt.toolchain,
+    ["python", "uv", "node", "npm", "bun", "typescript"],
+    "ordinary toolchain",
+  );
+  for (const value of Object.values(receipt.toolchain)) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 80) {
+      throw new Error("ordinary toolchain value is invalid");
+    }
+  }
+  const typescriptCurrent =
+    receipt.githubPackageProofs.npm.typescriptDeclarationChecks.typescriptCurrent.version;
+  if (
+    receipt.toolchain.python !== "not-used" ||
+    receipt.toolchain.uv !== "not-used" ||
+    receipt.toolchain.node !== receipt.runtime.version ||
+    !isNormativeSemver(receipt.toolchain.npm) ||
+    receipt.toolchain.bun !== "1.3.11" ||
+    receipt.toolchain.typescript !== `5.7.3 and ${typescriptCurrent}`
+  ) {
+    throw new Error("ordinary toolchain identity differs");
+  }
+}
+
+export function assertProtectedOrdinaryReceiptForWorkflow(
+  value: unknown,
+  input: ProtectedOrdinaryReceiptReviewInput,
+): asserts value is Record<string, unknown> {
+  assertClosedOrdinaryReceipt(value, "protected", protectedOrdinaryReceiptContext(input));
+}
+
+const INSTALLED_ARTIFACT_ECHO_EVIDENCE_SOURCE = `
+const observedEchoLifecycle = result.events.flatMap((event) => {
+  const stage =
+    event.type === EventType.TOOL_CALL_REQUESTED
+      ? "requested"
+      : event.type === EventType.TOOL_CALL_STARTED
+        ? "started"
+        : event.type === EventType.TOOL_CALL_COMPLETED
+          ? "completed"
+          : null;
+  return stage === null
+    ? []
+    : [{
+        stage,
+        toolCallId: "tool_call_id" in event ? event.tool_call_id : null,
+        result: "result" in event ? event.result : null,
+      }];
+});
+console.log("KAJI_ECHO_EVIDENCE:" + JSON.stringify({
+  schemaVersion: 1,
+  lifecycleEvents: observedEchoLifecycle,
+  finalText: result.text,
+  turnId: result.turnId,
+  finalSequence: Math.max(...result.events.map((event) => event.sequence)),
+  forbiddenTerminalEventCount: result.events.filter((event) =>
+    unexpectedTerminalTypes.has(event.type),
+  ).length,
+}));
+`;
+
+export function parseInstalledArtifactEchoEvidence(
+  output: string,
+): Pick<
+  OnboardingProof["assertions"],
+  | "turnIdPresent"
+  | "finalSequencePositive"
+  | "echoLifecycle"
+  | "echoLifecycleCounts"
+  | "echoToolCallIdentityCount"
+  | "echoToolCallIdNonempty"
+  | "echoResult"
+  | "echoFinalText"
+  | "forbiddenTerminalEventsAbsent"
+> {
+  const lines = output.trim().split(/\r?\n/u);
+  if (
+    lines.length !== 2 ||
+    lines[0] !== "PASS: echo requested, started, completed, and observed" ||
+    !lines[1]?.startsWith("KAJI_ECHO_EVIDENCE:")
+  ) {
+    throw new Error("installed-artifact Echo output changed");
+  }
+  let document: unknown;
+  try {
+    document = JSON.parse(lines[1].slice("KAJI_ECHO_EVIDENCE:".length));
+  } catch {
+    throw new Error("installed-artifact Echo evidence is invalid JSON");
+  }
+  closedObject(
+    document,
+    [
+      "schemaVersion",
+      "lifecycleEvents",
+      "finalText",
+      "turnId",
+      "finalSequence",
+      "forbiddenTerminalEventCount",
+    ],
+    "installed-artifact Echo evidence",
+  );
+  if (document.schemaVersion !== 1 || !Array.isArray(document.lifecycleEvents)) {
+    throw new Error("installed-artifact Echo evidence identity differs");
+  }
+  const lifecycleEvents = document.lifecycleEvents as unknown[];
+  const stages = ["requested", "started", "completed"] as const;
+  const counts = Object.fromEntries(
+    stages.map((stage) => [
+      stage,
+      lifecycleEvents.filter(
+        (event) =>
+          typeof event === "object" &&
+          event !== null &&
+          !Array.isArray(event) &&
+          (event as Record<string, unknown>).stage === stage,
+      ).length,
+    ]),
+  ) as Record<(typeof stages)[number], number>;
+  if (
+    lifecycleEvents.length !== 3 ||
+    stages.some((stage) => counts[stage] !== 1) ||
+    document.finalText !== EXPECTED_MOCK_REPLY ||
+    typeof document.turnId !== "string" ||
+    document.turnId.length === 0 ||
+    !Number.isSafeInteger(document.finalSequence) ||
+    Number(document.finalSequence) <= 0 ||
+    document.forbiddenTerminalEventCount !== 0
+  ) {
+    throw new Error("installed-artifact Echo evidence did not prove the expected run");
+  }
+  const toolCallIds = new Set<string>();
+  const observedStages: unknown[] = [];
+  for (const event of lifecycleEvents) {
+    closedObject(event, ["stage", "toolCallId", "result"], "installed-artifact Echo event");
+    if (
+      !stages.includes(event.stage as (typeof stages)[number]) ||
+      typeof event.toolCallId !== "string" ||
+      event.toolCallId.length === 0
+    ) {
+      throw new Error("installed-artifact Echo tool-call identity is invalid");
+    }
+    observedStages.push(event.stage);
+    toolCallIds.add(event.toolCallId);
+    if (event.stage === "completed") {
+      assertExactJson(event.result, { message: "hello" }, "installed-artifact Echo result");
+    } else if (event.result !== null) {
+      throw new Error("installed-artifact Echo nonterminal event retained a result");
+    }
+  }
+  if (toolCallIds.size !== 1) {
+    throw new Error("installed-artifact Echo tool-call identity changed");
+  }
+  if (JSON.stringify(observedStages) !== JSON.stringify(stages)) {
+    throw new Error("installed-artifact Echo lifecycle order changed");
+  }
+  return {
+    turnIdPresent: true,
+    finalSequencePositive: true,
+    echoLifecycle: ["requested", "started", "completed"],
+    echoLifecycleCounts: { requested: 1, started: 1, completed: 1 },
+    echoToolCallIdentityCount: 1,
+    echoToolCallIdNonempty: true,
+    echoResult: { message: "hello" },
+    echoFinalText: EXPECTED_MOCK_REPLY,
+    forbiddenTerminalEventsAbsent: true,
+  };
+}
+
+async function runScaffold(
+  manager: PackageManager,
+  tarball: string,
+  nodeTypesPackage: string,
+): Promise<ScaffoldResult> {
+  const startedNs = process.hrtime.bigint();
+  const root = join(workdir, `${manager}-scaffold`);
+  const bootstrap = join(root, "bootstrap");
+  const generated = join(root, "generated");
+  mkdirSync(bootstrap, { recursive: true });
+  writeFileSync(
+    join(bootstrap, "package.json"),
+    JSON.stringify({ name: `kaji-${manager}-bootstrap`, version: "1.0.0", private: true }),
+  );
+  const environment: NodeJS.ProcessEnv = {
+    ...baseEnvironment,
+    npm_config_cache: join(root, "npm-cache"),
+    BUN_INSTALL_CACHE_DIR: join(root, "bun-cache"),
+  };
+  const conflictingPackage = createConflictingKajiFixture(root);
+  await install(
+    manager,
+    "bootstrap",
+    bootstrap,
+    [tarball, "zod@4.3.6", nodeTypesPackage, conflictingPackage],
+    environment,
+  );
+  if (manager === "bun") {
+    // Keep Bun's default any-advisory threshold; it is intentionally stricter
+    // than npm's high-severity compatibility gate.
+    await runCommand(
+      "bun:audit",
+      "bun",
+      ["audit", "--production"],
+      bootstrap,
+      environment,
+      PACKAGE_TIMEOUT_MS,
+    );
+  }
+
+  const installedConflict = join(bootstrap, "node_modules/conflicting-kaji-cli/kaji.mjs");
+  if (!existsSync(installedConflict)) {
+    throw new Error("conflicting kaji fixture was not installed");
+  }
+  const ownerCheckBin = join(root, "owner-check-bin");
+  mkdirSync(ownerCheckBin);
+  symlinkSync(installedConflict, join(ownerCheckBin, "kaji"));
+  const ownerEnvironment = {
+    ...environment,
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9",
+    PATH: `${ownerCheckBin}${delimiter}${environment.PATH ?? ""}`,
+  };
+  const nestedWorkdir = join(bootstrap, "nested", "deeper");
+  mkdirSync(nestedWorkdir, { recursive: true });
+  const conflictOutput = await runCommand(
+    `${manager}:cli-owner-conflict`,
+    "kaji",
+    ["--help"],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  if (conflictOutput.trim() !== "kaji (conflicting fixture) 9.9.9") {
+    throw new Error("bare TypeScript CLI did not select the conflicting fixture");
+  }
+
+  const cliCommand = "bun";
+  const cli = ["--no-install", "-e", 'import("kaji-sdk/cli")', "--"];
+  const ownerOutput = await runCommand(
+    `${manager}:cli-owner-qualified`,
+    cliCommand,
+    [...cli, "--help"],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertCliOwnerOutput(ownerOutput);
+  console.log(
+    JSON.stringify({ manager, nestedConflictProof: true, owner: `kaji-sdk ${PACKAGE_VERSION}` }),
+  );
+  const initOutput = await runCommand(
+    `${manager}:cli-init`,
+    cliCommand,
+    [...cli, "--no-color", "init", generated, "--provider", "mock", "--yes"],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertCliInitOutput(initOutput, generated);
+
+  const installedPackageRoot = join(bootstrap, "node_modules/kaji-sdk");
+  const echo = join(generated, "echo");
+  const addOutput = await runCommand(
+    `${manager}:cli-add`,
+    cliCommand,
+    [...cli, "--no-color", "add", "echo", "--out", echo],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertCliAddOutput(addOutput, echo, installedPackageRoot);
+
+  const github = join(bootstrap, "owner-integrations/github");
+  const githubOutput = await runCommand(
+    `${manager}:cli-add`,
+    cliCommand,
+    [...cli, "--no-color", "add", "github", "--out", github],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertGithubCliAddOutput(githubOutput, github, installedPackageRoot);
+  const githubProofRunner = join(bootstrap, "installed-github-smoke.mts");
+  copyFileSync(INSTALLED_GITHUB_SMOKE, githubProofRunner);
+  const githubModule = JSON.stringify(join(github, "index.ts"));
+  await runCommand(
+    `${manager}:cli-inspect`,
+    "bun",
+    [
+      "--eval",
+      `const { inspectIntegration } = await import(${githubModule}); if (inspectIntegration().tools().length !== 6) process.exit(1);`,
+    ],
+    bootstrap,
+    ownerEnvironment,
+  );
+
+  const listOutput = await runCommand(
+    `${manager}:cli-list`,
+    cliCommand,
+    [...cli, "--no-color", "list-integrations", "--json"],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertCliListOutput(listOutput);
+
+  const replayFixture = join(root, "session.jsonl");
+  writeFileSync(replayFixture, REPLAY_FIXTURE);
+  const replayOutput = await runCommand(
+    `${manager}:cli-replay`,
+    cliCommand,
+    [...cli, "--no-color", "replay", replayFixture, "--format", "summary"],
+    nestedWorkdir,
+    ownerEnvironment,
+  );
+  assertCliReplayOutput(replayOutput);
+
+  const installed = readManifest(join(installedPackageRoot, "package.json"));
+  const generatedManifestPath = join(generated, "package.json");
+  const generatedManifest = readManifest(generatedManifestPath) as PackageManifest & {
+    dependencies: Record<string, string>;
+  };
+
+  // Validate the registry-facing versions before replacing only the SDK entry
+  // with the exact local tarball used by this release smoke.
+  assertGeneratedVersions(generatedManifest, installed);
+  generatedManifest.dependencies["kaji-sdk"] = tarball;
+  writeFileSync(generatedManifestPath, JSON.stringify(generatedManifest, null, 2));
+  await install(manager, "generated", generated, [], environment);
+  writeFileSync(join(generated, "lifecycle.ts"), LIFECYCLE_SMOKE_SOURCE);
+  writeFileSync(join(generated, "failure-history.ts"), FAILURE_HISTORY_SMOKE_SOURCE);
+  writeFileSync(join(generated, "legacy-ledger-types.ts"), LEGACY_LEDGER_TYPES_SOURCE);
+
+  const config = JSON.parse(readFileSync(join(generated, "tsconfig.json"), "utf8")) as {
+    compilerOptions?: { skipLibCheck?: boolean; types?: unknown };
+  };
+  if (config.compilerOptions?.skipLibCheck !== false) {
+    throw new Error("generated scaffold must compile with skipLibCheck disabled");
+  }
+  if (JSON.stringify(config.compilerOptions.types) !== JSON.stringify(["node"])) {
+    throw new Error("generated scaffold must load Node ambient declarations explicitly");
+  }
+  for (const compiler of ["typescript57", "typescript"] as const) {
+    const tsc = join(generated, `node_modules/${compiler}/bin/tsc`);
+    if (!existsSync(tsc)) throw new Error(`generated scaffold is missing ${compiler}`);
+    const phase: SmokePhase =
+      compiler === "typescript57"
+        ? `${manager}:compile-typescript-5.7`
+        : `${manager}:compile-typescript-current`;
+    await runCommand(phase, nodeBinary, [tsc, "--project", "tsconfig.json", "--noEmit"], generated);
+  }
+  const typescriptDeclarationChecks = await compileInstalledGitHubTypes(manager, generated);
+  const typescriptDeclarationChecksPath = join(generated, "github-types-declaration-checks.json");
+  writeFileSync(
+    typescriptDeclarationChecksPath,
+    JSON.stringify(typescriptDeclarationChecks, null, 2),
+  );
+  const githubProof = assertGithubPackageProof(
+    await runCommand(
+      `${manager}:github-package-proof`,
+      nodeBinary,
+      [
+        "--experimental-strip-types",
+        githubProofRunner,
+        "--sandbox-root",
+        root,
+        "--package-root",
+        realpathSync(installedPackageRoot),
+        "--typescript-declaration-checks",
+        typescriptDeclarationChecksPath,
+      ],
+      bootstrap,
+      githubProofEnvironment(ownerEnvironment),
+    ),
+    installedPackageRoot,
+    typescriptDeclarationChecks,
+  );
+  const tsx = join(generated, "node_modules/tsx/dist/cli.mjs");
+  if (!existsSync(tsx)) throw new Error("generated scaffold is missing the tsx runner");
+  const gettingStarted = markedSnippet(
+    join(repositoryRoot, "apps/docs/content/getting-started.mdx"),
+    "getting-started:no-key:typescript",
+    "ts",
+  );
+  const installedArtifactEcho = markedSnippet(
+    join(repositoryRoot, "docs/kaji/typescript-onboarding-evidence.md"),
+    "tthw-echo:typescript",
+    "ts",
+  );
+  writeFileSync(join(generated, "getting-started.mts"), gettingStarted);
+  writeFileSync(
+    join(generated, "installed-artifact-echo.mts"),
+    `${installedArtifactEcho}\n${INSTALLED_ARTIFACT_ECHO_EVIDENCE_SOURCE}`,
+  );
+  const docsEnvironment = tokenFreeHandoffEnvironment({
+    ...ownerEnvironment,
+    npm_config_registry: "http://127.0.0.1:9",
+  });
+  const docsCommand = manager === "npm" ? nodeBinary : "bun";
+  const docsArgs = (source: string) =>
+    manager === "npm" ? [tsx, source] : ["--no-install", source];
+  const gettingStartedOutput = await runCommand(
+    `${manager}:docs-getting-started-run`,
+    docsCommand,
+    docsArgs("getting-started.mts"),
+    generated,
+    docsEnvironment,
+  );
+  if (gettingStartedOutput.trim() !== EXPECTED_MOCK_REPLY) {
+    throw new Error("Getting Started no-key output changed");
+  }
+  const installedArtifactEchoOutput = await runCommand(
+    `${manager}:installed-artifact-echo-run`,
+    docsCommand,
+    docsArgs("installed-artifact-echo.mts"),
+    generated,
+    docsEnvironment,
+  );
+  const echoAssertions = parseInstalledArtifactEchoEvidence(installedArtifactEchoOutput);
+  const lifecycleOutput = await runCommand(
+    `${manager}:lifecycle-run`,
+    nodeBinary,
+    [tsx, "lifecycle.ts"],
+    generated,
+    environment,
+  );
+  assertLifecycleOutput(lifecycleOutput);
+  const failureHistoryOutput = await runCommand(
+    `${manager}:failure-history-run`,
+    nodeBinary,
+    [tsx, "failure-history.ts"],
+    generated,
+    environment,
+  );
+  assertFailureHistoryOutput(failureHistoryOutput);
+
+  const run = (phase: SmokePhase) =>
+    manager === "npm"
+      ? runCommand(phase, "npm", ["run", "start", "--silent"], generated, environment)
+      : runCommand(phase, "bun", ["run", "start"], generated, environment);
+  const coldOutput = await run(`${manager}:cold-run`);
+  const coldResult = assertScaffoldOutput(coldOutput);
+  const coldSetupToOutputMs = elapsedMilliseconds(startedNs, process.hrtime.bigint());
+  const warmStartedNs = process.hrtime.bigint();
+  const warmOutput = await run(`${manager}:warm-run`);
+  const warmResult = assertScaffoldOutput(warmOutput);
+  if (
+    coldResult.text !== warmResult.text ||
+    coldResult.finalSequence !== warmResult.finalSequence
+  ) {
+    throw new Error("cold and warm generated scaffold outputs differed");
+  }
+  const warmRunMs = elapsedMilliseconds(warmStartedNs, process.hrtime.bigint());
+  return {
+    coldSetupToOutputMs,
+    warmRunMs,
+    githubProof,
+    onboardingProof: {
+      manager,
+      phases: {
+        artifactInstall: true,
+        scaffoldInit: true,
+        noKeyRun: true,
+        echoSetup: true,
+        echoRun: true,
+        coldRun: true,
+        warmRun: true,
+      },
+      assertions: {
+        noKeyText: EXPECTED_MOCK_REPLY,
+        deterministicText: EXPECTED_MOCK_REPLY,
+        ...echoAssertions,
+        coldWarmEqual: true,
+      },
+    },
+  };
+}
+
+export function ordinarySuccessReceipt(
+  identity: ArtifactIdentity,
+  tarball: string,
+  installedPackagePath: string,
+  nodeVersion: string,
+  npmVersion: string,
+  bunVersion: string,
+  npmTiming: ScaffoldResult,
+  bunTiming: ScaffoldResult,
+  context: OrdinaryReceiptContext,
+): Record<string, unknown> {
+  const normalizedNodeVersion = semverFromVersionOutput(nodeVersion, "Node");
+  const normalizedNpmVersion = semverFromVersionOutput(npmVersion, "npm");
+  const normalizedBunVersion = semverFromVersionOutput(bunVersion, "Bun");
+  if (nodeVersion !== `v${normalizedNodeVersion}`) {
+    throw new Error("Node toolchain version must retain the official v prefix");
+  }
+  if (JSON.stringify(npmTiming.githubProof) !== JSON.stringify(bunTiming.githubProof)) {
+    throw new Error("npm and Bun installed-package proofs differ");
+  }
+  const declarations = npmTiming.githubProof.typescriptDeclarationChecks;
+  const artifactHash = identity.artifactSha256[PACKAGE_TARBALL];
+  if (artifactHash === undefined) {
+    throw new Error("success receipt is missing the canonical npm tarball digest");
+  }
+  const receipt = {
+    schemaVersion: 2,
+    executionMode: context.executionMode,
+    commit: identity.commit,
+    releaseManifestSha256: identity.manifestSha256,
+    artifactSha256: identity.artifactSha256,
+    packageArtifact: context.packageArtifact,
+    producerArtifact: context.producerArtifact,
+    runner: context.runner,
+    invocation: context.invocation,
+    runtime: { version: nodeVersion },
+    artifacts: { tarball, package: installedPackagePath },
+    githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof },
+    onboardingProofs: {
+      npm: npmTiming.onboardingProof,
+      bun: bunTiming.onboardingProof,
+    },
+    timings: {
+      npm: retainedScaffoldTiming(npmTiming),
+      bun: retainedScaffoldTiming(bunTiming),
+    },
+    toolchain: {
+      python: "not-used",
+      uv: "not-used",
+      node: nodeVersion,
+      npm: normalizedNpmVersion,
+      bun: normalizedBunVersion,
+      typescript: `${declarations.typescript57.version} and ${declarations.typescriptCurrent.version}`,
+    },
+    conclusion: "passed",
+    failureCode: null,
+  };
+  assertClosedOrdinaryReceipt(receipt, context.executionMode, context);
+  return receipt;
+}
+
+export function ordinaryFailureReceipt(
+  error: unknown,
+  arguments_: SmokeArguments,
+  identity: ArtifactIdentity | null,
+  nodeVersion: string,
+): Record<string, unknown> {
+  const retainedIdentity =
+    identity === null
+      ? null
+      : {
+          commit: sanitizeRetainedCommit(identity.commit),
+          manifestSha256: sanitizeRetainedSha256(identity.manifestSha256),
+          artifactSha256: sanitizeRetainedArtifactSha256(identity.artifactSha256),
+        };
+  const retainedFailure =
+    error instanceof SmokeCommandError &&
+    isSmokePhase(error.phase) &&
+    isCommandFailureKind(error.kind)
+      ? { phase: error.phase, kind: error.kind }
+      : { phase: null, kind: "unknown" as const };
+  const receipt: OrdinaryFailedReceiptV2 = {
+    schemaVersion: 2,
+    executionMode: arguments_.protected === true ? "protected" : "local",
+    commit: retainedIdentity?.commit ?? sanitizeRetainedCommit(arguments_.expectedCommit),
+    releaseManifestSha256: retainedIdentity?.manifestSha256 ?? null,
+    artifactSha256: retainedIdentity?.artifactSha256 ?? {},
+    runtime: { version: isRetainedNodeVersion(nodeVersion) ? nodeVersion : null },
+    artifacts: {},
+    githubPackageProofs: {},
+    onboardingProofs: {},
+    conclusion: "failed",
+    failureCode: identity === null ? "artifact_identity_failed" : "node_smoke_failed",
+    failedPhase: retainedFailure.phase,
+    failureKind: retainedFailure.kind,
+  };
+  assertClosedOrdinaryReceipt(receipt, receipt.executionMode);
+  return receipt;
+}
+
+async function main(rawArguments = process.argv.slice(2)): Promise<void> {
+  workdir = "";
+  installRoot = "";
+  if (rawArguments.includes("--for-handoff")) {
+    let pending: PendingSmokeReceipt | null = null;
+    let failure: unknown;
+    try {
+      const handoffArguments = parseArguments(rawArguments);
+      workdir = mkdtempSync(join(tmpdir(), "kaji-handoff-smoke-"));
+      installRoot = workdir;
+      pending = await runSuppliedTarballHandoff(handoffArguments);
+    } catch (error) {
+      failure = error;
+    }
+    finalizeSmokeRun(workdir, pending, null);
+    if (failure !== undefined) throw failure;
+    return;
+  }
+
+  try {
+    const fallbackOutput = requestedOutput(rawArguments);
+    let arguments_: SmokeArguments = {};
+    let receiptIdentity: ArtifactIdentity | null = null;
+    let receiptTarball: string | null = null;
+    let installedPackagePath: string | null = null;
+    let receiptNodeVersion = process.version;
+    let receiptContext: OrdinaryReceiptContext | null = null;
+    let pending: PendingSmokeReceipt | null = null;
+    let failure: unknown;
+
+    try {
+      arguments_ = parseArguments(rawArguments);
+      workdir = mkdtempSync(join(tmpdir(), "kaji-installed-smoke-"));
+      installRoot = join(workdir, "project");
+      mkdirSync(installRoot, { recursive: true });
+      const requestedTarball = arguments_.tarball;
+      let tarball: string;
+      if (requestedTarball === undefined) {
+        const environment = {
+          ...baseEnvironment,
+          npm_config_cache: join(workdir, "pack-cache"),
+        };
+        const packed = JSON.parse(
+          await runCommand(
+            "npm:pack",
+            "npm",
+            ["pack", "--json", "--ignore-scripts", "--pack-destination", workdir],
+            packageRoot,
+            environment,
+          ),
+        ) as Array<{ filename: string }>;
+        const filename = packed[0]?.filename;
+        if (!filename) throw new Error("npm pack did not report a tarball");
+        tarball = join(workdir, filename);
+      } else {
+        tarball = resolve(requestedTarball);
+        if (!existsSync(tarball)) throw new Error("supplied npm tarball does not exist");
+      }
+      tarball = realpathSync(tarball);
+      receiptTarball = tarball;
+      receiptIdentity = artifactIdentity(
+        tarball,
+        arguments_.releaseManifest,
+        arguments_.expectedCommit,
+      );
+
+      const nodeVersion = retainedSmokeToolVersion(
+        await runCommand("node:version", nodeBinary, ["--version"]),
+        "node",
+      );
+      receiptNodeVersion = nodeVersion;
+      const npmVersion = retainedSmokeToolVersion(
+        await runCommand("npm:version", "npm", ["--version"]),
+        "npm",
+      );
+      const bunVersion = retainedSmokeToolVersion(
+        await runCommand("bun:version", "bun", ["--version"]),
+        "bun",
+      );
+      receiptContext = ordinaryReceiptContext(
+        arguments_,
+        receiptIdentity,
+        receiptNodeVersion,
+        receiptTarball,
+      );
+
+      const npmEnvironment = {
+        ...baseEnvironment,
+        npm_config_cache: join(workdir, "npm-cache"),
+      };
+      writeFileSync(
+        join(installRoot, "package.json"),
+        JSON.stringify({ name: "kaji-package-smoke", version: "1.0.0", private: true }),
+      );
+      const packageManifest = readManifest(join(packageRoot, "package.json"));
+      const nodeTypesRange = packageManifest.devDependencies["@types/node"];
+      if (nodeTypesRange === undefined) {
+        throw new Error("package metadata has no supported @types/node range");
+      }
+      const nodeTypesPackage = `@types/node@${nodeTypesRange}`;
+      await install(
+        "npm",
+        "package",
+        installRoot,
+        [tarball, "zod@4.3.6", "openai@6.42.0", "@anthropic-ai/sdk@0.104.1", nodeTypesPackage],
+        npmEnvironment,
+      );
+      if (!existsSync(join(installRoot, "node_modules/kaji-sdk/dist/cli/init-worker.js"))) {
+        throw new Error("installed package is missing the pinned init worker");
+      }
+      installedPackagePath = realpathSync(join(installRoot, "node_modules/kaji-sdk"));
+      await runCommand(
+        "npm:audit",
+        "npm",
+        ["audit", "--omit=dev", "--audit-level=high"],
+        installRoot,
+        { ...npmEnvironment, npm_config_audit: "true" },
+        PACKAGE_TIMEOUT_MS,
+      );
+
+      const esm = `
+import * as sdk from "kaji-sdk";
+import * as testing from "kaji-sdk/testing";
+import * as openai from "kaji-sdk/openai";
+import * as anthropic from "kaji-sdk/anthropic";
+import * as integrations from "kaji-sdk/integrations";
+import * as github from "kaji-sdk/integrations/github";
+if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
+if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 15) process.exit(1);
+const githubRequester = integrations.createGitHubRequester();
+const gmailRequester = integrations.createGmailRequester();
+githubRequester.close();
+githubRequester.close();
+gmailRequester.close();
+gmailRequester.close();
+`;
+      const cjs = `
+const sdk = require("kaji-sdk");
+const testing = require("kaji-sdk/testing");
+const openai = require("kaji-sdk/openai");
+const anthropic = require("kaji-sdk/anthropic");
+const integrations = require("kaji-sdk/integrations");
+const github = require("kaji-sdk/integrations/github");
+if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
+if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
+if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 15) process.exit(1);
+const githubRequester = integrations.createGitHubRequester();
+const gmailRequester = integrations.createGmailRequester();
+githubRequester.close();
+githubRequester.close();
+gmailRequester.close();
+gmailRequester.close();
+`;
+      writeFileSync(join(installRoot, "smoke.mjs"), esm);
+      writeFileSync(join(installRoot, "smoke.cjs"), cjs);
+      await runCommand("exports:esm", nodeBinary, ["smoke.mjs"]);
+      await runCommand("exports:cjs", nodeBinary, ["smoke.cjs"]);
+      const ownerOutput = await runCommand(
+        "cli:help",
+        "bun",
+        ["--no-install", "-e", 'import("kaji-sdk/cli")', "--", "--help"],
+        installRoot,
+        { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
+      );
+      assertCliOwnerOutput(ownerOutput);
+      const cjsOwnerOutput = await runCommand(
+        "cli:help-cjs",
+        nodeBinary,
+        ["--eval", 'process.argv=[process.execPath,"--help"]; require("kaji-sdk/cli");'],
+        installRoot,
+        npmEnvironment,
+      );
+      assertCliOwnerOutput(cjsOwnerOutput);
+
+      const docs = readFileSync(join(repositoryRoot, "docs/kaji/production-beta.md"), "utf8");
+      const quickstart = docs.match(
+        /<!-- installed-quickstart:typescript:start -->\s*```ts\n([\s\S]*?)\n```\s*<!-- installed-quickstart:typescript:end -->/,
+      )?.[1];
+      if (quickstart === undefined)
+        throw new Error("canonical TypeScript quickstart block is missing");
+      writeFileSync(join(installRoot, "docs-quickstart.mts"), quickstart);
+      writeFileSync(
+        join(installRoot, "tsconfig.docs.json"),
+        JSON.stringify({
+          compilerOptions: {
+            module: "NodeNext",
+            moduleResolution: "NodeNext",
+            noEmit: false,
+            outDir: "compiled-docs",
+            skipLibCheck: false,
+            strict: true,
+            target: "ES2022",
+            types: ["node"],
+          },
+          include: ["docs-quickstart.mts"],
+        }),
+      );
+      const tsc = join(packageRoot, "node_modules/typescript/bin/tsc");
+      if (!existsSync(tsc)) throw new Error("current TypeScript compiler is missing");
+      await runCommand("docs:compile-typescript-current", nodeBinary, [
+        tsc,
+        "--project",
+        "tsconfig.docs.json",
+      ]);
+      await runCommand("docs:run", nodeBinary, ["compiled-docs/docs-quickstart.mjs"]);
+
+      const npmTiming = await runScaffold("npm", tarball, nodeTypesPackage);
+      const bunTiming = await runScaffold("bun", tarball, nodeTypesPackage);
+      assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/kaji-sdk"));
+      pending = {
+        kind: "ordinary",
+        output: arguments_.output,
+        diagnostics: [
+          JSON.stringify({ npm: npmTiming, bun: bunTiming }),
+          "PASS: exact npm tarball resolves exports and no-key npm/Bun scaffolds under TypeScript 5.7/current 6",
+        ],
+        receipt: ordinarySuccessReceipt(
+          receiptIdentity,
+          receiptTarball,
+          installedPackagePath,
+          receiptNodeVersion,
+          npmVersion,
+          bunVersion,
+          npmTiming,
+          bunTiming,
+          receiptContext,
+        ),
+      };
+    } catch (error) {
+      failure = error;
+      pending = {
+        kind: "ordinary",
+        output: arguments_.output ?? fallbackOutput,
+        receipt: ordinaryFailureReceipt(error, arguments_, receiptIdentity, receiptNodeVersion),
+      };
+    }
+    const cleanupFailure = new SmokeCommandError("workspace:cleanup", "cleanup");
+    finalizeSmokeRun(workdir, pending, {
+      kind: "ordinary",
+      output: arguments_.output ?? fallbackOutput,
+      receipt: ordinaryFailureReceipt(
+        cleanupFailure,
+        arguments_,
+        receiptIdentity,
+        receiptNodeVersion,
+      ),
+    });
+    if (failure !== undefined) throw failure;
+  } finally {
+    workdir = "";
+    installRoot = "";
+  }
+}
+
+if (import.meta.main) {
+  await main();
+}

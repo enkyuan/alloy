@@ -133,7 +133,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.11.9"
       - id: setup_bun
         uses: ./.github/actions/setup-bun-cache
@@ -170,7 +170,7 @@ jobs:
       - name: Measure protected paired replica
         id: measure
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/paired_benchmark.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/paired_benchmark.py
           --reference-artifacts-dir .artifacts/kaji-reference
           --candidate-artifacts-dir .artifacts/kaji-candidate
           --candidate-commit "$KAJI_RELEASE_COMMIT"
@@ -279,7 +279,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.11.9"
       - name: Download all raw paired replica receipts
         id: download
@@ -299,7 +299,7 @@ jobs:
       - name: Aggregate exactly three paired benchmark receipts
         id: aggregate
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/aggregate_benchmarks.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/aggregate_benchmarks.py
           --replica-report .artifacts/kaji-paired/replicas/replica-1.json
           --replica-report .artifacts/kaji-paired/replicas/replica-2.json
           --replica-report .artifacts/kaji-paired/replicas/replica-3.json
@@ -386,7 +386,7 @@ jobs:
       - id: setup_python
         uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           python-version: "3.11.9"
       - id: setup_bun
         uses: ./.github/actions/setup-bun-cache
@@ -410,7 +410,7 @@ jobs:
       - name: Run protected 30-minute soak
         id: soak
         run: >-
-          uv run --project kaji --no-sync python kaji/scripts/run_beta_soak.py
+          uv run --project kaji/packages/python --no-sync python kaji/scripts/run_beta_soak.py
           --minutes 30 --protected --artifacts-dir .artifacts/kaji-candidate
       - name: Normalize and retain soak evidence
         if: ${{ always() && github.run_attempt == 1 }}

@@ -3,7 +3,7 @@ language: Python
 message: kaji.core must stay foundational; do not import infra, runtime, knowledge, modalities, Redis, or service modules from core.
 severity: error
 files:
-  - "kaji/src/kaji/core/**/*.py"
+  - "kaji/packages/python/src/kaji/core/**/*.py"
 rule:
   any:
     - pattern: import kaji.infra

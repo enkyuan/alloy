@@ -3,8 +3,8 @@ language: TypeScript
 severity: error
 message: Copied providers must import fixed-origin contracts from kaji-sdk/integrations.
 files:
-  - "kaji/ts/registry/github/**/*.ts"
-  - "kaji/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/packages/typescript/registry/github/**/*.ts"
+  - "kaji/packages/python/src/kaji/integrations/registry/github/**/*.ts"
 rule:
   all:
     - kind: import_statement

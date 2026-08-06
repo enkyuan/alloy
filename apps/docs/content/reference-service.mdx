@@ -3,7 +3,7 @@ title: Reference Service
 description: The WIP kaji-serve package exposes a FastAPI and Soniox STT edge outside the supported 0.2 SDK beta.
 ---
 
-`kaji-serve` (`kaji/serve`) exposes one FastAPI process with REST routes and a
+`kaji-serve` (`kaji/packages/serve`) exposes one FastAPI process with REST routes and a
 Soniox speech-to-text WebSocket on port 8080. It is a WIP reference edge, not
 part of the 0.2 SDK beta core or a production durability or horizontal-scaling
 claim.
@@ -35,9 +35,9 @@ curl http://localhost:8080/health
 If its dependencies are already available, start the single API process:
 
 ```bash
-cd kaji/serve
+# from the repository root
 uv sync
-uv run uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
+uv run --package kaji-serve uvicorn kaji_serve.server.app:app --host 0.0.0.0 --port 8080
 ```
 
 ## When to use the reference service

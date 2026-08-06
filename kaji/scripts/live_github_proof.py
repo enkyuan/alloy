@@ -63,7 +63,9 @@ RELEASE_FILES = (
 )
 PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_github_live.py"
 CONTROL_HELPER = ROOT / "kaji" / "scripts" / "github_proof_control.py"
-TYPESCRIPT_RUNNER = ROOT / "kaji" / "ts" / "scripts" / "installed-github-live.mts"
+TYPESCRIPT_RUNNER = (
+    ROOT / "kaji" / "packages" / "typescript" / "scripts" / "installed-github-live.mts"
+)
 PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
 PYTHON_CHILD_BOOTSTRAP = "\n".join(
     (
@@ -190,7 +192,11 @@ def _is_source_path(value: Any, workspace: Path) -> bool:
         or resolved.is_relative_to(checkout)
         or any(
             marker in normalized
-            for marker in ("/kaji/src/", "/kaji/ts/src/", "/kaji/ts/dist/")
+            for marker in (
+                "/kaji/packages/python/src/",
+                "/kaji/packages/typescript/src/",
+                "/kaji/packages/typescript/dist/",
+            )
         )
     )
 

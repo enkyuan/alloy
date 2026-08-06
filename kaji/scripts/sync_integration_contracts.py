@@ -15,33 +15,53 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts" / "integrations"
 COPIES = {
     CONTRACTS / "manifest.schema.json": (
-        ROOT / "kaji" / "src" / "kaji" / "integrations" / "registry" / "schema.json",
-        ROOT / "kaji" / "ts" / "registry" / "schema.json",
+        ROOT
+        / "kaji"
+        / "packages"
+        / "python"
+        / "src"
+        / "kaji"
+        / "integrations"
+        / "registry"
+        / "schema.json",
+        ROOT / "kaji" / "packages" / "typescript" / "registry" / "schema.json",
     ),
     CONTRACTS / "index.schema.json": (
         ROOT
         / "kaji"
+        / "packages"
+        / "python"
         / "src"
         / "kaji"
         / "integrations"
         / "registry"
         / "index.schema.json",
-        ROOT / "kaji" / "ts" / "registry" / "index.schema.json",
+        ROOT / "kaji" / "packages" / "typescript" / "registry" / "index.schema.json",
     ),
     ROOT / "LICENSE": (
         ROOT
         / "kaji"
+        / "packages"
+        / "python"
         / "src"
         / "kaji"
         / "integrations"
         / "registry"
         / "github"
         / "LICENSE",
-        ROOT / "kaji" / "ts" / "registry" / "github" / "LICENSE",
+        ROOT / "kaji" / "packages" / "typescript" / "registry" / "github" / "LICENSE",
     ),
-    ROOT / "kaji" / "ts" / "registry" / "github" / "owner-fixtures.json": (
+    ROOT
+    / "kaji"
+    / "packages"
+    / "typescript"
+    / "registry"
+    / "github"
+    / "owner-fixtures.json": (
         ROOT
         / "kaji"
+        / "packages"
+        / "python"
         / "src"
         / "kaji"
         / "integrations"
@@ -51,8 +71,10 @@ COPIES = {
     ),
 }
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
-PYTHON_REGISTRY = ROOT / "kaji" / "src" / "kaji" / "integrations" / "registry"
-TYPESCRIPT_REGISTRY = ROOT / "kaji" / "ts" / "registry"
+PYTHON_REGISTRY = (
+    ROOT / "kaji" / "packages" / "python" / "src" / "kaji" / "integrations" / "registry"
+)
+TYPESCRIPT_REGISTRY = ROOT / "kaji" / "packages" / "typescript" / "registry"
 _INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 

@@ -3,11 +3,11 @@ language: TypeScript
 severity: error
 message: TypeScript release scripts must execute commands through scripts/command.ts.
 files:
-  - "kaji/ts/scripts/**/*.ts"
-  - "kaji/ts/scripts/**/*.mts"
-  - "kaji/ts/scripts/**/*.cts"
+  - "kaji/packages/typescript/scripts/**/*.ts"
+  - "kaji/packages/typescript/scripts/**/*.mts"
+  - "kaji/packages/typescript/scripts/**/*.cts"
 ignores:
-  - "kaji/ts/scripts/command.ts"
+  - "kaji/packages/typescript/scripts/command.ts"
 rule:
   any:
     - all:

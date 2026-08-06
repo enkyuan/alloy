@@ -449,7 +449,12 @@ def main() -> int:
             typescript_driver = (
                 installed.typescript_soak
                 if installed is not None
-                else ROOT / "kaji" / "ts" / "benchmarks" / "runtime-soak.ts"
+                else ROOT
+                / "kaji"
+                / "packages"
+                / "typescript"
+                / "benchmarks"
+                / "runtime-soak.ts"
             )
             try:
                 python_completed, typescript_completed = run_parallel_checked(

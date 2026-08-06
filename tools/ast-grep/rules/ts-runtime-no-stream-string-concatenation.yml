@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Accumulate provider text in the bounded DeltaAccumulator.
 files:
-  - "kaji/ts/src/runtime/runtime.ts"
+  - "kaji/packages/typescript/src/runtime/runtime.ts"
 rule:
   all:
     - any:

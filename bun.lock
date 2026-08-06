@@ -103,11 +103,11 @@
         "vite": "^8.0.12",
       },
     },
-    "kaji/ts": {
+    "kaji/packages/typescript": {
       "name": "kaji-sdk",
       "version": "0.2.0-beta.11",
       "bin": {
-        "kaji": "./dist/cli/bin.js",
+        "kaji": "dist/cli/bin.js",
       },
       "dependencies": {
         "ajv": "^8.20.0",
@@ -1522,7 +1522,7 @@
 
     "jsonfile": ["jsonfile@6.2.1", "", { "dependencies": { "universalify": "^2.0.0" }, "optionalDependencies": { "graceful-fs": "^4.1.6" } }, "sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q=="],
 
-    "kaji-sdk": ["kaji-sdk@workspace:kaji/ts"],
+    "kaji-sdk": ["kaji-sdk@workspace:kaji/packages/typescript"],
 
     "keyv": ["keyv@4.5.4", "", { "dependencies": { "json-buffer": "3.0.1" } }, "sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw=="],
 

@@ -28,7 +28,7 @@ jobs:
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: kaji
+          working-directory: .
           sync-args: --frozen
 
       - uses: ./.github/actions/setup-bun-cache
@@ -38,4 +38,4 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Run the canonical local Kaji CI gate
-        run: uv run --project kaji --no-sync python kaji/scripts/beta_release_check.py --gate
+        run: uv run --project kaji/packages/python --no-sync python kaji/scripts/beta_release_check.py --gate

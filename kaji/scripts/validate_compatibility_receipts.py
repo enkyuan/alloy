@@ -824,7 +824,7 @@ def _typescript_github_package_proof_valid(value: Any) -> bool:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/ts/tests/github-registry.test.ts",
+            "testFile": "kaji/packages/typescript/tests/github-registry.test.ts",
             "testName": (
                 "rejects approval for github_create_issue before token or HTTP"
             ),

@@ -866,7 +866,8 @@ def _registry_proof(
 
 def _package_metadata(candidate: Path) -> dict[str, Any]:
     document, _encoded = _load_json(
-        candidate / "kaji" / "ts" / "package.json", code="SOURCE_COMMIT_MISMATCH"
+        candidate / "kaji" / "packages" / "typescript" / "package.json",
+        code="SOURCE_COMMIT_MISMATCH",
     )
     if document.get("name") != PACKAGE_NAME or not _valid_semver(
         document.get("version")
@@ -1124,7 +1125,7 @@ def stage(
         "package"
     ] or (package.get("scripts") or {}).get("prebuild") != "bun run validate:registry":
         _reject("SOURCE_COMMIT_MISMATCH", source_commit=source["headCommit"])
-    ts_root = candidate / "kaji" / "ts"
+    ts_root = candidate / "kaji" / "packages" / "typescript"
 
     with _owned_directory(output_dir) as temporary:
         _run_stage_command(command_runner, CLEAN_COMMAND, ts_root, "BUILD_FAILED")

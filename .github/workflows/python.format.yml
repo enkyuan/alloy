@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths:
       - "kaji/**"
-      - "kaji/serve/**"
+      - "kaji/packages/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
   pull_request:
     paths:
       - "kaji/**"
-      - "kaji/serve/**"
+      - "kaji/packages/serve/**"
       - ".github/actions/setup-python-uv/**"
       - ".github/workflows/python.format.yml"
 
@@ -32,9 +32,9 @@ jobs:
       matrix:
         include:
           - package: kaji
-            working-directory: kaji
-          - package: kaji/serve
-            working-directory: kaji/serve
+            working-directory: kaji/packages/python
+          - package: kaji/packages/serve
+            working-directory: kaji/packages/serve
     defaults:
       run:
         working-directory: ${{ matrix.working-directory }}
@@ -43,7 +43,7 @@ jobs:
 
       - uses: ./.github/actions/setup-python-uv
         with:
-          working-directory: ${{ matrix.working-directory }}
+          working-directory: .
 
       - name: Check formatting
         run: uv run ruff format --check .

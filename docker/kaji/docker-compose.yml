@@ -73,8 +73,8 @@ services:
       start_period: 40s
     volumes:
       # Mount source code for development (comment out for production)
-      - ../../kaji/src:/app/kaji/src:ro
-      - ../../kaji/serve/src:/app/kaji/serve/src:ro
+      - ../../kaji/packages/python/src:/app/kaji/packages/python/src:ro
+      - ../../kaji/packages/serve/src:/app/kaji/packages/serve/src:ro
 
   # ============================================================================
   # Supabase Services

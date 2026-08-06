@@ -35,7 +35,9 @@ from process_runner import (
 KAJI_ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOT = KAJI_ROOT.parent
 DEFAULT_BUDGETS = KAJI_ROOT / "benchmarks" / "integration-budgets.json"
-TYPESCRIPT_RUNNER = KAJI_ROOT / "ts" / "scripts" / "integration-benchmark.ts"
+TYPESCRIPT_RUNNER = (
+    KAJI_ROOT / "packages" / "typescript" / "scripts" / "integration-benchmark.ts"
+)
 BENCHMARK_PLATFORM = Path(__file__).with_name("benchmark_platform.py")
 RUNTIMES = ("python", "typescript")
 CASE_NAMES = (
@@ -1078,7 +1080,7 @@ def _run_child(
         cwd = REPOSITORY_ROOT
     elif runtime == "typescript":
         command = [_bun_binary(), "scripts/integration-benchmark.ts", *common]
-        cwd = KAJI_ROOT / "ts"
+        cwd = KAJI_ROOT / "packages" / "typescript"
     else:
         _fail(f"unknown integration benchmark runtime: {runtime}")
     completed = run_checked(

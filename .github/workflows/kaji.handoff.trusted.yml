@@ -120,11 +120,11 @@ jobs:
         with:
           version: "0.11.25"
           enable-cache: true
-          cache-dependency-glob: trusted/kaji/uv.lock
+          cache-dependency-glob: trusted/uv.lock
 
       - name: Install trusted Python dependencies
         shell: bash
-        run: uv sync --project trusted/kaji --frozen
+        run: uv sync --project trusted/kaji/packages/python --frozen
 
       - name: Verify candidate source and signatures with the trusted verifier
         shell: bash
@@ -145,7 +145,7 @@ jobs:
           else
             arguments+=(--mode commit)
           fi
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/verify_ts_handoff_source.py "${arguments[@]}"
 
       - name: Set up candidate Node
@@ -160,12 +160,12 @@ jobs:
 
       - name: Install trusted TypeScript dependencies
         shell: bash
-        working-directory: trusted/kaji/ts
+        working-directory: trusted/kaji/packages/typescript
         run: bun install --frozen-lockfile
 
       - name: Install candidate TypeScript dependencies
         shell: bash
-        working-directory: candidate/kaji/ts
+        working-directory: candidate/kaji/packages/typescript
         run: bun install --frozen-lockfile
 
       - name: Preflight internal-evaluation handoff
@@ -180,7 +180,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/ts_handoff.py preflight \
             --mode internal-evaluation \
             --candidate-root candidate \
@@ -201,7 +201,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/ts_handoff.py preflight \
             --mode release \
             --candidate-root candidate \
@@ -217,7 +217,7 @@ jobs:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/ts_handoff.py stage \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
@@ -258,7 +258,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bun trusted/kaji/ts/scripts/smoke_package.mts \
+          bun trusted/kaji/packages/typescript/scripts/smoke_package.mts \
             --for-handoff artifact-contract \
             ".artifacts/kaji-handoff-staging/$KAJI_HANDOFF_TARBALL" \
             --candidate-root candidate \
@@ -373,7 +373,7 @@ jobs:
 
       - name: Install trusted TypeScript dependencies
         shell: bash
-        working-directory: trusted/kaji/ts
+        working-directory: trusted/kaji/packages/typescript
         run: bun install --frozen-lockfile
 
       - name: Download exact stage transfer envelope
@@ -429,7 +429,7 @@ jobs:
           EXPECTED_NODE_MAJOR: ${{ matrix.node }}
         run: |
           set -euo pipefail
-          bun trusted/kaji/ts/scripts/smoke_package.mts \
+          bun trusted/kaji/packages/typescript/scripts/smoke_package.mts \
             --for-handoff node \
             ".artifacts/kaji-handoff-staging/$EXPECTED_FILENAME" \
             --node-binary "$NODE_BINARY" \
@@ -689,7 +689,7 @@ jobs:
         with:
           version: ${{ steps.toolchain.outputs.uv }}
           enable-cache: true
-          cache-dependency-glob: trusted/kaji/uv.lock
+          cache-dependency-glob: trusted/uv.lock
 
       - name: Set up recorded Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -710,7 +710,7 @@ jobs:
           EXPECTED_UV: ${{ steps.toolchain.outputs.uv }}
         run: |
           set -euo pipefail
-          uv sync --project trusted/kaji --frozen
+          uv sync --project trusted/kaji/packages/python --frozen
           test "$(node --version | sed 's/^v//')" = "$EXPECTED_NODE"
           test "$(npm --version)" = "$EXPECTED_NPM"
           test "$(bun --version)" = "$EXPECTED_BUN"
@@ -730,7 +730,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/ts_handoff.py finalize \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
@@ -754,7 +754,7 @@ jobs:
         run: |
           set -euo pipefail
           validation=.artifacts/kaji-handoff-evidence/validation.json
-          uv run --project trusted/kaji --no-sync python \
+          uv run --project trusted/kaji/packages/python --no-sync python \
             trusted/kaji/scripts/validate_ts_consumer_handoff.py \
             --bundle-dir .artifacts/kaji-handoff \
             --receipts-dir .artifacts/kaji-handoff-inputs/receipt-set \

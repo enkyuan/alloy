@@ -3,7 +3,7 @@ language: TypeScript
 message: Event infrastructure must depend only on internal helpers and contracts, never upward on runtime or integrations.
 severity: error
 files:
-  - "kaji/ts/src/events/**/*.ts"
+  - "kaji/packages/typescript/src/events/**/*.ts"
 rule:
   any:
     - all:

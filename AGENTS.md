@@ -8,9 +8,9 @@
 
 ## Learned Workspace Facts
 
-- Monorepo layout: ryo services under `ryo/` (`api`, `consumer`, `auth`); the Python `kaji-sdk` package at `kaji/`, `kaji-serve` at `kaji/serve/` (path-depends on `..`), and the TypeScript `@kaji/sdk` package at `kaji/ts/`; web studio under `apps/web/`. Compose infra under `docker/`. Repo-wide JS workspace config (`package.json`, `turbo.json`, `bun.lock`) at the root.
-- Python SDK layout under `kaji/src/kaji/`: `core/`, `contracts/`, `infra/` (`events/`, `realtime/`, `observability/`), `integrations/`, `knowledge/`, `modalities/`, and `runtime/` (`agents/`, `providers/`, `tools/`, `sessions/`, `workflows/`). The FastAPI `server/` and TaskIQ `workers/` live in `kaji/serve/` (the `kaji_serve` package), NOT in the SDK.
+- Monorepo layout: ryo services under `ryo/` (`api`, `consumer`, `auth`); the Python `kaji-sdk` package at `kaji/packages/python/`, `kaji-serve` at `kaji/packages/serve/`, and the TypeScript `kaji-sdk` package at `kaji/packages/typescript/`; web studio under `apps/web/`. The Python SDK and serve form a `uv` workspace rooted at the repo root. Compose infra under `docker/`. Repo-wide JS workspace config (`package.json`, `turbo.json`, `bun.lock`) at the root.
+- Python SDK layout under `kaji/packages/python/src/kaji/`: `core/`, `contracts/`, `infra/` (`events/`, `realtime/`, `observability/`), `integrations/`, `knowledge/`, `modalities/`, and `runtime/` (`agents/`, `providers/`, `tools/`, `sessions/`, `workflows/`). The FastAPI `server/` and TaskIQ `workers/` live in `kaji/packages/serve/` (the `kaji_serve` package), NOT in the SDK.
 - Voice is a modality (STT, TTS, turn detection, interruption); the generic agent runtime (`agents/messaging`, `agents/nodes`) is NOT voice-specific despite past naming.
-- Bundled integrations are manifest-driven under `kaji/src/kaji/integrations/registry/` and `kaji/ts/registry/`; avoid reintroducing integration routers or services unless explicitly requested.
-- Provider errors belong in `kaji/src/kaji/runtime/providers/errors.py` and `kaji/ts/src/providers/errors.ts`; avoid parallel `service_errors`-style modules.
+- Bundled integrations are manifest-driven under `kaji/packages/python/src/kaji/integrations/registry/` and `kaji/packages/typescript/registry/`; avoid reintroducing integration routers or services unless explicitly requested.
+- Provider errors belong in `kaji/packages/python/src/kaji/runtime/providers/errors.py` and `kaji/packages/typescript/src/providers/errors.ts`; avoid parallel `service_errors`-style modules.
 - Keep generated artifacts out of the repo: ignore and delete `__pycache__/`, `*.pyc`, `logs/`, and common Python tool caches per the root `.gitignore`.

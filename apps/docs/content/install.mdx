@@ -34,7 +34,7 @@ SDK, or run the full workspace checks:
 git clone https://github.com/enkyuan/alloy.git
 cd alloy
 bun install --frozen-lockfile
-bun run --cwd kaji/ts test:quickstart
+bun run --cwd kaji/packages/typescript test:quickstart
 ```
 
 The final command runs the repository's deterministic TypeScript quickstart
@@ -80,8 +80,8 @@ from PyPI for this release, so there is no public registry-install command.
 For source-checkout development, install the Python project with uv:
 
 ```bash
-uv sync --project kaji --extra openai
-uv run --project kaji python -c "import kaji; print(kaji.__name__)"
+uv sync --project kaji/packages/python --extra openai
+uv run --project kaji/packages/python python -c "import kaji; print(kaji.__name__)"
 ```
 
 Python imports use `kaji`, and its CLI uses the `kaji` binary name. The SDK

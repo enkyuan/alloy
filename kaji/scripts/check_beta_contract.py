@@ -20,12 +20,20 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
 REGISTRY_INDEXES = (
-    ROOT / "kaji" / "src" / "kaji" / "integrations" / "registry" / "index.json",
-    ROOT / "kaji" / "ts" / "registry" / "index.json",
+    ROOT
+    / "kaji"
+    / "packages"
+    / "python"
+    / "src"
+    / "kaji"
+    / "integrations"
+    / "registry"
+    / "index.json",
+    ROOT / "kaji" / "packages" / "typescript" / "registry" / "index.json",
 )
 PACKAGE_CONTRACT_TARGETS = (
-    ROOT / "kaji" / "src" / "kaji" / "contracts",
-    ROOT / "kaji" / "ts" / "contracts",
+    ROOT / "kaji" / "packages" / "python" / "src" / "kaji" / "contracts",
+    ROOT / "kaji" / "packages" / "typescript" / "contracts",
 )
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 REQUIRED_JSON = {
@@ -784,9 +792,17 @@ def check_github_typescript_abi(documents: dict[str, dict[str, Any]]) -> None:
             )
 
     for manifest_path in (
-        ROOT / "kaji" / "ts" / "registry" / "github" / "manifest.json",
         ROOT
         / "kaji"
+        / "packages"
+        / "typescript"
+        / "registry"
+        / "github"
+        / "manifest.json",
+        ROOT
+        / "kaji"
+        / "packages"
+        / "python"
         / "src"
         / "kaji"
         / "integrations"
@@ -894,10 +910,18 @@ def integration_recovery_entries(
 
 def runtime_event_types() -> set[str]:
     python_source = (
-        ROOT / "kaji" / "src" / "kaji" / "infra" / "events" / "types.py"
+        ROOT
+        / "kaji"
+        / "packages"
+        / "python"
+        / "src"
+        / "kaji"
+        / "infra"
+        / "events"
+        / "types.py"
     ).read_text()
     typescript_source = (
-        ROOT / "kaji" / "ts" / "src" / "events" / "types.ts"
+        ROOT / "kaji" / "packages" / "typescript" / "src" / "events" / "types.ts"
     ).read_text()
     python_types = set(
         re.findall(r'^\s+[A-Z_]+\s*=\s*"([^"]+)"', python_source, re.MULTILINE)
@@ -1894,11 +1918,15 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
         raise fail(path, "/cliCommands", "expected python and typescript command tiers")
 
     python_commands: set[str] = set()
-    for source in (ROOT / "kaji" / "src" / "kaji" / "cli").glob("*.py"):
+    for source in (ROOT / "kaji" / "packages" / "python" / "src" / "kaji" / "cli").glob(
+        "*.py"
+    ):
         python_commands.update(
             re.findall(r'\.add_parser\(\s*["\']([^"\']+)["\']', source.read_text())
         )
-    typescript_source = (ROOT / "kaji" / "ts" / "src" / "cli" / "index.ts").read_text()
+    typescript_source = (
+        ROOT / "kaji" / "packages" / "typescript" / "src" / "cli" / "index.ts"
+    ).read_text()
     command_block = typescript_source.split("export const COMMANDS", 1)[1].split(
         "\n};", 1
     )[0]
@@ -1951,7 +1979,7 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
 
 def check_package_subpaths(document: dict[str, Any]) -> None:
     path = CONTRACTS / "feature-tiers-v1.json"
-    package_path = ROOT / "kaji" / "ts" / "package.json"
+    package_path = ROOT / "kaji" / "packages" / "typescript" / "package.json"
     package = load_json(package_path)
     package_exports = package.get("exports")
     if not isinstance(package_exports, dict):
