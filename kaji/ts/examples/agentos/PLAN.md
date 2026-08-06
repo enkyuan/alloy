@@ -206,7 +206,7 @@ bindings path is a security defect, not a thin adapter.
 ## Option 1 — `kaji-sdk/agentos` code-execution Integration  (proposed foundation — REDIRECTED)
 
 **What:** a new shipped subpath `kaji-sdk/agentos` exporting an
-`AgentOsIntegration extends Integration` whose tools delegate to an `AgentOs` VM handle.
+`AgentOsIntegration extends Integration` whose tools delegate to an agentOS `AgentOs` VM handle.
 This gives kaji-driven agents the isolated code execution it lacks today. `@rivet-dev/
 agentos-core` is an **optional peerDependency** (never a hard dep — it's non-portable).
 
@@ -250,7 +250,7 @@ agentos-core` is an **optional peerDependency** (never a hard dep — it's non-p
   only), NO manifest-validate `:156` change.
 
 **Tests (new):** `tests/agentos-registry.test.ts` mirroring gmail's 8-assertion suite via
-a `vi.fn` mock `AgentOs` handle (namespace, arg-mapping, risk flags on `exec`/`write_file`,
+a `vi.fn` mock agentOS `AgentOs` handle (namespace, arg-mapping, risk flags on `exec`/`write_file`,
 non-object result rejection, close→dispose-once, inspectIntegration). No live sidecar in
 unit tests. An **opt-in integration test** (`vitest.integration.config.ts`, gated on
 darwin/linux + agentos-core present) that boots a real VM and runs `echo hi`.
