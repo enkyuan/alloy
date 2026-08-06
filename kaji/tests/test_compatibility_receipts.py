@@ -20,7 +20,7 @@ TARBALL_SHA256 = "c" * 64
 PRODUCER_DIGEST = "sha256:" + "d" * 64
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "kaji-sdk-0.2.0-beta.10.tgz"
+TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 
 
@@ -721,7 +721,7 @@ def test_strong_binding_rejects_well_formed_external_identity_substitution() -> 
             "invocation",
             "workflowRef",
             "enkyuan/alloy/.github/workflows/kaji.publish.yml"
-            "@refs/tags/kaji-v0.2.0-beta.10",
+            "@refs/tags/kaji-v0.2.0-beta.11",
         ),
         ("invocation", "workflowSha", "f" * 40),
         ("invocation", "runId", 124),

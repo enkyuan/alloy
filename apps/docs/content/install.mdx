@@ -3,8 +3,8 @@ title: Install
 description: Install the published TypeScript beta from npm, or prepare either SDK from source, with the pre-1.0 compatibility boundary explicit.
 ---
 
-TypeScript `0.2.0-beta.10` is public on npm as
-[`kaji-sdk`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.10). Python is
+TypeScript `0.2.0-beta.11` is public on npm as
+[`kaji-sdk`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.11). Python is
 not published to PyPI for this release; repository release gates still build
 and exercise wheel and source-distribution artifacts. Both SDKs share the
 stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
@@ -16,9 +16,9 @@ Install the exact beta with the required Zod peer and the beta-supported
 OpenAI adapter:
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.10 zod openai
+npm install kaji-sdk@0.2.0-beta.11 zod openai
 # or
-bun add kaji-sdk@0.2.0-beta.10 zod openai
+bun add kaji-sdk@0.2.0-beta.11 zod openai
 ```
 
 The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`

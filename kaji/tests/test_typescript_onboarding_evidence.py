@@ -33,7 +33,7 @@ SCHEMA = (
 COMMIT = "a" * 40
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "kaji-sdk-0.2.0-beta.10.tgz"
+TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -467,7 +467,7 @@ def test_trusted_artifact_substitution_fails_closed(
         ("expected_workflow_run", "https://github.com/enkyuan/alloy/actions/runs/124"),
         (
             "expected_workflow_ref",
-            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.10",
+            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
         ),
         ("expected_workflow_sha", "b" * 40),
     ],

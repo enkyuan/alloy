@@ -27,7 +27,7 @@
       "$ref": "#/$defs/commit"
     },
     "tag": {
-      "const": "kaji-v0.2.0-beta.10"
+      "const": "kaji-v0.2.0-beta.11"
     },
     "workflowRun": {
       "$ref": "#/$defs/workflowRun"

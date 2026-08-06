@@ -17,12 +17,12 @@ from typing import Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.10.tgz": ("typescript", "0.2.0-beta.10"),
+    "kaji-sdk-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
     "python": "0.2.0b1",
-    "typescript": "0.2.0-beta.10",
+    "typescript": "0.2.0-beta.11",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
     "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),

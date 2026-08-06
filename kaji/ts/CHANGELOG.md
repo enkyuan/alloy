@@ -5,6 +5,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.2.0-beta.11] - 2026-08-01
+
+- First candidate carrying the experimental `gmail` registry integration
+  (read/list/send, mailbox-scoped) alongside the existing `echo` and `github`
+  catalog entries. Cross-SDK ABI and API conformance for `gmail` are asserted
+  by the same fixture-driven gates as `github`.
+- Cleared the oxlint `src` warnings without behavior change and wired
+  `publint` + `attw` into the TypeScript package-lint gate.
+- Added a repository-only agentOS interop example under
+  `kaji/ts/examples/agentos/`. It is deliberately excluded from the published
+  package (`examples/` is not in `files[]`); the shipped tarball contents are
+  unchanged by it. agentOS integration is not part of the SDK surface.
+- Advanced the npm candidate, installed-runtime, evidence, provenance,
+  registry-byte, documentation, and protected-release identities to beta.11.
+  Python `0.2.0b1` remains evidence-only and PyPI publication remains deferred.
+
 ## [0.2.0-beta.10] - 2026-08-01
 
 - Recovered from immutable beta.9 publish run `30726249929`, which failed

@@ -96,7 +96,7 @@
       ],
       "properties": {
         "name": {
-          "const": "kaji-sdk-0.2.0-beta.10.tgz"
+          "const": "kaji-sdk-0.2.0-beta.11.tgz"
         },
         "size": {
           "$ref": "#/$defs/positiveSafeInteger"
@@ -339,7 +339,7 @@
         "workflowRef": {
           "enum": [
             "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
-            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.10"
+            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11"
           ]
         },
         "workflowSha": {

@@ -1,6 +1,6 @@
 import type { Provider } from "../providers.js";
 
-export const TYPESCRIPT_SDK_RANGE = "^0.2.0-beta.10";
+export const TYPESCRIPT_SDK_RANGE = "^0.2.0-beta.11";
 export const ZOD_RANGE = ">=4.3 <5";
 const DOTENVX_VERSION = "2.9.0";
 
