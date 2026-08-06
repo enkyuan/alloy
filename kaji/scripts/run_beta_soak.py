@@ -34,7 +34,8 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji"
+SDK = ROOT / "kaji" / "packages" / "python"
+KAJI_ROOT = ROOT / "kaji"  # shared machinery (benchmarks/, scripts/) stays here
 GATE = Path(__file__).with_name("beta_soak_gate.py")
 PROTECTED_GATE_PARENT_ENV = (
     "GITHUB_ACTIONS",
@@ -462,7 +463,7 @@ def main() -> int:
                         CommandSpec(
                             [
                                 *child_python,
-                                str(SDK / "benchmarks" / "python" / "runtime_soak.py"),
+                                str(KAJI_ROOT / "benchmarks" / "python" / "runtime_soak.py"),
                                 "--minutes",
                                 args.minutes,
                                 "--seed",
