@@ -4879,5 +4879,28 @@
       }
     }
   ],
+  "thirdPartyIntegrationSurface": {
+    "namespace": "sample",
+    "registerAccepts": "ToolRegistry",
+    "registeredCatalogNames": ["sample.full", "sample.minimal"],
+    "tools": [
+      {
+        "catalogName": "sample.full",
+        "declaredName": "full",
+        "parallelSafe": true,
+        "risk": "read",
+        "specKeys": ["description", "name", "parallel_safe", "parameters", "risk", "timeout_ms"],
+        "timeoutMs": 1000
+      },
+      {
+        "catalogName": "sample.minimal",
+        "declaredName": "minimal",
+        "parallelSafe": false,
+        "risk": "read",
+        "specKeys": ["description", "name", "parameters", "risk"],
+        "timeoutMs": null
+      }
+    ]
+  },
   "version": "1.0.0"
 }

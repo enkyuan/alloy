@@ -39,7 +39,8 @@ import { ToolExecutionError } from "@/tools/execution-errors";
 import { InMemoryToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
-import { UnclassifiedToolRiskError, type ToolSpec } from "@/tools/registry";
+import { UnclassifiedToolRiskError, ToolRegistry, type ToolSpec } from "@/tools/registry";
+import { Integration, tool } from "@/integrations/base";
 import {
   ToolArgumentValidationError,
   ToolSchemaValidationError,
@@ -1425,6 +1426,86 @@ function assertJsonValue(value: unknown, path = ""): void {
   throw new TypeError(`non-JSON value ${typeof value} at ${path || "/"}`);
 }
 
+/**
+ * Snapshot the third-party-facing Integration authoring surface.
+ *
+ * Mirrors run_integration_surface() in export_parity.py. A stranger subclasses
+ * Integration, marks methods with tool(), and passes the instance to
+ * AgentBuilder.integration() (duck-typed on register()). This exercises exactly
+ * that path so check_sdk_parity catches Python/TypeScript surface drift before
+ * the beta tag freezes the ABI. See docs/kaji/NEXT.md (A0-lite).
+ */
+function runIntegrationSurface(): JsonObject {
+  const parameters = {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    type: "object",
+    properties: { value: { type: "string" } },
+    required: ["value"],
+    additionalProperties: false,
+  };
+
+  class SampleIntegration extends Integration {
+    readonly namespace = "sample";
+
+    readonly full = tool(
+      {
+        description: "Fully specified tool.",
+        parameters,
+        risk: "read",
+        parallel_safe: true,
+        timeout_ms: 1000,
+      },
+      async () => ({}),
+    );
+
+    readonly minimal = tool(
+      { description: "Minimally specified tool.", parameters, risk: "read" },
+      async () => ({}),
+    );
+  }
+
+  const integration = new SampleIntegration();
+
+  const tools = integration
+    .tools()
+    .map(([spec]) => ({
+      declaredName: spec.name,
+      catalogName: `${integration.namespace}.${spec.name}`,
+      specKeys: surfacedSpecKeys(spec),
+      risk: spec.risk,
+      parallelSafe: spec.parallel_safe ?? false,
+      timeoutMs: spec.timeout_ms ?? null,
+    }))
+    .sort((left, right) => left.declaredName.localeCompare(right.declaredName, "en"));
+
+  const registry = new ToolRegistry();
+  integration.register(registry);
+  const registeredCatalogNames = registry
+    .listSpecs()
+    .map((spec) => spec.catalogName)
+    .filter((name): name is string => name !== undefined)
+    .sort((left, right) => left.localeCompare(right, "en"));
+
+  return {
+    namespace: integration.namespace,
+    registerAccepts: "ToolRegistry",
+    tools,
+    registeredCatalogNames,
+  };
+}
+
+/** Optional ToolSpec fields the SDK surfaces with a non-default value. */
+function surfacedSpecKeys(spec: ToolSpec): string[] {
+  const keys = ["name", "description", "parameters", "risk"];
+  if (spec.parallel_safe !== undefined && spec.parallel_safe !== false) {
+    keys.push("parallel_safe");
+  }
+  if (spec.timeout_ms !== undefined && spec.timeout_ms !== null) {
+    keys.push("timeout_ms");
+  }
+  return keys.sort((left, right) => left.localeCompare(right, "en"));
+}
+
 async function exportParity(): Promise<JsonObject> {
   const document = JSON.parse(readFileSync(SCENARIOS_URL, "utf8"));
   const seen = new Set<string>();
@@ -1445,7 +1526,11 @@ async function exportParity(): Promise<JsonObject> {
     }
     scenarios.push({ id: scenario.id, snapshot });
   }
-  const result = { version: document.version, scenarios };
+  const result = {
+    version: document.version,
+    scenarios,
+    thirdPartyIntegrationSurface: runIntegrationSurface(),
+  };
   assertJsonValue(result);
   return result;
 }
