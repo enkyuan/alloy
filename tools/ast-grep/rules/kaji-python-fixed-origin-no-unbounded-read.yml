@@ -7,6 +7,7 @@ files:
   - "kaji/packages/python/src/kaji/integrations/oauth.py"
   - "kaji/packages/python/src/kaji/integrations/keychain.py"
   - "kaji/packages/python/src/kaji/integrations/registry/github/client.py"
+  - "kaji/packages/python/src/kaji/integrations/registry/gmail/client.py"
 rule:
   any:
     - pattern: $RESPONSE.read()

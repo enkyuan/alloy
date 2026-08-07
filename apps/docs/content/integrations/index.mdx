@@ -15,11 +15,11 @@ This is the catalog in TypeScript `0.2.0-beta.11` and Python `0.2.0b1`.
 WIP entries whose registry tier is `experimental` require
 `--allow-experimental` and are outside the stable beta set.
 
-| Integration | Support status       | Runtime            | Auth                    | Tools                     |
-| ----------- | -------------------- | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta                 | Python, TypeScript | None                    | 2                         |
-| `gmail`     | WIP (`experimental`) | Python, TypeScript | Google OAuth grant      | 3                         |
-| `github`    | Beta                 | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status | Runtime            | Auth                    | Tools                     |
+| ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
+| `echo`      | Beta           | Python, TypeScript | None                    | 2                         |
+| `gmail`     | Beta           | Python, TypeScript | Google OAuth grant      | 3                         |
+| `github`    | Beta           | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
 
 The TypeScript and Python registries contain `echo`, `gmail`, and `github`. Their
 manifests and JSON schemas are validated, and shared entries are checked for
@@ -41,7 +41,7 @@ After [installing the TypeScript beta](/docs/install#typescript), use its local
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
 npm exec -- kaji add github --out ./integrations/github
-npm exec -- kaji add gmail --allow-experimental --out ./integrations/gmail
+npm exec -- kaji add gmail --out ./integrations/gmail
 ```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.
@@ -90,9 +90,10 @@ The scopes are `gmail.readonly` and `gmail.send`. Its client is fixed to
 bodies, decodes base64url message payloads, and treats a connection loss after
 send dispatch as an unknown outcome.
 
-Gmail's machine registry tier is `experimental`; `kaji add gmail` requires
-`--allow-experimental`. Local package and ABI checks do not establish protected
-keyed-API or release evidence.
+Gmail's machine registry tier is `beta`, so `kaji add gmail` does not require
+`--allow-experimental`. Its live send path stays unproven until a protected
+operator run retains a valid `gmail-proof-v1` receipt on the release commit;
+local package and ABI checks do not establish that keyed-API or release evidence.
 
 See [integration recovery](/docs/integrations/recovery-v1) for the closed error
 vocabulary, including the Gmail rows.

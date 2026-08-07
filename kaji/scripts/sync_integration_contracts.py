@@ -50,6 +50,17 @@ COPIES = {
         / "github"
         / "LICENSE",
         ROOT / "kaji" / "packages" / "typescript" / "registry" / "github" / "LICENSE",
+        ROOT
+        / "kaji"
+        / "packages"
+        / "python"
+        / "src"
+        / "kaji"
+        / "integrations"
+        / "registry"
+        / "gmail"
+        / "LICENSE",
+        ROOT / "kaji" / "packages" / "typescript" / "registry" / "gmail" / "LICENSE",
     ),
     ROOT
     / "kaji"
@@ -67,6 +78,24 @@ COPIES = {
         / "integrations"
         / "registry"
         / "github"
+        / "owner-fixtures.json",
+    ),
+    ROOT
+    / "kaji"
+    / "packages"
+    / "typescript"
+    / "registry"
+    / "gmail"
+    / "owner-fixtures.json": (
+        ROOT
+        / "kaji"
+        / "packages"
+        / "python"
+        / "src"
+        / "kaji"
+        / "integrations"
+        / "registry"
+        / "gmail"
         / "owner-fixtures.json",
     ),
 }

@@ -530,6 +530,7 @@ def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None
     }
     release_contract_names = {
         "github-proof-v1.schema.json",
+        "gmail-proof-v1.schema.json",
         "kaji-ts-consumer-handoff-v1.schema.json",
         "publisher-identity-receipt-v1.schema.json",
         onboarding_contract_name,
@@ -7469,7 +7470,7 @@ def test_github_exact_artifact_proof_contract_and_operator_wiring() -> None:
     assert "--state" in cleanup
     assert "--expected-commit" in cleanup
     assert "--confirm-absence" in cleanup
-    assert "GitHub remains experimental" in documentation
-    assert "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT" in documentation
+    assert "does not promote GitHub by itself" in documentation
+    assert "gmail-proof-v1.schema.json" in documentation
     assert "confirm-absence" in documentation
     assert "Exact-artifact GitHub proof" in release_matrix

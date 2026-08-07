@@ -244,11 +244,11 @@ def test_python_session_purge_exports_are_stable() -> None:
 
 def test_release_matrix_matches_registry_stability() -> None:
     matrix = RELEASE_MATRIX.read_text()
-    assert "<!-- beta-integrations: echo,github -->" in matrix
-    assert "<!-- experimental-integrations: gmail -->" in matrix
+    assert "<!-- beta-integrations: echo,github,gmail -->" in matrix
+    assert "<!-- experimental-integrations:  -->" in matrix
     assert "| echo | beta | python, typescript |" in matrix
     assert "| github | beta | python, typescript |" in matrix
-    assert "| gmail | experimental | python, typescript |" in matrix
+    assert "| gmail | beta | python, typescript |" in matrix
 
 
 def test_contract_checker_reports_fixture_path_and_json_pointer(tmp_path: Path) -> None:

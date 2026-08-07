@@ -9,7 +9,7 @@
     },
     "gmail": {
       "manifest": "gmail/manifest.json",
-      "stability": "experimental",
+      "stability": "beta",
       "runtimes": ["python", "typescript"]
     },
     "github": {

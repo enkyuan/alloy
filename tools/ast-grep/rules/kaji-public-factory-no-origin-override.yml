@@ -7,6 +7,8 @@ files:
   - "kaji/packages/typescript/src/integrations/**/*.ts"
   - "kaji/packages/typescript/registry/github/**/*.ts"
   - "kaji/packages/python/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/packages/typescript/registry/gmail/**/*.ts"
+  - "kaji/packages/python/src/kaji/integrations/registry/gmail/**/*.ts"
 rule:
   all:
     - kind: function_declaration

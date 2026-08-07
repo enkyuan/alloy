@@ -291,16 +291,13 @@ def validate_budgets(value: object) -> dict[str, Any]:
         if input_digest(validated_input) != _EXPECTED_INPUT_SHA256[expected]:
             _fail(f"{expected} input corpus changed")
 
+    # Gmail is a promoted beta integration; its former GMAIL_RUNTIME_NOT_IN_
+    # REVIEWED_CHECKPOINT hold is retired. A dedicated gmailMimeMaxBounds perf
+    # case can be added under a protected calibration run — until then there are
+    # no benchmark deviations.
     deviations = document["deviations"]
-    expected_deviation = {
-        "case": "gmailMimeMaxBounds",
-        "status": "hold",
-        "reasonCode": "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT",
-        "ownerTask": 8,
-        "included": False,
-    }
-    if deviations != [expected_deviation]:
-        _fail("the Gmail benchmark hold must remain explicit and machine-readable")
+    if deviations != []:
+        _fail("no integration benchmark deviations are expected")
     return document
 
 

@@ -490,6 +490,11 @@ export class GmailClient {
       body: text,
       body_truncated: truncated,
     };
+    // ponytail: TS message-result ceiling is 60K, the shared TS-SDK model-result
+    // convention (see github/client.ts MAX_MODEL_RESULT_BYTES). Python bounds the
+    // same path at its 64K durable-tool-result limit; the 4K gap is a deliberate
+    // per-SDK ceiling, not a bug. Unify only if a conformance case requires an
+    // exact cross-SDK byte boundary.
     if (serializedBytes(result) > MAX_MODEL_RESULT_BYTES) throw new ProviderShapeError();
     return result;
   }
