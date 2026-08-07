@@ -164,6 +164,54 @@ here so the operator who has them can execute in order.
 - **OpenAI tool-loop proof, tag, and publish.** Steps 9 through 12 above are all
   credential- or ops-gated and run only in the protected workflows.
 
+### Beta.11 tag: readiness + the staged signed-tag command
+
+Reviewed release commit: `fd5d214aa111b8236ea4a4b901666b268fbe5365`
+(origin/main tip; the #107 merge).
+
+Tag-readiness checks that pass today (runnable in a normal session):
+
+| Check | Result |
+| --- | --- |
+| npm `kaji-sdk@0.2.0-beta.11` absent | 404 (absent) |
+| No tag `kaji-v0.2.0-beta.11` (local + remote) | none |
+| TS version pin | `0.2.0-beta.11` (package.json + `index.ts` VERSION) |
+| Python version pin | `0.2.0b1` (pyproject + `__version__`), intentional test-pinned skew |
+| CHANGELOG beta.11 entry | `## [0.2.0-beta.11]` present |
+| `KAJI_RELEASE_SIGNER_EMAIL` repo variable | set |
+
+The tag annotation is a canonical compact-JSON authorization whose SHA-256 the
+publish workflow re-verifies (`.github/actions/verify-kaji-beta-tag`). Every
+`<...>` value below is recorded by the protected `kaji.rehearsal.yml` run and
+does not exist until that CI run completes, so it cannot be pre-filled here. Do
+not invent these values; copy them from the rehearsal outputs
+(see releasing.md steps around "Bind the signed beta.11 tag to the rehearsal").
+
+1. Write the authorization body (one compact line plus one terminal LF, keys
+   recursively sorted, ASCII) to `AUTHORIZATION_FILE`:
+
+```json
+{"candidateArtifact":{"digest":"sha256:<from rehearsal>","id":<candidate artifact id>,"name":"kaji-beta-artifacts"},"commit":"<40-hex reviewed commit>","evidenceArtifact":{"digest":"sha256:<from rehearsal>","id":<evidence artifact id>,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.11.tgz","sha256":"<tarball sha256>"},"rehearsal":{"runAttempt":1,"runId":<rehearsal run id>,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<40-hex, equals reviewed commit>"},"releaseManifestSha256":"<manifest sha256>","schemaVersion":"1.0.0"}
+```
+
+2. Validate the file with the canonical-JSON checker in releasing.md (it rejects
+   CR/BOM/NUL/tabs/non-ASCII, multiple lines, and any non-canonical
+   serialization, and prints the authorization SHA-256), then create the signed
+   tag targeting the reviewed commit directly:
+
+```bash
+export AUTHORIZATION_FILE=/path/to/authorization.json
+export REVIEWED_COMMIT=fd5d214aa111b8236ea4a4b901666b268fbe5365
+# run the releasing.md validator first; it prints AUTHORIZATION_SHA256, then:
+git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE" kaji-v0.2.0-beta.11 "$REVIEWED_COMMIT"
+```
+
+Two operator-only hard stops, by rule and by releasing.md: (a) the authorization
+values only exist after the protected rehearsal plus the keyed OpenAI proof have
+run and been approved (steps 7-9), and releasing.md stops until you confirm a
+fresh `NPM_TOKEN` is stored only in `kaji-beta-publish`; (b) `git tag -s` and the
+tag push are irreversible signed release actions the operator executes.
+
 ---
 
 ## GSTACK REVIEW REPORT
