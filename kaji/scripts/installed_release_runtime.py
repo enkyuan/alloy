@@ -28,7 +28,7 @@ from verify_release_artifacts import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji"
+SDK = ROOT / "kaji" / "packages" / "python"
 TS = ROOT / "kaji" / "packages" / "typescript"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
 TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"

@@ -27,7 +27,7 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji"
+SDK = ROOT / "kaji" / "packages" / "python"
 TYPESCRIPT = ROOT / "kaji" / "packages" / "typescript"
 GATE = Path(__file__).with_name("beta_benchmark_gate.py")
 
