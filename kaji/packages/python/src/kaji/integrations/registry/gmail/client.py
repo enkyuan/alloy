@@ -437,6 +437,11 @@ class GmailClient:
                 parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
             )
             normalized = self._normalize(route, document)
+            # ponytail: Python bounds the message result at the shared 64K
+            # durable-tool-result limit. The TS SDK uses its own 60K model-result
+            # convention (registry/gmail/client.ts); the 4K gap is a deliberate
+            # per-SDK ceiling, not a bug. Unify only if a conformance case requires
+            # an exact cross-SDK byte boundary.
             return cast(
                 Mapping[str, object] | Sequence[object],
                 durable_json_snapshot(

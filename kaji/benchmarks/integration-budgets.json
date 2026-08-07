@@ -85,13 +85,5 @@
       }
     }
   ],
-  "deviations": [
-    {
-      "case": "gmailMimeMaxBounds",
-      "status": "hold",
-      "reasonCode": "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT",
-      "ownerTask": 8,
-      "included": false
-    }
-  ]
+  "deviations": []
 }

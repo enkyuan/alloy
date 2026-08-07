@@ -298,6 +298,7 @@ def test_publisher_identity_schema_is_required_closed_and_exactly_packaged() -> 
 
     expected_release_inventory = {
         "github-proof-v1.schema.json",
+        "gmail-proof-v1.schema.json",
         "kaji-ts-consumer-handoff-v1.schema.json",
         "publisher-identity-receipt-v1.schema.json",
         "typescript-onboarding-evidence-v1.schema.json",

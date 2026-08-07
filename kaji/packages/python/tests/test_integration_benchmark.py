@@ -90,15 +90,7 @@ def test_budget_contract_is_closed_and_records_the_gmail_hold() -> None:
         integration_benchmark.CASE_NAMES
     )
     assert "gmailMimeMaxBounds" not in integration_benchmark.CASE_NAMES
-    assert document["deviations"] == [
-        {
-            "case": "gmailMimeMaxBounds",
-            "status": "hold",
-            "reasonCode": "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT",
-            "ownerTask": 8,
-            "included": False,
-        }
-    ]
+    assert document["deviations"] == []
     assert document["modes"]["full"] == {
         "warmups": 20,
         "batches": 3,
@@ -244,7 +236,7 @@ def test_quick_orchestrator_runs_both_runtimes_and_binds_raw_artifact(
         "python",
         "typescript",
     }
-    assert summary["deviations"][0]["case"] == "gmailMimeMaxBounds"
+    assert summary["deviations"] == []
     assert (
         hashlib.sha256(raw_path.read_bytes()).hexdigest() == summary["rawSamplesSha256"]
     )

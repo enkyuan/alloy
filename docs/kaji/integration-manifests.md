@@ -89,8 +89,12 @@ If an exact marker is observed on an issue other than the designated fixture,
 cleanup stays pending for manual review. Do not use absence confirmation to
 clear that state, and do not automatically delete the out-of-scope comment.
 
-This tooling does not promote GitHub by itself. GitHub remains experimental
-until a protected operator run retains a valid
-`github-proof-v1.schema.json` receipt for the exact release artifacts. The
-reviewed checkpoint does not include a Gmail runtime; Gmail remains outside
-this proof and is recorded as `GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT`.
+This tooling does not promote GitHub by itself. A catalog-beta integration
+still owes a valid exact-artifact proof receipt for the release artifacts
+(`github-proof-v1.schema.json` for GitHub) from a protected operator run before
+its live side effects are claimed. Gmail is now a catalog-beta integration on
+the same footing: its receipt schema is `gmail-proof-v1.schema.json`, and its
+protected operator run (one `gmail.get_message` read plus one exactly-approved
+`gmail.send_message`, read back and deleted) is pending on the release commit.
+Until that receipt exists, treat Gmail's live send path as unproven, not the
+catalog stability, which is beta.

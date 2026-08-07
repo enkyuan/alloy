@@ -7,6 +7,8 @@ files:
   - "kaji/packages/typescript/src/auth/**/*.ts"
   - "kaji/packages/typescript/registry/github/client.ts"
   - "kaji/packages/python/src/kaji/integrations/registry/github/client.ts"
+  - "kaji/packages/typescript/registry/gmail/client.ts"
+  - "kaji/packages/python/src/kaji/integrations/registry/gmail/client.ts"
 rule:
   any:
     - pattern: $RESPONSE.text()

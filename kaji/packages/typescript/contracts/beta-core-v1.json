@@ -46,7 +46,7 @@
     "overflow": "typed_error"
   },
   "integrations": {
-    "stable": ["echo", "github"],
+    "stable": ["echo", "github", "gmail"],
     "experimentalRequiresOptIn": true
   }
 }

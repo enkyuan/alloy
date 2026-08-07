@@ -1600,6 +1600,105 @@ async def run_idempotency(scenario: dict[str, Any]) -> dict[str, Any]:
     return snapshot
 
 
+def run_integration_surface() -> dict[str, Any]:
+    """Snapshot the third-party-facing Integration authoring surface.
+
+    A stranger builds an integration by subclassing ``Integration``, decorating
+    methods with ``@tool``, and passing the instance to
+    ``AgentBuilder.integration()`` (duck-typed on ``register()``). This snapshot
+    exercises exactly that path and emits what the SDK surfaces, so
+    ``check_sdk_parity`` catches drift between the Python and TypeScript authoring
+    surfaces before the beta tag freezes the ABI. See docs/kaji/NEXT.md (A0-lite).
+
+    Two sample tools on purpose: ``full`` sets every field explicitly (a
+    conforming SDK must surface them identically); ``minimal`` sets only the
+    required fields (this locks each SDK's default emission for optional fields).
+    """
+    from kaji.runtime.integrations.base import Integration, tool
+    from kaji.runtime.tools.registry import ToolRegistry
+
+    parameters = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+
+    class SampleIntegration(Integration):
+        @property
+        def namespace(self) -> str:
+            return "sample"
+
+        @tool(
+            description="Fully specified tool.",
+            parameters=parameters,
+            risk="read",
+            parallel_safe=True,
+            timeout_ms=1000,
+        )
+        async def full(self, context: Any, arguments: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+        @tool(
+            description="Minimally specified tool.",
+            parameters=parameters,
+            risk="read",
+        )
+        async def minimal(
+            self, context: Any, arguments: dict[str, Any]
+        ) -> dict[str, Any]:
+            return {}
+
+    integration = SampleIntegration()
+
+    # Observed via the public tools() surface a stranger reads.
+    tools: list[dict[str, Any]] = []
+    for spec, handler in integration.tools():
+        entry: dict[str, Any] = {
+            "declaredName": spec.name,
+            "catalogName": f"{integration.namespace}.{spec.name}",
+            "specKeys": _surfaced_spec_keys(spec),
+            "risk": spec.risk,
+            "parallelSafe": spec.parallel_safe,
+            "timeoutMs": spec.timeout_ms,
+        }
+        tools.append(entry)
+    tools.sort(key=lambda item: item["declaredName"])
+
+    # Observed via register() into a real registry (the AgentBuilder path).
+    registry = ToolRegistry()
+    integration.register(registry)
+    registered = sorted(
+        spec.catalog_name
+        for spec in registry.list_specs()
+        if spec.catalog_name is not None
+    )
+
+    return {
+        "namespace": integration.namespace,
+        "registerAccepts": "ToolRegistry",
+        "tools": tools,
+        "registeredCatalogNames": registered,
+    }
+
+
+def _surfaced_spec_keys(spec: Any) -> list[str]:
+    """The optional ToolSpec fields this SDK surfaces with a non-default value.
+
+    Emitting presence (not just values) is what catches the known drift: the
+    TypeScript surface omits parallel_safe/timeout_ms when undefined while Python
+    carries defaults. Both sample tools set the required fields; the ``full`` tool
+    sets the optional ones so a conforming SDK surfaces the same key set.
+    """
+    keys: list[str] = ["name", "description", "parameters", "risk"]
+    if spec.parallel_safe is not False:
+        keys.append("parallel_safe")
+    if spec.timeout_ms is not None:
+        keys.append("timeout_ms")
+    return sorted(keys)
+
+
 async def export_parity() -> dict[str, Any]:
     document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
     snapshots: list[dict[str, Any]] = []
@@ -1627,7 +1726,11 @@ async def export_parity() -> dict[str, Any]:
         if tuple(snapshot) != SNAPSHOT_KEYS:
             raise AssertionError(f"incomplete snapshot envelope: {scenario_id}")
         snapshots.append({"id": scenario_id, "snapshot": snapshot})
-    result = {"version": document["version"], "scenarios": snapshots}
+    result = {
+        "version": document["version"],
+        "scenarios": snapshots,
+        "thirdPartyIntegrationSurface": run_integration_surface(),
+    }
     assert_json_value(result)
     return result
 

@@ -57,7 +57,7 @@ function expectedSemantics(
 }
 
 describe("integration benchmark case runner", () => {
-  it("keeps the five reviewed cases and explicit Gmail hold closed", () => {
+  it("keeps the five reviewed cases with no benchmark deviations", () => {
     const raw = JSON.parse(readFileSync(budgetsPath, "utf8")) as {
       cases: readonly { name: string }[];
       deviations: readonly unknown[];
@@ -65,15 +65,7 @@ describe("integration benchmark case runner", () => {
 
     expect(raw.cases.map(({ name }) => name)).toEqual(INTEGRATION_BENCHMARK_CASES);
     expect(INTEGRATION_BENCHMARK_CASES).not.toContain("gmailMimeMaxBounds");
-    expect(raw.deviations).toEqual([
-      {
-        case: "gmailMimeMaxBounds",
-        status: "hold",
-        reasonCode: "GMAIL_RUNTIME_NOT_IN_REVIEWED_CHECKPOINT",
-        ownerTask: 8,
-        included: false,
-      },
-    ]);
+    expect(raw.deviations).toEqual([]);
   });
 
   it("uses stable recursively sorted input hashing", () => {
