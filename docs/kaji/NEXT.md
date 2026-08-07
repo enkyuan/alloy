@@ -149,12 +149,18 @@ here so the operator who has them can execute in order.
 - **Gmail live proof.** Gmail is now catalog-beta, but its live send path is
   unproven until a protected operator run retains a valid
   `gmail-proof-v1.schema.json` receipt. The receipt schema ships in all three
-  contract locations; the harness that produces the receipt is intentionally
-  not yet written (it can only be developed and run against the live Gmail API
-  with OAuth credentials on the release commit). Model it on
-  `kaji/scripts/live_github_proof.py`: one `gmail.get_message` read plus one
-  exactly-approved `gmail.send_message`, read back and deleted, then a redacted
-  receipt. Run it in the `kaji-beta` protected window (step 9 above).
+  contract locations. `kaji/scripts/live_gmail_proof.py` ships as an
+  **executable skeleton**: the CLI (mirrors `live_github_proof.py`'s flags), the
+  receipt builder + schema validation, and the ordered
+  `get_message -> approved send_message -> readback -> delete -> redacted receipt`
+  sequence are real and self-checked (`test_live_gmail_proof.py`); every live
+  step is a `OperatorTodo` stub so the skeleton fails closed (exit 2) and can
+  never emit a passing receipt. The operator fills the stubs in the `kaji-beta`
+  window (step 9 above): port prerequisite validation from the GitHub proof,
+  write the `installed_gmail_live.py` / `installed-gmail-live.mts` child runners,
+  and wire the credentialed Gmail API calls. Note: the Gmail client exposes no
+  delete, so cleanup deletes the proof message via a raw authorized Gmail API
+  call, not through the shipped client.
 - **OpenAI tool-loop proof, tag, and publish.** Steps 9 through 12 above are all
   credential- or ops-gated and run only in the protected workflows.
 
