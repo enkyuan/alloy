@@ -3,12 +3,12 @@ language: TypeScript
 severity: error
 message: Fixed-origin and auth responses must use bounded readers.
 files:
-  - "kaji/packages/typescript/src/integrations/fixed-origin.ts"
-  - "kaji/packages/typescript/src/auth/**/*.ts"
-  - "kaji/packages/typescript/registry/github/client.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/github/client.ts"
-  - "kaji/packages/typescript/registry/gmail/client.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/gmail/client.ts"
+  - "kaji/packages/ts/src/integrations/fixed-origin.ts"
+  - "kaji/packages/ts/src/auth/**/*.ts"
+  - "kaji/packages/ts/registry/github/client.ts"
+  - "kaji/packages/py/src/integrations/registry/github/client.ts"
+  - "kaji/packages/ts/registry/gmail/client.ts"
+  - "kaji/packages/py/src/integrations/registry/gmail/client.ts"
 rule:
   any:
     - pattern: $RESPONSE.text()

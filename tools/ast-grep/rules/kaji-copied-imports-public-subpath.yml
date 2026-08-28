@@ -1,10 +1,10 @@
 id: kaji-copied-imports-public-subpath
 language: TypeScript
 severity: error
-message: Copied providers must import fixed-origin contracts from kaji-sdk/integrations.
+message: Copied providers must import fixed-origin contracts from kaji/integrations.
 files:
-  - "kaji/packages/typescript/registry/github/**/*.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/github/**/*.ts"
+  - "kaji/packages/ts/registry/github/**/*.ts"
+  - "kaji/packages/py/src/integrations/registry/github/**/*.ts"
 rule:
   all:
     - kind: import_statement
@@ -17,4 +17,4 @@ rule:
           - pattern: snapshotIntegrationResult
         stopBy: end
     - not:
-        regex: '(?s).*from\s+["'']kaji-sdk/integrations["'']\s*;?$'
+        regex: '(?s).*from\s+["'']kaji/integrations["'']\s*;?$'

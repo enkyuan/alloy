@@ -33,8 +33,8 @@ SCHEMA_PATH = (
     / "release"
     / "typescript-onboarding-evidence-v1.schema.json"
 )
-TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
-PRODUCER_NAME = "kaji-beta-artifacts"
+TARBALL = "kaji-0.2.0-beta.11.tgz"
+PRODUCER_NAME = "kaji-artifacts"
 SOURCE_NAMES = {
     22: "kaji-node-compat-22",
     24: "kaji-node-compat-24",
@@ -112,7 +112,7 @@ class AuthenticatedArtifactArchive:
     """Trusted Actions artifact metadata paired with exact downloaded ZIP bytes."""
 
     name: Literal[
-        "kaji-beta-artifacts",
+        "kaji-artifacts",
         "kaji-node-compat-22",
         "kaji-node-compat-24",
     ]
@@ -212,7 +212,7 @@ def load_authenticated_archive(
     path: Path,
     *,
     name: Literal[
-        "kaji-beta-artifacts",
+        "kaji-artifacts",
         "kaji-node-compat-22",
         "kaji-node-compat-24",
     ],

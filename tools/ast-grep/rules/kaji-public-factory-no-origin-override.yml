@@ -3,12 +3,12 @@ language: TypeScript
 severity: error
 message: Public provider factories must fix origins and production dependencies internally.
 files:
-  - "kaji/packages/typescript/src/auth/**/*.ts"
-  - "kaji/packages/typescript/src/integrations/**/*.ts"
-  - "kaji/packages/typescript/registry/github/**/*.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/github/**/*.ts"
-  - "kaji/packages/typescript/registry/gmail/**/*.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/gmail/**/*.ts"
+  - "kaji/packages/ts/src/auth/**/*.ts"
+  - "kaji/packages/ts/src/integrations/**/*.ts"
+  - "kaji/packages/ts/registry/github/**/*.ts"
+  - "kaji/packages/py/src/integrations/registry/github/**/*.ts"
+  - "kaji/packages/ts/registry/gmail/**/*.ts"
+  - "kaji/packages/py/src/integrations/registry/gmail/**/*.ts"
 rule:
   all:
     - kind: function_declaration

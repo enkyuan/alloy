@@ -92,7 +92,7 @@ it does not promote the integration.
 ## Normalized provider errors
 
 Catch the package-root `ProviderError` (`from kaji import ProviderError` or
-`import { ProviderError } from "kaji-sdk"`) and pass it to
+`import { ProviderError } from "kaji"`) and pass it to
 `normalize_provider_error()` or `normalizeProviderError()`. All Kaji provider
 auth, rate-limit, network, configuration, and API failures cross that boundary.
 Do not pass arbitrary vendor exceptions or log raw provider responses, causes,
@@ -103,10 +103,10 @@ for routing and retry policy, not a full diagnostic payload.
 
 `beta_release_check.py --release` is an offline rehearsal. It does not prove
 the exact-current-run TypeScript onboarding aggregate reviewed in
-`kaji-beta-onboarding`, the keyed-provider run reviewed separately in
-`kaji-beta`, the floor/latest runtime matrix, three-replica paired A/B
+`kaji-onboarding`, the keyed-provider run reviewed separately in
+`kaji-release`, the floor/latest runtime matrix, three-replica paired A/B
 benchmark, separate 30-minute soak, real signed tag, SBOM/provenance, closed
-publisher identity, or the sole npm write reviewed in `kaji-beta-publish`.
+publisher identity, or the sole npm write reviewed in `kaji-publish`.
 The protected rehearsal and publish workflows are authoritative. The
 benchmark must use the checked-in immutable reference, measure five adjacent
 pairs after two warmups on each of three numbered same-attempt `macos-15`

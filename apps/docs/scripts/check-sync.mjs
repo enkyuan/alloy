@@ -55,17 +55,17 @@ const [
   read("apps/docs/content/concepts/events.mdx"),
   read("apps/docs/content/integrations/index.mdx"),
   read("apps/docs/content/integrations/recovery-v1.mdx"),
-  read("kaji/packages/python/pyproject.toml"),
-  readJson("kaji/packages/typescript/package.json"),
+  read("kaji/packages/py/pyproject.toml"),
+  readJson("kaji/packages/ts/package.json"),
   read("bun.lock"),
   readJson("kaji/contracts/feature-tiers-v1.json"),
-  readJson("kaji/packages/python/src/kaji/integrations/registry/index.json"),
-  readJson("kaji/packages/typescript/registry/index.json"),
-  read("kaji/packages/typescript/src/events/types.ts"),
+  readJson("kaji/packages/py/src/integrations/registry/index.json"),
+  readJson("kaji/packages/ts/registry/index.json"),
+  read("kaji/packages/ts/src/events/types.ts"),
   readJson("kaji/contracts/errors/integration-recovery-v1.json"),
   read("apps/docs/src/pages/index.astro"),
-  read("kaji/packages/typescript/src/index.ts"),
-  read("kaji/packages/python/src/kaji/__init__.py"),
+  read("kaji/packages/ts/src/index.ts"),
+  read("kaji/packages/py/src/__init__.py"),
   read("apps/docs/content/architecture.mdx"),
   read("apps/docs/content/getting-started.mdx"),
   read("apps/docs/content/troubleshooting.mdx"),
@@ -80,9 +80,9 @@ const pythonVersion = pythonProject.match(/^version = "([^"]+)"$/m)?.[1];
 if (pythonVersion === undefined) fail("Python package version could not be read");
 requireText(install, `\`${pythonVersion}\``, "install guide");
 requireText(install, `\`${typescriptPackage.version}\``, "install guide");
-const npmPackageUrl = `https://www.npmjs.com/package/kaji-sdk/v/${typescriptPackage.version}`;
-const npmOpenaiInstall = `npm install kaji-sdk@${typescriptPackage.version} zod openai`;
-const bunOpenaiInstall = `bun add kaji-sdk@${typescriptPackage.version} zod openai`;
+const npmPackageUrl = `https://www.npmjs.com/package/kaji/v/${typescriptPackage.version}`;
+const npmOpenaiInstall = `npm install kaji@${typescriptPackage.version} zod openai`;
+const bunOpenaiInstall = `bun add kaji@${typescriptPackage.version} zod openai`;
 requireText(install, npmPackageUrl, "install guide npm package link");
 requireText(gettingStarted, npmPackageUrl, "getting-started npm package link");
 requireText(install, npmOpenaiInstall, "install guide npm command");
@@ -90,7 +90,7 @@ requireText(install, bunOpenaiInstall, "install guide Bun command");
 requireText(landingPage, npmOpenaiInstall, "landing install command");
 requireText(
   gettingStarted,
-  `npm install kaji-sdk@${typescriptPackage.version} zod`,
+  `npm install kaji@${typescriptPackage.version} zod`,
   "published-package tutorial",
 );
 requireText(gettingStarted, "npm install --save-dev tsx@4.22.4", "pinned TypeScript runner");
@@ -350,9 +350,7 @@ for (const [path, source] of displayedSources) {
     fail(`${path} still documents Poetry instead of the repository's uv workflow`);
   }
 
-  for (const match of source.matchAll(
-    /import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']kaji-sdk["']/g,
-  )) {
+  for (const match of source.matchAll(/import\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']kaji["']/g)) {
     for (const rawName of match[1].split(",")) {
       const name = rawName
         .trim()

@@ -20,9 +20,9 @@ TypeScript project.
 | [`ryo/consumer`](ryo/consumer)       | Ryo          | Consumer identity, wallet, transaction history              | Go, PostgreSQL                    |
 | [`ryo/auth`](ryo/auth)               | Ryo          | Auth service (Better Auth + JWT)                            | Bun, TypeScript                   |
 | [`apps/web`](apps/web)               | Ryo          | Studio: configure agents and payment providers              | React, TanStack Router, shadcn/ui |
-| [`kaji/packages/python`](kaji/packages/python)     | Kaji         | `kaji`: agent runtime, toolgen, providers                   | Python 3.11+                      |
+| [`kaji/packages/py`](kaji/packages/py)     | Kaji         | `kaji`: agent runtime, toolgen, providers                   | Python 3.11+                      |
 | [`kaji/packages/serve`](kaji/packages/serve)       | Kaji         | `kaji-serve`: experimental REST + Soniox STT edge           | Python, FastAPI, Soniox           |
-| [`kaji/packages/typescript`](kaji/packages/typescript) | Kaji     | `kaji-sdk`: TypeScript runtime                             | TypeScript                        |
+| [`kaji/packages/ts`](kaji/packages/ts) | Kaji     | `kaji`: TypeScript runtime                             | TypeScript                        |
 | [`apps/cli`](apps/cli)               | Kaji tooling | `@kaji/cli`: cross-language scaffolding and code generation | Bun, TypeScript                   |
 | [`apps/docs`](apps/docs)             | Kaji tooling | `@kaji/docs`: public documentation site                     | Astro, MDX                        |
 | [`packages/ui`](packages/ui)         | Shared       | `@kaji/ui`: shared UI and development helpers               | React, TypeScript                 |
@@ -59,7 +59,7 @@ is a tool the agent calls.
                │  spawns / configures
                ▼
    ┌──────────────────────────┐
-   │  kaji runtime            │   kaji or kaji-sdk
+   │  kaji runtime            │   kaji or kaji
    │  llm loop · toolgen      │   optional serve edge: fastapi + soniox stt
    └──────────────────────────┘
 ```
@@ -84,7 +84,7 @@ bun --filter @ryo/web dev
 
 # Kaji Python SDK (uv workspace rooted at the repo root)
 uv sync
-uv run --package kaji-sdk pytest
+uv run --package kaji pytest
 ```
 
 For the Kaji reference service, copy the canonical host-side template and let

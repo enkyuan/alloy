@@ -12,8 +12,7 @@ implementations and contracts belong in [`kaji/`](../kaji).
 | [`apps/docs`](docs) | `@kaji/docs` | Private deployment package for the public Kaji documentation site                         | Astro, MDX                                               |
 | [`apps/cli`](cli)   | `@kaji/cli`  | Published cross-language `kaji` CLI for scaffolding and code generation                   | Bun, TypeScript                                         |
 
-The standalone `@kaji/cli` is a project-level developer tool. The Python
-`kaji` package and TypeScript `kaji-sdk` also ship package-specific CLIs; the
+The standalone `@kaji/cli` is a project-level developer tool. The Python `kaji` package and TypeScript `kaji` also ship package-specific CLIs; the
 command surfaces are intentionally distinct and documented in
 [`docs/kaji/cli.md`](../docs/kaji/cli.md).
 

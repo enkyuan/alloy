@@ -1,11 +1,11 @@
 {
   "artifacts": {
     "python": {
-      "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
+      "file": "kaji-0.2.0b1-py3-none-any.whl",
       "sha256": "2a092b49c2c87666db9178bb8233f0b42551b683fa69475739582a8678ff0945"
     },
     "typescript": {
-      "file": "kaji-sdk-0.2.0-beta.2.tgz",
+      "file": "kaji-0.2.0-beta.2.tgz",
       "sha256": "266c9931456bef6f1abe9bbc96c6407d8ec98240ffdb164bad1f7785ca44d369"
     }
   },
@@ -296,7 +296,7 @@
   "releaseManifestSha256": "fc0527cb950600f7d1984abdfbc4216996408ec0ac20ad28c0ddd9d64265d6b4",
   "resolvedPackages": {
     "python": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/python/lib/python3.11/site-packages/kaji/__init__.py",
-    "typescript": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/typescript/node_modules/kaji-sdk"
+    "typescript": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/typescript/node_modules/kaji"
   },
   "runner": {
     "arch": "arm64",

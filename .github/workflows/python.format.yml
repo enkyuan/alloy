@@ -32,7 +32,7 @@ jobs:
       matrix:
         include:
           - package: kaji
-            working-directory: kaji/packages/python
+            working-directory: kaji/packages/py
           - package: kaji/packages/serve
             working-directory: kaji/packages/serve
     defaults:

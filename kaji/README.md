@@ -19,12 +19,12 @@ for the full developer path and scope.
 
 | Package      | Path                          | Published as        | What it is                                            |
 | ------------ | ----------------------------- | ------------------- | ----------------------------------------------------- |
-| Python SDK   | [`packages/python`](packages/python)         | `kaji-sdk` (PyPI)   | Python embedded agent SDK, imported as `kaji`. Full docs in its own README. |
-| TypeScript SDK | [`packages/typescript`](packages/typescript) | `kaji-sdk` (npm)    | TypeScript embedded agent SDK                         |
+| Python SDK   | [`packages/py`](packages/py)         | `kaji` (PyPI)   | Python embedded agent SDK, imported as `kaji`. Full docs in its own README. |
+| TypeScript SDK | [`packages/ts`](packages/ts) | `kaji` (npm)    | TypeScript embedded agent SDK                         |
 | Reference service | [`packages/serve`](packages/serve)       | `kaji-serve` (unpublished) | Experimental FastAPI + Soniox STT reference service   |
 
-> Both SDKs publish under the name `kaji-sdk`: one on PyPI, one on npm. The
-> Python package is imported as `kaji`; the TypeScript package as `kaji-sdk`.
+> The npm package publishes as `kaji`; the PyPI package publishes as `kaji`.
+> The Python package is imported as `kaji`; the TypeScript package as `kaji`.
 
 Canonical contracts, release scripts, benchmarks, and fixtures live once at the
 Kaji root (`contracts/`, `scripts/`, `benchmarks/`, `fixtures/`) and are consumed
@@ -35,9 +35,9 @@ the repository root.
 
 | Task                      | From                          | Command                                      |
 | ------------------------- | ----------------------------- | -------------------------------------------- |
-| Python SDK tests          | repo root                     | `uv run --package kaji-sdk pytest`           |
+| Python SDK tests          | repo root                     | `uv run --package kaji pytest`           |
 | Reference-service tests   | repo root                     | `uv run --package kaji-serve pytest`         |
-| TypeScript SDK tests      | repo root                     | `bun --filter kaji-sdk test`                 |
+| TypeScript SDK tests      | repo root                     | `bun --filter kaji test`                 |
 | Release forensics / gates | `kaji/`                       | `kaji/scripts/*.py` (e.g. `beta_release_check.py`) |
 
 Contributor setup and the full local-check matrix live in

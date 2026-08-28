@@ -9,7 +9,7 @@ authors = [
 ]
 dependencies = [
     # Shape A: extras live on the project dep; uv.sources is path-only.
-    "kaji-sdk[gemini]",
+    "kaji[gemini]",
     "fastapi>=0.119.0,<0.120",
     "pydantic[email]>=2.12.0,<3",
     "uvicorn>=0.37.0,<0.38",
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-kaji-sdk = { workspace = true }
+kaji = { workspace = true }
 
 [build-system]
 requires = ["setuptools>=68", "editables>=0.5"]
@@ -32,12 +32,16 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 include-package-data = true
-package-dir = { "" = "src" }
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["kaji_serve", "kaji_serve.*"]
-namespaces = false
+package-dir = { "kaji_serve" = "src" }
+packages = [
+    "kaji_serve",
+    "kaji_serve.modalities",
+    "kaji_serve.modalities.voice",
+    "kaji_serve.modalities.voice.stt",
+    "kaji_serve.server",
+    "kaji_serve.server.models",
+    "kaji_serve.server.v1",
+]
 
 [dependency-groups]
 dev = [

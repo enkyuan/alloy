@@ -15,9 +15,9 @@ from typing import Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
-    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
+    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
@@ -25,9 +25,9 @@ EXPECTED_PACKAGES = {
     "typescript": "0.2.0-beta.11",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
-    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
+    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 REFERENCE_EXPECTED_PACKAGES = {
     "contract": "1.0.0",
@@ -41,7 +41,7 @@ EXPECTED_FIXED_BUILD_TOOLS = {
     "setuptools": "83.0.0",
     "uv": "0.11.25",
 }
-EXPECTED_BUILD_AUDIT = "kaji/packages/python/build-requirements.txt"
+EXPECTED_BUILD_AUDIT = "kaji/packages/py/build-requirements.txt"
 ENTRY_KEYS = {
     "commit",
     "contractVersion",

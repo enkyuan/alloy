@@ -31,9 +31,9 @@ if __name__ == "__main__":
 }
 
 const PYTHON_EXTRAS: Record<Provider, string> = {
-  mock: "kaji-sdk",
-  openai: "kaji-sdk[openai]",
-  anthropic: "kaji-sdk[anthropic]",
+  mock: "kaji",
+  openai: "kaji[openai]",
+  anthropic: "kaji[anthropic]",
 };
 
 function resolvePythonRequirement(provider: Provider): string {

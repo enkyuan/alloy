@@ -1,0 +1,188 @@
+{
+  "name": "kaji",
+  "version": "0.2.0-beta.11",
+  "description": "Embeddable SDK for building agents in TypeScript: event-sourced runtime, tool registry, session replay. Infra-free core.",
+  "homepage": "https://github.com/enkyuan/alloy/blob/main/docs/kaji/README.md",
+  "bugs": {
+    "url": "https://github.com/enkyuan/alloy/issues"
+  },
+  "license": "FSL-1.1-ALv2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/enkyuan/alloy.git",
+    "directory": "kaji/packages/ts"
+  },
+  "bin": {
+    "kaji": "dist/cli/bin.js"
+  },
+  "files": [
+    "LICENSE",
+    "contracts",
+    "dist",
+    "registry/index.json",
+    "registry/index.schema.json",
+    "registry/schema.json",
+    "registry/echo/index.ts",
+    "registry/echo/manifest.json",
+    "registry/github/LICENSE",
+    "registry/github/client.ts",
+    "registry/github/index.ts",
+    "registry/github/manifest.json",
+    "registry/github/owner-fixtures.json",
+    "registry/github/tests/github.test.ts",
+    "registry/gmail/LICENSE",
+    "registry/gmail/client.ts",
+    "registry/gmail/index.ts",
+    "registry/gmail/manifest.json",
+    "registry/gmail/owner-fixtures.json",
+    "registry/gmail/tests/gmail.test.ts"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
+      }
+    },
+    "./openai": {
+      "import": {
+        "types": "./dist/openai.d.ts",
+        "default": "./dist/openai.js"
+      },
+      "require": {
+        "types": "./dist/openai.d.cts",
+        "default": "./dist/openai.cjs"
+      }
+    },
+    "./anthropic": {
+      "import": {
+        "types": "./dist/anthropic.d.ts",
+        "default": "./dist/anthropic.js"
+      },
+      "require": {
+        "types": "./dist/anthropic.d.cts",
+        "default": "./dist/anthropic.cjs"
+      }
+    },
+    "./integrations": {
+      "import": {
+        "types": "./dist/integrations.d.ts",
+        "default": "./dist/integrations.js"
+      },
+      "require": {
+        "types": "./dist/integrations.d.cts",
+        "default": "./dist/integrations.cjs"
+      }
+    },
+    "./integrations/github": {
+      "import": {
+        "types": "./dist/integrations/github.d.ts",
+        "default": "./dist/integrations/github.js"
+      },
+      "require": {
+        "types": "./dist/integrations/github.d.cts",
+        "default": "./dist/integrations/github.cjs"
+      }
+    },
+    "./auth": {
+      "import": {
+        "types": "./dist/auth.d.ts",
+        "default": "./dist/auth.js"
+      },
+      "require": {
+        "types": "./dist/auth.d.cts",
+        "default": "./dist/auth.cjs"
+      }
+    },
+    "./cli": {
+      "import": {
+        "types": "./dist/cli/package-entry.d.ts",
+        "default": "./dist/cli/package-entry.js"
+      },
+      "require": {
+        "types": "./dist/cli/package-entry-cjs.d.cts",
+        "default": "./dist/cli/package-entry-cjs.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "prebuild": "bun run validate:registry",
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "typecheck:registry": "tsc -p tsconfig.registry.json --noEmit",
+    "lint": "oxlint src tests scripts registry",
+    "format": "oxfmt --write \"**/*.ts\"",
+    "format:check": "oxfmt --check \"**/*.ts\"",
+    "lint:package": "bun run build && publint run . --strict && attw --pack --profile node16",
+    "parity": "uv run --project ../py python ../../scripts/check_sdk_parity.py",
+    "test": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run \"$@\"' --",
+    "test:coverage": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run --coverage --coverage.include=\"src/**/*.ts\" --coverage.include=\"registry/**/*.ts\" --coverage.exclude=\"src/**/*.d.ts\" --coverage.exclude=\"registry/**/tests/**/*.test.ts\" --coverage.reporter=text --coverage.reporter=json-summary --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80 \"$@\"' --",
+    "test:complexity": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run tests/runtime-complexity.test.ts tests/runtime-faults.test.ts \"$@\"' --",
+    "benchmark:beta": "bun benchmarks/runtime-benchmark.ts",
+    "soak:beta": "bun benchmarks/runtime-soak.ts",
+    "test:quickstart": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run examples/minimal-agent/smoke.test.ts \"$@\"' --",
+    "test:integration": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts \"$@\"' --",
+    "test:watch": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs \"$@\"' --",
+    "check:integrations": "bun run scripts/check_integration_sources.ts",
+    "clean": "rm -rf dist",
+    "package:smoke": "bun run build && bun scripts/smoke_package.mts",
+    "validate:registry": "bun run scripts/validate_registry.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "@arethetypeswrong/cli": "0.18.4",
+    "@dotenvx/dotenvx": "2.9.0",
+    "@types/bun": "^1.0.0",
+    "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "4.1.9",
+    "openai": "^6.42.0",
+    "oxfmt": "^0.54.0",
+    "publint": "0.3.21",
+    "tsup": "^8.3.5",
+    "typescript": "^6.0.2",
+    "typescript57": "npm:typescript@5.7.3",
+    "vitest": "4.1.9",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30 <2",
+    "openai": ">=4 <8",
+    "zod": ">=4.3 <5"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    }
+  },
+  "optionalDependencies": {},
+  "engines": {
+    "node": "22.x || 24.x"
+  }
+}

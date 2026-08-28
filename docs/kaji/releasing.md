@@ -9,13 +9,13 @@ publication is deferred.
 
 Three protected environments have intentionally different authority:
 
-- `kaji-beta-onboarding` protects only the deterministic TypeScript onboarding
+- `kaji-onboarding` protects only the deterministic TypeScript onboarding
   aggregate. It receives no provider or registry secret. Its single deployment
   is `typescript-onboarding-evidence`, after the unprotected archive calibration
   has validated the same three current-run raw REST ZIP bodies.
-- `kaji-beta` protects mandatory keyed OpenAI proof in Python and TypeScript.
+- `kaji-release` protects mandatory keyed OpenAI proof in Python and TypeScript.
   Configure `OPENAI_API_KEY` here only. It has no registry publisher authority.
-- `kaji-beta-publish` protects the sole final npm write. Its single deployment
+- `kaji-publish` protects the sole final npm write. Its single deployment
   is `publish-npm`, and only credentialed steps in that job receive
   `NPM_TOKEN`. It must not contain a provider key.
 
@@ -64,21 +64,21 @@ Complete these once before creating the release tag:
    under Apache-2.0 on the second anniversary of that date.
 4. Configure all three environments with required reviewer `enkyuan`,
    `prevent_self_review=false`, and `can_admins_bypass=false`.
-   `kaji-beta-onboarding` and `kaji-beta` permit only `main` and
-   `kaji-v0.2.0-beta.11`; `kaji-beta-publish` permits only
-   `kaji-v0.2.0-beta.11`. Configure `OPENAI_API_KEY` only in `kaji-beta`, and
+   `kaji-onboarding` and `kaji-release` permit only `main` and
+   `kaji-v0.2.0-beta.11`; `kaji-publish` permits only
+   `kaji-v0.2.0-beta.11`. Configure `OPENAI_API_KEY` only in `kaji-release`, and
    configure `KAJI_NPM_PUBLISHER` only for the final publisher boundary. Audit
    the complete reviewer and custom branch-policy state without reading any
    secret:
 
    ```bash
-   uv run --project kaji/packages/python --no-sync python \
+   uv run --project kaji/packages/py --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
    ```
 
 5. Confirm the exact first-publication registry state. The protected workflow
    fails closed unless the stable `tiny-tarball@1.0.0` npm control is an exact
-   200 JSON document, the `kaji-sdk` packument is an exact 404 JSON object
+   200 JSON document, the `kaji` packument is an exact 404 JSON object
    `{"error":"Not found"}`, and the exact beta.11 endpoint is an exact 404 JSON
    string `"Not Found"`. It binds every response to its original HTTPS URL,
    forbids redirects, bounds the body, and requires a JSON content type. Do not
@@ -90,7 +90,7 @@ Complete these once before creating the release tag:
    npm 11.16 warned about setup-node's deprecated `always-auth=false` setting;
    npm and PyPI remained absent. Do not rerun that workflow or reuse its tag.
    Before beta.11 tag creation, the operator must explicitly confirm that a
-   fresh `NPM_TOKEN` is stored only in `kaji-beta-publish`. Do not inspect,
+   fresh `NPM_TOKEN` is stored only in `kaji-publish`. Do not inspect,
    copy, or test the secret locally. Do not run a local credential preflight;
    the protected `publish-npm` job removes
    only setup-node's deprecated setting, then performs exact `npm whoami`
@@ -114,7 +114,7 @@ From a clean, real Git checkout with its `.git` metadata present, using Bun
 1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters, run:
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release
 ```
 
 Source archives are unsupported because the release gate must bind artifacts
@@ -142,7 +142,7 @@ later run is not acceptable evidence.
    ```bash
    test "$(gh api repos/enkyuan/alloy/commits/main --jq .sha)" \
      = "$REVIEWED_COMMIT"
-   uv run --project kaji/packages/python --no-sync python \
+   uv run --project kaji/packages/py --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py audit-environments
    ```
 
@@ -162,11 +162,11 @@ later run is not acceptable evidence.
    benchmark replicas and their aggregate, the 30-minute soak, and
    `typescript-onboarding-archive-calibration`. The calibration must be
    terminal success before `typescript-onboarding-evidence` becomes the sole
-   waiting deployment under `kaji-beta-onboarding`. Do not approve a run with
+   waiting deployment under `kaji-onboarding`. Do not approve a run with
    a failed calibration, a rerun, a mixed attempt, or any other waiting job.
 
 4. Query the complete current-run artifact collection. Resolve exactly one
-   unexpired `kaji-beta-artifacts`, `kaji-node-compat-22`, and
+   unexpired `kaji-artifacts`, `kaji-node-compat-22`, and
    `kaji-node-compat-24`. Record each exact artifact ID and canonical
    `sha256:<64 lowercase hex>` REST digest, then raw-download each ZIP by its
    exact ID:
@@ -197,7 +197,7 @@ later run is not acceptable evidence.
    read-only rehearsal audit and dry run:
 
    ```bash
-   uv run --project kaji/packages/python --no-sync python \
+   uv run --project kaji/packages/py --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py gate \
      --mode rehearsal \
      --run-id "$REHEARSAL_RUN_ID" \
@@ -216,19 +216,19 @@ later run is not acceptable evidence.
    Only after that command succeeds, rerun the identical command with
    `--approve` appended. The helper stable-reads the archives, repeats the
    complete local and 13-GET remote snapshot, requires unchanged state, and
-   approves exactly the sole `kaji-beta-onboarding` deployment. Do not approve
+   approves exactly the sole `kaji-onboarding` deployment. Do not approve
    onboarding manually in the Actions UI. A failure after the approval POST is
    ambiguous; do not retry it or rerun the workflow.
 
 6. Require the protected onboarding aggregate and its retained
    `status.json`, `validation.log`, and
    `typescript-onboarding-evidence.json` to pass. Approve the later, distinct
-   `kaji-beta` deployment separately. The keyed provider proof must complete a
+   `kaji-release` deployment separately. The keyed provider proof must complete a
    normalized OpenAI tool loop in Python and TypeScript; missing-key hygiene is
    not provider evidence.
 
 7. Wait for terminal-green candidate evidence and independently select the
-   exact `kaji-beta-artifacts` and `kaji-release-candidate-evidence` IDs,
+   exact `kaji-artifacts` and `kaji-release-candidate-evidence` IDs,
    names, canonical REST digests, manifest hash, and npm tarball hash. Download
    and verify both artifacts by exact ID. These immutable rehearsal identities,
    not a later rebuild or same-named artifact, form the tag authorization.
@@ -240,7 +240,7 @@ recursively lexicographically sorted keys, compact `,`/`:` separators, ASCII
 JSON, and exactly one terminal LF:
 
 ```json
-{"candidateArtifact":{"digest":"sha256:<64 lowercase hex>","id":456,"name":"kaji-beta-artifacts"},"commit":"<40 lowercase hex>","evidenceArtifact":{"digest":"sha256:<64 lowercase hex>","id":789,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.11.tgz","sha256":"<64 lowercase hex>"},"rehearsal":{"runAttempt":1,"runId":123,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<same commit>"},"releaseManifestSha256":"<64 lowercase hex>","schemaVersion":"1.0.0"}
+{"candidateArtifact":{"digest":"sha256:<64 lowercase hex>","id":456,"name":"kaji-artifacts"},"commit":"<40 lowercase hex>","evidenceArtifact":{"digest":"sha256:<64 lowercase hex>","id":789,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-0.2.0-beta.11.tgz","sha256":"<64 lowercase hex>"},"rehearsal":{"runAttempt":1,"runId":123,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<same commit>"},"releaseManifestSha256":"<64 lowercase hex>","schemaVersion":"1.0.0"}
 ```
 
 The exact message is that one compact line plus one LF, with no CR, BOM,
@@ -250,7 +250,7 @@ workflow SHA to equal `REVIEWED_COMMIT`, run attempt 1, distinct positive-safe
 artifact IDs, fixed artifact names, and the exact beta.11 tarball name.
 
 Stop here until the operator explicitly confirms a fresh `NPM_TOKEN` is stored
-only in `kaji-beta-publish`. Do not inspect or test the secret. After that
+only in `kaji-publish`. Do not inspect or test the secret. After that
 confirmation and one final registry/tag/main/environment recheck, write the
 exact authorization bytes to `AUTHORIZATION_FILE`.
 
@@ -264,7 +264,7 @@ set -euo pipefail
 : "${REVIEWED_COMMIT:?set the exact rehearsed commit}"
 
 AUTHORIZATION_SHA256="$(
-  uv run --project kaji/packages/python --no-sync python - "$AUTHORIZATION_FILE" <<'PY'
+  uv run --project kaji/packages/py --no-sync python - "$AUTHORIZATION_FILE" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -323,7 +323,7 @@ set -euo pipefail
 : "${AUTHORIZATION_FILE:?retain the exact authorization-message path}"
 : "${AUTHORIZATION_SHA256:?retain the validated authorization digest}"
 
-uv run --project kaji/packages/python --no-sync python - \
+uv run --project kaji/packages/py --no-sync python - \
   "$TAG" "$REVIEWED_COMMIT" "$AUTHORIZATION_FILE" \
   "$AUTHORIZATION_SHA256" <<'PY'
 import hashlib
@@ -409,7 +409,7 @@ reuse this tag after it is pushed.
    publish run's exact IDs, digests, and raw ZIPs:
 
    ```bash
-   uv run --project kaji/packages/python --no-sync python \
+   uv run --project kaji/packages/py --no-sync python \
      kaji/scripts/approve_typescript_onboarding_gate.py gate \
      --mode publish \
      --run-id "$PUBLISH_RUN_ID" \
@@ -427,16 +427,16 @@ reuse this tag after it is pushed.
 
    After the dry run succeeds, rerun the identical command with `--approve`
    appended. Require the protected onboarding aggregate to finish terminal
-   green, then approve the later `kaji-beta` keyed-provider deployment
+   green, then approve the later `kaji-release` keyed-provider deployment
    separately.
 
 4. Review the exact manifest, checksums, offline summary, compatibility,
    onboarding, provider, paired benchmark, soak, SBOM, provenance,
    attestation, signed-source/rebuild/carrier, and registry-absence evidence.
-   Keep `kaji-beta-publish` unapproved until every upstream gate is terminal
+   Keep `kaji-publish` unapproved until every upstream gate is terminal
    green and fresh-token storage has already been explicitly confirmed.
 
-5. Approve the sole `kaji-beta-publish` deployment, `publish-npm`, exactly
+5. Approve the sole `kaji-publish` deployment, `publish-npm`, exactly
    once. There is no separate publisher deployment and no Python publisher.
    Inside this job, exact `npm whoami` equality with `KAJI_NPM_PUBLISHER` is
    the first credentialed action. The job then reverifies the signed tag,
@@ -469,7 +469,7 @@ is failure. Therefore:
   or **Re-run all jobs**. The workflow rejects `run_attempt > 1` at
   registry preflight and never resumes a registry version.
 - Treat any publisher failure, timeout, cancellation, or inconclusive registry
-  lookup as `partial_or_ambiguous`; preserve `kaji-beta-artifacts`,
+  lookup as `partial_or_ambiguous`; preserve `kaji-artifacts`,
   `kaji-offline-evidence`, `kaji-supply-chain-evidence`, and
   `kaji-publication-status` from that run before remediation.
 - Check the exact npm version through its HTTPS registry endpoint and preserve
@@ -546,7 +546,7 @@ is failure. Therefore:
 - If npm `0.2.0-beta.2` exists, deprecate it with a forward pointer:
 
   ```bash
-  npm deprecate kaji-sdk@0.2.0-beta.2 "Unsafe beta; use the next published beta"
+  npm deprecate kaji@0.2.0-beta.2 "Unsafe beta; use the next published beta"
   ```
 
 - Increment the npm beta version, update locks/changelogs, pass all gates again
@@ -575,7 +575,7 @@ mismatch.
 ## Automated TypeScript onboarding evidence
 
 Both protected workflows derive onboarding evidence only from the exact
-current-run `kaji-beta-artifacts`, `kaji-node-compat-22`, and
+current-run `kaji-artifacts`, `kaji-node-compat-22`, and
 `kaji-node-compat-24` raw REST ZIP bodies. Each archive is selected from the
 complete run collection, requeried by exact ID, checked for canonical name,
 digest, producer run, head commit, attempt 1, and non-expiration, then hashed

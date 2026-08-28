@@ -106,7 +106,7 @@ def _aggregate(reports: list[dict[str, Any]]) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "schemaVersion": 1,
-        "kind": "kaji-beta-paired-benchmark-aggregate",
+        "kind": "kaji-paired-benchmark-aggregate",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "protocolHash": first["protocolHash"],
         "threshold": THRESHOLD,

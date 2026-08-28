@@ -7,7 +7,7 @@ This mirrors ``kaji/scripts/live_github_proof.py`` for Gmail. It ships as a
 skeleton on purpose: the credentialed Gmail API calls, the OAuth token
 resolution, and the per-SDK installed-runtime child runners can only be written
 and validated against the live Gmail API on the real release commit, inside the
-``kaji-beta`` protected environment. See docs/kaji/NEXT.md (manual runbook).
+``kaji-release`` protected environment. See docs/kaji/NEXT.md (manual runbook).
 
 What IS real and testable here now:
   * the CLI surface (mirrors the GitHub proof's flags exactly),
@@ -44,14 +44,14 @@ PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "gmail-proof-v1.schema
 
 # Release artifact names. Keep in lockstep with live_github_proof.py; the beta
 # tag drives these. (TS tarball tracks beta.11; Python wheel/sdist track 0.2.0b1.)
-PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
-PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
+TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
 
 # Child runners that must exist before this proof can run. Neither is written.
 PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_gmail_live.py"
 TYPESCRIPT_RUNNER = (
-    ROOT / "kaji" / "packages" / "typescript" / "scripts" / "installed-gmail-live.mts"
+    ROOT / "kaji" / "packages" / "ts" / "scripts" / "installed-gmail-live.mts"
 )
 
 

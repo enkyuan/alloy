@@ -16,31 +16,25 @@ def _env_names(contents: str) -> set[str]:
     return set(re.findall(r"^([A-Z][A-Z0-9_]*)=", contents, flags=re.MULTILINE))
 
 
-def test_editable_import_uses_conventional_source_package() -> None:
-    assert (
-        Path(kaji_serve.__file__).resolve().parent
-        == (SERVE_ROOT / "src" / "kaji_serve").resolve()
-    )
+def test_editable_import_uses_flattened_source_package() -> None:
+    assert Path(kaji_serve.__file__).resolve().parent == (SERVE_ROOT / "src").resolve()
 
 
-def test_setuptools_discovers_packages_below_src() -> None:
+def test_setuptools_maps_flattened_src_to_kaji_serve() -> None:
     project = tomllib.loads((SERVE_ROOT / "pyproject.toml").read_text())
     setuptools = project["tool"]["setuptools"]
 
-    assert setuptools["package-dir"] == {"": "src"}
-    assert setuptools["packages"]["find"] == {
-        "where": ["src"],
-        "include": ["kaji_serve", "kaji_serve.*"],
-        "namespaces": False,
-    }
+    assert setuptools["package-dir"] == {"kaji_serve": "src"}
+    assert "kaji_serve" in setuptools["packages"]
+    assert not (SERVE_ROOT / "src" / "kaji_serve").exists()
 
 
 def test_service_installs_only_its_provider_and_validation_extras() -> None:
     project = tomllib.loads((SERVE_ROOT / "pyproject.toml").read_text())
     dependencies = project["project"]["dependencies"]
 
-    assert "kaji-sdk[gemini]" in dependencies
-    assert not any("kaji-sdk[providers]" in dep for dep in dependencies)
+    assert "kaji[gemini]" in dependencies
+    assert not any("kaji[providers]" in dep for dep in dependencies)
     assert any(dep.startswith("pydantic[email]") for dep in dependencies)
 
 

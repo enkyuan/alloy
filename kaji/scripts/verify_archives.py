@@ -84,9 +84,9 @@ def load_archives(dist_dir: Path) -> None:
     sdk_root = Path(__file__).resolve().parents[1]
     # Contracts stay at kaji/contracts (shared canonical spine).
     contracts_dir = sdk_root / "contracts"
-    # The Python SDK package moved to kaji/packages/python; its packaging inputs
+    # The Python SDK package moved to kaji/packages/py; its packaging inputs
     # (LICENSE/README/pyproject/build-requirements/src) live there now.
-    py_pkg_root = sdk_root / "packages" / "python"
+    py_pkg_root = sdk_root / "packages" / "py"
     license_bytes = (py_pkg_root / "LICENSE").read_bytes()
     readme_bytes = (py_pkg_root / "README.md").read_bytes()
     pyproject = tomllib.loads((py_pkg_root / "pyproject.toml").read_text())
@@ -103,6 +103,7 @@ def manifest_declared_owner_fixture_paths(
     read_bytes: Callable[[str], bytes],
     *,
     prefix: str = "",
+    registry_root_path: str = registry_root,
 ) -> set[str]:
     """Return each packaged owner fixture that its integration manifest declares.
 
@@ -112,7 +113,7 @@ def manifest_declared_owner_fixture_paths(
     relative path in its `files` array. Any other test file is forbidden even if
     the manifest declares it, so a stray test can never be smuggled in.
     """
-    registry_prefix = f"{prefix}{registry_root}/"
+    registry_prefix = f"{prefix}{registry_root_path}/"
     allowed: set[str] = set()
     for path in paths:
         if not path.startswith(registry_prefix) or not path.endswith("/manifest.json"):
@@ -452,12 +453,12 @@ def validate_requires_txt(data: bytes, label: str) -> None:
 
 
 def verify_archives() -> None:
-    if project_name != "kaji-sdk":
+    if project_name != "kaji":
         fail(f"unexpected Python project name: {project_name}")
-    egg_info = f"src/{wheel_distribution}.egg-info"
-    package_root = py_pkg_root / "src" / "kaji"
+    egg_info = f"{wheel_distribution}.egg-info"
+    package_root = py_pkg_root / "src"
     expected_source_bytes = {
-        path.relative_to(py_pkg_root / "src").as_posix(): path.read_bytes()
+        f"kaji/{path.relative_to(package_root).as_posix()}": path.read_bytes()
         for path in package_root.rglob("*")
         if path.is_file()
         and path.name != ".DS_Store"
@@ -614,6 +615,7 @@ def verify_archives() -> None:
             relative_names,
             sdist_bytes,
             prefix="src/",
+            registry_root_path="integrations/registry",
         )
         forbidden = forbidden_artifacts(
             relative_names,
@@ -623,7 +625,8 @@ def verify_archives() -> None:
             fail(f"forbidden artifacts in sdist: {forbidden[:5]}")
 
         expected_sdist_source_bytes = {
-            f"src/{path}": expected for path, expected in expected_source_bytes.items()
+            f"src/{path.removeprefix('kaji/')}": expected
+            for path, expected in expected_source_bytes.items()
         }
         missing_sources = sorted(set(expected_sdist_source_bytes) - relative_names)
         if missing_sources:
@@ -742,9 +745,9 @@ def verify_archives() -> None:
                 fail(f"sdist checkout metadata differs from source: {relative}")
 
         packaged_contracts = {
-            path.removeprefix("src/kaji/contracts/")
+            path.removeprefix("src/contracts/")
             for path in relative_names
-            if path.startswith("src/kaji/contracts/")
+            if path.startswith("src/contracts/")
             and Path(path).suffix in {".json", ".md"}
         }
         if packaged_contracts != set(canonical_contracts):
@@ -752,11 +755,11 @@ def verify_archives() -> None:
             extra = sorted(packaged_contracts - set(canonical_contracts))
             fail(f"sdist contract set mismatch; missing={missing}, extra={extra}")
         for relative, expected in sorted(canonical_contracts.items()):
-            path = f"{root}/src/kaji/contracts/{relative}"
+            path = f"{root}/src/contracts/{relative}"
             member = members[path]
             extracted = tf.extractfile(member)
             if extracted is None or extracted.read() != expected:
-                fail(f"src/kaji/contracts/{relative} differs from canonical bytes")
+                fail(f"src/contracts/{relative} differs from canonical bytes")
 
         license_path = f"{root}/LICENSE"
         member = members.get(license_path)

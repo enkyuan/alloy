@@ -75,7 +75,7 @@ jobs:
             const expectedDigest = `sha256:${process.env.CANDIDATE_ARTIFACT_DIGEST}`;
             if (
               artifact.id !== Number(process.env.CANDIDATE_ARTIFACT_ID) ||
-              artifact.name !== "kaji-beta-artifacts" ||
+              artifact.name !== "kaji-artifacts" ||
               artifact.expired ||
               artifact.digest !== expectedDigest ||
               artifact.workflow_run?.id !== context.runId ||
@@ -152,7 +152,7 @@ jobs:
         id: reference
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-beta-artifacts
+          name: kaji-artifacts
           path: .artifacts/kaji-reference
           repository: ${{ github.repository }}
           run-id: 30081423771
@@ -170,7 +170,7 @@ jobs:
       - name: Measure protected paired replica
         id: measure
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/paired_benchmark.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/paired_benchmark.py
           --reference-artifacts-dir .artifacts/kaji-reference
           --candidate-artifacts-dir .artifacts/kaji-candidate
           --candidate-commit "$KAJI_RELEASE_COMMIT"
@@ -299,7 +299,7 @@ jobs:
       - name: Aggregate exactly three paired benchmark receipts
         id: aggregate
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/aggregate_benchmarks.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/aggregate_benchmarks.py
           --replica-report .artifacts/kaji-paired/replicas/replica-1.json
           --replica-report .artifacts/kaji-paired/replicas/replica-2.json
           --replica-report .artifacts/kaji-paired/replicas/replica-3.json
@@ -410,7 +410,7 @@ jobs:
       - name: Run protected 30-minute soak
         id: soak
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/run_beta_soak.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/run_beta_soak.py
           --minutes 30 --protected --artifacts-dir .artifacts/kaji-candidate
       - name: Normalize and retain soak evidence
         if: ${{ always() && github.run_attempt == 1 }}
@@ -490,7 +490,7 @@ jobs:
             --arg commit "$KAJI_RELEASE_COMMIT" \
             --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-            '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+            '{schemaVersion: 2, kind: "kaji-performance-status",
               commit: $commit, conclusion: "not_run",
               failureCode: "performance_not_completed",
               benchmarkOutcome: "not_run", soakOutcome: "not_run",
@@ -532,7 +532,7 @@ jobs:
             --argjson runId "$GITHUB_RUN_ID" \
             --argjson runAttempt "$GITHUB_RUN_ATTEMPT" \
             '.schemaVersion == 1 and
-             .kind == "kaji-beta-paired-benchmark-aggregate" and
+             .kind == "kaji-paired-benchmark-aggregate" and
              .passed == true and .failures == [] and
              .candidate.commit == $commit and
              (.reportReceiptSha256 | type == "string" and test("^[0-9a-f]{64}$")) and
@@ -616,7 +616,7 @@ jobs:
               --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
               --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
               --slurpfile paired "$paired" \
-              '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+              '{schemaVersion: 2, kind: "kaji-performance-status",
                 commit: $commit, conclusion: "passed", failureCode: null,
                 benchmarkOutcome: "success", soakOutcome: "success",
                 validationOutcome: "success",
@@ -638,7 +638,7 @@ jobs:
               --arg validationOutcome "${VALIDATION_OUTCOME:-skipped}" \
               --arg workflowRun "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
               --argjson workflowRunAttempt "$GITHUB_RUN_ATTEMPT" \
-              '{schemaVersion: 2, kind: "kaji-beta-performance-status",
+              '{schemaVersion: 2, kind: "kaji-performance-status",
                 commit: $commit, conclusion: "failed",
                 failureCode: $failureCode, benchmarkOutcome: $benchmarkOutcome,
                 soakOutcome: $soakOutcome,

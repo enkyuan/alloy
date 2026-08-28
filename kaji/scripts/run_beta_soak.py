@@ -34,7 +34,7 @@ from process_runner import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "packages" / "python"
+SDK = ROOT / "kaji" / "packages" / "py"
 KAJI_ROOT = ROOT / "kaji"  # shared machinery (benchmarks/, scripts/) stays here
 GATE = Path(__file__).with_name("beta_soak_gate.py")
 PROTECTED_GATE_PARENT_ENV = (
@@ -65,8 +65,8 @@ FAILURE_CODES = frozenset(
     }
 )
 EXPECTED_ARTIFACTS = {
-    "python": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "typescript": "kaji-sdk-0.2.0-beta.11.tgz",
+    "python": "kaji-0.2.0b1-py3-none-any.whl",
+    "typescript": "kaji-0.2.0-beta.11.tgz",
 }
 
 
@@ -453,7 +453,7 @@ def main() -> int:
                 else ROOT
                 / "kaji"
                 / "packages"
-                / "typescript"
+                / "ts"
                 / "benchmarks"
                 / "runtime-soak.ts"
             )
@@ -463,7 +463,12 @@ def main() -> int:
                         CommandSpec(
                             [
                                 *child_python,
-                                str(KAJI_ROOT / "benchmarks" / "python" / "runtime_soak.py"),
+                                str(
+                                    KAJI_ROOT
+                                    / "benchmarks"
+                                    / "python"
+                                    / "runtime_soak.py"
+                                ),
                                 "--minutes",
                                 args.minutes,
                                 "--seed",

@@ -51,9 +51,9 @@ COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 WORKFLOW_RUN_PATTERN = re.compile(
     r"https://github\.com/[^/]+/[^/]+/actions/runs/[1-9][0-9]*"
 )
-PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
-PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
+TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
 RELEASE_FILES = (
     PYTHON_WHEEL,
     PYTHON_SDIST,
@@ -64,7 +64,7 @@ RELEASE_FILES = (
 PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_github_live.py"
 CONTROL_HELPER = ROOT / "kaji" / "scripts" / "github_proof_control.py"
 TYPESCRIPT_RUNNER = (
-    ROOT / "kaji" / "packages" / "typescript" / "scripts" / "installed-github-live.mts"
+    ROOT / "kaji" / "packages" / "ts" / "scripts" / "installed-github-live.mts"
 )
 PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
 PYTHON_CHILD_BOOTSTRAP = "\n".join(
@@ -193,9 +193,9 @@ def _is_source_path(value: Any, workspace: Path) -> bool:
         or any(
             marker in normalized
             for marker in (
-                "/kaji/packages/python/src/",
-                "/kaji/packages/typescript/src/",
-                "/kaji/packages/typescript/dist/",
+                "/kaji/packages/py/src/",
+                "/kaji/packages/ts/src/",
+                "/kaji/packages/ts/dist/",
             )
         )
     )

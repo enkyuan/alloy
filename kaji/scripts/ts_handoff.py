@@ -35,11 +35,11 @@ from process_runner import (
 )
 
 
-PACKAGE_NAME = "kaji-sdk"
+PACKAGE_NAME = "kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 BASE_REF = "refs/remotes/origin/main"
 SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
-MANIFEST_NAME = "kaji-sdk.manifest.json"
+MANIFEST_NAME = "kaji.manifest.json"
 STAGE_INDEX_NAME = "stage.json"
 RAW_SOURCE_NAME = "source-equivalence.raw.json"
 RAW_SIGNATURE_NAME = "signature-verification.raw.json"
@@ -79,9 +79,9 @@ RECEIPT_DIGEST_KEYS = (
     "node24",
 )
 
-REGISTRY_URL = "https://registry.npmjs.org/kaji-sdk"
+REGISTRY_URL = "https://registry.npmjs.org/kaji"
 REGISTRY_ORIGIN = "https://registry.npmjs.org"
-REGISTRY_PATH = "/kaji-sdk"
+REGISTRY_PATH = "/kaji"
 REGISTRY_MAX_BYTES = 5 * 1024 * 1024
 REGISTRY_DEADLINE_SECONDS = 30.0
 
@@ -866,7 +866,7 @@ def _registry_proof(
 
 def _package_metadata(candidate: Path) -> dict[str, Any]:
     document, _encoded = _load_json(
-        candidate / "kaji" / "packages" / "typescript" / "package.json",
+        candidate / "kaji" / "packages" / "ts" / "package.json",
         code="SOURCE_COMMIT_MISMATCH",
     )
     if document.get("name") != PACKAGE_NAME or not _valid_semver(
@@ -1125,7 +1125,7 @@ def stage(
         "package"
     ] or (package.get("scripts") or {}).get("prebuild") != "bun run validate:registry":
         _reject("SOURCE_COMMIT_MISMATCH", source_commit=source["headCommit"])
-    ts_root = candidate / "kaji" / "packages" / "typescript"
+    ts_root = candidate / "kaji" / "packages" / "ts"
 
     with _owned_directory(output_dir) as temporary:
         _run_stage_command(command_runner, CLEAN_COMMAND, ts_root, "BUILD_FAILED")

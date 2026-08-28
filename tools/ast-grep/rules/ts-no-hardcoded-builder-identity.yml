@@ -3,8 +3,8 @@ language: TypeScript
 severity: error
 message: Tool identity must come from TurnContext, never a builder literal.
 files:
-  - "kaji/packages/typescript/src/runtime/builder.ts"
-  - "kaji/packages/typescript/src/runtime/runtime.ts"
+  - "kaji/packages/ts/src/runtime/builder.ts"
+  - "kaji/packages/ts/src/runtime/runtime.ts"
 rule:
   any:
     - pattern: $REGISTRY.execute("builder", $$$ARGS)

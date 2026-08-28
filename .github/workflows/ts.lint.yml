@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "apps/cli/**"
       - "apps/web/**"
       - "packages/shared/**"
@@ -16,7 +16,7 @@ on:
       - ".github/workflows/ts.lint.yml"
   pull_request:
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "apps/cli/**"
       - "apps/web/**"
       - "packages/shared/**"
@@ -36,18 +36,18 @@ concurrency:
 
 jobs:
   kaji-ts:
-    name: kaji/packages/typescript
+    name: kaji/packages/ts
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: kaji/packages/typescript
+        working-directory: kaji/packages/ts
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
 

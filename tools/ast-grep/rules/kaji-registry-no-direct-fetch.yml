@@ -3,8 +3,8 @@ language: TypeScript
 severity: error
 message: Copied registry code must use the provider-fixed bounded requester.
 files:
-  - "kaji/packages/typescript/registry/**/*.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/**/*.ts"
+  - "kaji/packages/ts/registry/**/*.ts"
+  - "kaji/packages/py/src/integrations/registry/**/*.ts"
 rule:
   any:
     - pattern: fetch($$$ARGS)

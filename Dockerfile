@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the monorepo. kaji-serve is a uv workspace member; the workspace root
-# (pyproject.toml + uv.lock) plus the kaji-sdk member must all be present.
+# (pyproject.toml + uv.lock) plus the kaji member must all be present.
 COPY . .
 
 # Install. Frozen = lockfile must already exist and resolve; no remote re-resolution.

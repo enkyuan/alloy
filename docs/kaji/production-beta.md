@@ -113,8 +113,8 @@ import {
   deadlineAfter,
   normalizeProviderError,
   tool,
-} from "kaji-sdk";
-import { MockProvider } from "kaji-sdk/testing";
+} from "kaji";
+import { MockProvider } from "kaji/testing";
 import { z } from "zod";
 
 class EchoIntegration extends Integration {
@@ -345,7 +345,7 @@ inject scoped implementations through `AgentBuilder.clock()` and
 The local release rehearsal is necessary but not sufficient:
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release
+uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release
 ```
 
 Promotion additionally requires evidence from the exact release commit for:
@@ -353,11 +353,11 @@ Promotion additionally requires evidence from the exact release commit for:
 - Python 3.11 and the latest supported Python;
 - exact-current-run TypeScript npm and Bun install, scaffold, no-key, Echo
   lifecycle, cold, and warm receipts aggregated under
-  `kaji-beta-onboarding` on GitHub-hosted Linux/x64: Node 22 on
+  `kaji-onboarding` on GitHub-hosted Linux/x64: Node 22 on
   `ubuntu-22.04` and Node 24 on `ubuntu-24.04`; this is not evidence for other
   runtimes or platforms;
 - required keyed OpenAI tool loops in both Python and TypeScript under the
-  separate `kaji-beta` review boundary; a missing `OPENAI_API_KEY` blocks
+  separate `kaji-release` review boundary; a missing `OPENAI_API_KEY` blocks
   release rather than producing a readiness skip;
 - the immutable-reference paired A/B benchmark on three numbered same-attempt
   `macos-15` matrix replicas, including retained raw runner/image receipts;
@@ -365,7 +365,7 @@ Promotion additionally requires evidence from the exact release commit for:
 - an immutable signed tag with the configured signer identity;
 - exact-artifact SBOM/provenance and registry publication verification;
 - a closed publisher-identity receipt and the sole npm write under the
-  independent `kaji-beta-publish` review boundary. PyPI remains deferred.
+  independent `kaji-publish` review boundary. PyPI remains deferred.
 
 The protected rehearsal and publish workflows are authoritative; the three
 environment names above are distinct approval scopes, not workflow names. See

@@ -9,25 +9,25 @@ The core needs no database, server, or control plane.
 
 ## Packages
 
-| Package             | Path                       | What it is                                        |
-| ------------------- | -------------------------- | ------------------------------------------------- |
-| `kaji-sdk`          | `kaji/packages/typescript` | TypeScript SDK and the primary path in these docs |
-| `kaji-sdk` (Python) | `kaji/packages/python`     | Python SDK with shared event and tool contracts   |
-| `@kaji/cli`         | `apps/cli`                 | WIP cross-language scaffold and diagnostics       |
-| `kaji-serve`        | `kaji/packages/serve`      | WIP REST and Soniox STT reference service         |
+| Package         | Path                  | What it is                                        |
+| --------------- | --------------------- | ------------------------------------------------- |
+| `kaji`          | `kaji/packages/ts`    | TypeScript SDK and the primary path in these docs |
+| `kaji` (Python) | `kaji/packages/py`    | Python SDK with shared event and tool contracts   |
+| `@kaji/cli`     | `apps/cli`            | WIP cross-language scaffold and diagnostics       |
+| `kaji-serve`    | `kaji/packages/serve` | WIP REST and Soniox STT reference service         |
 
 The primary TypeScript package is public as
-[`kaji-sdk@0.2.0-beta.11`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.11).
+[`kaji@0.2.0-beta.11`](https://www.npmjs.com/package/kaji/v/0.2.0-beta.11).
 Python remains a source-checkout compatibility path while PyPI publication is
 deferred.
 
 ## Start in process
 
-| If you want…                                  | Use                |
-| --------------------------------------------- | ------------------ |
-| In-process agent in a Node or Bun application | `kaji-sdk`         |
-| Deterministic provider tests without API keys | `kaji-sdk/testing` |
-| WIP REST or transcription over WebSocket      | `kaji-serve`       |
+| If you want…                                  | Use            |
+| --------------------------------------------- | -------------- |
+| In-process agent in a Node or Bun application | `kaji`         |
+| Deterministic provider tests without API keys | `kaji/testing` |
+| WIP REST or transcription over WebSocket      | `kaji-serve`   |
 
 Use the [reference service](/docs/reference-service) only to evaluate the WIP
 Python REST and Soniox STT service.
@@ -40,7 +40,7 @@ validates selected tools, and returns the final text with the events produced
 by that turn. The default store and committer are bounded, in-memory, and
 process-local.
 
-Start with `MockProvider` from `kaji-sdk/testing` to verify the local runtime.
+Start with `MockProvider` from `kaji/testing` to verify the local runtime.
 OpenAI is the stable live-provider adapter in the 0.2 beta contract. The
 packaged catalog contains the beta `echo` integration and the WIP GitHub
 integration, whose registry tier is `experimental`. Catalog tools are never

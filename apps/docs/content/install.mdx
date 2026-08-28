@@ -4,7 +4,7 @@ description: Install the published TypeScript beta from npm, or prepare either S
 ---
 
 TypeScript `0.2.0-beta.11` is public on npm as
-[`kaji-sdk`](https://www.npmjs.com/package/kaji-sdk/v/0.2.0-beta.11). Python is
+[`kaji`](https://www.npmjs.com/package/kaji/v/0.2.0-beta.11). Python is
 not published to PyPI for this release; repository release gates still build
 and exercise wheel and source-distribution artifacts. Both SDKs share the
 stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
@@ -16,14 +16,14 @@ Install the exact beta with the required Zod peer and the beta-supported
 OpenAI adapter:
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.11 zod openai
+npm install kaji@0.2.0-beta.11 zod openai
 # or
-bun add kaji-sdk@0.2.0-beta.11 zod openai
+bun add kaji@0.2.0-beta.11 zod openai
 ```
 
 The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
 as an optional peer. Omit `openai` when you only use `MockProvider` from
-`kaji-sdk/testing`.
+`kaji/testing`.
 
 ## Source checkout
 
@@ -34,7 +34,7 @@ SDK, or run the full workspace checks:
 git clone https://github.com/enkyuan/alloy.git
 cd alloy
 bun install --frozen-lockfile
-bun run --cwd kaji/packages/typescript test:quickstart
+bun run --cwd kaji/packages/ts test:quickstart
 ```
 
 The final command runs the repository's deterministic TypeScript quickstart
@@ -45,7 +45,7 @@ package above.
 ## TypeScript contract
 
 The package declares `zod >=4.3 <5` as a required peer. `openai >=4 <8` is
-optional; omit it when you only use `MockProvider` from `kaji-sdk/testing`.
+optional; omit it when you only use `MockProvider` from `kaji/testing`.
 Zod 3 and Zod 5 are outside the declared beta range.
 
 | Protected evidence cell | Verified release snapshot                            |
@@ -80,8 +80,8 @@ from PyPI for this release, so there is no public registry-install command.
 For source-checkout development, install the Python project with uv:
 
 ```bash
-uv sync --project kaji/packages/python --extra openai
-uv run --project kaji/packages/python python -c "import kaji; print(kaji.__name__)"
+uv sync --project kaji/packages/py --extra openai
+uv run --project kaji/packages/py python -c "import kaji; print(kaji.__name__)"
 ```
 
 Python imports use `kaji`, and its CLI uses the `kaji` binary name. The SDK

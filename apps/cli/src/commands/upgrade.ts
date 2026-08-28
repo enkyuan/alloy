@@ -17,7 +17,7 @@ export interface OutdatedEntry {
 }
 
 const PREFIX = "@kaji/";
-const KAJI_SDK_PACKAGE = "kaji-sdk";
+const KAJI_SDK_PACKAGE = "kaji";
 
 export async function findOutdated(
   cwd: string,
@@ -70,7 +70,7 @@ async function run(cmd: string[], cwd: string): Promise<void> {
 }
 
 export const upgrade = new Command("upgrade")
-  .description("upgrade kaji-sdk and @kaji/* packages to latest")
+  .description("upgrade kaji and @kaji/* packages to latest")
   .option("-c, --cwd <cwd>", "working directory", process.cwd())
   .option("-y, --yes", "skip confirmation", false)
   .action(async (opts: { cwd: string; yes: boolean }) => {

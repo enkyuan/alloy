@@ -19,7 +19,7 @@ on:
           - all
 
 concurrency:
-  group: kaji-beta-performance-${{ github.ref }}-${{ github.event_name }}
+  group: kaji-performance-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
         with:
           bun-version: "1.3.11"
       - name: Install frozen TypeScript dependencies for the release build
-        working-directory: kaji/packages/typescript
+        working-directory: kaji/packages/ts
         run: bun install --frozen-lockfile
       - uses: ./.github/actions/setup-python-uv
         with:
@@ -56,12 +56,12 @@ jobs:
       - name: Build and verify one release artifact set
         env:
           KAJI_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
-        run: uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release
+        run: uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release
       - name: Upload exact release artifacts
         id: release-artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-beta-artifacts
+          name: kaji-artifacts
           path: .artifacts/kaji-release
           if-no-files-found: error
 

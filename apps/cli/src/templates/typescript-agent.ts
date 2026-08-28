@@ -13,22 +13,20 @@ export const TYPESCRIPT_PROVIDER_RANGES = {
 const TS_PROVIDER_SOURCE: Record<Provider, { imports: string; setup: string }> = {
   mock: {
     imports:
-      'import { AgentBuilder } from "kaji-sdk";\n' +
-      'import { MockProvider } from "kaji-sdk/testing";',
+      'import { AgentBuilder } from "kaji";\n' + 'import { MockProvider } from "kaji/testing";',
     setup: "const provider = new MockProvider();",
   },
   openai: {
     imports:
-      'import { AgentBuilder } from "kaji-sdk";\n' +
-      'import { OpenAIProvider } from "kaji-sdk/openai";',
+      'import { AgentBuilder } from "kaji";\n' + 'import { OpenAIProvider } from "kaji/openai";',
     setup: `const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) throw new Error("OPENAI_API_KEY is required for the openai scaffold");
 const provider = new OpenAIProvider({ apiKey });`,
   },
   anthropic: {
     imports:
-      'import { AgentBuilder } from "kaji-sdk";\n' +
-      'import { AnthropicProvider } from "kaji-sdk/anthropic";',
+      'import { AgentBuilder } from "kaji";\n' +
+      'import { AnthropicProvider } from "kaji/anthropic";',
     setup: `const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the anthropic scaffold");
 const provider = new AnthropicProvider({ apiKey });`,
@@ -78,7 +76,7 @@ export function typescriptPackageTemplate(provider: Provider): string {
           start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
           typecheck: "tsc --noEmit",
         },
-        dependencies: { "kaji-sdk": TYPESCRIPT_SDK_RANGE, zod: ZOD_RANGE, ...providerDeps },
+        dependencies: { kaji: TYPESCRIPT_SDK_RANGE, zod: ZOD_RANGE, ...providerDeps },
         devDependencies: {
           "@dotenvx/dotenvx": DOTENVX_VERSION,
           "@types/node": "^22.10.2",

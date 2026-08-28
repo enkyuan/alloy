@@ -3,7 +3,7 @@ language: Python
 message: Observability infrastructure must remain runtime-agnostic.
 severity: error
 files:
-  - "kaji/packages/python/src/kaji/infra/observability/**/*.py"
+  - "kaji/packages/py/src/infra/observability/**/*.py"
 rule:
   any:
     - pattern: import kaji.runtime

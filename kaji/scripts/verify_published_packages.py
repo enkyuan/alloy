@@ -27,16 +27,16 @@ from jsonschema.exceptions import SchemaError
 from process_runner import METADATA_BUDGET, CommandError, run_checked
 
 
-PYPI_PROJECT = "kaji-sdk"
+PYPI_PROJECT = "kaji"
 PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
-NPM_PACKAGE = "kaji-sdk"
+NPM_PACKAGE = "kaji"
 NPM_VERSION = "0.2.0-beta.11"
 NPM_SPEC = f"{NPM_PACKAGE}@{NPM_VERSION}"
 NPM_REGISTRY = "https://registry.npmjs.org/"
-NPM_TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
-NPM_PURL = "pkg:npm/kaji-sdk@0.2.0-beta.11"
-USER_AGENT = "kaji-beta-release-verifier/1"
+NPM_TARBALL = "kaji-0.2.0-beta.11.tgz"
+NPM_PURL = "pkg:npm/kaji@0.2.0-beta.11"
+USER_AGENT = "kaji-release-verifier/1"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 SHA1_PATTERN = re.compile(r"[0-9a-f]{40}")

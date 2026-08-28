@@ -61,7 +61,7 @@ def run_workflow_checks(environment: dict[str, str], *, include_gate: bool) -> N
             "bun",
             "run",
             "--cwd",
-            "kaji/packages/typescript",
+            "kaji/packages/ts",
             "test",
             "--",
             "tests/release-security.test.ts",

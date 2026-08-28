@@ -124,7 +124,7 @@ jobs:
 
       - name: Install trusted Python dependencies
         shell: bash
-        run: uv sync --project trusted/kaji/packages/python --frozen
+        run: uv sync --project trusted/kaji/packages/py --frozen
 
       - name: Verify candidate source and signatures with the trusted verifier
         shell: bash
@@ -145,7 +145,7 @@ jobs:
           else
             arguments+=(--mode commit)
           fi
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/verify_ts_handoff_source.py "${arguments[@]}"
 
       - name: Set up candidate Node
@@ -160,12 +160,12 @@ jobs:
 
       - name: Install trusted TypeScript dependencies
         shell: bash
-        working-directory: trusted/kaji/packages/typescript
+        working-directory: trusted/kaji/packages/ts
         run: bun install --frozen-lockfile
 
       - name: Install candidate TypeScript dependencies
         shell: bash
-        working-directory: candidate/kaji/packages/typescript
+        working-directory: candidate/kaji/packages/ts
         run: bun install --frozen-lockfile
 
       - name: Preflight internal-evaluation handoff
@@ -180,7 +180,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/ts_handoff.py preflight \
             --mode internal-evaluation \
             --candidate-root candidate \
@@ -201,7 +201,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/ts_handoff.py preflight \
             --mode release \
             --candidate-root candidate \
@@ -217,7 +217,7 @@ jobs:
           EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/ts_handoff.py stage \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
@@ -228,7 +228,7 @@ jobs:
           stage=.artifacts/kaji-handoff-staging/stage.json
           preflight=.artifacts/kaji-handoff-inputs/preflight.json
           source_commit=$(jq -er '.sourceCommit | select(test("^[0-9a-f]{40}$"))' "$stage")
-          artifact_filename=$(jq -er '.artifact.filename | select(test("^kaji-sdk-[0-9A-Za-z.+-]+[.]tgz$"))' "$stage")
+          artifact_filename=$(jq -er '.artifact.filename | select(test("^kaji-[0-9A-Za-z.+-]+[.]tgz$"))' "$stage")
           artifact_sha256=$(jq -er '.artifact.sha256 | select(test("^[0-9a-f]{64}$"))' "$stage")
           stage_preflight_sha256=$(jq -er '.preflightSha256 | select(test("^[0-9a-f]{64}$"))' "$stage")
           test -f "$preflight"
@@ -258,7 +258,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bun trusted/kaji/packages/typescript/scripts/smoke_package.mts \
+          bun trusted/kaji/packages/ts/scripts/smoke_package.mts \
             --for-handoff artifact-contract \
             ".artifacts/kaji-handoff-staging/$KAJI_HANDOFF_TARBALL" \
             --candidate-root candidate \
@@ -373,7 +373,7 @@ jobs:
 
       - name: Install trusted TypeScript dependencies
         shell: bash
-        working-directory: trusted/kaji/packages/typescript
+        working-directory: trusted/kaji/packages/ts
         run: bun install --frozen-lockfile
 
       - name: Download exact stage transfer envelope
@@ -429,7 +429,7 @@ jobs:
           EXPECTED_NODE_MAJOR: ${{ matrix.node }}
         run: |
           set -euo pipefail
-          bun trusted/kaji/packages/typescript/scripts/smoke_package.mts \
+          bun trusted/kaji/packages/ts/scripts/smoke_package.mts \
             --for-handoff node \
             ".artifacts/kaji-handoff-staging/$EXPECTED_FILENAME" \
             --node-binary "$NODE_BINARY" \
@@ -710,7 +710,7 @@ jobs:
           EXPECTED_UV: ${{ steps.toolchain.outputs.uv }}
         run: |
           set -euo pipefail
-          uv sync --project trusted/kaji/packages/python --frozen
+          uv sync --project trusted/kaji/packages/py --frozen
           test "$(node --version | sed 's/^v//')" = "$EXPECTED_NODE"
           test "$(npm --version)" = "$EXPECTED_NPM"
           test "$(bun --version)" = "$EXPECTED_BUN"
@@ -730,7 +730,7 @@ jobs:
           GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/ts_handoff.py finalize \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
@@ -754,7 +754,7 @@ jobs:
         run: |
           set -euo pipefail
           validation=.artifacts/kaji-handoff-evidence/validation.json
-          uv run --project trusted/kaji/packages/python --no-sync python \
+          uv run --project trusted/kaji/packages/py --no-sync python \
             trusted/kaji/scripts/validate_ts_consumer_handoff.py \
             --bundle-dir .artifacts/kaji-handoff \
             --receipts-dir .artifacts/kaji-handoff-inputs/receipt-set \
@@ -769,7 +769,7 @@ jobs:
           tarball=$(jq -er '.artifact.filename | select(type == "string")' "$validation")
           test "$tarball" = "$(basename "$tarball")"
           case "$tarball" in ""|*/*|.*) exit 1 ;; esac
-          expected_bundle=$(printf '%s\n' "$tarball" kaji-sdk.manifest.json \
+          expected_bundle=$(printf '%s\n' "$tarball" kaji.manifest.json \
             kaji-ts-consumer-handoff-v1.schema.json | LC_ALL=C sort)
           actual_bundle=$(find .artifacts/kaji-handoff -mindepth 1 -maxdepth 1 \
             -type f -printf '%f\n' | LC_ALL=C sort)
@@ -786,7 +786,7 @@ jobs:
           name: kaji-ts-consumer-handoff-${{ env.KAJI_RELEASE_COMMIT }}
           path: |
             .artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}
-            .artifacts/kaji-handoff/kaji-sdk.manifest.json
+            .artifacts/kaji-handoff/kaji.manifest.json
             .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json
           if-no-files-found: error
           include-hidden-files: true
@@ -797,7 +797,7 @@ jobs:
         with:
           subject-path: |
             .artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}
-            .artifacts/kaji-handoff/kaji-sdk.manifest.json
+            .artifacts/kaji-handoff/kaji.manifest.json
             .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json
 
       - name: Retain closed transport and provenance evidence
@@ -843,7 +843,7 @@ jobs:
           cp "$bundle_real" "$evidence/provenance.bundle.jsonl"
           bundle_sha256=$(sha256sum "$evidence/provenance.bundle.jsonl" | cut -d ' ' -f 1)
           tarball_sha256=$(sha256sum ".artifacts/kaji-handoff/$KAJI_HANDOFF_TARBALL" | cut -d ' ' -f 1)
-          manifest_sha256=$(sha256sum .artifacts/kaji-handoff/kaji-sdk.manifest.json | cut -d ' ' -f 1)
+          manifest_sha256=$(sha256sum .artifacts/kaji-handoff/kaji.manifest.json | cut -d ' ' -f 1)
           schema_sha256=$(sha256sum .artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json | cut -d ' ' -f 1)
           validation=.artifacts/kaji-handoff-evidence/validation.json
           test "$(jq -er '.sourceCommit' "$validation")" = "$KAJI_RELEASE_COMMIT"
@@ -863,7 +863,7 @@ jobs:
              .predicateType == "https://slsa.dev/provenance/v1" and
              (.subject | sort_by(.name)) == ([
                {name: $tarball, digest: {sha256: $tarballSha256}},
-               {name: "kaji-sdk.manifest.json", digest: {sha256: $manifestSha256}},
+               {name: "kaji.manifest.json", digest: {sha256: $manifestSha256}},
                {name: "kaji-ts-consumer-handoff-v1.schema.json", digest: {sha256: $schemaSha256}}
              ] | sort_by(.name))' \
             "$statement" >/dev/null
@@ -904,7 +904,7 @@ jobs:
                 bundleSha256: $bundleSha256},
               subjects: [
                 {role: "tarball", name: $tarballName, sha256: $tarballSha256},
-                {role: "manifest", name: "kaji-sdk.manifest.json", sha256: $manifestSha256},
+                {role: "manifest", name: "kaji.manifest.json", sha256: $manifestSha256},
                 {role: "schema", name: "kaji-ts-consumer-handoff-v1.schema.json", sha256: $schemaSha256}
               ]}' >"$temporary"
 
@@ -943,7 +943,7 @@ jobs:
              .attestation.bundleSha256 == $bundleSha256 and
              (.subjects | length == 3) and
              .subjects[0] == {role: "tarball", name: env.KAJI_HANDOFF_TARBALL, sha256: $tarballSha256} and
-             .subjects[1] == {role: "manifest", name: "kaji-sdk.manifest.json", sha256: $manifestSha256} and
+             .subjects[1] == {role: "manifest", name: "kaji.manifest.json", sha256: $manifestSha256} and
              .subjects[2] == {role: "schema", name: "kaji-ts-consumer-handoff-v1.schema.json", sha256: $schemaSha256} and
              (all(.subjects[]; keys == ["name", "role", "sha256"] and (.sha256 | test("^[0-9a-f]{64}$"))))' \
             "$temporary" >/dev/null

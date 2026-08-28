@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Iterate provider streams through ProviderDeadlineScope.consume().
 files:
-  - "kaji/packages/python/src/kaji/runtime/agents/runtime.py"
+  - "kaji/packages/py/src/runtime/agents/runtime.py"
 rule:
   pattern:
     context: |

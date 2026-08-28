@@ -24,7 +24,7 @@ from process_runner import (
 
 
 KAJI_ROOT = Path(__file__).resolve().parents[1]
-SDK_ROOT = KAJI_ROOT / "packages" / "python"
+SDK_ROOT = KAJI_ROOT / "packages" / "py"
 SCRIPTS = KAJI_ROOT / "scripts"
 import verify_release_artifacts  # noqa: E402
 
@@ -290,7 +290,7 @@ def assert_list_integrations_output(output: str) -> None:
         "experimental_opt_in_required": False,
         "next_commands": {
             "python": "python -m kaji.cli add echo",
-            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add echo",
+            "typescript": "bun --no-install -e 'import(\"kaji/cli\")' -- add echo",
         },
     }:
         raise SystemExit(
@@ -304,7 +304,7 @@ def assert_list_integrations_output(output: str) -> None:
         or github.get("next_commands")
         != {
             "python": "python -m kaji.cli add github",
-            "typescript": "bun --no-install -e 'import(\"kaji-sdk/cli\")' -- add github",
+            "typescript": "bun --no-install -e 'import(\"kaji/cli\")' -- add github",
         }
     ):
         raise SystemExit(
@@ -357,7 +357,6 @@ def build_archives(dist_dir: Path) -> tuple[Path, Path]:
             "build",
             "--sdist",
             "--wheel",
-            "--clear",
             "--out-dir",
             str(dist_dir),
             "--build-constraints",
@@ -409,7 +408,7 @@ def smoke_archives(
 
     temporary_parent = Path(os.environ.get("TMPDIR") or "/tmp")
     with TemporaryDirectory(
-        prefix="kaji-sdk-release-smoke.",
+        prefix="kaji-release-smoke.",
         dir=temporary_parent,
     ) as temporary:
         workdir = Path(temporary)
@@ -499,7 +498,7 @@ def smoke_archives(
                 cwd=artifact_workdir,
                 environment=environment,
             )
-            if "kaji (Python distribution kaji-sdk) 0.2.0b1" not in help_output:
+            if "kaji (Python distribution kaji) 0.2.0b1" not in help_output:
                 raise SystemExit("FAIL: qualified Python CLI owner/version mismatch")
 
             scaffold = workdir / f"scaffold-{safe_name}"
@@ -726,10 +725,8 @@ def failure_receipt(
             "executable": str(Path(sys.executable).resolve()),
         },
         "artifacts": {
-            "wheel": (
-                str(root / "kaji_sdk-0.2.0b1-py3-none-any.whl") if root else None
-            ),
-            "sdist": str(root / "kaji_sdk-0.2.0b1.tar.gz") if root else None,
+            "wheel": (str(root / "kaji-0.2.0b1-py3-none-any.whl") if root else None),
+            "sdist": str(root / "kaji-0.2.0b1.tar.gz") if root else None,
         },
         "githubPackageProofs": {},
         "conclusion": "failed",

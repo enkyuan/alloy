@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "kaji-sdk": "file:kaji-sdk-0.2.0-beta.11.tgz",
+    "kaji": "file:kaji-0.2.0-beta.11.tgz",
     "zod": "4.4.3"
   }
 }

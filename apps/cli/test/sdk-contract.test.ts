@@ -13,10 +13,10 @@ interface PackageMetadata {
 }
 
 const typescriptPackage = JSON.parse(
-  readFileSync(new URL("../../../kaji/packages/typescript/package.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../../../kaji/packages/ts/package.json", import.meta.url), "utf8"),
 ) as PackageMetadata;
 const pythonProject = readFileSync(
-  new URL("../../../kaji/packages/python/pyproject.toml", import.meta.url),
+  new URL("../../../kaji/packages/py/pyproject.toml", import.meta.url),
   "utf8",
 );
 

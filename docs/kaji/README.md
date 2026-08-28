@@ -1,7 +1,7 @@
 # Kaji documentation
 
 This is the canonical, versioned operating path for the Python `kaji` and
-TypeScript `kaji-sdk` packages. Package pages link here for scope and to the
+TypeScript `kaji` packages. Package pages link here for scope and to the
 [release matrix](../../kaji/RELEASE_MATRIX.md) for evidence. Package README
 canonical-status-link blocks do not change when release status changes.
 

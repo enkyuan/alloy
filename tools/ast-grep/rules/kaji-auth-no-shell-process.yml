@@ -3,9 +3,9 @@ language: TypeScript
 severity: error
 message: Auth and registry process calls must use a fixed argument-array runner with shell disabled.
 files:
-  - "kaji/packages/typescript/src/auth/**/*.ts"
-  - "kaji/packages/typescript/registry/**/*.ts"
-  - "kaji/packages/python/src/kaji/integrations/registry/**/*.ts"
+  - "kaji/packages/ts/src/auth/**/*.ts"
+  - "kaji/packages/ts/registry/**/*.ts"
+  - "kaji/packages/py/src/integrations/registry/**/*.ts"
 rule:
   any:
     - pattern: exec($$$ARGS)

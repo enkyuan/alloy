@@ -1,9 +1,9 @@
 id: python-sdk-no-service-imports
 language: Python
-message: Keep kaji/packages/python/src/kaji independent from service-only runtime dependencies; service APIs belong under kaji/packages/serve.
+message: Keep kaji/packages/py/src independent from service-only runtime dependencies; service APIs belong under kaji/packages/serve.
 severity: error
 files:
-  - "kaji/packages/python/src/kaji/**/*.py"
+  - "kaji/packages/py/src/**/*.py"
 rule:
   any:
     - pattern: import kaji_serve

@@ -36,7 +36,7 @@ Documentation lives in `content/`. The collection schema in
 documented SDK versions, CLI commands, event types, integration catalog, and
 recovery anchors against the repository contracts.
 
-When changing `kaji/packages/python`, `kaji/packages/typescript`, or either embedded CLI, update the relevant
+When changing `kaji/packages/py`, `kaji/packages/ts`, or either embedded CLI, update the relevant
 MDX page in the same pull request. Keep beta and experimental surfaces labeled
 explicitly; do not turn local or unprotected evidence into a release claim.
 
@@ -53,5 +53,5 @@ bun run format:check
 ## Further reading
 
 - [`kaji/README.md`](../../kaji/README.md) -- Kaji package index and operating path
-- [`kaji/packages/python/README.md`](../../kaji/packages/python/README.md) -- Python SDK reference
-- [`kaji/packages/typescript/README.md`](../../kaji/packages/typescript/README.md) -- TypeScript SDK reference
+- [`kaji/packages/py/README.md`](../../kaji/packages/py/README.md) -- Python SDK reference
+- [`kaji/packages/ts/README.md`](../../kaji/packages/ts/README.md) -- TypeScript SDK reference

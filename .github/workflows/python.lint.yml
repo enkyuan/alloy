@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: kaji/packages/python
+        working-directory: kaji/packages/py
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -42,11 +42,11 @@ jobs:
           # checkers (ty, pyrefly, pyright) don't execute the redirector, so
           # they can only resolve `import kaji.X` against an on-disk kaji/
           # directory. The wheel install creates one in site-packages.
-          # Select the kaji-sdk workspace member so its dev group (pytest,
+          # Select the kaji workspace member so its dev group (pytest,
           # jsonschema test extras, etc.) is installed — ty checks src/ AND
           # tests/, so it must resolve the test-only imports. A bare root sync
           # only pulls the root project's dev group under the uv workspace.
-          sync-args: "--frozen --no-editable --package kaji-sdk"
+          sync-args: "--frozen --no-editable --package kaji"
 
       - name: Type check
         # Direct venv invocation (NOT `uv run`) — `uv run` re-syncs the venv
@@ -59,7 +59,7 @@ jobs:
         # --python pins the environment ty resolves imports against to the
         # synced root workspace venv. Without it, ty auto-discovers an
         # environment, which in the workspace layout can land on one missing
-        # the kaji-sdk member's deps (pytest/pydantic/jsonschema) and fail
+        # the kaji member's deps (pytest/pydantic/jsonschema) and fail
         # with unresolved-import even when the venv beside it is complete.
         run: ../../../.venv/bin/ty check --python ../../../.venv
 

@@ -99,7 +99,7 @@ def expected_package_bytes(ts_root: Path) -> tuple[dict[str, object], dict[str, 
 
 
 def verify_npm_tarball(tarball: Path, repo: Path) -> None:
-    ts_root = repo / "kaji/packages/typescript"
+    ts_root = repo / "kaji/packages/ts"
     canonical_contracts_root = repo / "kaji/contracts"
     if not tarball.is_file():
         fail(f"npm tarball does not exist: {tarball}")
@@ -161,7 +161,7 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
             if stream is None or stream.read() != expected_payload:
                 fail(f"npm tarball file differs from checkout: {relative}")
 
-    if package.get("name") != "kaji-sdk" or package.get("version") != "0.2.0-beta.11":
+    if package.get("name") != "kaji" or package.get("version") != "0.2.0-beta.11":
         fail("npm package name/version are not the approved beta coordinates")
     if package.get("license") != "FSL-1.1-ALv2":
         fail("npm package license metadata is not canonical")

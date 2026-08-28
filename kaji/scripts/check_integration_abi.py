@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parents[2]
 KAJI = ROOT / "kaji"
 CONTRACTS = KAJI / "contracts" / "integrations"
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
-PYTHON_SDK = KAJI / "packages" / "python"
-TYPESCRIPT_SDK = KAJI / "packages" / "typescript"
-PYTHON_REGISTRY = PYTHON_SDK / "src" / "kaji" / "integrations" / "registry"
+PYTHON_SDK = KAJI / "packages" / "py"
+TYPESCRIPT_SDK = KAJI / "packages" / "ts"
+PYTHON_REGISTRY = PYTHON_SDK / "src" / "integrations" / "registry"
 TYPESCRIPT_REGISTRY = TYPESCRIPT_SDK / "registry"
 _INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 

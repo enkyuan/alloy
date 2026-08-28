@@ -1,7 +1,7 @@
 # Kaji MVP
 
 This document defines the MVP scope for the Kaji SDKs. It is focused on the
-Python (`kaji`) and TypeScript (`kaji-sdk`) packages; `kaji-serve`
+Python (`kaji`) and TypeScript (`kaji`) packages; `kaji-serve`
 is treated as out of scope for the SDK production-readiness path.
 
 Both SDKs target the same five-step developer path:
@@ -14,8 +14,8 @@ Both SDKs target the same five-step developer path:
 
 Before you write any code:
 
-1. **Prepare an SDK** (`uv sync --project kaji/packages/python --extra openai` from the source
-   checkout for Python, or `npm install kaji-sdk@0.2.0-beta.11 zod` for
+1. **Prepare an SDK** (`uv sync --project kaji/packages/py --extra openai` from the source
+   checkout for Python, or `npm install kaji@0.2.0-beta.11 zod` for
    TypeScript after protected npm publication)
 2. **Install the OpenAI provider SDK** for the beta-supported live path
 3. **Set `OPENAI_API_KEY`** for live OpenAI runs. The installed-package mock
@@ -66,7 +66,7 @@ it in [`docs/kaji/`](kaji/).
 | First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.                              | Catalog contract implemented; production third-party integrations remain out of MVP. |
 | Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                                    | Implemented.                                                                         |
 | Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                                       | Implemented.                                                                         |
-| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji-sdk/testing`.                                       | Implemented; keep docs honest.                                                       |
+| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji/testing`.                                       | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
 
@@ -140,9 +140,9 @@ gate until the promotion criteria in `kaji/RELEASE_MATRIX.md` are met.
 **Python**
 
 ```bash
-uv sync --project kaji/packages/python --extra openai       # OpenAI
+uv sync --project kaji/packages/py --extra openai       # OpenAI
 # or
-uv sync --project kaji/packages/python --extra anthropic    # Anthropic (experimental/WIP)
+uv sync --project kaji/packages/py --extra anthropic    # Anthropic (experimental/WIP)
 ```
 
 The Python distribution is not published to PyPI for this release.
@@ -150,9 +150,9 @@ The Python distribution is not published to PyPI for this release.
 **TypeScript**
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.11 zod openai        # OpenAI
+npm install kaji@0.2.0-beta.11 zod openai        # OpenAI
 # or
-npm install kaji-sdk@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+npm install kaji@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 ```
 
 ### Step 2 - Configure provider
@@ -181,10 +181,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
-import { OpenAIProvider } from "kaji-sdk";
+import { OpenAIProvider } from "kaji";
 const provider = new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! });
 // Experimental/WIP alternative:
-import { AnthropicProvider } from "kaji-sdk";
+import { AnthropicProvider } from "kaji";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
 
@@ -197,17 +197,17 @@ final assistant text.
 **Python**
 
 ```bash
-uv run --package kaji-sdk pytest tests/test_quickstart.py -q
+uv run --package kaji pytest tests/test_quickstart.py -q
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
-  uv run --package kaji-sdk pytest -m integration tests/integration/test_openai_tools.py -q
+  uv run --package kaji pytest -m integration tests/integration/test_openai_tools.py -q
 ```
 
 **TypeScript**
 
 ```bash
-bun --filter kaji-sdk test:quickstart
+bun --filter kaji test:quickstart
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
-  bun --filter kaji-sdk test:integration tests/integration/openai-tools.test.ts
+  bun --filter kaji test:integration tests/integration/openai-tools.test.ts
 ```
 
 These developer tests may skip without keys, but a skip is not release
@@ -218,7 +218,7 @@ release. Anthropic, Gemini, Kimi, and OpenRouter remain experimental/WIP.
 For release readiness, run the cross-SDK gate from the repository root:
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py
+uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
@@ -228,8 +228,8 @@ live-gate hygiene. The ast-grep step guards the Python SDK/service boundary, cor
 For the live-gate credential modes specifically:
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/verify_openai_loop.py
-KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/packages/python python kaji/scripts/verify_openai_loop.py
+uv run --project kaji/packages/py python kaji/scripts/verify_openai_loop.py
+KAJI_REQUIRE_LIVE_KEYS=1 uv run --project kaji/packages/py python kaji/scripts/verify_openai_loop.py
 ```
 
 Without `OPENAI_API_KEY`, the first command proves missing-key hygiene only.
@@ -237,11 +237,11 @@ It is not provider evidence. The protected `live_provider_proof.py` gate
 requires OpenAI credentials and fails loudly when they are absent.
 
 ```bash
-OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/packages/python python kaji/scripts/verify_openai_loop.py
+OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini uv run --project kaji/packages/py python kaji/scripts/verify_openai_loop.py
 ```
 
 The same keyed proof can be included in the wrapper with
-`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py`.
+`OPENAI_API_KEY=... KAJI_RUN_KEYED_LIVE=1 uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py`.
 
 ### Step 2.6 - Scaffold the first run
 
@@ -293,7 +293,7 @@ class WeatherIntegration(Integration):
 **TypeScript**
 
 ```ts
-import { Integration, tool } from "kaji-sdk";
+import { Integration, tool } from "kaji";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -339,7 +339,7 @@ asyncio.run(main())
 **TypeScript**
 
 ```ts
-import { AgentBuilder } from "kaji-sdk";
+import { AgentBuilder } from "kaji";
 
 const runtime = new AgentBuilder()
   .provider(provider) // from step 2
@@ -410,8 +410,8 @@ fixed and does not reflect real LLM outputs.
 
 | Package                    | Checks                                                                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------- |
-| `kaji/packages/python`     | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
-| `kaji/packages/typescript` | tsc (type check), oxfmt (format), vitest (unit + quickstart)                              |
+| `kaji/packages/py`     | `scripts/check_types.py` (ty with the src remap), ruff (lint), pytest (unit + quickstart) |
+| `kaji/packages/ts` | tsc (type check), oxfmt (format), vitest (unit + quickstart)                              |
 | `kaji/packages/serve`      | ruff (lint), pytest (unit); no ty until typing debt is addressed                          |
 
 Install smoke jobs for both SDK packages validate that the published wheel /
@@ -420,8 +420,8 @@ tarball exports resolve correctly and provider errors are clear.
 Python release packaging must also run:
 
 ```bash
-uv run --package kaji-sdk python scripts/clean_caches.py
-uv run --package kaji-sdk python scripts/release_smoke.py
+uv run --package kaji python scripts/clean_caches.py
+uv run --package kaji python scripts/release_smoke.py
 ```
 
 `scripts/release_smoke.py` builds the wheel, verifies wheel contents, installs
@@ -458,14 +458,14 @@ AgentBuilder
 
 Current code paths:
 
-- Python: `kaji/packages/python/src/kaji/runtime/agents/builder.py` creates a scoped
+- Python: `kaji/packages/py/src/runtime/agents/builder.py` creates a scoped
   registry, registers each integration, builds a planner, and passes
   `registry.list_specs()` into `AgentRuntime`.
-- Python: `kaji/packages/python/src/kaji/runtime/agents/runtime.py` commits runtime events through
+- Python: `kaji/packages/py/src/runtime/agents/runtime.py` commits runtime events through
   the journal and advances a cursor-based session projector.
-- TypeScript: `kaji/packages/typescript/src/runtime/builder.ts` mirrors the Python builder
+- TypeScript: `kaji/packages/ts/src/runtime/builder.ts` mirrors the Python builder
   by creating a scoped `ToolRegistry`, `ToolPlanner`, and runtime.
-- TypeScript: `kaji/packages/typescript/src/runtime/runtime.ts` commits through `EventCommitter`,
+- TypeScript: `kaji/packages/ts/src/runtime/runtime.ts` commits through `EventCommitter`,
   advances a cursor projector, streams the provider, and executes tool calls
   through `ToolPlanner`.
 
@@ -527,7 +527,7 @@ Implemented Python changes:
 Target TypeScript shape:
 
 ```ts
-import { Integration, tool } from "kaji-sdk";
+import { Integration, tool } from "kaji";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -670,14 +670,14 @@ Status: implemented for the package entrypoints. The Python top-level `kaji`
 namespace includes the stable runtime plus documented experimental extensions;
 top-level importability does not promote RAG/retrieval into the beta promise.
 The TypeScript main entrypoint does not export the deterministic test provider;
-tests import it from `kaji-sdk/testing`.
+tests import it from `kaji/testing`.
 
 Required changes:
 
 - Keep top-level exports for stable MVP names: events, builder/runtime,
   providers, integrations, tools, sessions, policies, and cancellation.
 - Move non-MVP features in docs to explicit subpackage imports.
-- Use `kaji-sdk/testing` for TypeScript test-only helpers such as
+- Use `kaji/testing` for TypeScript test-only helpers such as
   `MockProvider`.
 - Add `test_public_api.py` assertions for the names that must stay available in
   the five-step path.
