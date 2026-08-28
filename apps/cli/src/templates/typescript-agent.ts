@@ -13,20 +13,22 @@ export const TYPESCRIPT_PROVIDER_RANGES = {
 const TS_PROVIDER_SOURCE: Record<Provider, { imports: string; setup: string }> = {
   mock: {
     imports:
-      'import { AgentBuilder } from "kaji";\n' + 'import { MockProvider } from "kaji/testing";',
+      'import { AgentBuilder } from "@irogane/kaji";\n' +
+      'import { MockProvider } from "@irogane/kaji/testing";',
     setup: "const provider = new MockProvider();",
   },
   openai: {
     imports:
-      'import { AgentBuilder } from "kaji";\n' + 'import { OpenAIProvider } from "kaji/openai";',
+      'import { AgentBuilder } from "@irogane/kaji";\n' +
+      'import { OpenAIProvider } from "@irogane/kaji/openai";',
     setup: `const apiKey = process.env.OPENAI_API_KEY;
 if (!apiKey) throw new Error("OPENAI_API_KEY is required for the openai scaffold");
 const provider = new OpenAIProvider({ apiKey });`,
   },
   anthropic: {
     imports:
-      'import { AgentBuilder } from "kaji";\n' +
-      'import { AnthropicProvider } from "kaji/anthropic";',
+      'import { AgentBuilder } from "@irogane/kaji";\n' +
+      'import { AnthropicProvider } from "@irogane/kaji/anthropic";',
     setup: `const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the anthropic scaffold");
 const provider = new AnthropicProvider({ apiKey });`,

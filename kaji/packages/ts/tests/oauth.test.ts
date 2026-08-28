@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import { inspect } from "node:util";
 
-import { ToolExecutionError, type ToolExecutionContext } from "kaji";
+import { ToolExecutionError, type ToolExecutionContext } from "@irogane/kaji";
 import {
   GoogleOAuthClient,
   type OAuthCredentialRecord,

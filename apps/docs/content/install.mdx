@@ -4,7 +4,7 @@ description: Install the published TypeScript beta from npm, or prepare either S
 ---
 
 TypeScript `0.2.0-beta.11` is public on npm as
-[`kaji`](https://www.npmjs.com/package/kaji/v/0.2.0-beta.11). Python is
+[`kaji`](https://www.npmjs.com/package/@irogane/kaji/v/0.2.0-beta.11). Python is
 not published to PyPI for this release; repository release gates still build
 and exercise wheel and source-distribution artifacts. Both SDKs share the
 stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
@@ -16,14 +16,14 @@ Install the exact beta with the required Zod peer and the beta-supported
 OpenAI adapter:
 
 ```bash
-npm install kaji@0.2.0-beta.11 zod openai
+npm install @irogane/kaji@0.2.0-beta.11 zod openai
 # or
-bun add kaji@0.2.0-beta.11 zod openai
+bun add @irogane/kaji@0.2.0-beta.11 zod openai
 ```
 
 The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
 as an optional peer. Omit `openai` when you only use `MockProvider` from
-`kaji/testing`.
+`@irogane/kaji/testing`.
 
 ## Source checkout
 
@@ -45,7 +45,7 @@ package above.
 ## TypeScript contract
 
 The package declares `zod >=4.3 <5` as a required peer. `openai >=4 <8` is
-optional; omit it when you only use `MockProvider` from `kaji/testing`.
+optional; omit it when you only use `MockProvider` from `@irogane/kaji/testing`.
 Zod 3 and Zod 5 are outside the declared beta range.
 
 | Protected evidence cell | Verified release snapshot                            |

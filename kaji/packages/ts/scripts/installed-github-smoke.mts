@@ -8,11 +8,11 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import type { ToolExecutionContext } from "kaji";
+import type { ToolExecutionContext } from "@irogane/kaji";
 
-type SdkRuntime = typeof import("kaji");
-type TestingRuntime = typeof import("kaji/testing");
-type GitHubRuntime = typeof import("kaji/integrations/github");
+type SdkRuntime = typeof import("@irogane/kaji");
+type TestingRuntime = typeof import("@irogane/kaji/testing");
+type GitHubRuntime = typeof import("@irogane/kaji/integrations/github");
 
 const EXPECTED_TOOLS = [
   "add_comment",
@@ -515,10 +515,10 @@ async function runProof(argv: string[]) {
   try {
     proofStage = "package-identity";
     const requirePackage = createRequire(import.meta.url);
-    const sdkEntry = fileURLToPath(import.meta.resolve("kaji"));
-    const githubEntry = fileURLToPath(import.meta.resolve("kaji/integrations/github"));
-    const requiredSdkEntry = requirePackage.resolve("kaji");
-    const requiredGithubEntry = requirePackage.resolve("kaji/integrations/github");
+    const sdkEntry = fileURLToPath(import.meta.resolve("@irogane/kaji"));
+    const githubEntry = fileURLToPath(import.meta.resolve("@irogane/kaji/integrations/github"));
+    const requiredSdkEntry = requirePackage.resolve("@irogane/kaji");
+    const requiredGithubEntry = requirePackage.resolve("@irogane/kaji/integrations/github");
     if (
       realpathSync(join(dirname(sdkEntry), "..")) !== packageRoot ||
       realpathSync(join(dirname(requiredSdkEntry), "..")) !== packageRoot
@@ -569,11 +569,11 @@ async function runProof(argv: string[]) {
     ) as CopiedManifest;
 
     proofStage = "public-imports";
-    const sdk = await import("kaji");
-    const testing = (await import("kaji/testing")) as TestingRuntime;
-    const github = (await import("kaji/integrations/github")) as GitHubRuntime;
-    const requiredSdk = requirePackage("kaji") as SdkRuntime;
-    const requiredGithub = requirePackage("kaji/integrations/github") as GitHubRuntime;
+    const sdk = await import("@irogane/kaji");
+    const testing = (await import("@irogane/kaji/testing")) as TestingRuntime;
+    const github = (await import("@irogane/kaji/integrations/github")) as GitHubRuntime;
+    const requiredSdk = requirePackage("@irogane/kaji") as SdkRuntime;
+    const requiredGithub = requirePackage("@irogane/kaji/integrations/github") as GitHubRuntime;
     const publicScenarios: string[] = [];
     const esmRuntimeExports = Object.keys(github).sort();
     const cjsRuntimeExports = Object.keys(requiredGithub).sort();
@@ -623,8 +623,8 @@ async function runProof(argv: string[]) {
       throw new Error("GitHub package class identity differs from the root Integration export");
     }
     if (
-      !/\bfrom\s+["']kaji["']/.test(readFileSync(githubEntry, "utf8")) ||
-      !/\brequire\(["']kaji["']\)/.test(readFileSync(requiredGithubEntry, "utf8"))
+      !/\bfrom\s+["']@irogane\/kaji["']/.test(readFileSync(githubEntry, "utf8")) ||
+      !/\brequire\(["']@irogane\/kaji["']\)/.test(readFileSync(requiredGithubEntry, "utf8"))
     ) {
       throw new Error("GitHub package output does not resolve Integration through the root export");
     }

@@ -37,7 +37,7 @@ the repository root.
 | ------------------------- | ----------------------------- | -------------------------------------------- |
 | Python SDK tests          | repo root                     | `uv run --package kaji pytest`           |
 | Reference-service tests   | repo root                     | `uv run --package kaji-serve pytest`         |
-| TypeScript SDK tests      | repo root                     | `bun --filter kaji test`                 |
+| TypeScript SDK tests      | repo root                     | `bun --filter @irogane/kaji test`                 |
 | Release forensics / gates | `kaji/`                       | `kaji/scripts/*.py` (e.g. `beta_release_check.py`) |
 
 Contributor setup and the full local-check matrix live in

@@ -7,8 +7,8 @@ import {
   type ToolHandler,
   type ToolSpec,
   type TraceSink,
-} from "kaji";
-import { createGmailRequester } from "kaji/integrations";
+} from "@irogane/kaji";
+import { createGmailRequester } from "@irogane/kaji/integrations";
 
 import { GmailClient } from "./client";
 

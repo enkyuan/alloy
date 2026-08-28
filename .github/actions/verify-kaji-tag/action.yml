@@ -91,7 +91,7 @@ runs:
         [ "$EXPECTED_REHEARSAL_WORKFLOW_PATH" = .github/workflows/kaji.rehearsal.yml ]
         [ "$EXPECTED_CANDIDATE_ARTIFACT_NAME" = kaji-artifacts ]
         [ "$EXPECTED_EVIDENCE_ARTIFACT_NAME" = kaji-release-candidate-evidence ]
-        [ "$EXPECTED_NPM_TARBALL_NAME" = kaji-0.2.0-beta.11.tgz ]
+        [ "$EXPECTED_NPM_TARBALL_NAME" = irogane-kaji-0.2.0-beta.11.tgz ]
         for sha in "$EXPECTED_TAG_OBJECT" "$EXPECTED_COMMIT" "$EXPECTED_REHEARSAL_WORKFLOW_SHA"; do
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
         done
@@ -280,7 +280,7 @@ runs:
           !/^sha256:[0-9a-f]{64}$/.test(authorization.candidateArtifact.digest) ||
           !/^sha256:[0-9a-f]{64}$/.test(authorization.evidenceArtifact.digest) ||
           !/^[0-9a-f]{64}$/.test(authorization.releaseManifestSha256) ||
-          authorization.npmTarball.name !== "kaji-0.2.0-beta.11.tgz" ||
+          authorization.npmTarball.name !== "irogane-kaji-0.2.0-beta.11.tgz" ||
           !/^[0-9a-f]{64}$/.test(authorization.npmTarball.sha256)
         ) fail();
         if (`${canonicalize(authorization)}\n` !== body) fail();

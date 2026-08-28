@@ -1,4 +1,4 @@
-import type { AgentRuntime, StoredKajiEvent } from "kaji";
+import type { AgentRuntime, StoredKajiEvent } from "@irogane/kaji";
 
 type HistoryReader = Pick<AgentRuntime, "history">;
 

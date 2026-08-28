@@ -11,8 +11,8 @@ TypeScript `0.2.0-beta.11` is public on npm. Verify the exact version and then
 install it with its required peer:
 
 ```bash
-npm view kaji@0.2.0-beta.11 version
-npm install kaji@0.2.0-beta.11 zod
+npm view @irogane/kaji@0.2.0-beta.11 version
+npm install @irogane/kaji@0.2.0-beta.11 zod
 ```
 
 If the first command returns `404`, check `npm config get registry`, your
@@ -30,7 +30,7 @@ npm install "openai@>=4 <8"
 # or: bun add "openai@>=4 <8"
 ```
 
-If you only use `MockProvider` from `kaji/testing`, you can omit `openai`.
+If you only use `MockProvider` from `@irogane/kaji/testing`, you can omit `openai`.
 
 ## `OPENAI_API_KEY` is required
 
@@ -93,7 +93,7 @@ To consume events as they are committed, subscribe through the committer. See
 Catch `ProviderError` from the package root and normalize it:
 
 ```ts
-import { normalizeProviderError, ProviderError } from "kaji";
+import { normalizeProviderError, ProviderError } from "@irogane/kaji";
 
 try {
   await runtime.turn("Hello");

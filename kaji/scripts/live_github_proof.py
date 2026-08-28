@@ -53,7 +53,7 @@ WORKFLOW_RUN_PATTERN = re.compile(
 )
 PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
 PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
+TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 RELEASE_FILES = (
     PYTHON_WHEEL,
     PYTHON_SDIST,

@@ -172,7 +172,7 @@ def _identity(commit: str, prefix: str) -> dict[str, Any]:
                 "sha256": chr(ord(prefix) + 2) * 64,
             },
             "typescript": {
-                "file": "kaji-0.2.0-beta.11.tgz",
+                "file": "irogane-kaji-0.2.0-beta.11.tgz",
                 "sha256": chr(ord(prefix) + 3) * 64,
             },
         },
@@ -376,7 +376,7 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
         },
     }
     assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-0.2.0-beta.2.tgz"
-    assert pair.IDENTITY_FILES["typescript"] == "kaji-0.2.0-beta.11.tgz"
+    assert pair.IDENTITY_FILES["typescript"] == "irogane-kaji-0.2.0-beta.11.tgz"
     assert "resolved" not in json.dumps(anchor).lower()
 
 
@@ -415,7 +415,7 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
             root / "ts",
             root / "typescript/runtime-benchmark.ts",
             root / "typescript/runtime-soak.ts",
-            root / "typescript/node_modules/kaji/dist/index.js",
+            root / "typescript/node_modules/@irogane/kaji/dist/index.js",
             "1" * 64,
             "2" * 64,
         ),
@@ -431,13 +431,13 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
     reference_manifest = json.loads((reference_consumer / "package.json").read_text())
     reference_lock = json.loads((reference_consumer / "package-lock.json").read_text())
     assert reference_manifest["dependencies"]["kaji"] == "file:kaji-0.2.0-beta.2.tgz"
-    assert reference_lock["packages"]["node_modules/kaji"]["version"] == "0.2.0-beta.2"
+    assert reference_lock["packages"]["node_modules/@irogane/kaji"]["version"] == "0.2.0-beta.2"
     assert all(
         package == reference_lock["packages"][name]
         for name, package in json.loads(runtime_module.TS_CONSUMER_LOCK.read_text())[
             "packages"
         ].items()
-        if name not in {"", "node_modules/kaji"}
+        if name not in {"", "node_modules/@irogane/kaji"}
     )
 
     with pair.installed_release_runtime(
@@ -451,7 +451,7 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
         candidate,
         expected_commit=candidate_commit,
     ) as installed:
-        assert installed.release.npm_tarball.name == "kaji-0.2.0-beta.11.tgz"
+        assert installed.release.npm_tarball.name == "irogane-kaji-0.2.0-beta.11.tgz"
 
     with pytest.raises(SystemExit, match="artifact file set mismatch"):
         with pair.installed_release_runtime(

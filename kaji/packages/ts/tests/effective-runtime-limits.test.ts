@@ -9,7 +9,7 @@ import {
   ToolPlanner,
   TurnTimeoutError,
   type EffectiveRuntimeLimits,
-} from "kaji";
+} from "@irogane/kaji";
 import { MockProvider } from "@/providers/mock";
 
 describe("AgentRuntime effective limits", () => {

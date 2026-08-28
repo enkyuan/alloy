@@ -6,7 +6,7 @@
     "": {
       "name": "kaji-installed-release-runtime",
       "dependencies": {
-        "kaji": "file:kaji-0.2.0-beta.11.tgz",
+        "@irogane/kaji": "file:irogane-kaji-0.2.0-beta.11.tgz",
         "zod": "4.4.3"
       }
     },
@@ -71,9 +71,9 @@
       "integrity": "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==",
       "license": "MIT"
     },
-    "node_modules/kaji": {
+    "node_modules/@irogane/kaji": {
       "version": "0.2.0-beta.11",
-      "resolved": "file:kaji-0.2.0-beta.11.tgz",
+      "resolved": "file:irogane-kaji-0.2.0-beta.11.tgz",
       "integrity": "sha512-GrfjQOer1oIo1SASZyCrGFSsiIXdVEZaVGhKW2y5AJmc7I4Uae/oq68/S0B8yhFWig49eoesF4/1nQi7AxWSYA==",
       "license": "FSL-1.1-ALv2",
       "dependencies": {
