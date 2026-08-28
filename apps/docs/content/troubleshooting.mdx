@@ -5,14 +5,14 @@ description: Diagnose common TypeScript and Python SDK setup, provider, tool, an
 
 Start with the first error you can reproduce, then apply the matching fix.
 
-## Cannot find package `kaji-sdk`
+## Cannot find package `kaji`
 
 TypeScript `0.2.0-beta.11` is public on npm. Verify the exact version and then
 install it with its required peer:
 
 ```bash
-npm view kaji-sdk@0.2.0-beta.11 version
-npm install kaji-sdk@0.2.0-beta.11 zod
+npm view kaji@0.2.0-beta.11 version
+npm install kaji@0.2.0-beta.11 zod
 ```
 
 If the first command returns `404`, check `npm config get registry`, your
@@ -30,7 +30,7 @@ npm install "openai@>=4 <8"
 # or: bun add "openai@>=4 <8"
 ```
 
-If you only use `MockProvider` from `kaji-sdk/testing`, you can omit `openai`.
+If you only use `MockProvider` from `kaji/testing`, you can omit `openai`.
 
 ## `OPENAI_API_KEY` is required
 
@@ -93,7 +93,7 @@ To consume events as they are committed, subscribe through the committer. See
 Catch `ProviderError` from the package root and normalize it:
 
 ```ts
-import { normalizeProviderError, ProviderError } from "kaji-sdk";
+import { normalizeProviderError, ProviderError } from "kaji";
 
 try {
   await runtime.turn("Hello");
@@ -117,7 +117,7 @@ The Python distribution is unavailable from PyPI for this release. In a source
 checkout, install the provider extra through the project environment:
 
 ```bash
-uv sync --project kaji/packages/python --extra openai
+uv sync --project kaji/packages/py --extra openai
 ```
 
 ### Control top-level import loading
@@ -131,5 +131,5 @@ you need to control that first-access cost.
 Run the CLI through the project environment:
 
 ```bash
-uv run --project kaji/packages/python kaji --help
+uv run --project kaji/packages/py kaji --help
 ```

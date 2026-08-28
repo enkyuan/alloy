@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def _production_sources() -> list[Path]:
-    source_root = Path(__file__).resolve().parents[1] / "src" / "kaji_serve"
+    source_root = Path(__file__).resolve().parents[1] / "src"
     return sorted(source_root.rglob("*.py"))
 
 
@@ -47,7 +47,7 @@ def test_production_logging_has_no_raw_exceptions_or_tracebacks() -> None:
 
 
 def test_stt_logging_has_no_transcript_or_user_identifiers() -> None:
-    source_root = Path(__file__).resolve().parents[1] / "src" / "kaji_serve"
+    source_root = Path(__file__).resolve().parents[1] / "src"
     paths = (
         source_root / "modalities" / "voice" / "stt" / "handler.py",
         source_root / "modalities" / "voice" / "stt" / "soniox_gateway.py",

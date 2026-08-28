@@ -14,8 +14,8 @@ process-local boundary.
 {/* event-delivery:typescript:start */}
 
 ```ts
-import { AgentBuilder, InMemoryEventCommitter } from "kaji-sdk";
-import { MockProvider } from "kaji-sdk/testing";
+import { AgentBuilder, InMemoryEventCommitter } from "kaji";
+import { MockProvider } from "kaji/testing";
 
 const sessionId = "session-1";
 const committer = new InMemoryEventCommitter();

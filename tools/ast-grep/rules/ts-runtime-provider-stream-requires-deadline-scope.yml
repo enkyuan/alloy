@@ -3,6 +3,6 @@ language: TypeScript
 severity: error
 message: Iterate provider streams through the deadline cancellation scope.
 files:
-  - "kaji/packages/typescript/src/runtime/runtime.ts"
+  - "kaji/packages/ts/src/runtime/runtime.ts"
 rule:
   pattern: for await (const $CHUNK of this.provider.generateStream($$$ARGS)) { $$$BODY }

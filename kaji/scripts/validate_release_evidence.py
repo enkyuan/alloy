@@ -69,10 +69,10 @@ MAX_SIGNED_TARBALL_BYTES = 128 * 1024 * 1024
 MAX_ONBOARDING_STATUS_BYTES = 64 * 1024
 MAX_PUBLICATION_STATUS_BYTES = 256 * 1024
 IO_CHUNK_BYTES = 1024 * 1024
-PYTHON_WHEEL = "kaji_sdk-0.2.0b1-py3-none-any.whl"
-PYTHON_SDIST = "kaji_sdk-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
-PRODUCER_ARTIFACT = "kaji-beta-artifacts"
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
+TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
+PRODUCER_ARTIFACT = "kaji-artifacts"
 EVIDENCE_ARTIFACT = "kaji-release-candidate-evidence"
 REHEARSAL_WORKFLOW_PATH = ".github/workflows/kaji.rehearsal.yml"
 PUBLISH_WORKFLOW_PATH = ".github/workflows/kaji.publish.yml"
@@ -866,9 +866,9 @@ def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
         not any(
             marker in normalized
             for marker in (
-                "/kaji/packages/python/src/",
-                "/kaji/packages/typescript/src/",
-                "/kaji/packages/typescript/dist/",
+                "/kaji/packages/py/src/",
+                "/kaji/packages/ts/src/",
+                "/kaji/packages/ts/dist/",
             )
         ),
         "source_path_detected",
@@ -876,7 +876,7 @@ def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
     suffix = (
         "/site-packages/kaji/__init__.py"
         if runtime == "python"
-        else "/node_modules/kaji-sdk"
+        else "/node_modules/kaji"
     )
     require(normalized.endswith(suffix), "resolved_package_invalid")
 
@@ -948,7 +948,7 @@ def validate_paired_benchmark(
     require(set(document) == expected_keys, "paired_benchmark_schema_invalid")
     require(
         document.get("schemaVersion") == 1
-        and document.get("kind") == "kaji-beta-paired-benchmark-aggregate",
+        and document.get("kind") == "kaji-paired-benchmark-aggregate",
         "paired_benchmark_schema_invalid",
     )
     try:
@@ -1146,7 +1146,7 @@ def validate_performance_status(
 ) -> None:
     require(
         document.get("schemaVersion") == 2
-        and document.get("kind") == "kaji-beta-performance-status",
+        and document.get("kind") == "kaji-performance-status",
         "performance_status_invalid",
     )
     require(document.get("commit") == args.expected_commit, "commit_mismatch")

@@ -52,14 +52,14 @@ SAMPLE_FAILURE_MARKER = re.compile(
     rb"variant=(replay|indexed) status=(-?(?:0|[1-9][0-9]{0,9}))"
 )
 SOURCE_TREE_ROOTS = (
-    Path("kaji/packages/python/src/kaji"),
-    Path("kaji/packages/typescript/src"),
+    Path("kaji/packages/py/src"),
+    Path("kaji/packages/ts/src"),
 )
 SOURCE_INPUTS = (
     Path("kaji/benchmarks/python/runtime_benchmark.py"),
-    Path("kaji/packages/typescript/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime-benchmark.ts"),
     Path("kaji/benchmarks/python/runtime_soak.py"),
-    Path("kaji/packages/typescript/benchmarks/runtime-soak.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime-soak.ts"),
     Path("kaji/scripts/beta_benchmark_gate.py"),
     Path("kaji/scripts/run_beta_benchmarks.py"),
     Path("kaji/scripts/beta_soak_gate.py"),
@@ -73,9 +73,9 @@ SOURCE_INPUTS = (
     Path("kaji/scripts/installed-typescript-runtime/package-lock.json"),
     Path("kaji/scripts/verify_release_artifacts.py"),
     Path("kaji/benchmarks/beta-budgets.json"),
-    Path("kaji/packages/python/pyproject.toml"),
-    Path("kaji/packages/typescript/package.json"),
-    Path("kaji/packages/typescript/tsconfig.json"),
+    Path("kaji/packages/py/pyproject.toml"),
+    Path("kaji/packages/ts/package.json"),
+    Path("kaji/packages/ts/tsconfig.json"),
 )
 
 
@@ -233,7 +233,7 @@ def _runtime_command(
             else ROOT
             / "kaji"
             / "packages"
-            / "typescript"
+            / "ts"
             / "benchmarks"
             / "runtime-benchmark.ts"
         ),

@@ -11,7 +11,7 @@ permissions:
 # A released beta version is immutable. Do not cancel or overlap work for the
 # same tag, because a cross-registry publication cannot be rolled back atomically.
 concurrency:
-  group: kaji-beta-publish-${{ github.ref_name }}
+  group: kaji-publish-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -247,7 +247,7 @@ jobs:
                 ".github/workflows/kaji.rehearsal.yml" ||
               authorization.rehearsal.workflowSha !== releaseCommit ||
               !positiveSafeInteger(authorization.rehearsal.runId) ||
-              authorization.candidateArtifact.name !== "kaji-beta-artifacts" ||
+              authorization.candidateArtifact.name !== "kaji-artifacts" ||
               authorization.evidenceArtifact.name !== "kaji-release-candidate-evidence" ||
               !positiveSafeInteger(authorization.candidateArtifact.id) ||
               !positiveSafeInteger(authorization.evidenceArtifact.id) ||
@@ -255,7 +255,7 @@ jobs:
               !/^sha256:[0-9a-f]{64}$/.test(authorization.candidateArtifact.digest) ||
               !/^sha256:[0-9a-f]{64}$/.test(authorization.evidenceArtifact.digest) ||
               !/^[0-9a-f]{64}$/.test(authorization.releaseManifestSha256) ||
-              authorization.npmTarball.name !== "kaji-sdk-0.2.0-beta.11.tgz" ||
+              authorization.npmTarball.name !== "kaji-0.2.0-beta.11.tgz" ||
               !/^[0-9a-f]{64}$/.test(authorization.npmTarball.sha256) ||
               canonicalize(authorization) + "\n" !== body
             ) {
@@ -344,13 +344,13 @@ jobs:
             );
             scalarOutput("rehearsal-workflow-sha", authorization.rehearsal.workflowSha, /^[0-9a-f]{40}$/);
             scalarOutput("candidate-artifact-id", authorization.candidateArtifact.id, /^[1-9][0-9]*$/);
-            scalarOutput("candidate-artifact-name", authorization.candidateArtifact.name, /^kaji-beta-artifacts$/);
+            scalarOutput("candidate-artifact-name", authorization.candidateArtifact.name, /^kaji-artifacts$/);
             scalarOutput("candidate-artifact-digest", authorization.candidateArtifact.digest, /^sha256:[0-9a-f]{64}$/);
             scalarOutput("evidence-artifact-id", authorization.evidenceArtifact.id, /^[1-9][0-9]*$/);
             scalarOutput("evidence-artifact-name", authorization.evidenceArtifact.name, /^kaji-release-candidate-evidence$/);
             scalarOutput("evidence-artifact-digest", authorization.evidenceArtifact.digest, /^sha256:[0-9a-f]{64}$/);
             scalarOutput("release-manifest-sha256", authorization.releaseManifestSha256, /^[0-9a-f]{64}$/);
-            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^kaji-sdk-0\.2\.0-beta\.11\.tgz$/);
+            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^kaji-0\.2\.0-beta\.11\.tgz$/);
             scalarOutput("npm-tarball-sha256", authorization.npmTarball.sha256, /^[0-9a-f]{64}$/);
             core.summary
               .addHeading("Verified immutable beta authorization", 2)
@@ -422,7 +422,7 @@ jobs:
             ([.artifacts[].id] as $ids |
               ($ids | length) == ($ids | unique | length) and
               all($ids[]; type == "number" and . > 0 and . <= 9007199254740991)) and
-            (["kaji-beta-artifacts", "kaji-release-candidate-evidence",
+            (["kaji-artifacts", "kaji-release-candidate-evidence",
               "kaji-node-compat-22", "kaji-node-compat-24"] |
               all(. as $name |
                 ([$artifacts[] |
@@ -444,7 +444,7 @@ jobs:
             '[.artifacts[] | select(.name == "kaji-node-compat-24" and .expired == false)] | .[0].digest' \
             "$collection")"
           for binding in \
-            "candidate|$CANDIDATE_ID|$CANDIDATE_DIGEST|kaji-beta-artifacts|$signed_root/candidate/source.zip" \
+            "candidate|$CANDIDATE_ID|$CANDIDATE_DIGEST|kaji-artifacts|$signed_root/candidate/source.zip" \
             "evidence|$EVIDENCE_ID|$EVIDENCE_DIGEST|kaji-release-candidate-evidence|$signed_root/evidence/source.zip" \
             "node22|$node22_id|$node22_digest|kaji-node-compat-22|$signed_root/node-22/source.zip" \
             "node24|$node24_id|$node24_digest|kaji-node-compat-24|$signed_root/node-24/source.zip"; do
@@ -506,7 +506,7 @@ jobs:
           node-version: "24"
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - uses: ./.github/actions/setup-python-uv
@@ -521,7 +521,7 @@ jobs:
         run: |
           mkdir -p .artifacts/kaji-offline-evidence
           set +e
-          uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release \
+          uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release \
             > >(tee .artifacts/kaji-offline-evidence/offline-gates.log) 2>&1
           status=$?
           set -e
@@ -568,7 +568,7 @@ jobs:
             [ -f "$path" ]
             [ ! -L "$path" ]
           done
-          uv run --project kaji/packages/python --no-sync python \
+          uv run --project kaji/packages/py --no-sync python \
             kaji/scripts/validate_release_evidence.py \
             --mode rehearsal \
             --artifacts-dir .artifacts/kaji-release \
@@ -614,9 +614,9 @@ jobs:
           destination = Path(sys.argv[2])
           expected = {
               "SHA256SUMS",
-              "kaji-sdk-0.2.0-beta.11.tgz",
-              "kaji_sdk-0.2.0b1-py3-none-any.whl",
-              "kaji_sdk-0.2.0b1.tar.gz",
+              "kaji-0.2.0-beta.11.tgz",
+              "kaji-0.2.0b1-py3-none-any.whl",
+              "kaji-0.2.0b1.tar.gz",
               "manifest.json",
           }
           encoded = archive_path.read_bytes()
@@ -678,9 +678,9 @@ jobs:
           cmp --silent "$rebuilt/$SIGNED_NPM_NAME" "$signed/$SIGNED_NPM_NAME"
           mkdir -p "$carrier"
           for filename in \
-            kaji_sdk-0.2.0b1-py3-none-any.whl \
-            kaji_sdk-0.2.0b1.tar.gz \
-            kaji-sdk-0.2.0-beta.11.tgz \
+            kaji-0.2.0b1-py3-none-any.whl \
+            kaji-0.2.0b1.tar.gz \
+            kaji-0.2.0-beta.11.tgz \
             manifest.json \
             SHA256SUMS; do
             cp "$signed/$filename" "$carrier/$filename"
@@ -721,11 +721,11 @@ jobs:
           name: kaji-authorized-rehearsal-source
           path: |
             .artifacts/kaji-authorized-rehearsal/source.zip
-            .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.11.tgz
+            .artifacts/kaji-authorized-rehearsal/kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-authorized-rehearsal-evidence/source.zip
             .artifacts/kaji-authorized-rehearsal-node-22/source.zip
             .artifacts/kaji-authorized-rehearsal-node-24/source.zip
-            .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.11.tgz
+            .artifacts/kaji-rebuilt/kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-offline-evidence/signed-source-carrier.json
           if-no-files-found: error
       - name: Upload offline gate/test summary
@@ -740,7 +740,7 @@ jobs:
         id: release-artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: kaji-beta-artifacts
+          name: kaji-artifacts
           path: .artifacts/kaji-release
           if-no-files-found: error
 
@@ -801,7 +801,7 @@ jobs:
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-beta-artifacts
+          name: kaji-artifacts
           path: .artifacts/kaji-release
       - name: Verify exact candidate artifacts before Python smoke
         id: verify
@@ -814,7 +814,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-python-compat-${{ matrix.python-version }}
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/release_smoke.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/release_smoke.py
           --artifacts-dir .artifacts/kaji-release
           --expected-commit "$EXPECTED_COMMIT"
           --output "$KAJI_COMPAT_RECEIPT_DIR/compatibility-receipt.json"
@@ -974,7 +974,7 @@ jobs:
                     providerAlias: "synthetic_complete", catalogName: "synthetic.complete",
                     sameIdentityAtEveryStage: true}
                 },
-                policyBeforeRequest: {testFile: "kaji/packages/typescript/tests/github-registry.test.ts",
+                policyBeforeRequest: {testFile: "kaji/packages/ts/tests/github-registry.test.ts",
                   testName: "rejects approval for github_create_issue before token or HTTP",
                   tokenLookups: 0, requestAttempts: 0},
                 aliasCollisionRejected: true, conclusion: "passed", failureCode: null
@@ -993,7 +993,7 @@ jobs:
                 if $kind == "python" then
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji_sdk-0.2.0b1-py3-none-any.whl", "kaji_sdk-0.2.0b1.tar.gz"] and
+                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1021,7 +1021,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-sdk-0.2.0-beta.11.tgz"] and
+                    keys == ["kaji-0.2.0-beta.11.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1178,7 +1178,7 @@ jobs:
       - id: setup_bun
         uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Resolve exact producer artifact by ID
@@ -1214,7 +1214,7 @@ jobs:
               attempt_number: 1,
             });
             if (artifact.id !== artifactId ||
-                artifact.name !== "kaji-beta-artifacts" ||
+                artifact.name !== "kaji-artifacts" ||
                 artifact.digest !== `sha256:${expectedDigest}` ||
                 artifact.expired !== false ||
                 artifact.workflow_run?.id !== context.runId ||
@@ -1242,8 +1242,8 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
-          bun kaji/packages/typescript/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+          bun kaji/packages/ts/scripts/smoke_package.mts
+          .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
           --protected
@@ -1259,7 +1259,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
           KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
-          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
           KAJI_COMPAT_RUNNER_LABEL: ${{ matrix.runner }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
@@ -1285,7 +1285,7 @@ jobs:
             const {
               assertClosedOrdinaryReceipt,
               assertProtectedOrdinaryReceiptForWorkflow,
-            } = await import("./kaji/packages/typescript/scripts/smoke_package.mts");
+            } = await import("./kaji/packages/ts/scripts/smoke_package.mts");
             const required = (name) => {
               const value = process.env[name];
               if (!value) throw new Error("missing trusted receipt input: " + name);
@@ -1343,7 +1343,7 @@ jobs:
           KAJI_CLOSED_RECEIPT="$receipt" bun --eval '
             const { readFileSync } = await import("node:fs");
             const { assertClosedOrdinaryReceipt } =
-              await import("./kaji/packages/typescript/scripts/smoke_package.mts");
+              await import("./kaji/packages/ts/scripts/smoke_package.mts");
             assertClosedOrdinaryReceipt(
               JSON.parse(readFileSync(process.env.KAJI_CLOSED_RECEIPT, "utf8")),
               "protected",
@@ -1450,15 +1450,20 @@ jobs:
               ($ids | length) == ($ids | unique | length) and
               all($ids[]; type == "number" and . > 0 and . <= 9007199254740991 and
                 (tojson | test("^[1-9][0-9]*$")))) and
-            (["kaji-beta-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
+            (["kaji-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
               all(. as $name |
                 ([$artifacts[] | select(.name == $name and .expired == false)] | length) == 1))
           ' "$collection" >/dev/null
           printf '[]' >"$metadata"
-          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+          for binding in \
+            "producer:kaji-artifacts" \
+            "node22:kaji-node-compat-22" \
+            "node24:kaji-node-compat-24"; do
             key="${binding%%:*}"
             name="${binding#*:}"
-            row="$(jq --compact-output --arg name "$name"               '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]'               "$collection")"
+            row="$(jq --compact-output --arg name "$name" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]' \
+              "$collection")"
             artifact_id="$(jq -r '.id' <<<"$row")"
             artifact_digest="$(jq -r '.digest' <<<"$row")"
             [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
@@ -1475,12 +1480,23 @@ jobs:
               echo "Exact artifact lookup failed." >&2
               exit 1
             }
-            jq --exit-status               --argjson id "$artifact_id"               --arg name "$name"               --arg digest "$artifact_digest"               --argjson runId "$GITHUB_RUN_ID"               --arg branch "$EXPECTED_HEAD_BRANCH"               --arg commit "$EXPECTED_COMMIT"               --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id"               --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip"               '.id == $id and .name == $name and .digest == $digest and
+            jq --exit-status \
+              --argjson id "$artifact_id" \
+              --arg name "$name" \
+              --arg digest "$artifact_digest" \
+              --argjson runId "$GITHUB_RUN_ID" \
+              --arg branch "$EXPECTED_HEAD_BRANCH" \
+              --arg commit "$EXPECTED_COMMIT" \
+              --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id" \
+              --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip" \
+              '.id == $id and .name == $name and .digest == $digest and
                .expired == false and .size_in_bytes > 0 and
                .url == $url and .archive_download_url == $archive and
                .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
                .workflow_run.head_sha == $commit' "$exact" >/dev/null
-            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest"               '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]'               "$metadata" >"$metadata.tmp"
+            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest" \
+              '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]' \
+              "$metadata" >"$metadata.tmp"
             mv "$metadata.tmp" "$metadata"
             printf '%s-artifact-id=%s\n' "$key" "$artifact_id" >>"$GITHUB_OUTPUT"
             printf '%s-artifact-digest=%s\n' "$key" "$artifact_digest" >>"$GITHUB_OUTPUT"
@@ -1497,7 +1513,10 @@ jobs:
           set -euo pipefail
           umask 077
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+          for binding in \
+            "producer:kaji-artifacts" \
+            "node22:kaji-node-compat-22" \
+            "node24:kaji-node-compat-24"; do
             key="${binding%%:*}"
             name="${binding#*:}"
             artifact_id="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .id' "$metadata")"
@@ -1526,7 +1545,7 @@ jobs:
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
           set +e
-          uv run --project kaji/packages/python --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
+          uv run --project kaji/packages/py --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
           status=$?
           set -e
           printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
@@ -1541,7 +1560,7 @@ jobs:
         run: |
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          uv run --project kaji/packages/python --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          uv run --project kaji/packages/py --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
           import json
           from pathlib import Path
           import sys
@@ -1559,7 +1578,7 @@ jobs:
           run_id, commit, workflow_ref = int(sys.argv[11]), sys.argv[12], sys.argv[13]
           common = dict(run_id=run_id, run_attempt=1, head_sha=commit, expired=False)
           producer = load_authenticated_archive(
-              producer_path, name="kaji-beta-artifacts",
+              producer_path, name="kaji-artifacts",
               artifact_id=producer_id, digest=producer_digest, **common,
           )
           node22 = load_authenticated_archive(
@@ -1672,7 +1691,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && !cancelled() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' && needs.typescript-onboarding-archive-calibration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    environment: kaji-beta-onboarding
+    environment: kaji-onboarding
     permissions:
       actions: read
       contents: read
@@ -1764,15 +1783,20 @@ jobs:
               ($ids | length) == ($ids | unique | length) and
               all($ids[]; type == "number" and . > 0 and . <= 9007199254740991 and
                 (tojson | test("^[1-9][0-9]*$")))) and
-            (["kaji-beta-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
+            (["kaji-artifacts", "kaji-node-compat-22", "kaji-node-compat-24"] |
               all(. as $name |
                 ([$artifacts[] | select(.name == $name and .expired == false)] | length) == 1))
           ' "$collection" >/dev/null
           printf '[]' >"$metadata"
-          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+          for binding in \
+            "producer:kaji-artifacts" \
+            "node22:kaji-node-compat-22" \
+            "node24:kaji-node-compat-24"; do
             key="${binding%%:*}"
             name="${binding#*:}"
-            row="$(jq --compact-output --arg name "$name"               '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]'               "$collection")"
+            row="$(jq --compact-output --arg name "$name" \
+              '[.artifacts[] | select(.name == $name and .expired == false)] | .[0]' \
+              "$collection")"
             artifact_id="$(jq -r '.id' <<<"$row")"
             artifact_digest="$(jq -r '.digest' <<<"$row")"
             [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]]
@@ -1786,12 +1810,20 @@ jobs:
             fi
             exact="$KAJI_JOB_ROOT/work/$key-artifact.json"
             api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id" >"$exact" 2>/dev/null
-            jq --exit-status               --argjson id "$artifact_id" --arg name "$name" --arg digest "$artifact_digest"               --argjson runId "$GITHUB_RUN_ID" --arg branch "$EXPECTED_HEAD_BRANCH"               --arg commit "$EXPECTED_COMMIT"               --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id"               --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip"               '.id == $id and .name == $name and .digest == $digest and
+            jq --exit-status \
+              --argjson id "$artifact_id" --arg name "$name" --arg digest "$artifact_digest" \
+              --argjson runId "$GITHUB_RUN_ID" --arg branch "$EXPECTED_HEAD_BRANCH" \
+              --arg commit "$EXPECTED_COMMIT" \
+              --arg url "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id" \
+              --arg archive "https://api.github.com/repos/enkyuan/alloy/actions/artifacts/$artifact_id/zip" \
+              '.id == $id and .name == $name and .digest == $digest and
                .expired == false and .size_in_bytes > 0 and
                .url == $url and .archive_download_url == $archive and
                .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
                .workflow_run.head_sha == $commit' "$exact" >/dev/null
-            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest"               '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]'               "$metadata" >"$metadata.tmp"
+            jq --arg name "$name" --argjson id "$artifact_id" --arg digest "$artifact_digest" \
+              '. + [{name: $name, id: $id, digest: $digest, observedDigest: null}]' \
+              "$metadata" >"$metadata.tmp"
             mv "$metadata.tmp" "$metadata"
             printf '%s-artifact-id=%s\n' "$key" "$artifact_id" >>"$GITHUB_OUTPUT"
             printf '%s-artifact-digest=%s\n' "$key" "$artifact_digest" >>"$GITHUB_OUTPUT"
@@ -1808,7 +1840,10 @@ jobs:
           set -euo pipefail
           umask 077
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          for binding in             "producer:kaji-beta-artifacts"             "node22:kaji-node-compat-22"             "node24:kaji-node-compat-24"; do
+          for binding in \
+            "producer:kaji-artifacts" \
+            "node22:kaji-node-compat-22" \
+            "node24:kaji-node-compat-24"; do
             key="${binding%%:*}"
             name="${binding#*:}"
             artifact_id="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .id' "$metadata")"
@@ -1831,7 +1866,7 @@ jobs:
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
           set +e
-          uv run --project kaji/packages/python --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
+          uv run --project kaji/packages/py --no-sync python             kaji/scripts/validate_typescript_onboarding_evidence.py             --producer-archive "$KAJI_JOB_ROOT/work/archives/producer.zip"             --node22-archive "$KAJI_JOB_ROOT/work/archives/node22.zip"             --node24-archive "$KAJI_JOB_ROOT/work/archives/node24.zip"             --producer-artifact-id "$(jq -r '.[0].id' "$metadata")"             --producer-artifact-digest "$(jq -r '.[0].digest' "$metadata")"             --node22-source-artifact-id "$(jq -r '.[1].id' "$metadata")"             --node22-source-artifact-digest "$(jq -r '.[1].digest' "$metadata")"             --node24-source-artifact-id "$(jq -r '.[2].id' "$metadata")"             --node24-source-artifact-digest "$(jq -r '.[2].digest' "$metadata")"             --expected-run-id "$GITHUB_RUN_ID"             --expected-workflow-run "https://github.com/enkyuan/alloy/actions/runs/$GITHUB_RUN_ID"             --expected-workflow-ref "$EXPECTED_WORKFLOW_REF"             --expected-workflow-sha "$EXPECTED_COMMIT"             --output "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             >"$KAJI_JOB_ROOT/work/validation.log" 2>&1
           status=$?
           set -e
           printf 'exit-code=%s\n' "$status" >>"$GITHUB_OUTPUT"
@@ -1848,7 +1883,7 @@ jobs:
           candidate="$KAJI_JOB_ROOT/work/candidate"
           mkdir -p "$candidate"
           unzip -q "$KAJI_JOB_ROOT/work/archives/producer.zip" -d "$candidate"
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/verify_release_artifacts.py             --artifacts-dir "$candidate" --expected-commit "$EXPECTED_COMMIT"
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/verify_release_artifacts.py             --artifacts-dir "$candidate" --expected-commit "$EXPECTED_COMMIT"
       - name: Independently validate and recompute protected onboarding evidence
         id: aggregate_validation
         if: ${{ steps.candidate_verification.outcome == 'success' }}
@@ -1859,7 +1894,7 @@ jobs:
         run: |
           set -euo pipefail
           metadata="$KAJI_JOB_ROOT/work/archive-metadata.json"
-          uv run --project kaji/packages/python --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
+          uv run --project kaji/packages/py --no-sync python -             "$KAJI_JOB_ROOT/work/typescript-onboarding-evidence.json"             "$KAJI_JOB_ROOT/work/archives/producer.zip"             "$KAJI_JOB_ROOT/work/archives/node22.zip"             "$KAJI_JOB_ROOT/work/archives/node24.zip"             "$(jq -r '.[0].id' "$metadata")" "$(jq -r '.[0].digest' "$metadata")"             "$(jq -r '.[1].id' "$metadata")" "$(jq -r '.[1].digest' "$metadata")"             "$(jq -r '.[2].id' "$metadata")" "$(jq -r '.[2].digest' "$metadata")"             "$GITHUB_RUN_ID" "$EXPECTED_COMMIT" "$EXPECTED_WORKFLOW_REF" <<'PY'
           import json
           from pathlib import Path
           import sys
@@ -1877,7 +1912,7 @@ jobs:
           run_id, commit, workflow_ref = int(sys.argv[11]), sys.argv[12], sys.argv[13]
           common = dict(run_id=run_id, run_attempt=1, head_sha=commit, expired=False)
           producer = load_authenticated_archive(
-              producer_path, name="kaji-beta-artifacts",
+              producer_path, name="kaji-artifacts",
               artifact_id=producer_id, digest=producer_digest, **common,
           )
           node22 = load_authenticated_archive(
@@ -2040,7 +2075,7 @@ jobs:
     # Two proofs are capped at three minutes each. Thirty minutes leaves setup
     # and final evidence upload outside the child-process budget.
     timeout-minutes: 30
-    environment: kaji-beta
+    environment: kaji-release
     env:
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
       KAJI_RELEASE_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
@@ -2098,7 +2133,7 @@ jobs:
       - id: download
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-beta-artifacts
+          name: kaji-artifacts
           path: .artifacts/kaji-release
       - name: Verify exact candidate artifacts before provider proof
         id: verify
@@ -2111,7 +2146,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/live_provider_proof.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/live_provider_proof.py
           --protected --artifacts-dir .artifacts/kaji-release
           --expected-commit "$KAJI_RELEASE_COMMIT"
       - name: Normalize terminal provider evidence
@@ -2218,7 +2253,7 @@ jobs:
           sync-args: --frozen
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - name: Authenticate exact onboarding artifact bindings before downloads
@@ -2277,7 +2312,7 @@ jobs:
              .path == $path and .head_branch == $branch and .head_sha == $commit' \
             "$run_metadata" >/dev/null
           for binding in \
-            "producer|$PRODUCER_ID|$PRODUCER_DIGEST|kaji-beta-artifacts" \
+            "producer|$PRODUCER_ID|$PRODUCER_DIGEST|kaji-artifacts" \
             "onboarding|$ONBOARDING_ID|$ONBOARDING_DIGEST|kaji-typescript-onboarding-evidence" \
             "node22|$NODE22_ID|$NODE22_DIGEST|kaji-node-compat-22" \
             "node24|$NODE24_ID|$NODE24_DIGEST|kaji-node-compat-24"; do
@@ -2446,9 +2481,9 @@ jobs:
           --expected-commit "$EXPECTED_COMMIT"
       - name: Rebuild and verify exact package contents against the clean checkout
         run: |
-          bun run --cwd kaji/packages/typescript build
+          bun run --cwd kaji/packages/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
           python3 kaji/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Validate one canonical current-run evidence set
@@ -2456,7 +2491,7 @@ jobs:
         env:
           KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
         run: >-
-          uv run --project kaji/packages/python --no-sync python kaji/scripts/validate_release_evidence.py
+          uv run --project kaji/packages/py --no-sync python kaji/scripts/validate_release_evidence.py
           --mode publish
           --artifacts-dir .artifacts/kaji-release
           --producer-archive .artifacts/kaji-raw/producer.zip
@@ -2500,8 +2535,8 @@ jobs:
           --signed-release-manifest-sha256 "${{ needs.verify-tag.outputs.release-manifest-sha256 }}"
           --signed-npm-tarball-name "${{ needs.verify-tag.outputs.npm-tarball-name }}"
           --signed-npm-tarball-sha256 "${{ needs.verify-tag.outputs.npm-tarball-sha256 }}"
-          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/kaji-sdk-0.2.0-beta.11.tgz
-          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/kaji-sdk-0.2.0-beta.11.tgz
+          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/kaji-0.2.0-beta.11.tgz
+          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/kaji-0.2.0-beta.11.tgz
           --workspace "$GITHUB_WORKSPACE"
           --output .artifacts/kaji-evidence/release-evidence-validation.json
       - name: Generate SBOM
@@ -2516,9 +2551,9 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
-            .artifacts/kaji-release/kaji_sdk-0.2.0b1-py3-none-any.whl
-            .artifacts/kaji-release/kaji_sdk-0.2.0b1.tar.gz
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/kaji-0.2.0b1-py3-none-any.whl
+            .artifacts/kaji-release/kaji-0.2.0b1.tar.gz
+            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-release/manifest.json
             .artifacts/kaji-release/SHA256SUMS
             .artifacts/kaji-evidence/offline-gates.log
@@ -2592,7 +2627,7 @@ jobs:
       - name: Require PyPI beta absence and exact npm beta absence
         run: |
           set -euo pipefail
-          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)"
+          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_STATUS" in
             404) ;;
             200) echo "PyPI beta 0.2.0b1 must remain absent; aborting npm publication" >&2; exit 1 ;;
@@ -2651,7 +2686,7 @@ jobs:
           PACKUMENT_BODY="$RUNNER_TEMP/kaji-npm-packument.json"
           PACKUMENT_METADATA="$RUNNER_TEMP/kaji-npm-packument.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk \
+            https://registry.npmjs.org/kaji \
             "$PACKUMENT_BODY" "$PACKUMENT_METADATA" 65536
           PACKUMENT_HTTP="$FETCH_HTTP_STATUS"
           case "$PACKUMENT_HTTP" in
@@ -2661,7 +2696,7 @@ jobs:
                 "$PACKUMENT_BODY" >/dev/null
               ;;
             200)
-              echo "npm package kaji-sdk already exists; aborting first publication" >&2
+              echo "npm package kaji already exists; aborting first publication" >&2
               exit 1
               ;;
             *)
@@ -2672,7 +2707,7 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
+            https://registry.npmjs.org/kaji/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
@@ -2697,7 +2732,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && !cancelled() && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: kaji-beta-publish
+    environment: kaji-publish
     outputs:
       expected-publisher: ${{ steps.publisher-identity-init.outputs.expected-publisher }}
       publisher-artifact-id: ${{ steps.publisher-identity-upload.outputs.artifact-id }}
@@ -2815,7 +2850,7 @@ jobs:
           fi
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -2833,9 +2868,9 @@ jobs:
           --expected-commit "$EXPECTED_COMMIT"
       - name: Rebuild and verify npm archive contents against the clean checkout
         run: |
-          bun run --cwd kaji/packages/typescript build
+          bun run --cwd kaji/packages/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
       - name: Verify exact npm publisher identity
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -2975,7 +3010,7 @@ jobs:
             --argjson runId "$GITHUB_RUN_ID" \
             --arg branch "$GITHUB_REF_NAME" \
             --arg commit "$RELEASE_COMMIT" \
-            '.id == $id and .name == "kaji-beta-artifacts" and
+            '.id == $id and .name == "kaji-artifacts" and
              .digest == $digest and .expired == false and .size_in_bytes > 0 and
              .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
              .workflow_run.head_sha == $commit' "$metadata" >/dev/null
@@ -2984,7 +3019,7 @@ jobs:
           [ "$(sha256sum ".artifacts/kaji-release/$SIGNED_NPM_TARBALL_NAME" | cut -d' ' -f1)" = \
             "$SIGNED_NPM_TARBALL_SHA256" ]
       - name: Reverify signed tag immediately before npm publication
-        uses: ./.github/actions/verify-kaji-beta-tag
+        uses: ./.github/actions/verify-kaji-tag
         with:
           token: ${{ github.token }}
           tag: ${{ needs.verify-tag.outputs.tag-name }}
@@ -3008,7 +3043,7 @@ jobs:
       - name: Recheck exact registry absence immediately before npm publication
         run: |
           set -euo pipefail
-          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)"
+          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_STATUS" in
             404) ;;
             200) echo "PyPI beta 0.2.0b1 must remain absent; aborting npm publication" >&2; exit 1 ;;
@@ -3067,7 +3102,7 @@ jobs:
           PACKUMENT_BODY="$RUNNER_TEMP/kaji-npm-packument.json"
           PACKUMENT_METADATA="$RUNNER_TEMP/kaji-npm-packument.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk \
+            https://registry.npmjs.org/kaji \
             "$PACKUMENT_BODY" "$PACKUMENT_METADATA" 65536
           PACKUMENT_HTTP="$FETCH_HTTP_STATUS"
           case "$PACKUMENT_HTTP" in
@@ -3077,7 +3112,7 @@ jobs:
                 "$PACKUMENT_BODY" >/dev/null
               ;;
             200)
-              echo "npm package kaji-sdk already exists; aborting first publication" >&2
+              echo "npm package kaji already exists; aborting first publication" >&2
               exit 1
               ;;
             *)
@@ -3088,7 +3123,7 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
+            https://registry.npmjs.org/kaji/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
@@ -3112,7 +3147,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$NODE_AUTH_TOKEN"
-          npm publish .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
+          npm publish .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -3423,7 +3458,7 @@ jobs:
             --argjson runId "$GITHUB_RUN_ID" \
             --arg branch "$GITHUB_REF_NAME" \
             --arg commit "$EXPECTED_COMMIT" \
-            '.id == $id and .name == "kaji-beta-artifacts" and
+            '.id == $id and .name == "kaji-artifacts" and
              .digest == $digest and .expired == false and .size_in_bytes > 0 and
              .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
              .workflow_run.head_sha == $commit' "$metadata" >/dev/null
@@ -3435,7 +3470,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           timeout --signal=TERM --kill-after=10s 20m \
-            uv run --project kaji/packages/python --no-sync python \
+            uv run --project kaji/packages/py --no-sync python \
             kaji/scripts/verify_published_packages.py \
             --target npm \
             --artifacts-dir .artifacts/kaji-release \
@@ -3468,7 +3503,7 @@ jobs:
         run: |
           set +e
           mkdir -p .artifacts/kaji-publication-status
-          PYPI_HTTP="$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji-sdk/0.2.0b1/json)"
+          PYPI_HTTP="$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_HTTP" in
             200) PYPI_STATE=present ;;
             404) PYPI_STATE=absent ;;
@@ -3514,12 +3549,12 @@ jobs:
             NPM_BODY="$RUNNER_TEMP/kaji-npm-classification.json"
             NPM_METADATA="$RUNNER_TEMP/kaji-npm-classification.metadata"
             if fetch_classification_json \
-              https://registry.npmjs.org/kaji-sdk/0.2.0-beta.11 \
+              https://registry.npmjs.org/kaji/0.2.0-beta.11 \
               "$NPM_BODY" "$NPM_METADATA" 262144; then
               case "$FETCH_HTTP_STATUS" in
                 200)
                   if jq --exit-status \
-                    'type == "object" and .name == "kaji-sdk" and
+                    'type == "object" and .name == "kaji" and
                      .version == "0.2.0-beta.11"' \
                     "$NPM_BODY" >/dev/null 2>&1; then
                     NPM_STATE=present
@@ -3576,7 +3611,7 @@ jobs:
           fi
           CLASSIFY_STATUS=127
           if [ -f kaji/scripts/verify_published_packages.py ]; then
-            uv run --project kaji/packages/python --no-sync python \
+            uv run --project kaji/packages/py --no-sync python \
               kaji/scripts/verify_published_packages.py state \
               --target npm \
               --previous-state unpublished \
@@ -3830,7 +3865,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXPECTED_PUBLISHER"
-          uv run --project kaji/packages/python --no-sync python \
+          uv run --project kaji/packages/py --no-sync python \
             kaji/scripts/validate_release_evidence.py publication-status \
             --publication-status .artifacts/kaji-publication-status/publication-status.json \
             --expected-commit "$EXPECTED_COMMIT" \
@@ -3867,7 +3902,7 @@ jobs:
             --argjson runId "$GITHUB_RUN_ID" \
             --arg branch "$GITHUB_REF_NAME" \
             --arg commit "$EXPECTED_COMMIT" \
-            '.id == $id and .name == "kaji-beta-artifacts" and
+            '.id == $id and .name == "kaji-artifacts" and
              .digest == $digest and .expired == false and .size_in_bytes > 0 and
              .workflow_run.id == $runId and .workflow_run.head_branch == $branch and
              .workflow_run.head_sha == $commit' "$metadata" >/dev/null
@@ -3876,7 +3911,7 @@ jobs:
           [ "$(sha256sum ".artifacts/kaji-release/$SIGNED_NPM_TARBALL_NAME" | cut -d' ' -f1)" = \
             "$SIGNED_NPM_TARBALL_SHA256" ]
       - name: Reverify signed tag immediately before release attachment
-        uses: ./.github/actions/verify-kaji-beta-tag
+        uses: ./.github/actions/verify-kaji-tag
         with:
           token: ${{ github.token }}
           tag: ${{ needs.verify-tag.outputs.tag-name }}
@@ -3906,7 +3941,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --tag "$EXPECTED_TAG"
           --title "Kaji $EXPECTED_TAG"
-          .artifacts/kaji-release/kaji-sdk-0.2.0-beta.11.tgz
+          .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
           .artifacts/kaji-release/manifest.json
           .artifacts/kaji-release/SHA256SUMS
           .artifacts/kaji-evidence/offline-gates.log
@@ -3930,6 +3965,6 @@ jobs:
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.11.tgz
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-sdk-0.2.0-beta.11.tgz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz
+          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

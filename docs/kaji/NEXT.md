@@ -28,10 +28,10 @@ The path already exists and works today. An out-of-tree integration reaches an
 `AgentRuntime` by subclassing `Integration` and passing it to
 `AgentBuilder.integration()`. This path has no allowlist, no manifest, and no
 registry directory; it is duck-typed on a `register()` method
-([`builder.py`](../../kaji/packages/python/src/kaji/runtime/agents/builder.py),
-[`builder.ts`](../../kaji/packages/typescript/src/runtime/builder.ts)). The
+([`builder.py`](../../kaji/packages/py/src/runtime/agents/builder.py),
+[`builder.ts`](../../kaji/packages/ts/src/runtime/builder.ts)). The
 `agentos` example uses exactly this path
-([`agentos-integration.ts`](../../kaji/packages/typescript/examples/agentos/agentos-integration.ts)).
+([`agentos-integration.ts`](../../kaji/packages/ts/examples/agentos/agentos-integration.ts)).
 
 The manifest/registry loader (`load_manifest` / `loadManifest`) is a separate
 source-copy mechanism used only by `kaji add`; it never constructs a runtime
@@ -52,7 +52,7 @@ here is to prove, document, and exhibit the path -- not to build a loader.
 3. **Graduate agentOS.** Promote the `agentos` example to the
    separately-versioned `@kaji/agentos` package the example README already
    promises, as the worked example of an arm's-length, out-of-tree integration.
-   Keep it outside the `kaji-sdk` tarball; its native, ESM-only, preview nature
+   Keep it outside the `kaji` tarball; its native, ESM-only, preview nature
    is exactly why it must not be a core subpath.
 
 **Deliberately not doing (yet): a manifest-to-runtime bridge.** Making external
@@ -100,16 +100,16 @@ each item tagged by the kind of work it is.
 3. **[code/CI]** Land the reviewed release commit on `main`; confirm license
    byte-identity and changelog dates.
 4. **[ops]** Configure the three protected environments in order
-   (`kaji-beta-onboarding` then `kaji-beta` then `kaji-beta-publish`) and the
+   (`kaji-onboarding` then `kaji-release` then `kaji-publish`) and the
    reviewer.
-5. **[credential]** Store `OPENAI_API_KEY` in `kaji-beta` only, a fresh
-   `NPM_TOKEN` in `kaji-beta-publish` only, and set `KAJI_RELEASE_SIGNER_EMAIL`.
+5. **[credential]** Store `OPENAI_API_KEY` in `kaji-release` only, a fresh
+   `NPM_TOKEN` in `kaji-publish` only, and set `KAJI_RELEASE_SIGNER_EMAIL`.
 6. **[CI/evidence]** Confirm registry-absence (npm and PyPI 404 for beta.11).
 7. **[CI/evidence]** Dispatch `kaji.rehearsal.yml`: offline gates, Python
    3.11/3.14 and Node 22/24 compatibility, the 3x paired benchmark, and the
    30-minute soak.
-8. **[CI/evidence]** Approve the `kaji-beta-onboarding` aggregate.
-9. **[credential]** Approve `kaji-beta`. `live_provider_proof.py` completes the
+8. **[CI/evidence]** Approve the `kaji-onboarding` aggregate.
+9. **[credential]** Approve `kaji-release`. `live_provider_proof.py` completes the
    OpenAI tool loop in both SDKs. This is the single highest-leverage blocker:
    it cannot be rehearsed offline and is the literal content of the release
    promise. Run the Gmail live proof (see runbook below) in the same protected
@@ -117,7 +117,7 @@ each item tagged by the kind of work it is.
 10. **[ops]** Bind and push the canonical-JSON signed annotated tag
     `kaji-v0.2.0-beta.11`.
 11. **[CI/evidence]** Publish workflow: SBOM, provenance, attestation.
-12. **[credential/ops]** Approve `kaji-beta-publish`, publish once, and require
+12. **[credential/ops]** Approve `kaji-publish`, publish once, and require
     `npm_byte_verified` plus `verify_published_packages.py`.
 
 ---
@@ -126,7 +126,7 @@ each item tagged by the kind of work it is.
 
 **Ship C first, then A, with B running continuously.**
 
-"Any app builds on Kaji" means nothing until `npm i kaji-sdk` is a real
+"Any app builds on Kaji" means nothing until `npm i kaji` is a real
 published thing. The beta is one credential and one repo-visibility flip from
 done, so it is the cheapest high-value unlock. The third-party path (A) is what
 makes the generality real, but it has no audience until there is a published SDK
@@ -155,7 +155,7 @@ here so the operator who has them can execute in order.
   `get_message -> approved send_message -> readback -> delete -> redacted receipt`
   sequence are real and self-checked (`test_live_gmail_proof.py`); every live
   step is a `OperatorTodo` stub so the skeleton fails closed (exit 2) and can
-  never emit a passing receipt. The operator fills the stubs in the `kaji-beta`
+  never emit a passing receipt. The operator fills the stubs in the `kaji-release`
   window (step 9 above): port prerequisite validation from the GitHub proof,
   write the `installed_gmail_live.py` / `installed-gmail-live.mts` child runners,
   and wire the credentialed Gmail API calls. Note: the Gmail client exposes no
@@ -173,7 +173,7 @@ Tag-readiness checks that pass today (runnable in a normal session):
 
 | Check | Result |
 | --- | --- |
-| npm `kaji-sdk@0.2.0-beta.11` absent | 404 (absent) |
+| npm `kaji@0.2.0-beta.11` absent | 404 (absent) |
 | No tag `kaji-v0.2.0-beta.11` (local + remote) | none |
 | TS version pin | `0.2.0-beta.11` (package.json + `index.ts` VERSION) |
 | Python version pin | `0.2.0b1` (pyproject + `__version__`), intentional test-pinned skew |
@@ -181,7 +181,7 @@ Tag-readiness checks that pass today (runnable in a normal session):
 | `KAJI_RELEASE_SIGNER_EMAIL` repo variable | set |
 
 The tag annotation is a canonical compact-JSON authorization whose SHA-256 the
-publish workflow re-verifies (`.github/actions/verify-kaji-beta-tag`). Every
+publish workflow re-verifies (`.github/actions/verify-kaji-tag`). Every
 `<...>` value below is recorded by the protected `kaji.rehearsal.yml` run and
 does not exist until that CI run completes, so it cannot be pre-filled here. Do
 not invent these values; copy them from the rehearsal outputs
@@ -191,7 +191,7 @@ not invent these values; copy them from the rehearsal outputs
    recursively sorted, ASCII) to `AUTHORIZATION_FILE`:
 
 ```json
-{"candidateArtifact":{"digest":"sha256:<from rehearsal>","id":<candidate artifact id>,"name":"kaji-beta-artifacts"},"commit":"<40-hex reviewed commit>","evidenceArtifact":{"digest":"sha256:<from rehearsal>","id":<evidence artifact id>,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-sdk-0.2.0-beta.11.tgz","sha256":"<tarball sha256>"},"rehearsal":{"runAttempt":1,"runId":<rehearsal run id>,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<40-hex, equals reviewed commit>"},"releaseManifestSha256":"<manifest sha256>","schemaVersion":"1.0.0"}
+{"candidateArtifact":{"digest":"sha256:<from rehearsal>","id":<candidate artifact id>,"name":"kaji-artifacts"},"commit":"<40-hex reviewed commit>","evidenceArtifact":{"digest":"sha256:<from rehearsal>","id":<evidence artifact id>,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-0.2.0-beta.11.tgz","sha256":"<tarball sha256>"},"rehearsal":{"runAttempt":1,"runId":<rehearsal run id>,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<40-hex, equals reviewed commit>"},"releaseManifestSha256":"<manifest sha256>","schemaVersion":"1.0.0"}
 ```
 
 2. Validate the file with the canonical-JSON checker in releasing.md (it rejects
@@ -209,7 +209,7 @@ git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE" kaji-v0.2.0-beta.11 "$REV
 Two operator-only hard stops, by rule and by releasing.md: (a) the authorization
 values only exist after the protected rehearsal plus the keyed OpenAI proof have
 run and been approved (steps 7-9), and releasing.md stops until you confirm a
-fresh `NPM_TOKEN` is stored only in `kaji-beta-publish`; (b) `git tag -s` and the
+fresh `NPM_TOKEN` is stored only in `kaji-publish`; (b) `git tag -s` and the
 tag push are irreversible signed release actions the operator executes.
 
 ---
@@ -246,7 +246,7 @@ package-authoring contract, not another subclass tutorial.** Verified: the
 subclass + `AgentBuilder.integration()` path works today with zero SDK changes
 (`builder.ts:66`, `builder.py:85`, duck-typed on `register()`). But both READMEs
 already ship a `WeatherIntegration` subclass example
-([python](../../kaji/packages/python/README.md), TS README), so the missing piece
+([python](../../kaji/packages/py/README.md), TS README), so the missing piece
 is not a tutorial. What is missing for a stranger: package naming, peer-dependency
 ranges, factory-export convention, cross-SDK parity of the authored surface, and
 ESM/CJS consumption guidance. Reframe A as *closing* that gap, and make the

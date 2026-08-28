@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "apps/cli/**"
       - "apps/web/**"
       - "packages/shared/**"
@@ -16,7 +16,7 @@ on:
       - ".github/workflows/ts.format.yml"
   pull_request:
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "apps/cli/**"
       - "apps/web/**"
       - "packages/shared/**"
@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        workspace: [kaji/packages/typescript, apps/cli, apps/web, ryo/auth, packages/ui, packages/shared]
+        workspace: [kaji/packages/ts, apps/cli, apps/web, ryo/auth, packages/ui, packages/shared]
     defaults:
       run:
         working-directory: ${{ matrix.workspace }}

@@ -12,8 +12,8 @@ from historical plans.
 | Ryo services       | `ryo/api`, `ryo/consumer`, `ryo/auth` | Go APIs and the TypeScript authentication service                |
 | Ryo studio         | `apps/web`                            | React/TanStack web application                                   |
 | Python SDK         | `kaji`                                | Infra-free `kaji` runtime and public Python package              |
-| TypeScript SDK     | `kaji/ts`                             | `kaji-sdk`, kept in contract parity with Python                 |
-| Kaji service       | `kaji/serve`                          | Experimental FastAPI REST and Soniox STT edge                    |
+| TypeScript SDK     | `kaji/ts`                             | `kaji`, kept in contract parity with Python                     |
+| Kaji service       | `kaji/packages/serve`                          | Experimental FastAPI REST and Soniox STT edge                    |
 | Developer surfaces | `apps/cli`, `apps/docs`               | Standalone CLI/scaffolds and the public documentation site       |
 | Shared packages    | `packages/ui`, `packages/shared`      | Reusable UI code and TypeScript configuration                    |
 | Shared contracts   | `kaji/contracts`, `docs/kaji`         | Cross-SDK schemas, feature tiers, fixtures, and operating guides |
@@ -25,7 +25,7 @@ Start at [`README.md`](../README.md) for the system overview,
 ## Architecture and compatibility boundaries
 
 - `kaji` and `kaji/ts` are embedded runtimes. Server, worker, database, and
-  transport concerns belong in `kaji/serve` unless a shared protocol requires
+  transport concerns belong in `kaji/packages/serve` unless a shared protocol requires
   an SDK interface.
 - `kaji/contracts/feature-tiers-v1.json` defines stable, experimental, and
   deprecated public surfaces. Stable changes require matching Python and
@@ -62,7 +62,7 @@ Start at [`README.md`](../README.md) for the system overview,
 - Python: Python `3.11+` with `uv`; use Ruff, `ty`, and pytest.
 - Go: Go `1.25+`; use `gofmt`, `go vet`, and `go test -race`.
 - Run every row in [`CONTRIBUTING.md`](../CONTRIBUTING.md) that corresponds to a
-  changed path. Contract or release changes also require `bun run audit:kaji-beta`.
+  changed path. Contract or release changes also require `bun run audit:kaji`.
 - CI workflow files use `<area>.<check>.yml`. Keep external actions SHA-pinned,
   token permissions least-privilege, routine jobs bounded and cancellable, and
   path filters symmetric between push and pull request triggers.

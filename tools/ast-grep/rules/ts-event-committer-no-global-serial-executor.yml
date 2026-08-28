@@ -3,7 +3,7 @@ language: TypeScript
 severity: error
 message: Event committers must not share a module-global SerialExecutor across sessions.
 files:
-  - "kaji/packages/typescript/src/events/committer.ts"
+  - "kaji/packages/ts/src/events/committer.ts"
 rule:
   any:
     - all:

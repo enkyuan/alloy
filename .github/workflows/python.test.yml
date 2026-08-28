@@ -79,17 +79,17 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
 
       - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: .
 
       - name: Run quickstart smoke
-        run: uv run --project packages/python pytest packages/python/tests/test_quickstart.py -q
+        run: uv run --project packages/py pytest packages/py/tests/test_quickstart.py -q
 
       - name: Run non-network tests
-        run: uv run --project packages/python pytest packages/python/tests -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
+        run: uv run --project packages/py pytest packages/py/tests -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
 
       - name: Upload coverage
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -121,8 +121,8 @@ jobs:
 
       - name: Build, verify, and install wheel and sdist
         run: |
-          uv run --project packages/python --no-sync python scripts/release_smoke.py
-          uv run --project packages/python --no-sync python scripts/verify_archives.py packages/python/dist
+          uv run --project packages/py --no-sync python scripts/release_smoke.py
+          uv run --project packages/py --no-sync python scripts/verify_archives.py packages/py/dist
 
   serve:
     name: kaji/packages/serve

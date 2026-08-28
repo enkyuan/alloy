@@ -1,2 +1,2 @@
 [tool.uv.workspace]
-members = ["kaji/packages/python", "kaji/packages/serve"]
+members = ["kaji/packages/py", "kaji/packages/serve"]

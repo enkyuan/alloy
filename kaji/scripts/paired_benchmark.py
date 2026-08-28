@@ -51,7 +51,7 @@ PROTOCOL_INPUTS = (
     Path(".github/actions/setup-python-uv/action.yml"),
     Path(".github/workflows/kaji.performance.yml"),
     Path("kaji/benchmarks/python/runtime_benchmark.py"),
-    Path("kaji/packages/typescript/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime-benchmark.ts"),
     Path("kaji/benchmarks/beta-budgets.json"),
     Path("kaji/scripts/paired_benchmark.py"),
     Path("kaji/scripts/aggregate_benchmarks.py"),
@@ -64,14 +64,14 @@ PROTOCOL_INPUTS = (
     Path("kaji/scripts/installed-typescript-runtime/package-lock.core.json"),
 )
 IDENTITY_FILES = {
-    "pythonWheel": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "pythonSdist": "kaji_sdk-0.2.0b1.tar.gz",
-    "typescript": "kaji-sdk-0.2.0-beta.11.tgz",
+    "pythonWheel": "kaji-0.2.0b1-py3-none-any.whl",
+    "pythonSdist": "kaji-0.2.0b1.tar.gz",
+    "typescript": "kaji-0.2.0-beta.11.tgz",
 }
 REFERENCE_IDENTITY_FILES = {
-    "pythonWheel": "kaji_sdk-0.2.0b1-py3-none-any.whl",
-    "pythonSdist": "kaji_sdk-0.2.0b1.tar.gz",
-    "typescript": "kaji-sdk-0.2.0-beta.2.tgz",
+    "pythonWheel": "kaji-0.2.0b1-py3-none-any.whl",
+    "pythonSdist": "kaji-0.2.0b1.tar.gz",
+    "typescript": "kaji-0.2.0-beta.2.tgz",
 }
 REPORT_KEYS = {
     "schemaVersion",
@@ -650,7 +650,7 @@ def _measure_replica(
     )
     report: dict[str, Any] = {
         "schemaVersion": 1,
-        "kind": "kaji-beta-paired-benchmark-replica",
+        "kind": "kaji-paired-benchmark-replica",
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "protected": protected,
         "protocolHash": _protocol_hash(),
@@ -685,7 +685,7 @@ def _validate_replica_report(value: Any) -> dict[str, Any]:
     if (
         type(value["schemaVersion"]) is not int
         or value["schemaVersion"] != 1
-        or value["kind"] != "kaji-beta-paired-benchmark-replica"
+        or value["kind"] != "kaji-paired-benchmark-replica"
         or value["protected"] is not True
         or value["protocolHash"] != _protocol_hash()
         or type(value["replica"]) is not int

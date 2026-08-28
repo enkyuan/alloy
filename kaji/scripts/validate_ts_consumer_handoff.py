@@ -21,7 +21,7 @@ from typing import Any, NoReturn
 from jsonschema import Draft202012Validator
 
 
-MANIFEST_NAME = "kaji-sdk.manifest.json"
+MANIFEST_NAME = "kaji.manifest.json"
 SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
 RECEIPT_NAMES = (
     "source-equivalence.json",
@@ -90,7 +90,7 @@ FAILURE_CODES = frozenset(
     }
 )
 
-PACKAGE_NAME = "kaji-sdk"
+PACKAGE_NAME = "kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 SIGNER_REPOSITORY = "enkyuan/alloy"
 SIGNER_FILE_PATH = ".github/workflows/kaji.handoff.trusted.yml"
@@ -118,7 +118,7 @@ SCHEMA_PATH = (
     / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
 )
 TRUSTED_LICENSE_PATH = (
-    Path(__file__).resolve().parents[1] / "packages/typescript/LICENSE"
+    Path(__file__).resolve().parents[1] / "packages/ts/LICENSE"
 )
 
 
@@ -256,7 +256,7 @@ def _safe_stable_strings(value: Any) -> None:
 def _npm_pack_basename(version: str) -> str:
     if SEMVER.fullmatch(version) is None:
         _reject("SCHEMA_INVALID")
-    return f"kaji-sdk-{version}.tgz"
+    return f"kaji-{version}.tgz"
 
 
 def _checked_archive_name(raw_name: str) -> str:

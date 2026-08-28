@@ -18,63 +18,58 @@ COPIES = {
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "schema.json",
-        ROOT / "kaji" / "packages" / "typescript" / "registry" / "schema.json",
+        ROOT / "kaji" / "packages" / "ts" / "registry" / "schema.json",
     ),
     CONTRACTS / "index.schema.json": (
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "index.schema.json",
-        ROOT / "kaji" / "packages" / "typescript" / "registry" / "index.schema.json",
+        ROOT / "kaji" / "packages" / "ts" / "registry" / "index.schema.json",
     ),
     ROOT / "LICENSE": (
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "github"
         / "LICENSE",
-        ROOT / "kaji" / "packages" / "typescript" / "registry" / "github" / "LICENSE",
+        ROOT / "kaji" / "packages" / "ts" / "registry" / "github" / "LICENSE",
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "gmail"
         / "LICENSE",
-        ROOT / "kaji" / "packages" / "typescript" / "registry" / "gmail" / "LICENSE",
+        ROOT / "kaji" / "packages" / "ts" / "registry" / "gmail" / "LICENSE",
     ),
     ROOT
     / "kaji"
     / "packages"
-    / "typescript"
+    / "ts"
     / "registry"
     / "github"
     / "owner-fixtures.json": (
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "github"
@@ -83,16 +78,15 @@ COPIES = {
     ROOT
     / "kaji"
     / "packages"
-    / "typescript"
+    / "ts"
     / "registry"
     / "gmail"
     / "owner-fixtures.json": (
         ROOT
         / "kaji"
         / "packages"
-        / "python"
+        / "py"
         / "src"
-        / "kaji"
         / "integrations"
         / "registry"
         / "gmail"
@@ -101,9 +95,9 @@ COPIES = {
 }
 ABI_INDEX = CONTRACTS / "abi-index-v1.json"
 PYTHON_REGISTRY = (
-    ROOT / "kaji" / "packages" / "python" / "src" / "kaji" / "integrations" / "registry"
+    ROOT / "kaji" / "packages" / "py" / "src" / "integrations" / "registry"
 )
-TYPESCRIPT_REGISTRY = ROOT / "kaji" / "packages" / "typescript" / "registry"
+TYPESCRIPT_REGISTRY = ROOT / "kaji" / "packages" / "ts" / "registry"
 _INTEGRATION_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
 
 
