@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, it } from "vitest";
 
-import { CancellationError, EventType } from "kaji";
+import { CancellationError, EventType } from "@irogane/kaji";
 import { countObservedCancellation, countObservedTimeout } from "../benchmarks/runtime-soak";
 
 const execute = promisify(execFile);

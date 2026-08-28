@@ -113,8 +113,8 @@ import {
   deadlineAfter,
   normalizeProviderError,
   tool,
-} from "kaji";
-import { MockProvider } from "kaji/testing";
+} from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 import { z } from "zod";
 
 class EchoIntegration extends Integration {

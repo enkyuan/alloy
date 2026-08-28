@@ -55,7 +55,7 @@ const CANONICAL_ECHO_ROW = {
   experimental_opt_in_required: false,
   next_commands: {
     python: "python -m kaji.cli add echo",
-    typescript: "bun --no-install -e 'import(\"kaji/cli\")' -- add echo",
+    typescript: "bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add echo",
   },
 };
 
@@ -68,7 +68,7 @@ const CANONICAL_GITHUB_ROW = {
   experimental_opt_in_required: false,
   next_commands: {
     python: "python -m kaji.cli add github",
-    typescript: "bun --no-install -e 'import(\"kaji/cli\")' -- add github",
+    typescript: "bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add github",
   },
 };
 
@@ -281,7 +281,7 @@ function localReceiptContext(commit: string | null): OrdinaryReceiptContext {
   return {
     executionMode: "local",
     packageArtifact: {
-      name: "kaji-0.2.0-beta.11.tgz",
+      name: "irogane-kaji-0.2.0-beta.11.tgz",
       size: 4096,
       sha256: "c".repeat(64),
     },
@@ -410,10 +410,10 @@ describe("npm contract artifact", () => {
         {
           commit: "a".repeat(40),
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+          artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
         },
-        "/artifacts/kaji-0.2.0-beta.11.tgz",
-        "/tmp/node_modules/kaji",
+        "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+        "/tmp/node_modules/@irogane/kaji",
         "v24.4.0",
         "11.4.2",
         "1.3.11",
@@ -451,10 +451,10 @@ describe("npm contract artifact", () => {
           {
             commit: "a".repeat(40),
             manifestSha256: "b".repeat(64),
-            artifactSha256: { "kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+            artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
           },
-          "/artifacts/kaji-0.2.0-beta.11.tgz",
-          "/tmp/node_modules/kaji",
+          "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+          "/tmp/node_modules/@irogane/kaji",
           "v24.4.0",
           "11.4.2",
           "1.3.11",
@@ -477,7 +477,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.2.0-beta.11.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -512,10 +512,10 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
-      "/artifacts/kaji-0.2.0-beta.11.tgz",
-      "/tmp/node_modules/kaji",
+      "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+      "/tmp/node_modules/@irogane/kaji",
       "v24.4.0",
       "11.4.2",
       "1.3.11",
@@ -528,7 +528,7 @@ describe("npm contract artifact", () => {
       schemaVersion: 2,
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.2.0-beta.11.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -659,7 +659,7 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
       "v24.4.0",
     );
@@ -688,7 +688,7 @@ describe("npm contract artifact", () => {
       ["githubPackageProofs", { npm: typedGitHubPackageProof }],
       ["timings", { npm: { coldSetupToOutputMs: 1, warmRunMs: 1 } }],
       ["toolchain", { node: "v24.4.0" }],
-      ["packageArtifact", { name: "kaji-0.2.0-beta.11.tgz" }],
+      ["packageArtifact", { name: "irogane-kaji-0.2.0-beta.11.tgz" }],
     ] as const) {
       const candidate = structuredClone(failed) as Record<string, unknown>;
       candidate[key] = claim;
@@ -738,7 +738,7 @@ describe("npm contract artifact", () => {
 
   it("uses the production workflow finalizer path with exact trusted inputs and bytes", () => {
     const root = mkdtempSync(join(tmpdir(), "kaji-protected-receipt-review-"));
-    const tarball = join(root, "kaji-0.2.0-beta.11.tgz");
+    const tarball = join(root, "irogane-kaji-0.2.0-beta.11.tgz");
     const bytes = Buffer.from("reviewed candidate package bytes");
     writeFileSync(tarball, bytes);
     const packageSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -768,7 +768,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.2.0-beta.11.tgz",
         size: bytes.length,
         sha256: packageSha256,
       },
@@ -804,10 +804,10 @@ describe("npm contract artifact", () => {
         {
           commit,
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "kaji-0.2.0-beta.11.tgz": packageSha256 },
+          artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": packageSha256 },
         },
         tarball,
-        "/tmp/node_modules/kaji",
+        "/tmp/node_modules/@irogane/kaji",
         "v24.4.0",
         "11.4.2",
         "1.3.11",
@@ -969,14 +969,16 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["kaji"]).toBe("file:kaji-0.2.0-beta.11.tgz");
-    expect(lock.packages["node_modules/kaji"].version).toBe("0.2.0-beta.11");
-    expect(lock.packages["node_modules/kaji"].resolved).toBe("file:kaji-0.2.0-beta.11.tgz");
-    expect(manifest.dependencies["kaji"]).not.toBe("file:kaji-0.2.0-beta.2.tgz");
+    expect(manifest.dependencies["@irogane/kaji"]).toBe("file:irogane-kaji-0.2.0-beta.11.tgz");
+    expect(lock.packages["node_modules/@irogane/kaji"].version).toBe("0.2.0-beta.11");
+    expect(lock.packages["node_modules/@irogane/kaji"].resolved).toBe(
+      "file:irogane-kaji-0.2.0-beta.11.tgz",
+    );
+    expect(manifest.dependencies["@irogane/kaji"]).not.toBe("file:kaji-0.2.0-beta.2.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
       [string, { resolved?: string; integrity?: string }]
     >) {
-      if (name === "" || name === "node_modules/kaji") continue;
+      if (name === "" || name === "node_modules/@irogane/kaji") continue;
       expect(value.resolved).toMatch(/^https:\/\/registry\.npmjs\.org\//);
       expect(value.integrity).toMatch(/^sha512-[A-Za-z0-9+/]+={0,2}$/);
     }
@@ -985,11 +987,11 @@ describe("npm contract artifact", () => {
   it("keeps the installed provider proof public-only and receipt-redacted", () => {
     const source = readFileSync(join(packageRoot, "scripts/installed-provider-proof.mts"), "utf8");
 
-    expect(source).toContain('from "kaji"');
-    expect(source).toContain('from "kaji/openai"');
-    expect(source).not.toContain('from "kaji/anthropic"');
+    expect(source).toContain('from "@irogane/kaji"');
+    expect(source).toContain('from "@irogane/kaji/openai"');
+    expect(source).not.toContain('from "@irogane/kaji/anthropic"');
     expect(source).not.toContain("ANTHROPIC_API_KEY");
-    expect(source).toContain('import.meta.resolve("kaji")');
+    expect(source).toContain('import.meta.resolve("@irogane/kaji")');
     expect(source).toContain(".build({ store: new InMemoryEventStore() })");
     for (const field of [
       "sdk",
@@ -1269,9 +1271,9 @@ describe("npm contract artifact", () => {
       "`${manager}:github-package-proof`",
       '"--sandbox-root"',
       '"--package-root"',
-      'from "kaji/integrations/github"',
-      'import * as github from "kaji/integrations/github";',
-      'const github = require("kaji/integrations/github");',
+      'from "@irogane/kaji/integrations/github"',
+      'import * as github from "@irogane/kaji/integrations/github";',
+      'const github = require("@irogane/kaji/integrations/github");',
       'writeFileSync(join(generated, "github-types.mts"), GITHUB_ESM_TYPES_SOURCE)',
       'writeFileSync(join(generated, "github-types.cts"), GITHUB_CJS_TYPES_SOURCE)',
       "githubPackageProofs: { npm: npmTiming.githubProof, bun: bunTiming.githubProof }",
@@ -1286,7 +1288,7 @@ describe("npm contract artifact", () => {
       'const nestedWorkdir = join(bootstrap, "nested", "deeper")',
       'BUN_CONFIG_REGISTRY: "http://127.0.0.1:9"',
       "nestedConflictProof: true",
-      'const cli = ["--no-install", "-e", \'import("kaji/cli")\', "--"]',
+      'const cli = ["--no-install", "-e", \'import("@irogane/kaji/cli")\', "--"]',
       "assertCliOwnerOutput(ownerOutput)",
       '[...cli, "--no-color", "add", "echo", "--out", echo]',
       '[...cli, "--no-color", "add", "github", "--out", github]',
@@ -1339,7 +1341,7 @@ describe("npm contract artifact", () => {
     }
 
     const scaffoldSource = readFileSync(join(packageRoot, "src/cli/init.ts"), "utf8");
-    expect(scaffoldSource).toContain('import { AgentBuilder } from "kaji"');
+    expect(scaffoldSource).toContain('import { AgentBuilder } from "@irogane/kaji"');
     expect(scaffoldSource).toContain("new AgentBuilder().provider(provider).build()");
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
@@ -1353,7 +1355,7 @@ describe("npm contract artifact", () => {
       'const githubModule = JSON.stringify(join(installedPackageRoot, "registry/github/index.ts"));',
     );
     expect(source).not.toContain('echoFinalText: "The echo tool returned hello."');
-    expect(source).not.toContain("node_modules/kaji/dist/cli/bin.js");
+    expect(source).not.toContain("node_modules/@irogane/kaji/dist/cli/bin.js");
     expect(source).not.toContain('if (!fields.get("text")');
     const expectedIntegrationExportList =
       '["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"]';
@@ -1537,10 +1539,10 @@ describe("npm contract artifact", () => {
       identity: {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
-      installedPackagePath: "/private/secret/sk-package-canary/node_modules/kaji",
+      installedPackagePath: "/private/secret/sk-package-canary/node_modules/@irogane/kaji",
       nodeVersion: "v24.11.0",
     };
     const receipt = ordinaryFailureReceipt(
@@ -1598,7 +1600,7 @@ describe("npm contract artifact", () => {
         manifestSha256: unsafeCanary,
         artifactSha256: {
           [`${unsafeCanary}.tgz`]: "c".repeat(64),
-          "kaji-0.2.0-beta.11.tgz": unsafeCanary,
+          "irogane-kaji-0.2.0-beta.11.tgz": unsafeCanary,
         },
       },
       `v24.0.0\n${unsafeCanary}`,
@@ -1706,7 +1708,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-0.2.0-beta.11.tgz": artifactHash },
+        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1766,7 +1768,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "kaji-0.2.0-beta.11.tgz": artifactHash },
+        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1945,8 +1947,8 @@ describe("npm contract artifact", () => {
       'source: "github-types.cts"',
       'config: "tsconfig.github-types-esm.json"',
       'config: "tsconfig.github-types-cjs.json"',
-      'import sdk = require("kaji");',
-      'import github = require("kaji/integrations/github");',
+      'import sdk = require("@irogane/kaji");',
+      'import github = require("@irogane/kaji/integrations/github");',
       "const roots: Integration[] = [direct, created, inspected]",
       "const roots: sdk.Integration[] = [direct, created, inspected]",
       'module: "NodeNext"',
@@ -1985,7 +1987,7 @@ describe("npm contract artifact", () => {
       expect(esmFixture).toContain(required);
     }
     for (const required of [
-      'import sdk = require("kaji");',
+      'import sdk = require("@irogane/kaji");',
       "const approvalInput: sdk.CliApprovalInput = {",
       "const approvalOutput: sdk.CliApprovalOutput = {",
       "const approvalOptions: sdk.CliApprovalOptions = {",
@@ -2294,9 +2296,9 @@ exit 7
       "publicScenarioCount: publicScenarios.length",
       "packageCatalog:",
       "cliCopiedCatalog:",
-      'const sdk = await import("kaji");',
-      'const testing = (await import("kaji/testing"))',
-      'await import("kaji/integrations/github")',
+      'const sdk = await import("@irogane/kaji");',
+      'const testing = (await import("@irogane/kaji/testing"))',
+      'await import("@irogane/kaji/integrations/github")',
       "const requirePackage = createRequire(import.meta.url);",
       'exactToolSpecs(inspected, packageAbi, "ESM")',
       'exactToolSpecs(requiredInspected, packageAbi, "CommonJS")',
@@ -2341,9 +2343,9 @@ exit 7
     ]) {
       expect(runner).toContain(required);
     }
-    expect(runner).not.toMatch(/import\s+\{[^}]*\}\s+from "kaji";/);
+    expect(runner).not.toMatch(/import\s+\{[^}]*\}\s+from "@irogane\/kaji";/);
     expect(runner.indexOf('Reflect.set(Socket.prototype, "connect"')).toBeLessThan(
-      runner.indexOf('const sdk = await import("kaji");'),
+      runner.indexOf('const sdk = await import("@irogane/kaji");'),
     );
     expect(runner).not.toContain("process.env.GITHUB_TOKEN");
     expect(runner).not.toContain("createGitHubRequester");
@@ -2380,8 +2382,8 @@ exit 7
   it("proves installed ESM and CommonJS GitHub class identity through the package root", () => {
     const runner = readFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), "utf8");
     for (const required of [
-      'requirePackage.resolve("kaji")',
-      'requirePackage.resolve("kaji/integrations/github")',
+      'requirePackage.resolve("@irogane/kaji")',
+      'requirePackage.resolve("@irogane/kaji/integrations/github")',
       "esmIdentityInspected instanceof sdk.Integration",
       "cjsIdentityInspected instanceof requiredSdk.Integration",
       "esmIdentityCreated instanceof github.GitHubIntegration",
@@ -2476,8 +2478,8 @@ exit 7
 
       const installed = realpathSync(join(extracted, "package"));
       const bootstrap = join(workdir, "bootstrap");
-      mkdirSync(join(bootstrap, "node_modules"), { recursive: true });
-      symlinkSync(installed, join(bootstrap, "node_modules", "kaji"), "dir");
+      mkdirSync(join(bootstrap, "node_modules", "@irogane"), { recursive: true });
+      symlinkSync(installed, join(bootstrap, "node_modules", "@irogane", "kaji"), "dir");
       symlinkSync(join(packageRoot, "node_modules"), join(installed, "node_modules"), "dir");
       symlinkSync(
         join(packageRoot, "node_modules", "@types"),
@@ -2496,13 +2498,13 @@ exit 7
   type CliApprovalInput,
   type CliApprovalOptions,
   type CliApprovalOutput,
-} from "kaji";
+} from "@irogane/kaji";
 import {
   GitHubIntegration,
   createGithubIntegration,
   inspectIntegration,
   type CreateGitHubIntegrationOptions,
-} from "kaji/integrations/github";
+} from "@irogane/kaji/integrations/github";
 const options: CreateGitHubIntegrationOptions = {
   tokenFor: async () => "proof",
   repositories: [],
@@ -2547,8 +2549,8 @@ void approvalOptions;
       );
       writeFileSync(
         join(bootstrap, "github-types.cts"),
-        `import sdk = require("kaji");
-import github = require("kaji/integrations/github");
+        `import sdk = require("@irogane/kaji");
+import github = require("@irogane/kaji/integrations/github");
 const options: github.CreateGitHubIntegrationOptions = {
   tokenFor: async () => "proof",
   repositories: [],
@@ -2829,7 +2831,7 @@ void approvalOptions;
         ],
         installOptions,
       );
-      writeConsumerManifest({ ...localDependencies, kaji: `file:${tarball}` });
+      writeConsumerManifest({ ...localDependencies, "@irogane/kaji": `file:${tarball}` });
       runText(
         "npm",
         [
@@ -2842,7 +2844,7 @@ void approvalOptions;
         ],
         installOptions,
       );
-      const installed = join(consumer, "node_modules/kaji");
+      const installed = join(consumer, "node_modules/@irogane/kaji");
       expect(lstatSync(installed).isSymbolicLink()).toBe(false);
       expect(realpathSync(installed).startsWith(`${realpathSync(consumer)}/`)).toBe(true);
       const exercise = `
@@ -2882,7 +2884,7 @@ console.log(JSON.stringify({
           [
             "--input-type=module",
             "--eval",
-            `const testing=await import("kaji/testing"); const root=await import("kaji"); const openai=await import("kaji/openai"); ${exercise}`,
+            `const testing=await import("@irogane/kaji/testing"); const root=await import("@irogane/kaji"); const openai=await import("@irogane/kaji/openai"); ${exercise}`,
           ],
           { cwd: consumer },
         ),
@@ -2897,7 +2899,7 @@ console.log(JSON.stringify({
           "node",
           [
             "--eval",
-            `void (async()=>{ const testing=require("kaji/testing"); const root=require("kaji"); const openai=require("kaji/openai"); ${exercise} })();`,
+            `void (async()=>{ const testing=require("@irogane/kaji/testing"); const root=require("@irogane/kaji"); const openai=require("@irogane/kaji/openai"); ${exercise} })();`,
           ],
           { cwd: consumer },
         ),
@@ -2913,13 +2915,13 @@ console.log(JSON.stringify({
         [
           "--input-type=module",
           "--eval",
-          'process.argv=["node","--help"]; await import("kaji/cli");',
+          'process.argv=["node","--help"]; await import("@irogane/kaji/cli");',
         ],
         { cwd: consumer },
       );
       const cjsCli = runText(
         "node",
-        ["--eval", 'process.argv=["node","--help"]; require("kaji/cli");'],
+        ["--eval", 'process.argv=["node","--help"]; require("@irogane/kaji/cli");'],
         { cwd: consumer },
       );
       expect(esmCli).toContain("usage: kaji");
@@ -2982,8 +2984,8 @@ console.log(JSON.stringify({
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
       expect(manifest.version).toBe("0.2.0-beta.11");
-      expect(packed[0]!.filename).toBe(`kaji-${manifest.version}.tgz`);
-      expect(packed[0]!.filename).not.toBe("kaji-0.2.0-beta.2.tgz");
+      expect(packed[0]!.filename).toBe(`irogane-kaji-${manifest.version}.tgz`);
+      expect(packed[0]!.filename).not.toBe("irogane-kaji-0.2.0-beta.2.tgz");
       expect(manifest.license).toBe("FSL-1.1-ALv2");
       expect(manifest.files).toContain("LICENSE");
       expect(manifest.exports["./cli"]).toEqual({

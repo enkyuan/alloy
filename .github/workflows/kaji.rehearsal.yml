@@ -370,7 +370,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.2.0-beta.11.tgz"] and
+                    keys == ["irogane-kaji-0.2.0-beta.11.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -591,7 +591,7 @@ jobs:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
           bun kaji/packages/ts/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+          .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
           --protected
@@ -607,7 +607,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
           KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
-          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           KAJI_COMPAT_RUNNER_LABEL: ${{ matrix.runner }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: ${{ needs.offline-release.outputs.artifact-digest }}

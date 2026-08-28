@@ -84,11 +84,13 @@ describe("kaji init", () => {
           expect(existsSync(join(root, "package.json"))).toBe(false);
           break;
         case "openai-provider":
-          expect(readFileSync(join(project, "agent.ts"), "utf8")).toContain('from "kaji/openai"');
+          expect(readFileSync(join(project, "agent.ts"), "utf8")).toContain(
+            'from "@irogane/kaji/openai"',
+          );
           break;
         case "anthropic-provider":
           expect(readFileSync(join(project, "agent.ts"), "utf8")).toContain(
-            'from "kaji/anthropic"',
+            'from "@irogane/kaji/anthropic"',
           );
           break;
         case "force":
@@ -149,8 +151,8 @@ describe("kaji init", () => {
     expect(tsconfig.compilerOptions.types).toEqual(["node"]);
     expect(tsconfig.compilerOptions.skipLibCheck).toBe(false);
     const agent = readFileSync(join(out, "agent.ts"), "utf8");
-    expect(agent).toContain('from "kaji/testing"');
-    expect(agent).toContain('import { AgentBuilder } from "kaji"');
+    expect(agent).toContain('from "@irogane/kaji/testing"');
+    expect(agent).toContain('import { AgentBuilder } from "@irogane/kaji"');
     expect(agent).toContain("new AgentBuilder().provider(provider).build()");
     expect(agent).not.toContain("InMemoryEventStore");
     expect(agent).not.toContain("purgeSession");

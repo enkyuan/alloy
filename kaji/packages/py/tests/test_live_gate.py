@@ -90,13 +90,13 @@ def _fake_installed_runtime(
     root = tmp_path / "installed"
     typescript = root / "ts"
     python_package = root / "python/lib/python3.14/site-packages/kaji/__init__.py"
-    typescript_package = typescript / "node_modules/kaji"
+    typescript_package = typescript / "node_modules/@irogane/kaji"
     typescript.mkdir(parents=True)
     python_package.parent.mkdir(parents=True)
     typescript_package.mkdir(parents=True)
     python_package.write_text("", encoding="utf-8")
     wheel = tmp_path / "artifacts/kaji-0.2.0b1-py3-none-any.whl"
-    tarball = tmp_path / "artifacts/kaji-0.2.0-beta.11.tgz"
+    tarball = tmp_path / "artifacts/irogane-kaji-0.2.0-beta.11.tgz"
     wheel.parent.mkdir(parents=True)
     wheel.write_bytes(b"wheel")
     tarball.write_bytes(b"tarball")
@@ -335,7 +335,7 @@ def test_protected_provider_proof_runs_two_openai_tool_loops_and_records_commit(
             "sha256": "c" * 64,
         },
         "typescript": {
-            "file": "kaji-0.2.0-beta.11.tgz",
+            "file": "irogane-kaji-0.2.0-beta.11.tgz",
             "sha256": "d" * 64,
         },
     }
@@ -440,9 +440,9 @@ def test_installed_provider_runners_use_only_public_package_imports() -> None:
     assert "kaji/src" not in python_source
     assert "AnthropicProvider" not in python_source
     assert "ANTHROPIC_API_KEY" not in python_source
-    assert 'from "kaji"' in typescript_source
-    assert 'from "kaji/openai"' in typescript_source
-    assert 'from "kaji/anthropic"' not in typescript_source
+    assert 'from "@irogane/kaji"' in typescript_source
+    assert 'from "@irogane/kaji/openai"' in typescript_source
+    assert 'from "@irogane/kaji/anthropic"' not in typescript_source
     assert "ANTHROPIC_API_KEY" not in typescript_source
     assert 'from "@/' not in typescript_source
     assert "/dist/" not in typescript_source

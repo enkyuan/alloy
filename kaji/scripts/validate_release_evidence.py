@@ -71,7 +71,7 @@ MAX_PUBLICATION_STATUS_BYTES = 256 * 1024
 IO_CHUNK_BYTES = 1024 * 1024
 PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
 PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
+TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 PRODUCER_ARTIFACT = "kaji-artifacts"
 EVIDENCE_ARTIFACT = "kaji-release-candidate-evidence"
 REHEARSAL_WORKFLOW_PATH = ".github/workflows/kaji.rehearsal.yml"
@@ -876,7 +876,7 @@ def validate_package_path(value: Any, runtime: str, workspace: Path) -> None:
     suffix = (
         "/site-packages/kaji/__init__.py"
         if runtime == "python"
-        else "/node_modules/kaji"
+        else "/node_modules/@irogane/kaji"
     )
     require(normalized.endswith(suffix), "resolved_package_invalid")
 

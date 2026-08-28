@@ -90,7 +90,7 @@ FAILURE_CODES = frozenset(
     }
 )
 
-PACKAGE_NAME = "kaji"
+PACKAGE_NAME = "@irogane/kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 SIGNER_REPOSITORY = "enkyuan/alloy"
 SIGNER_FILE_PATH = ".github/workflows/kaji.handoff.trusted.yml"

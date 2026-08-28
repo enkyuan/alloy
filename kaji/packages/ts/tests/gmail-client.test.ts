@@ -3,14 +3,14 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { type ToolExecutionContext } from "kaji";
+import { type ToolExecutionContext } from "@irogane/kaji";
 import {
   IntegrationAuthRequiredError,
   IntegrationPolicyError,
   IntegrationRateLimitedError,
   type BoundedResponse,
   type FixedOriginRequester,
-} from "kaji/integrations";
+} from "@irogane/kaji/integrations";
 import { GmailClient } from "../registry/gmail/client";
 
 function context(overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext {
