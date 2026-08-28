@@ -104,15 +104,15 @@ current macOS host only; it does not replace protected evidence below.
 Use the root wrapper as the default local gate before a beta checkpoint:
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py
+uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py
 ```
 
 The wrapper runs the non-keyed local checks below and fails clearly when
 required local tooling such as `bun` or `uv` is missing. This is an offline
 rehearsal, not provider-readiness evidence. The protected rehearsal and
-publish workflows are authoritative. `kaji-beta-onboarding` protects the
-deterministic TypeScript onboarding aggregate, `kaji-beta` protects the keyed
-OpenAI tool loop in both SDKs, and `kaji-beta-publish` protects publisher
+publish workflows are authoritative. `kaji-onboarding` protects the
+deterministic TypeScript onboarding aggregate, `kaji-release` protects the keyed
+OpenAI tool loop in both SDKs, and `kaji-publish` protects publisher
 identity and the sole npm write. A missing OpenAI credential blocks the
 release.
 
@@ -122,19 +122,19 @@ TypeScript optional provider imports, and cancellation error shape.
 
 | Gate                      | Command or workflow                                                             | Required for beta                                                   | Current evidence                       |
 | ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| Offline release rehearsal | `uv run --project kaji/packages/python python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Offline release rehearsal | `uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
 
 <!-- beta-parity-scenarios: 67 -->
 
-| Cross-SDK behavioral parity | `uv run --project kaji/packages/python python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
+| Cross-SDK behavioral parity | `uv run --project kaji/packages/py python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
 | Shared schemas and registry | `gate / kaji` / `beta release gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |
 | Node floor/latest artifacts | the same workflows on Node 22/24 | Yes | Pending protected run |
-| TypeScript onboarding evidence | exact current-run tarball and raw `kaji-beta-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` REST ZIPs, independently recomputed by calibration and the protected aggregate | Yes; npm and Bun install, scaffold, no-key, Echo lifecycle, cold, and warm phases on GitHub-hosted Linux/x64 Node 22 `ubuntu-22.04` and Node 24 `ubuntu-24.04`; no human, macOS/arm64, Windows, or fully offline onboarding claim | Pending protected run |
+| TypeScript onboarding evidence | exact current-run tarball and raw `kaji-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` REST ZIPs, independently recomputed by calibration and the protected aggregate | Yes; npm and Bun install, scaffold, no-key, Echo lifecycle, cold, and warm phases on GitHub-hosted Linux/x64 Node 22 `ubuntu-22.04` and Node 24 `ubuntu-24.04`; no human, macOS/arm64, Windows, or fully offline onboarding claim | Pending protected run |
 | Paired A/B benchmark | `kaji.performance.yml`: immutable reference artifacts and the exact candidate on three numbered GitHub-hosted `macos-15` matrix replicas in one run attempt; five adjacent matched pairs after two warmups per case, with retained raw runner/image receipts; diagnostic runner names may repeat | Yes; timing must pass unanimously at ≤1.20 across all three replicas, mixed timing is inconclusive, and any per-pair RSS ratio >1.20 is a hard failure | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30 --protected` on the exact candidate, with retained `macos-15` image provenance | Yes; independent of the paired benchmark | Pending protected run |
-| Keyed OpenAI proof | `live_provider_proof.py` in `kaji-beta` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
+| Keyed OpenAI proof | `live_provider_proof.py` in `kaji-release` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |

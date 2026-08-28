@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Commit runtime events through the canonical EventJournal, never its store or bus directly.
 files:
-  - "kaji/packages/python/src/kaji/runtime/**/*.py"
+  - "kaji/packages/py/src/runtime/**/*.py"
 rule:
   any:
     - pattern: self.store.append($$$ARGS)

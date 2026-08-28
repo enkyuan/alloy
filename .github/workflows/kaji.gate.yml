@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  kaji-beta-pr-gate:
-    name: beta release gate
+  kaji-pr-gate:
+    name: release gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -38,4 +38,4 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Run the canonical local Kaji CI gate
-        run: uv run --project kaji/packages/python --no-sync python kaji/scripts/beta_release_check.py --gate
+        run: uv run --project kaji/packages/py --no-sync python kaji/scripts/beta_release_check.py --gate

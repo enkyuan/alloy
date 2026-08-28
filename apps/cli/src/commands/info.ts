@@ -21,7 +21,7 @@ const FRAMEWORK_KEYS = [
   "solid-js",
 ];
 const KAJI_PREFIX = "@kaji/";
-const KAJI_SDK_PACKAGE = "kaji-sdk";
+const KAJI_SDK_PACKAGE = "kaji";
 const PROVIDER_KEYS = ["openai", "@anthropic-ai/sdk", "@google/genai", "google-genai"];
 
 function pickDeps(pkg: Record<string, unknown> | null, keys: string[]) {

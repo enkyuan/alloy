@@ -1,7 +1,7 @@
 # TypeScript onboarding evidence
 
 This policy records deterministic onboarding proof for the exact
-`kaji-sdk-0.2.0-beta.11.tgz` release candidate. It runs from the candidate
+`kaji-0.2.0-beta.11.tgz` release candidate. It runs from the candidate
 artifact rather than a source checkout and is required in both the rehearsal
 and tag-triggered protected release workflows.
 
@@ -23,7 +23,7 @@ runner and image evidence; they do not widen this onboarding claim.
 ## Exact inputs and retained output
 
 The workflow resolves exactly one unexpired artifact for each of
-`kaji-beta-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` from
+`kaji-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` from
 the current run attempt. It requeries each artifact by numeric ID, checks its
 canonical `sha256:<hex>` REST digest, current run ID, attempt `1`, head commit,
 and expected name, then authenticates the raw REST ZIP bytes before reading
@@ -33,7 +33,7 @@ download, or later same-named artifact cannot substitute.
 The unprotected `typescript-onboarding-archive-calibration` job and protected
 `typescript-onboarding-evidence` job independently repeat that lookup, byte
 authentication, receipt validation, and two-cell aggregate recomputation. The
-protected job waits at `kaji-beta-onboarding` only after calibration succeeds;
+protected job waits at `kaji-onboarding` only after calibration succeeds;
 it does not consume or trust calibration output.
 
 A successful protected job retains exactly these files in
@@ -133,8 +133,8 @@ For either TypeScript package manager, the installed CLI first stages Echo into
 
 <!-- tthw-echo:typescript:start -->
 ```ts
-import { AgentBuilder, EventType } from "kaji-sdk";
-import { MockProvider } from "kaji-sdk/testing";
+import { AgentBuilder, EventType } from "kaji";
+import { MockProvider } from "kaji/testing";
 import { EchoIntegration } from "./echo/index.ts";
 
 const runtime = new AgentBuilder()

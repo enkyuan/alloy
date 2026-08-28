@@ -75,7 +75,7 @@ def main() -> int:
             "test:integration",
             "tests/integration/openai-tools.test.ts",
         ],
-        cwd=ROOT / "kaji" / "packages" / "typescript",
+        cwd=ROOT / "kaji" / "packages" / "ts",
         environment=environment,
     )
     if status != 0:

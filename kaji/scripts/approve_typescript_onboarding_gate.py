@@ -22,9 +22,9 @@ API_VERSION = "2026-03-10"
 RUN_ATTEMPT = 1
 TAG = "kaji-v0.2.0-beta.11"
 
-ONBOARDING_ENVIRONMENT = "kaji-beta-onboarding"
-PROVIDER_ENVIRONMENT = "kaji-beta"
-PUBLISH_ENVIRONMENT = "kaji-beta-publish"
+ONBOARDING_ENVIRONMENT = "kaji-onboarding"
+PROVIDER_ENVIRONMENT = "kaji-release"
+PUBLISH_ENVIRONMENT = "kaji-publish"
 REVIEWER_TYPE = "User"
 REVIEWER_LOGIN = "enkyuan"
 REVIEWER_ID = 90286412
@@ -32,7 +32,7 @@ REVIEWER_ID = 90286412
 ONBOARDING_JOB_NAME = "TypeScript onboarding evidence"
 ARCHIVE_CALIBRATION_JOB_NAME = "TypeScript onboarding archive calibration"
 
-PRODUCER_ARTIFACT_NAME = "kaji-beta-artifacts"
+PRODUCER_ARTIFACT_NAME = "kaji-artifacts"
 NODE22_ARTIFACT_NAME = "kaji-node-compat-22"
 NODE24_ARTIFACT_NAME = "kaji-node-compat-24"
 

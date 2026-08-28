@@ -56,10 +56,10 @@ not represented as provider errors.
 ## Validate and synchronize
 
 ```bash
-uv run --project kaji/packages/python python kaji/scripts/sync_integration_contracts.py --check
-bun --filter kaji-sdk validate:registry
-bun --filter kaji-sdk check:integrations
-bun --filter kaji-sdk typecheck:registry
+uv run --project kaji/packages/py python kaji/scripts/sync_integration_contracts.py --check
+bun --filter kaji validate:registry
+bun --filter kaji check:integrations
+bun --filter kaji typecheck:registry
 ```
 
 Corrupt or unreadable indexed manifests are fatal. List commands must not hide

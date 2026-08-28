@@ -8,9 +8,9 @@
 ├── uv.lock                   # single workspace lockfile
 ├── kaji/
 │   └── packages/
-│       ├── python/           # the `kaji` SDK (Python), src at src/kaji/
+│       ├── py/               # the `kaji` SDK (Python), source at src/
 │       ├── serve/            # `kaji-serve` -- REST + Soniox STT
-│       └── typescript/       # `kaji-sdk` -- TypeScript SDK
+│       └── ts/               # `kaji` -- TypeScript SDK
 └── docker/
     ├── kaji/                 # Postgres and Supabase for kaji-serve
     └── ryo/                  # docker stack for the ryo product
@@ -78,10 +78,10 @@ tool worker.
 # from the repository root -- run uv sync once first
 
 # Core SDK tests (no database needed)
-uv run --package kaji-sdk pytest tests/
+uv run --project kaji/packages/py pytest kaji/packages/py/tests/
 
 # Reference service tests (DB tests need Postgres)
-uv run --package kaji-serve pytest tests/
+uv run --project kaji/packages/serve pytest kaji/packages/serve/tests/
 ```
 
 ## Quick Start

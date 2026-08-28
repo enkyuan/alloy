@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
@@ -34,7 +34,7 @@ on:
       - ".github/workflows/kaji.publish.yml"
   pull_request:
     paths:
-      - "kaji/packages/typescript/**"
+      - "kaji/packages/ts/**"
       - "packages/shared/**"
       - "ryo/auth/**"
       - "packages/ui/**"
@@ -72,12 +72,12 @@ concurrency:
 
 jobs:
   kaji-ts:
-    name: kaji/packages/typescript
+    name: kaji/packages/ts
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: kaji/packages/typescript
+        working-directory: kaji/packages/ts
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -87,7 +87,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
 
@@ -104,7 +104,7 @@ jobs:
         run: bun run test:coverage
 
   kaji-ts-install-smoke:
-    name: kaji/packages/typescript install smoke / Node ${{ matrix.node-version }}
+    name: kaji/packages/ts install smoke / Node ${{ matrix.node-version }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -113,7 +113,7 @@ jobs:
         node-version: ["22", "24"]
     defaults:
       run:
-        working-directory: kaji/packages/typescript
+        working-directory: kaji/packages/ts
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -123,7 +123,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bun-cache
         with:
-          working-directory: kaji/packages/typescript
+          working-directory: kaji/packages/ts
           bun-version: "1.3.11"
           install-args: --frozen-lockfile
 

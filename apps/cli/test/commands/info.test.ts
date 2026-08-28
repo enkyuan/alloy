@@ -14,7 +14,7 @@ describe("info command", () => {
   it("emits json with detected frameworks and kaji packages", async () => {
     const dir = tempProject({
       name: "x",
-      dependencies: { next: "15.0.0", "kaji-sdk": "0.1.0", openai: "6.0.0" },
+      dependencies: { next: "15.0.0", kaji: "0.1.0", openai: "6.0.0" },
     });
     const logs: string[] = [];
     const orig = console.log;
@@ -29,7 +29,7 @@ describe("info command", () => {
       expect.arrayContaining([expect.objectContaining({ name: "next", version: "15.0.0" })]),
     );
     expect(out.kaji.packages).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "kaji-sdk", version: "0.1.0" })]),
+      expect.arrayContaining([expect.objectContaining({ name: "kaji", version: "0.1.0" })]),
     );
     expect(out.providers).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "openai", version: "6.0.0" })]),

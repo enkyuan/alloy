@@ -1,7 +1,7 @@
 # kaji-serve
 
 The experimental FastAPI + voice reference service for the
-[Kaji SDK](../python/README.md).
+[Kaji SDK](../py/README.md).
 
 Wraps `kaji` as a service experiment with REST and a Soniox speech-to-text
 WebSocket. For the supported beta surface, embed the SDK in your own app.
@@ -26,7 +26,7 @@ Not included yet:
 - Load-tested voice/runtime production hardening.
 
 ```bash
-cd kaji/serve
+cd kaji/packages/serve
 uv sync
 ```
 
@@ -41,5 +41,5 @@ Before packaging, remove local Python caches from the repo tree from the repo
 root:
 
 ```bash
-uv run --project kaji python kaji/scripts/clean_caches.py --root kaji/serve
+uv run --project kaji/packages/py python kaji/scripts/clean_caches.py --root kaji/packages/serve
 ```

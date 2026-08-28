@@ -30,7 +30,7 @@ TYPESCRIPT_RUNNER = (
     ROOT
     / "kaji"
     / "packages"
-    / "typescript"
+    / "ts"
     / "scripts"
     / "installed-provider-proof.mts"
 )

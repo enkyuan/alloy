@@ -14,9 +14,9 @@ from typing import Any, Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
-    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-sdk-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
+    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
 }
 PYTHON_COMPATIBILITY_RECEIPT_FIELDS = {
     "artifactSha256",
@@ -122,7 +122,7 @@ TIMING_FIELDS = {"coldSetupToOutputMs", "warmRunMs"}
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 MAX_RELEASE_MANIFEST_BYTES = 1024 * 1024
 MAX_JSON_BYTES = 16 * 1024 * 1024
-TYPESCRIPT_TARBALL = "kaji-sdk-0.2.0-beta.11.tgz"
+TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
 EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop."
 PROTECTED_WORKFLOW_REFS = {
     "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
@@ -610,8 +610,8 @@ def validate_python_compatibility_receipt_v1(
         receipt.get("artifacts"), {"wheel", "sdist"}, f"{location}/artifacts"
     )
     expected_names = (
-        "kaji_sdk-0.2.0b1-py3-none-any.whl",
-        "kaji_sdk-0.2.0b1.tar.gz",
+        "kaji-0.2.0b1-py3-none-any.whl",
+        "kaji-0.2.0b1.tar.gz",
     )
     if (
         Path(str(artifact_paths["wheel"])).name != expected_names[0]
@@ -824,7 +824,7 @@ def _typescript_github_package_proof_valid(value: Any) -> bool:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/packages/typescript/tests/github-registry.test.ts",
+            "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
             "testName": (
                 "rejects approval for github_create_issue before token or HTTP"
             ),
@@ -1059,7 +1059,7 @@ def validate_node_compatibility_receipt_v2(
     for field in ("runId", "runAttempt"):
         _positive_safe_integer(invocation[field], f"{location}/invocation/{field}")
     if (
-        producer.get("name") != "kaji-beta-artifacts"
+        producer.get("name") != "kaji-artifacts"
         or not isinstance(producer.get("digest"), str)
         or CANONICAL_SHA256.fullmatch(producer["digest"]) is None
         or producer.get("runId") != invocation.get("runId")

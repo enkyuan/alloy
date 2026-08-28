@@ -3,7 +3,7 @@ language: Python
 message: Event infrastructure must depend only on core and contracts, never upward on runtime or integrations.
 severity: error
 files:
-  - "kaji/packages/python/src/kaji/infra/events/**/*.py"
+  - "kaji/packages/py/src/infra/events/**/*.py"
 rule:
   any:
     - pattern: import kaji.runtime

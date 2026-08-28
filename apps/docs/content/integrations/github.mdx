@@ -3,7 +3,7 @@ title: GitHub integration
 description: Wire the packaged TypeScript GitHub catalog with a repository allowlist, lazy credentials, read-only tool exposure, and explicit lifecycle ownership.
 ---
 
-`kaji-sdk/integrations/github` is a WIP TypeScript package subpath whose machine
+`kaji/integrations/github` is a WIP TypeScript package subpath whose machine
 registry tier is `experimental`. Its implemented subset provides bounded GitHub
 evidence and issue mutations. It uses a fixed
 `https://api.github.com` origin, rejects redirects, validates repository names
@@ -17,14 +17,14 @@ Install the public TypeScript beta and OpenAI peer, then export
 tooling. Replace `owner/repo` with every exact repository the agent may read.
 
 ```bash
-npm install kaji-sdk@0.2.0-beta.11 zod openai
+npm install kaji@0.2.0-beta.11 zod openai
 ```
 
 {/* docs-test:github-read-only:start */}
 
 ```ts
-import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji-sdk";
-import { createGithubIntegration } from "kaji-sdk/integrations/github";
+import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji";
+import { createGithubIntegration } from "kaji/integrations/github";
 
 const principalId = "github-investigator";
 const github = createGithubIntegration({

@@ -3,8 +3,8 @@ language: TypeScript
 severity: error
 message: Accumulate streamed tool arguments in LinearStringParts, never repeated string concatenation.
 files:
-  - "kaji/packages/typescript/src/providers/openai.ts"
-  - "kaji/packages/typescript/src/providers/anthropic.ts"
+  - "kaji/packages/ts/src/providers/openai.ts"
+  - "kaji/packages/ts/src/providers/anthropic.ts"
 rule:
   all:
     - any:

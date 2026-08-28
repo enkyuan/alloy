@@ -18,8 +18,8 @@ from typing import NoReturn
 from verify_npm_package import verify_npm_tarball
 from process_runner import METADATA_BUDGET, CommandError, run_checked
 
-PYTHON_PROJECT = "kaji-sdk"
-PYTHON_DISTRIBUTION = "kaji_sdk"
+PYTHON_PROJECT = "kaji"
+PYTHON_DISTRIBUTION = "kaji"
 PYTHON_VERSION = "0.2.0b1"
 TYPESCRIPT_VERSION = "0.2.0-beta.11"
 PYTHON_BUILD_REQUIREMENTS = {"setuptools==83.0.0", "editables==0.6"}
@@ -75,15 +75,15 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
-    sdk = repo / "kaji/packages/python"
-    ts = repo / "kaji/packages/typescript"
+    sdk = repo / "kaji/packages/py"
+    ts = repo / "kaji/packages/ts"
     artifacts = args.artifacts_dir
     if not artifacts.is_absolute():
         artifacts = repo / artifacts
     artifacts.mkdir(parents=True, exist_ok=True)
 
     python_metadata = tomllib.loads((sdk / "pyproject.toml").read_text())
-    python_source = (sdk / "src/kaji/__init__.py").read_text()
+    python_source = (sdk / "src/__init__.py").read_text()
     source_match = re.search(r'^__version__ = "([^"]+)"$', python_source, re.MULTILINE)
     typescript_metadata = json.loads((ts / "package.json").read_text())
     typescript_source = (ts / "src/index.ts").read_text()
@@ -200,9 +200,9 @@ def main() -> None:
     sdist = find_one(
         sdk / "dist", f"{PYTHON_DISTRIBUTION}-{python_version}.tar.gz", "Python sdist"
     )
-    tarballs = sorted(artifacts.glob("kaji-sdk-*.tgz"))
+    tarballs = sorted(artifacts.glob("kaji-*.tgz"))
     if not tarballs:
-        tarballs = sorted(ts.glob("kaji-sdk-*.tgz"))
+        tarballs = sorted(ts.glob("kaji-*.tgz"))
     if len(tarballs) != 1:
         fail(f"expected exactly one TypeScript tarball, found {len(tarballs)}")
     npm_tarball = tarballs[0]
@@ -272,7 +272,7 @@ def main() -> None:
             "uv": actual_tools["uv"],
         },
         "buildAudit": {
-            "file": "kaji/packages/python/build-requirements.txt",
+            "file": "kaji/packages/py/build-requirements.txt",
             "sha256": sha256(build_audit),
         },
         "packages": {

@@ -215,7 +215,7 @@ def mutate_sdist_package_test(files: TarFiles) -> None:
     )
     root = source.name.split("/", 1)[0]
     member = copy.copy(source)
-    member.name = f"{root}/src/kaji/integrations/registry/github/tests/test_extra.py"
+    member.name = f"{root}/src/integrations/registry/github/tests/test_extra.py"
     payload = b"def test_unexpected_package_payload():\n    pass\n"
     member.size = len(payload)
     files.append((member, payload))

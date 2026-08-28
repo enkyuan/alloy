@@ -28,8 +28,8 @@ from verify_release_artifacts import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = ROOT / "kaji" / "packages" / "python"
-TS = ROOT / "kaji" / "packages" / "typescript"
+SDK = ROOT / "kaji" / "packages" / "py"
+TS = ROOT / "kaji" / "packages" / "ts"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
 TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"
 TS_CONSUMER = Path(__file__).with_name("installed-typescript-runtime")
@@ -253,7 +253,7 @@ def _install_typescript(
         raise RuntimeError(
             "node and npm are required to construct the installed runtime"
         )
-    consumer = root / "typescript"
+    consumer = root / "ts"
     consumer.mkdir()
     template_hash, rendered_hash = _render_typescript_consumer(
         consumer,
@@ -288,8 +288,8 @@ def _install_typescript(
                 "import { realpathSync } from 'node:fs'; "
                 "import { dirname, join } from 'node:path'; "
                 "import { fileURLToPath } from 'node:url'; "
-                "await import('kaji-sdk'); "
-                "const entry=fileURLToPath(import.meta.resolve('kaji-sdk')); "
+                "await import('kaji'); "
+                "const entry=fileURLToPath(import.meta.resolve('kaji')); "
                 "console.log(JSON.stringify(realpathSync(join(dirname(entry), '..'))));"
             ),
         ],
@@ -340,16 +340,16 @@ def _render_typescript_consumer(
     packages = template.get("packages")
     root_package = packages.get("") if isinstance(packages, dict) else None
     sdk_package = (
-        packages.get("node_modules/kaji-sdk") if isinstance(packages, dict) else None
+        packages.get("node_modules/kaji") if isinstance(packages, dict) else None
     )
     if (
         not isinstance(manifest, dict)
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest.get("dependencies")
-        or manifest["dependencies"].get("kaji-sdk") != "file:kaji-sdk-0.2.0-beta.11.tgz"
+        or manifest["dependencies"].get("kaji") != "file:kaji-0.2.0-beta.11.tgz"
         or sdk_package.get("version") != "0.2.0-beta.11"
-        or sdk_package.get("resolved") != "file:kaji-sdk-0.2.0-beta.11.tgz"
+        or sdk_package.get("resolved") != "file:kaji-0.2.0-beta.11.tgz"
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
@@ -357,25 +357,23 @@ def _render_typescript_consumer(
     copied_tarball = consumer / typescript_tarball
     shutil.copyfile(tarball, copied_tarball)
     rendered_manifest = copy.deepcopy(manifest)
-    rendered_manifest["dependencies"]["kaji-sdk"] = f"file:{typescript_tarball}"
+    rendered_manifest["dependencies"]["kaji"] = f"file:{typescript_tarball}"
     (consumer / "package.json").write_text(
         json.dumps(rendered_manifest, indent=2) + "\n"
     )
     rendered = copy.deepcopy(template)
-    rendered["packages"][""]["dependencies"]["kaji-sdk"] = f"file:{typescript_tarball}"
-    rendered_sdk = rendered["packages"]["node_modules/kaji-sdk"]
+    rendered["packages"][""]["dependencies"]["kaji"] = f"file:{typescript_tarball}"
+    rendered_sdk = rendered["packages"]["node_modules/kaji"]
     rendered_sdk["version"] = typescript_version
     rendered_sdk["resolved"] = f"file:{typescript_tarball}"
     digest = hashlib.sha512(copied_tarball.read_bytes()).digest()
     rendered_sdk["integrity"] = "sha512-" + base64.b64encode(digest).decode("ascii")
 
     comparison = copy.deepcopy(rendered)
-    comparison["packages"][""]["dependencies"]["kaji-sdk"] = (
-        "file:kaji-sdk-0.2.0-beta.11.tgz"
-    )
-    comparison_sdk = comparison["packages"]["node_modules/kaji-sdk"]
+    comparison["packages"][""]["dependencies"]["kaji"] = "file:kaji-0.2.0-beta.11.tgz"
+    comparison_sdk = comparison["packages"]["node_modules/kaji"]
     comparison_sdk["version"] = "0.2.0-beta.11"
-    comparison_sdk["resolved"] = "file:kaji-sdk-0.2.0-beta.11.tgz"
+    comparison_sdk["resolved"] = "file:kaji-0.2.0-beta.11.tgz"
     comparison_sdk["integrity"] = sdk_package["integrity"]
     if comparison != template:
         raise RuntimeError("rendered consumer lock changed frozen registry packages")

@@ -3,7 +3,7 @@ language: Python
 severity: error
 message: Accumulate provider text in the bounded RuntimeStreamAccumulator.
 files:
-  - "kaji/packages/python/src/kaji/runtime/agents/runtime.py"
+  - "kaji/packages/py/src/runtime/agents/runtime.py"
 rule:
   all:
     - any:
