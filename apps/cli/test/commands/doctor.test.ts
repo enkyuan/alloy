@@ -69,7 +69,7 @@ describe("doctor.runChecks", () => {
 
   it("flags a missing required provider peer", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
-    writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
+    writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=anthropic\n");
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({ dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6" } }),
