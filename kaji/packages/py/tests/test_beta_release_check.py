@@ -1237,7 +1237,9 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         rendered["packages"]["node_modules/zod"]
         == template["packages"]["node_modules/zod"]
     )
-    assert rendered["packages"]["node_modules/@irogane/kaji"]["integrity"].startswith("sha512-")
+    assert rendered["packages"]["node_modules/@irogane/kaji"]["integrity"].startswith(
+        "sha512-"
+    )
     assert lock.read_text() == json.dumps(template)
 
 

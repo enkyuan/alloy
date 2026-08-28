@@ -3471,7 +3471,9 @@ def test_npm_verification_checks_downloaded_sri_audit_attestation_and_github_att
     assert evidence["integrity"] == integrity
     assert evidence["shasum"] == hashlib.sha1(payload).hexdigest()  # noqa: S324
     assert evidence["signatureAudit"]["packageVerified"] is True
-    assert (tmp_path / "registry-irogane-kaji-0.2.0-beta.11.tgz").read_bytes() == payload
+    assert (
+        tmp_path / "registry-irogane-kaji-0.2.0-beta.11.tgz"
+    ).read_bytes() == payload
     assert (tmp_path / "npm-signature-audit.json").is_file()
     assert (
         "npm",
@@ -4133,7 +4135,9 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         verified.python_wheel == (artifacts / "kaji-0.2.0b1-py3-none-any.whl").resolve()
     )
     assert verified.python_sdist == (artifacts / "kaji-0.2.0b1.tar.gz").resolve()
-    assert verified.npm_tarball == (artifacts / "irogane-kaji-0.2.0-beta.11.tgz").resolve()
+    assert (
+        verified.npm_tarball == (artifacts / "irogane-kaji-0.2.0-beta.11.tgz").resolve()
+    )
     with pytest.raises(TypeError):
         cast(MutableMapping[str, str], verified.artifact_sha256)["extra"] = (
             "not immutable"
@@ -5600,7 +5604,9 @@ def _archive_native_release_evidence_fixture(
                 "--artifacts-dir",
             )
         )
-        npm_bytes = (signed_artifacts_dir / "irogane-kaji-0.2.0-beta.11.tgz").read_bytes()
+        npm_bytes = (
+            signed_artifacts_dir / "irogane-kaji-0.2.0-beta.11.tgz"
+        ).read_bytes()
         signed_npm.write_bytes(npm_bytes)
         rebuilt_npm.write_bytes(npm_bytes)
         signed_evidence_digest = (
