@@ -21,10 +21,10 @@ the full five-step developer path and scope definition.
 ## Install
 
 ```bash
-npm install kaji@0.2.0-beta.11 zod openai        # OpenAI
+npm install @irogane/kaji@0.2.0-beta.11 zod openai        # OpenAI
 # or
-npm install kaji@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
-# or: bun add kaji@0.2.0-beta.11 zod openai
+npm install @irogane/kaji@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+# or: bun add @irogane/kaji@0.2.0-beta.11 zod openai
 ```
 
 `zod` is a required peer dependency (Zod 4). `openai` and `@anthropic-ai/sdk`
@@ -44,8 +44,8 @@ because this runtime has no enabled tools. Save this example as
 CommonJS project:
 
 ```ts
-import { AgentBuilder } from "kaji";
-import { MockProvider } from "kaji/testing";
+import { AgentBuilder } from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 
 const runtime = new AgentBuilder().provider(new MockProvider({ reply: "hello" })).build();
 const result = await runtime.turn("Say hello.");
@@ -75,7 +75,7 @@ caught typed provider error and `normalizeProviderError()` where applicable.
 Always page until an empty page; a short page is not proof of exhaustion.
 
 ```ts
-import type { AgentRuntime, StoredKajiEvent } from "kaji";
+import type { AgentRuntime, StoredKajiEvent } from "@irogane/kaji";
 
 async function pageHistory(runtime: AgentRuntime, sessionId: string, limit = 128) {
   const events: StoredKajiEvent[] = [];
@@ -187,7 +187,7 @@ export OPENAI_API_KEY=sk-...
 ```
 
 ```ts
-import { AgentBuilder, OpenAIProvider, Integration, deadlineAfter, tool } from "kaji";
+import { AgentBuilder, OpenAIProvider, Integration, deadlineAfter, tool } from "@irogane/kaji";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -232,8 +232,8 @@ investigation agent, opt into read-only exposure so the two mutation tools are
 not registered or sent to the model.
 
 ```ts
-import { AgentBuilder, OpenAIProvider, deadlineAfter } from "kaji";
-import { createGithubIntegration } from "kaji/integrations/github";
+import { AgentBuilder, OpenAIProvider, deadlineAfter } from "@irogane/kaji";
+import { createGithubIntegration } from "@irogane/kaji/integrations/github";
 
 const principalId = "github-investigator";
 const github = createGithubIntegration({
@@ -274,7 +274,7 @@ for the 15-tool catalog, mutation policy, limits, and unsupported surfaces.
 ### Gmail integration (experimental)
 
 Gmail ships as an **experimental** catalog entry. Unlike `github`, it has no
-`kaji/integrations/gmail` package subpath. You copy its source into your
+`@irogane/kaji/integrations/gmail` package subpath. You copy its source into your
 project and own it:
 
 ```bash
@@ -429,7 +429,7 @@ runtime executes them. All hosts use `TypedApprovalHandler` and return an
 that prints the tool name, risk, and arguments, then reads `y` / `N` on stdin:
 
 ```ts
-import { AgentBuilder, cliApprovalHandler, openai } from "kaji";
+import { AgentBuilder, cliApprovalHandler, openai } from "@irogane/kaji";
 
 const agent = new AgentBuilder()
   .provider(openai())
@@ -459,7 +459,7 @@ kaji replay <session.jsonl>            # render a stored JSONL session log
 ```
 
 This is the embedded `kaji` CLI. The standalone cross-language
-`@kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
+`@irogane/kaji/cli` scaffold has its own `--lang`/`--provider` options; Python's `kaji`
 package also exposes additional Python-only maintenance commands.
 Generated projects pin dotenvx and load `.env` from their `start` script after
 you copy `.env.example` to `.env`.
@@ -472,7 +472,7 @@ required only for catalog entries still marked experimental.
 For simple setups you can use the process-level registry:
 
 ```ts
-import { executeTool, registerTool, toolSpecFromSchema } from "kaji";
+import { executeTool, registerTool, toolSpecFromSchema } from "@irogane/kaji";
 import { z } from "zod";
 
 registerTool(
@@ -563,11 +563,11 @@ ANTHROPIC_API_KEY=... bun run test:integration
 ```
 
 `MockProvider` is a deterministic stub that exercises the full tool loop. It is
-available from `kaji/testing` for unit tests, not from the main package
+available from `@irogane/kaji/testing` for unit tests, not from the main package
 entrypoint used to build real agents.
 
 ```ts
-import { MockProvider } from "kaji/testing";
+import { MockProvider } from "@irogane/kaji/testing";
 ```
 
 ## Development

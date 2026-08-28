@@ -824,38 +824,38 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
     [
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"name": "kaji", "versions": {}},
             "version-unused",
         ),
         (
             404,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"error": "Not found"},
             "package-absent",
         ),
-        (404, "https://registry.npmjs.org/kaji", {}, None),
+        (404, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
         (404, "https://example.com/redirect", {"error": "Not found"}, None),
         (302, "https://example.com/redirect", {}, None),
-        (401, "https://registry.npmjs.org/kaji", {}, None),
-        (403, "https://registry.npmjs.org/kaji", {}, None),
-        (429, "https://registry.npmjs.org/kaji", {}, None),
-        (500, "https://registry.npmjs.org/kaji", {}, None),
+        (401, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (403, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (429, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (500, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"name": "wrong", "versions": {}},
             None,
         ),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"name": "kaji", "versions": []},
             None,
         ),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"name": "kaji", "versions": {"0.2.0-beta.11": {}}},
             None,
         ),
@@ -941,10 +941,10 @@ def test_release_registry_rejects_missing_token_without_network(
 @pytest.mark.parametrize(
     "result",
     [
-        (200, "https://registry.npmjs.org/kaji", b"{"),
+        (200, "https://registry.npmjs.org/@irogane%2Fkaji", b"{"),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             b"x" * (5 * 1024 * 1024 + 1),
         ),
         TimeoutError("registry timeout"),
@@ -1088,7 +1088,7 @@ def _stage_fixture(
         assert "NODE_AUTH_TOKEN" not in environment
         if command_tuple[:2] == ("npm", "pack"):
             pack_root = Path(command_tuple[-1])
-            filename = "kaji-0.2.0-beta.11.tgz"
+            filename = "irogane-kaji-0.2.0-beta.11.tgz"
             (pack_root / filename).write_bytes(tarball_payload)
             output = json.dumps(
                 [
@@ -1157,7 +1157,7 @@ def test_stage_runs_frozen_commands_builds_once_and_packs_once(
         "source-equivalence.json",
         "signature-verification.json",
         "pack-once.json",
-        "kaji-0.2.0-beta.11.tgz",
+        "irogane-kaji-0.2.0-beta.11.tgz",
     }
 
 
@@ -1173,7 +1173,7 @@ def test_stage_fsyncs_tarball_before_receipts_and_atomic_publication(
 
     def fsync_file(path: Path) -> None:
         events.append(("file-fsync", path, None))
-        assert path.name == "kaji-0.2.0-beta.11.tgz"
+        assert path.name == "irogane-kaji-0.2.0-beta.11.tgz"
         assert path.parent.name.startswith(".stage.tmp-")
         assert not (path.parent / ".pack" / path.name).exists()
         original_fsync_file(path)
@@ -1257,7 +1257,7 @@ def test_stage_rejects_pack_metadata_disagreement_and_cleans_owned_temp(
 
     def runner(command: Any, _cwd: Path, _environment: Any) -> Any:
         if tuple(command)[:2] == ("npm", "pack"):
-            path = Path(command[-1]) / "kaji-0.2.0-beta.11.tgz"
+            path = Path(command[-1]) / "irogane-kaji-0.2.0-beta.11.tgz"
             path.write_bytes(b"artifact")
             return handoff.CompletedCommand(
                 returncode=0,
@@ -1411,7 +1411,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         output_dir=output,
     )
     assert set(path.name for path in output.iterdir()) == {
-        "kaji-0.2.0-beta.11.tgz",
+        "irogane-kaji-0.2.0-beta.11.tgz",
         "kaji.manifest.json",
         "kaji-ts-consumer-handoff-v1.schema.json",
     }

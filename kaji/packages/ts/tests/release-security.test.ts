@@ -101,11 +101,11 @@ function independentAliasValid(schema: HandoffSchema, definition: string, value:
 }
 
 function npmPackBasenameV1(schema: HandoffSchema, name: string, version: string): string {
-  if (name !== "kaji") throw new Error("unexpected package name");
+  if (name !== "@irogane/kaji") throw new Error("unexpected package name");
   if (!independentAliasValid(schema, "semver", version)) {
     throw new Error("invalid package version");
   }
-  return `${name}-${version}.tgz`;
+  return `irogane-kaji-${version}.tgz`;
 }
 
 describe("TypeScript consumer handoff schema", () => {
@@ -127,13 +127,13 @@ describe("TypeScript consumer handoff schema", () => {
       expect(semver(testCase.value), testCase.value).toBe(testCase.valid);
       if (testCase.valid) {
         expect(independentAliasValid(schema, "semver", testCase.value)).toBe(true);
-        const derived = npmPackBasenameV1(schema, "kaji", testCase.value);
+        const derived = npmPackBasenameV1(schema, "@irogane/kaji", testCase.value);
         expect(derived).toBe(testCase.basename);
         expect(basename(derived), derived).toBe(true);
       } else {
         expect(testCase.basename).toBeUndefined();
         expect(independentAliasValid(schema, "semver", testCase.value)).toBe(false);
-        expect(() => npmPackBasenameV1(schema, "kaji", testCase.value)).toThrow(
+        expect(() => npmPackBasenameV1(schema, "@irogane/kaji", testCase.value)).toThrow(
           "invalid package version",
         );
       }
@@ -1292,7 +1292,7 @@ function signedBetaFixture() {
       name: "kaji-release-candidate-evidence",
     },
     npmTarball: {
-      name: "kaji-0.2.0-beta.11.tgz",
+      name: "irogane-kaji-0.2.0-beta.11.tgz",
       sha256: npmTarballSha256,
     },
     rehearsal: {
@@ -1534,7 +1534,7 @@ cat "$KAJI_FIXTURE_ROOT/$file"
         EXPECTED_EVIDENCE_ARTIFACT_NAME: "kaji-release-candidate-evidence",
         EXPECTED_EVIDENCE_ARTIFACT_DIGEST: fixture.expected.evidenceArtifactDigest,
         EXPECTED_RELEASE_MANIFEST_SHA256: fixture.expected.releaseManifestSha256,
-        EXPECTED_NPM_TARBALL_NAME: "kaji-0.2.0-beta.11.tgz",
+        EXPECTED_NPM_TARBALL_NAME: "irogane-kaji-0.2.0-beta.11.tgz",
         EXPECTED_NPM_TARBALL_SHA256: fixture.expected.npmTarballSha256,
       },
     });
@@ -1887,13 +1887,13 @@ function runExactVersionRegistryAbsence(
     packumentHttp: "404",
     packumentBody: '{"error":"Not found"}',
     packumentContentType: "application/json",
-    packumentEffectiveUrl: "https://registry.npmjs.org/kaji",
+    packumentEffectiveUrl: "https://registry.npmjs.org/@irogane%2Fkaji",
     packumentRedirects: "0",
     packumentTransportStatus: "0",
     targetHttp: "404",
     targetBody: '"Not Found"',
     targetContentType: "application/json",
-    targetEffectiveUrl: "https://registry.npmjs.org/kaji/0.2.0-beta.11",
+    targetEffectiveUrl: "https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11",
     targetRedirects: "0",
     targetTransportStatus: "0",
     ...overrides,
@@ -1944,11 +1944,11 @@ case "$url" in
     key=CONTROL
     body_file="$KAJI_FIXTURE_ROOT/control.json"
     ;;
-  https://registry.npmjs.org/kaji)
+  https://registry.npmjs.org/@irogane%2Fkaji)
     key=PACKUMENT
     body_file="$KAJI_FIXTURE_ROOT/packument.json"
     ;;
-  https://registry.npmjs.org/kaji/0.2.0-beta.11)
+  https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11)
     key=TARGET
     body_file="$KAJI_FIXTURE_ROOT/target.json"
     ;;
@@ -2046,7 +2046,7 @@ case "$url" in
     body="$KAJI_FIXTURE_ROOT/control.json"
     http=200
     ;;
-  https://registry.npmjs.org/kaji/0.2.0-beta.11)
+  https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11)
     body="$KAJI_FIXTURE_ROOT/target.json"
     http=404
     ;;
@@ -3060,7 +3060,7 @@ describe("Kaji workflow contracts", () => {
       '[ "sha256:$(sha256sum "$archive" | cut -d\' \' -f1)" = "$SIGNED_CANDIDATE_DIGEST" ]',
       "zipfile.ZipFile",
       '"SHA256SUMS"',
-      '"kaji-0.2.0-beta.11.tgz"',
+      '"irogane-kaji-0.2.0-beta.11.tgz"',
       '"kaji-0.2.0b1-py3-none-any.whl"',
       '"kaji-0.2.0b1.tar.gz"',
       '"manifest.json"',
@@ -3201,14 +3201,14 @@ describe("Kaji workflow contracts", () => {
       packageManifest.version,
     );
 
-    expect(packageManifest.name).toBe("kaji");
+    expect(packageManifest.name).toBe("@irogane/kaji");
     expect(packageManifest.version).toBe("0.2.0-beta.11");
     expect(packageManifest.version).not.toBe("0.2.0-beta.2");
     expect(packageManifest.version).not.toBe("0.2.0-beta.4");
     expect(sourceVersion?.[1]).toBe(packageManifest.version);
     expect(packageSmokeVersion?.[1]).toBe(packageManifest.version);
-    expect(tarball).toBe(`kaji-${packageManifest.version}.tgz`);
-    expect(tarball).toBe("kaji-0.2.0-beta.11.tgz");
+    expect(tarball).toBe(`irogane-kaji-${packageManifest.version}.tgz`);
+    expect(tarball).toBe("irogane-kaji-0.2.0-beta.11.tgz");
     if (existsSync(resolve("dist"))) {
       const exportedIdentityPaths = new Set([
         packageManifest.main,
@@ -3505,7 +3505,7 @@ describe("Kaji workflow contracts", () => {
         }
         const finalizerRun = steps[finalizer]?.run ?? "";
         expect(steps[finalizer]?.env).toMatchObject({
-          KAJI_COMPAT_CANDIDATE_TARBALL: ".artifacts/kaji-release/kaji-0.2.0-beta.11.tgz",
+          KAJI_COMPAT_CANDIDATE_TARBALL: ".artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz",
           KAJI_COMPAT_RUNNER_LABEL: "${{ matrix.runner }}",
           KAJI_COMPAT_PRODUCER_ARTIFACT_ID: `\${{ needs.${producer}.outputs.artifact-id }}`,
           KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: `\${{ needs.${producer}.outputs.artifact-digest }}`,
@@ -4449,8 +4449,8 @@ describe("Kaji workflow contracts", () => {
     for (const step of [preflight, immediate]) {
       for (const fragment of [
         "https://registry.npmjs.org/tiny-tarball/1.0.0",
-        "https://registry.npmjs.org/kaji",
-        "https://registry.npmjs.org/kaji/0.2.0-beta.11",
+        "https://registry.npmjs.org/@irogane%2Fkaji",
+        "https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11",
         "--connect-timeout 10",
         "--proto '=https'",
         "--tlsv1.2",
@@ -4475,7 +4475,7 @@ describe("Kaji workflow contracts", () => {
     expect(JSON.stringify(immediate)).not.toMatch(
       /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\.|KAJI_NPM_PUBLISHER/u,
     );
-    expect(classifier.run).toContain("https://registry.npmjs.org/kaji/0.2.0-beta.11");
+    expect(classifier.run).toContain("https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11");
     expect(classifier.run).toContain('type == "string" and . == "Not Found"');
     for (const fragment of [
       "https://registry.npmjs.org/tiny-tarball/1.0.0",
@@ -4491,9 +4491,9 @@ describe("Kaji workflow contracts", () => {
       expect(classifier.run, fragment).toContain(fragment);
     }
     for (const step of [preflight, immediate, classifier]) {
-      expect(step.run).toContain("https://registry.npmjs.org/kaji/0.2.0-beta.11");
+      expect(step.run).toContain("https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11");
     }
-    expect(classifier.run).toContain('.name == "kaji"');
+    expect(classifier.run).toContain('.name == "@irogane/kaji"');
     expect(classifier.run).toContain('.version == "0.2.0-beta.11"');
 
     for (const [jobId, stepName] of [
@@ -4528,7 +4528,7 @@ describe("Kaji workflow contracts", () => {
           // A redirect to a DIFFERENT url than requested must be rejected. Keep this
           // distinct from the requested target (.../0.2.0-beta.11) so the effective_url
           // != url guard fires; this is a mismatch case, not a version-bump target.
-          { targetEffectiveUrl: "https://registry.npmjs.org/kaji/0.2.0-beta.0" },
+          { targetEffectiveUrl: "https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.0" },
         ],
         ["target oversized body", { targetBody: `"${"x".repeat(70_000)}"` }],
       ] as const) {
@@ -4648,7 +4648,7 @@ describe("Kaji workflow contracts", () => {
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji/scripts/attach_release_assets.py"),
     )?.run;
-    expect(releaseAttach).toContain("kaji-0.2.0-beta.11.tgz");
+    expect(releaseAttach).toContain("irogane-kaji-0.2.0-beta.11.tgz");
     for (const forbidden of [
       "kaji-0.2.0b1-py3-none-any.whl",
       "kaji-0.2.0b1.tar.gz",
@@ -5160,7 +5160,7 @@ describe("Kaji workflow contracts", () => {
       path.replace(/\s+$/u, ""),
     );
     expect(attachedPaths).toEqual([
-      ".artifacts/kaji-release/kaji-0.2.0-beta.11.tgz",
+      ".artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz",
       ".artifacts/kaji-release/manifest.json",
       ".artifacts/kaji-release/SHA256SUMS",
       ".artifacts/kaji-evidence/offline-gates.log",
@@ -5184,8 +5184,8 @@ describe("Kaji workflow contracts", () => {
       ".artifacts/kaji-publication-status/registry-verification.json",
       ".artifacts/kaji-publication-status/publication-status.json",
       ".artifacts/kaji-publication-status/publication-status.md",
-      ".artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz",
-      ".artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz.github-attestation.json",
+      ".artifacts/kaji-publication-status/downloaded/registry-irogane-kaji-0.2.0-beta.11.tgz",
+      ".artifacts/kaji-publication-status/downloaded/registry-irogane-kaji-0.2.0-beta.11.tgz.github-attestation.json",
       ".artifacts/kaji-publication-status/downloaded/npm-signature-audit.json",
     ]);
   });

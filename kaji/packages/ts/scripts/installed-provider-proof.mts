@@ -5,8 +5,8 @@ import { realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "kaji";
-import { OpenAIProvider } from "kaji/openai";
+import { AgentBuilder, EventType, InMemoryEventStore, ToolRegistry } from "@irogane/kaji";
+import { OpenAIProvider } from "@irogane/kaji/openai";
 
 const MARKER = "kaji-installed-provider-proof-marker";
 const PROVIDER_KEYS = { openai: "OPENAI_API_KEY" } as const;
@@ -44,7 +44,7 @@ class EchoProofIntegration {
 }
 
 function resolvedPackage(): string {
-  const entry = fileURLToPath(import.meta.resolve("kaji"));
+  const entry = fileURLToPath(import.meta.resolve("@irogane/kaji"));
   return realpathSync(join(dirname(entry), ".."));
 }
 

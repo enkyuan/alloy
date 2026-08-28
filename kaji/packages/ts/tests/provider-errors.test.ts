@@ -11,7 +11,7 @@ import {
   ToolExecutionError,
   normalizeProviderError,
   type NormalizedProviderError,
-} from "kaji";
+} from "@irogane/kaji";
 import { providerAPIErrorFromUnknown } from "@/providers/errors";
 import { inspect } from "node:util";
 

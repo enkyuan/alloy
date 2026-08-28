@@ -88,7 +88,15 @@ function shellQuote(value: string): string {
 }
 
 function nextCommand(status: BundleStatus, manifest: LoadedIntegrationManifest): string {
-  const command = ["bun", "--no-install", "-e", 'import("kaji/cli")', "--", "add", manifest.name];
+  const command = [
+    "bun",
+    "--no-install",
+    "-e",
+    'import("@irogane/kaji/cli")',
+    "--",
+    "add",
+    manifest.name,
+  ];
   if (manifest.stability === "experimental") command.push("--allow-experimental");
   command.push("--out", status.destination);
   if (status.state === "outdated") command.push("--force");

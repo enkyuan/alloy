@@ -21,7 +21,7 @@
  *     factory passes `permissions: { network: "deny" }` and a bounded mount.
  *     Nothing here is "safe by default"; it is safe because we set it.
  */
-import { Integration, type ToolHandler, type ToolSpec } from "kaji";
+import { Integration, type ToolHandler, type ToolSpec } from "@irogane/kaji";
 // Type-only import is erased at runtime, so it does not require the native dep
 // to be installed for typechecking of code that does not construct a VM.
 import type { AgentOs, AgentOsOptions } from "@rivet-dev/agentos-core";

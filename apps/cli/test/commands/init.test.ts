@@ -23,7 +23,7 @@ describe("init command", () => {
     expect(existsSync(join(dir, "agent.ts"))).toBe(true);
     expect(existsSync(join(dir, ".env.example"))).toBe(true);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
-    expect(agent).toMatch(/from "kaji"/);
+    expect(agent).toContain('from "@irogane/kaji"');
     expect(agent).toMatch(/new OpenAIProvider\(\{ apiKey \}\)/);
     expect(agent).toMatch(/\.provider\(provider\)/);
     expect(agent).toMatch(/\.turn\("Say hello\."\)/);
@@ -48,7 +48,7 @@ describe("init command", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
     await init.parseAsync(["node", "kaji", "--cwd", dir, "--lang", "ts", "--yes"]);
     const agent = readFileSync(join(dir, "agent.ts"), "utf-8");
-    expect(agent).toContain('import { MockProvider } from "kaji/testing"');
+    expect(agent).toContain('import { MockProvider } from "@irogane/kaji/testing"');
     expect(agent).toContain("const provider = new MockProvider()");
     const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
     expect(pkg.dependencies.openai).toBeUndefined();

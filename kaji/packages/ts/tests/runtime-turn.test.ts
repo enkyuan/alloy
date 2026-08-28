@@ -23,7 +23,7 @@ import {
   type ModelResponseChunk,
   type ProviderMessage,
   type ToolIdempotencyLedger,
-} from "kaji";
+} from "@irogane/kaji";
 import { MockProvider } from "@/providers/mock";
 import {
   authorizedListenerTeardown,

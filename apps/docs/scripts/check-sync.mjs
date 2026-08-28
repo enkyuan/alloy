@@ -80,9 +80,9 @@ const pythonVersion = pythonProject.match(/^version = "([^"]+)"$/m)?.[1];
 if (pythonVersion === undefined) fail("Python package version could not be read");
 requireText(install, `\`${pythonVersion}\``, "install guide");
 requireText(install, `\`${typescriptPackage.version}\``, "install guide");
-const npmPackageUrl = `https://www.npmjs.com/package/kaji/v/${typescriptPackage.version}`;
-const npmOpenaiInstall = `npm install kaji@${typescriptPackage.version} zod openai`;
-const bunOpenaiInstall = `bun add kaji@${typescriptPackage.version} zod openai`;
+const npmPackageUrl = `https://www.npmjs.com/package/@irogane/kaji/v/${typescriptPackage.version}`;
+const npmOpenaiInstall = `npm install @irogane/kaji@${typescriptPackage.version} zod openai`;
+const bunOpenaiInstall = `bun add @irogane/kaji@${typescriptPackage.version} zod openai`;
 requireText(install, npmPackageUrl, "install guide npm package link");
 requireText(gettingStarted, npmPackageUrl, "getting-started npm package link");
 requireText(install, npmOpenaiInstall, "install guide npm command");
@@ -90,7 +90,7 @@ requireText(install, bunOpenaiInstall, "install guide Bun command");
 requireText(landingPage, npmOpenaiInstall, "landing install command");
 requireText(
   gettingStarted,
-  `npm install kaji@${typescriptPackage.version} zod`,
+  `npm install @irogane/kaji@${typescriptPackage.version} zod`,
   "published-package tutorial",
 );
 requireText(gettingStarted, "npm install --save-dev tsx@4.22.4", "pinned TypeScript runner");

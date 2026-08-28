@@ -161,7 +161,7 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
             if stream is None or stream.read() != expected_payload:
                 fail(f"npm tarball file differs from checkout: {relative}")
 
-    if package.get("name") != "kaji" or package.get("version") != "0.2.0-beta.11":
+    if package.get("name") != "@irogane/kaji" or package.get("version") != "0.2.0-beta.11":
         fail("npm package name/version are not the approved beta coordinates")
     if package.get("license") != "FSL-1.1-ALv2":
         fail("npm package license metadata is not canonical")

@@ -29,16 +29,16 @@ import {
   type TimerScheduler,
   type ToolExecutionContext,
   type ToolSpec,
-} from "kaji";
-import { OpenAIProvider } from "kaji/openai";
+} from "@irogane/kaji";
+import { OpenAIProvider } from "@irogane/kaji/openai";
 import {
   createSessionState,
   type ProviderResponseDiagnostics,
   withProviderResponseDiagnostics,
-} from "kaji/testing";
+} from "@irogane/kaji/testing";
 
 const RESOLVED_PACKAGE = realpathSync(
-  join(dirname(fileURLToPath(import.meta.resolve("kaji"))), ".."),
+  join(dirname(fileURLToPath(import.meta.resolve("@irogane/kaji"))), ".."),
 );
 
 const CASES = [

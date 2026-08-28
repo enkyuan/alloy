@@ -92,7 +92,7 @@ it does not promote the integration.
 ## Normalized provider errors
 
 Catch the package-root `ProviderError` (`from kaji import ProviderError` or
-`import { ProviderError } from "kaji"`) and pass it to
+`import { ProviderError } from "@irogane/kaji"`) and pass it to
 `normalize_provider_error()` or `normalizeProviderError()`. All Kaji provider
 auth, rate-limit, network, configuration, and API failures cross that boundary.
 Do not pass arbitrary vendor exceptions or log raw provider responses, causes,

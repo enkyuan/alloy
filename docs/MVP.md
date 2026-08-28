@@ -15,7 +15,7 @@ Both SDKs target the same five-step developer path:
 Before you write any code:
 
 1. **Prepare an SDK** (`uv sync --project kaji/packages/py --extra openai` from the source
-   checkout for Python, or `npm install kaji@0.2.0-beta.11 zod` for
+   checkout for Python, or `npm install @irogane/kaji@0.2.0-beta.11 zod` for
    TypeScript after protected npm publication)
 2. **Install the OpenAI provider SDK** for the beta-supported live path
 3. **Set `OPENAI_API_KEY`** for live OpenAI runs. The installed-package mock
@@ -66,7 +66,7 @@ it in [`docs/kaji/`](kaji/).
 | First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.                              | Catalog contract implemented; production third-party integrations remain out of MVP. |
 | Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                                    | Implemented.                                                                         |
 | Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                                       | Implemented.                                                                         |
-| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `kaji/testing`.                                       | Implemented; keep docs honest.                                                       |
+| Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `@irogane/kaji/testing`.                                       | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
 
@@ -150,9 +150,9 @@ The Python distribution is not published to PyPI for this release.
 **TypeScript**
 
 ```bash
-npm install kaji@0.2.0-beta.11 zod openai        # OpenAI
+npm install @irogane/kaji@0.2.0-beta.11 zod openai        # OpenAI
 # or
-npm install kaji@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+npm install @irogane/kaji@0.2.0-beta.11 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 ```
 
 ### Step 2 - Configure provider
@@ -181,10 +181,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ```ts
-import { OpenAIProvider } from "kaji";
+import { OpenAIProvider } from "@irogane/kaji";
 const provider = new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! });
 // Experimental/WIP alternative:
-import { AnthropicProvider } from "kaji";
+import { AnthropicProvider } from "@irogane/kaji";
 const provider = new AnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY! });
 ```
 
@@ -205,9 +205,9 @@ OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
 **TypeScript**
 
 ```bash
-bun --filter kaji test:quickstart
+bun --filter @irogane/kaji test:quickstart
 OPENAI_API_KEY=... KAJI_LIVE_OPENAI_MODEL=gpt-5.4-mini \
-  bun --filter kaji test:integration tests/integration/openai-tools.test.ts
+  bun --filter @irogane/kaji test:integration tests/integration/openai-tools.test.ts
 ```
 
 These developer tests may skip without keys, but a skip is not release
@@ -245,7 +245,7 @@ The same keyed proof can be included in the wrapper with
 
 ### Step 2.6 - Scaffold the first run
 
-The cross-language `@kaji/cli` scaffold should lead to the same public SDK API
+The cross-language `@irogane/kaji/cli` scaffold should lead to the same public SDK API
 as the hand-written quickstarts:
 
 ```bash
@@ -293,7 +293,7 @@ class WeatherIntegration(Integration):
 **TypeScript**
 
 ```ts
-import { Integration, tool } from "kaji";
+import { Integration, tool } from "@irogane/kaji";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -339,7 +339,7 @@ asyncio.run(main())
 **TypeScript**
 
 ```ts
-import { AgentBuilder } from "kaji";
+import { AgentBuilder } from "@irogane/kaji";
 
 const runtime = new AgentBuilder()
   .provider(provider) // from step 2
@@ -527,7 +527,7 @@ Implemented Python changes:
 Target TypeScript shape:
 
 ```ts
-import { Integration, tool } from "kaji";
+import { Integration, tool } from "@irogane/kaji";
 import { z } from "zod";
 
 class WeatherIntegration extends Integration {
@@ -670,14 +670,14 @@ Status: implemented for the package entrypoints. The Python top-level `kaji`
 namespace includes the stable runtime plus documented experimental extensions;
 top-level importability does not promote RAG/retrieval into the beta promise.
 The TypeScript main entrypoint does not export the deterministic test provider;
-tests import it from `kaji/testing`.
+tests import it from `@irogane/kaji/testing`.
 
 Required changes:
 
 - Keep top-level exports for stable MVP names: events, builder/runtime,
   providers, integrations, tools, sessions, policies, and cancellation.
 - Move non-MVP features in docs to explicit subpackage imports.
-- Use `kaji/testing` for TypeScript test-only helpers such as
+- Use `@irogane/kaji/testing` for TypeScript test-only helpers such as
   `MockProvider`.
 - Add `test_public_api.py` assertions for the names that must stay available in
   the five-step path.

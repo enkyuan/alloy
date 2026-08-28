@@ -3,8 +3,8 @@ import { resolve } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { ToolRegistry, type ToolExecutionContext } from "kaji";
-import type { BoundedResponse, FixedOriginRequester } from "kaji/integrations";
+import { ToolRegistry, type ToolExecutionContext } from "@irogane/kaji";
+import type { BoundedResponse, FixedOriginRequester } from "@irogane/kaji/integrations";
 import { GmailClient } from "../registry/gmail/client";
 import {
   GmailIntegration,

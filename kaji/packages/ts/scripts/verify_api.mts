@@ -9,10 +9,10 @@
  * release gate uses smoke_package.mts to create that project.
  */
 
-const sdk = await import("kaji");
-const testing = await import("kaji/testing");
-const openaiSubpath = await import("kaji/openai");
-const anthropicSubpath = await import("kaji/anthropic");
+const sdk = await import("@irogane/kaji");
+const testing = await import("@irogane/kaji/testing");
+const openaiSubpath = await import("@irogane/kaji/openai");
+const anthropicSubpath = await import("@irogane/kaji/anthropic");
 
 const {
   AgentBuilder,
@@ -96,14 +96,14 @@ if (MockProvider == null) {
 
 console.log("\nChecking provider subpath exports...");
 if (OpenAIProviderSubpath == null) {
-  reportFailure("kaji/openai OpenAIProvider", "is null or undefined");
+  reportFailure("@irogane/kaji/openai OpenAIProvider", "is null or undefined");
 } else {
-  reportPass("kaji/openai OpenAIProvider");
+  reportPass("@irogane/kaji/openai OpenAIProvider");
 }
 if (AnthropicProviderSubpath == null) {
-  reportFailure("kaji/anthropic AnthropicProvider", "is null or undefined");
+  reportFailure("@irogane/kaji/anthropic AnthropicProvider", "is null or undefined");
 } else {
-  reportPass("kaji/anthropic AnthropicProvider");
+  reportPass("@irogane/kaji/anthropic AnthropicProvider");
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentBuilder, AgentRuntime, KajiEvent, StoredKajiEvent, EventType } from "kaji";
+import { AgentBuilder, AgentRuntime, KajiEvent, StoredKajiEvent, EventType } from "@irogane/kaji";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { MockProvider } from "@/providers/mock";
 import { InMemoryEventStore } from "@/events/store";

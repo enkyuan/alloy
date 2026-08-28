@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
-import { ToolExecutionError, type ToolExecutionContext } from "kaji";
+import { ToolExecutionError, type ToolExecutionContext } from "@irogane/kaji";
 import {
   IntegrationAuthRequiredError,
   IntegrationPolicyError,
   snapshotIntegrationResult,
   type BoundedResponse,
   type FixedOriginRequester,
-} from "kaji/integrations";
+} from "@irogane/kaji/integrations";
 import { recoveryForReason } from "@/contracts/integration-recovery";
 import { GitHubClient } from "../registry/github/client";
 

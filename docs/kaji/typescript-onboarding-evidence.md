@@ -133,8 +133,8 @@ For either TypeScript package manager, the installed CLI first stages Echo into
 
 <!-- tthw-echo:typescript:start -->
 ```ts
-import { AgentBuilder, EventType } from "kaji";
-import { MockProvider } from "kaji/testing";
+import { AgentBuilder, EventType } from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 import { EchoIntegration } from "./echo/index.ts";
 
 const runtime = new AgentBuilder()

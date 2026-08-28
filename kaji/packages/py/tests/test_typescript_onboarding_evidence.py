@@ -33,7 +33,7 @@ SCHEMA = (
 COMMIT = "a" * 40
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "kaji-0.2.0-beta.11.tgz"
+TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 
 
 def _load(path: Path, name: str) -> ModuleType:

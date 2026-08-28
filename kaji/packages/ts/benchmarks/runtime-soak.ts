@@ -31,10 +31,10 @@ import {
   type ToolIdempotencyLedger,
   type ToolSpec,
   type TurnResult,
-} from "kaji";
+} from "@irogane/kaji";
 
 const RESOLVED_PACKAGE = realpathSync(
-  join(dirname(fileURLToPath(import.meta.resolve("kaji"))), ".."),
+  join(dirname(fileURLToPath(import.meta.resolve("@irogane/kaji"))), ".."),
 );
 
 interface Options {

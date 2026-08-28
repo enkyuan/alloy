@@ -35,7 +35,7 @@ async def inspect(context: kaji.ToolExecutionContext, value: str) -> dict:
 
 <!-- docs-test:typescript-migration-after:start -->
 ```ts
-import type { ToolExecutionContext, ToolExecutor } from "kaji";
+import type { ToolExecutionContext, ToolExecutor } from "@irogane/kaji";
 
 const execute: ToolExecutor = async (
   name: string,
@@ -168,8 +168,8 @@ import {
   UnclassifiedToolRiskError,
   functionTool,
   type ToolSpec,
-} from "kaji";
-import { MockProvider } from "kaji/testing";
+} from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 import { z } from "zod";
 
 const unsafe = {
@@ -208,8 +208,8 @@ try {
 
 <!-- docs-test:typescript-risk-context-after:start -->
 ```ts
-import { AgentBuilder, functionTool } from "kaji";
-import { MockProvider } from "kaji/testing";
+import { AgentBuilder, functionTool } from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 import { z } from "zod";
 
 const inspect = functionTool(
@@ -303,7 +303,7 @@ asyncio.run(cursor_read())
 
 <!-- docs-test:typescript-cursor-before:start -->
 ```ts
-import { EventType, InMemoryEventStore, KajiEvent } from "kaji";
+import { EventType, InMemoryEventStore, KajiEvent } from "@irogane/kaji";
 
 const store = new InMemoryEventStore();
 await store.append(
@@ -319,7 +319,7 @@ if (events.length !== 2) throw new Error("full read failed");
 
 <!-- docs-test:typescript-cursor-after:start -->
 ```ts
-import { EventType, InMemoryEventStore, KajiEvent } from "kaji";
+import { EventType, InMemoryEventStore, KajiEvent } from "@irogane/kaji";
 
 const store = new InMemoryEventStore();
 const first = await store.append(
@@ -371,7 +371,7 @@ class ApprovalHandler:
 
 <!-- docs-test:typescript-approval-after:start -->
 ```ts
-import type { TypedApprovalHandler } from "kaji";
+import type { TypedApprovalHandler } from "@irogane/kaji";
 
 const approvalHandler: TypedApprovalHandler = {
   async request() {
@@ -424,7 +424,7 @@ if (jsonSchema.type !== "object") throw new Error("Zod 4 schema export failed");
 <!-- docs-test:typescript-zod-after:end -->
 
 ```bash
-npm install kaji@0.2.0-beta.11 'zod@>=4.3 <5'
+npm install @irogane/kaji@0.2.0-beta.11 'zod@>=4.3 <5'
 ```
 
 ## Manifest and index schema
