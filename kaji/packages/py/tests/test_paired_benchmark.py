@@ -431,7 +431,10 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
     reference_manifest = json.loads((reference_consumer / "package.json").read_text())
     reference_lock = json.loads((reference_consumer / "package-lock.json").read_text())
     assert reference_manifest["dependencies"]["kaji"] == "file:kaji-0.2.0-beta.2.tgz"
-    assert reference_lock["packages"]["node_modules/@irogane/kaji"]["version"] == "0.2.0-beta.2"
+    assert (
+        reference_lock["packages"]["node_modules/@irogane/kaji"]["version"]
+        == "0.2.0-beta.2"
+    )
     assert all(
         package == reference_lock["packages"][name]
         for name, package in json.loads(runtime_module.TS_CONSUMER_LOCK.read_text())[
