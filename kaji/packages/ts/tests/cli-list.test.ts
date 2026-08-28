@@ -87,9 +87,9 @@ describe("kaji list-integrations", () => {
     const output = lines.join("\n");
     expect(output).toBe(
       "echo  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
-        "  typescript: bun --no-install -e 'import(\"kaji/cli\")' -- add echo\n" +
+        "  typescript: bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add echo\n" +
         "weather  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
-        "  typescript: bun --no-install -e 'import(\"kaji/cli\")' -- add weather",
+        "  typescript: bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add weather",
     );
   });
 
@@ -116,7 +116,7 @@ describe("kaji list-integrations", () => {
         auth: { kind: "none", provider: null },
         experimental_opt_in_required: false,
         next_commands: {
-          typescript: "bun --no-install -e 'import(\"kaji/cli\")' -- add echo",
+          typescript: "bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add echo",
         },
       },
     ]);
@@ -186,9 +186,9 @@ describe("kaji list-integrations", () => {
     expect(code).toBe(0);
     expect(lines.join("\n")).toBe(
       "echo  [beta]  v0.1.0  auth=none  runtimes=typescript\n" +
-        "  typescript: bun --no-install -e 'import(\"kaji/cli\")' -- add echo\n" +
+        "  typescript: bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add echo\n" +
         "weather  [experimental]  v0.1.0  auth=none  runtimes=typescript\n" +
-        "  typescript: bun --no-install -e 'import(\"kaji/cli\")' -- add weather --allow-experimental",
+        "  typescript: bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add weather --allow-experimental",
     );
   });
 
@@ -281,7 +281,7 @@ describe("kaji list-integrations", () => {
     expect(lines).toContain("github  [beta]  v0.1.0  auth=env  runtimes=python,typescript");
     expect(lines).toContain("  python: python -m kaji.cli add github");
     expect(lines).toContain(
-      "  typescript: bun --no-install -e 'import(\"kaji/cli\")' -- add github",
+      "  typescript: bun --no-install -e 'import(\"@irogane/kaji/cli\")' -- add github",
     );
   });
 });

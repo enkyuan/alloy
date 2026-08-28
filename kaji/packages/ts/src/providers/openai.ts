@@ -38,7 +38,7 @@ import {
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 
-// Preserve the public `kaji/openai` type export while keeping the
+// Preserve the public `@irogane/kaji/openai` type export while keeping the
 // implementation shared with other providers.
 export type { RetryOptions } from "@/providers/base";
 

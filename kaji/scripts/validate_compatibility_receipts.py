@@ -16,7 +16,7 @@ from typing import Any, Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
+    "irogane-kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
 }
 PYTHON_COMPATIBILITY_RECEIPT_FIELDS = {
     "artifactSha256",
@@ -122,7 +122,7 @@ TIMING_FIELDS = {"coldSetupToOutputMs", "warmRunMs"}
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 MAX_RELEASE_MANIFEST_BYTES = 1024 * 1024
 MAX_JSON_BYTES = 16 * 1024 * 1024
-TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
+TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop."
 PROTECTED_WORKFLOW_REFS = {
     "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",

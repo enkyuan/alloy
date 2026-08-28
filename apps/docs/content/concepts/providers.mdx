@@ -15,10 +15,10 @@ against a neutral message and tool-spec format.
 | `anthropic` | Native adapter            | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
 | `kimi`      | OpenAI-compatible factory | Native adapter | WIP          | `OPENROUTER_API_KEY` |
 | `gemini`    | OpenAI-compatible factory | Native adapter | WIP          | `GEMINI_API_KEY`     |
-| `mock`      | `kaji/testing`            | Main package   | Testing only | -                    |
+| `mock`      | `@irogane/kaji/testing`   | Main package   | Testing only | -                    |
 
 TypeScript callers choose a provider factory in code. For local tests, import
-`MockProvider` from `kaji/testing`; for the stable live-provider path, use
+`MockProvider` from `@irogane/kaji/testing`; for the stable live-provider path, use
 `openai()`. In the 0.2 beta contract, OpenAI is the only stable live-provider
 adapter. Other implemented adapters remain WIP.
 

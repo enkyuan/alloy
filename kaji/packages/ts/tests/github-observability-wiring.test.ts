@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { MetricMeasurement, MetricsSink, ToolExecutionContext, TraceSink } from "kaji";
+import type {
+  MetricMeasurement,
+  MetricsSink,
+  ToolExecutionContext,
+  TraceSink,
+} from "@irogane/kaji";
 
 import { createGithubIntegration } from "@/integrations/github";
 import { createPackageGitHubState } from "@/integrations/github-package-internal";

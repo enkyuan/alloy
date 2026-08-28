@@ -35,7 +35,7 @@ from process_runner import (
 )
 
 
-PACKAGE_NAME = "kaji"
+PACKAGE_NAME = "@irogane/kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 BASE_REF = "refs/remotes/origin/main"
 SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
@@ -79,9 +79,9 @@ RECEIPT_DIGEST_KEYS = (
     "node24",
 )
 
-REGISTRY_URL = "https://registry.npmjs.org/kaji"
+REGISTRY_URL = "https://registry.npmjs.org/@irogane%2Fkaji"
 REGISTRY_ORIGIN = "https://registry.npmjs.org"
-REGISTRY_PATH = "/kaji"
+REGISTRY_PATH = "/@irogane%2Fkaji"
 REGISTRY_MAX_BYTES = 5 * 1024 * 1024
 REGISTRY_DEADLINE_SECONDS = 30.0
 

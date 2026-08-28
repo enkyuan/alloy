@@ -5,7 +5,7 @@
 //   3. Add helper tools your agent wants but the API doesn't have natively
 // Updates: re-run `kaji add echo` to diff against the latest version we ship.
 
-import { functionTool, Integration } from "kaji";
+import { functionTool, Integration } from "@irogane/kaji";
 import * as z from "zod";
 
 const messageParameters = z.strictObject({ message: z.string() });

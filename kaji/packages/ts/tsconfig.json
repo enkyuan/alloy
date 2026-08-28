@@ -11,12 +11,12 @@
     "moduleResolution": "bundler",
     "baseUrl": ".",
     "paths": {
-      "kaji/anthropic": ["./src/providers/anthropic.ts"],
-      "kaji/integrations": ["./src/integrations/public.ts"],
-      "kaji/integrations/github": ["./src/integrations/github.ts"],
-      "kaji/openai": ["./src/providers/openai.ts"],
-      "kaji/testing": ["./src/testing.ts"],
-      "kaji": ["./src/index.ts"],
+      "@irogane/kaji/anthropic": ["./src/providers/anthropic.ts"],
+      "@irogane/kaji/integrations": ["./src/integrations/public.ts"],
+      "@irogane/kaji/integrations/github": ["./src/integrations/github.ts"],
+      "@irogane/kaji/openai": ["./src/providers/openai.ts"],
+      "@irogane/kaji/testing": ["./src/testing.ts"],
+      "@irogane/kaji": ["./src/index.ts"],
       "@/*": ["./src/*"]
     },
     "declaration": true,

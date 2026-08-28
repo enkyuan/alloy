@@ -382,11 +382,11 @@ describe("cross-SDK release matrix docs", () => {
     const index = read("apps/docs/content/integrations/index.mdx");
     const guideExample = snippet(guide, "docs-test:github-read-only", "ts");
 
-    expect(readme).toContain('from "kaji/integrations/github"');
+    expect(readme).toContain('from "@irogane/kaji/integrations/github"');
     expect(readme).toContain("createGithubIntegration");
     expect(readme).toContain('toolExposure: "read-only"');
     expect(readme).toContain("github.close()");
-    expect(guideExample).toContain('from "kaji/integrations/github"');
+    expect(guideExample).toContain('from "@irogane/kaji/integrations/github"');
     expect(guideExample).toContain('toolExposure: "read-only"');
     expect(guideExample).toContain("await runtime.drainTools(10_000)");
     expect(guideExample).toContain("github.close()");

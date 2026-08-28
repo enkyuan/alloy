@@ -126,7 +126,7 @@ each item tagged by the kind of work it is.
 
 **Ship C first, then A, with B running continuously.**
 
-"Any app builds on Kaji" means nothing until `npm i kaji` is a real
+"Any app builds on Kaji" means nothing until `npm i @irogane/kaji` is a real
 published thing. The beta is one credential and one repo-visibility flip from
 done, so it is the cheapest high-value unlock. The third-party path (A) is what
 makes the generality real, but it has no audience until there is a published SDK
@@ -173,7 +173,7 @@ Tag-readiness checks that pass today (runnable in a normal session):
 
 | Check | Result |
 | --- | --- |
-| npm `kaji@0.2.0-beta.11` absent | 404 (absent) |
+| npm `@irogane/kaji@0.2.0-beta.11` absent | 404 (absent) |
 | No tag `kaji-v0.2.0-beta.11` (local + remote) | none |
 | TS version pin | `0.2.0-beta.11` (package.json + `index.ts` VERSION) |
 | Python version pin | `0.2.0b1` (pyproject + `__version__`), intentional test-pinned skew |

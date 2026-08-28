@@ -57,9 +57,9 @@ not represented as provider errors.
 
 ```bash
 uv run --project kaji/packages/py python kaji/scripts/sync_integration_contracts.py --check
-bun --filter kaji validate:registry
-bun --filter kaji check:integrations
-bun --filter kaji typecheck:registry
+bun --filter @irogane/kaji validate:registry
+bun --filter @irogane/kaji check:integrations
+bun --filter @irogane/kaji typecheck:registry
 ```
 
 Corrupt or unreadable indexed manifests are fatal. List commands must not hide

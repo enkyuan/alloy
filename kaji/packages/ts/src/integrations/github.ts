@@ -5,8 +5,8 @@ import {
   type ToolHandler,
   type ToolSpec,
   type TraceSink,
-} from "kaji";
-import { IntegrationPolicyError } from "kaji/integrations";
+} from "@irogane/kaji";
+import { IntegrationPolicyError } from "@irogane/kaji/integrations";
 
 import { createSharedGitHubToolBindings } from "../../registry/github/index";
 import {

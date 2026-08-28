@@ -1,12 +1,12 @@
 id: kaji-copied-imports-public-subpath
 valid:
   - |
-      import { createGitHubRequester, snapshotIntegrationResult } from "kaji/integrations";
+      import { createGitHubRequester, snapshotIntegrationResult } from "@irogane/kaji/integrations";
   - |
-      import { Integration, type ToolSpec } from "kaji";
+      import { Integration, type ToolSpec } from "@irogane/kaji";
 invalid:
   - |
-      import { createGitHubRequester } from "kaji";
+      import { createGitHubRequester } from "@irogane/kaji";
   - |
       import { FixedOriginRequester } from "@/integrations/fixed-origin";
   - |

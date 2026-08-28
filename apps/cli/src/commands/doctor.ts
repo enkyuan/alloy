@@ -113,7 +113,7 @@ export function runChecks(o: RunOptions): { checks: Check[]; failed: boolean } {
     checks.push({
       name: "kaji installed",
       ok: hasDependency(all, "kaji") || hasDependency(all, "kaji"),
-      hint: "Run `bun add kaji` or regenerate with `kaji init --lang ts`.",
+      hint: "Run `bun add @irogane/kaji` or regenerate with `kaji init --lang ts`.",
       severity: "hard",
     });
     checks.push({

@@ -1,4 +1,4 @@
-/** Package-qualified CLI entry for `bun --no-install -e 'import("kaji/cli")' -- ...`. */
+/** Package-qualified CLI entry for `bun --no-install -e 'import("@irogane/kaji/cli")' -- ...`. */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 

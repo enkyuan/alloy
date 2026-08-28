@@ -611,7 +611,7 @@ if name == "uv":
 if name == "npm" and args and args[0] == "pack":
     destination = Path(args[args.index("--pack-destination") + 1])
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "kaji-0.2.0-beta.11.tgz").write_bytes(b"npm")
+    (destination / "irogane-kaji-0.2.0-beta.11.tgz").write_bytes(b"npm")
 """
     for name in ("bun", "node", "npm", "uv"):
         executable = binaries / name
@@ -805,13 +805,13 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-0.2.0-beta.11.tgz",
+                "file": "irogane-kaji-0.2.0-beta.11.tgz",
                 "sha256": "d" * 64,
             },
         },
         "resolvedPackages": {
             "python": str(runtime_root / "python/kaji/__init__.py"),
-            "typescript": str(typescript / "node_modules/kaji"),
+            "typescript": str(typescript / "node_modules/@irogane/kaji"),
         },
         "typescriptConsumerLock": {
             "templateSha256": "e" * 64,
@@ -1187,7 +1187,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
                 "private": True,
                 "type": "module",
                 "dependencies": {
-                    "kaji": "file:kaji-0.2.0-beta.11.tgz",
+                    "@irogane/kaji": "file:irogane-kaji-0.2.0-beta.11.tgz",
                     "zod": "4.4.3",
                 },
             }
@@ -1201,13 +1201,13 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
             "": {
                 "name": "kaji-installed-release-runtime",
                 "dependencies": {
-                    "kaji": "file:kaji-0.2.0-beta.11.tgz",
+                    "@irogane/kaji": "file:irogane-kaji-0.2.0-beta.11.tgz",
                     "zod": "4.4.3",
                 },
             },
-            "node_modules/kaji": {
+            "node_modules/@irogane/kaji": {
                 "version": "0.2.0-beta.11",
-                "resolved": "file:kaji-0.2.0-beta.11.tgz",
+                "resolved": "file:irogane-kaji-0.2.0-beta.11.tgz",
                 "integrity": "sha512-template",
             },
             "node_modules/zod": {
@@ -1218,7 +1218,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         },
     }
     lock.write_text(json.dumps(template))
-    tarball = tmp_path / "kaji-0.2.0-beta.11.tgz"
+    tarball = tmp_path / "irogane-kaji-0.2.0-beta.11.tgz"
     tarball.write_bytes(b"verified tarball bytes")
     consumer = tmp_path / "consumer"
     consumer.mkdir()
@@ -1237,7 +1237,7 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         rendered["packages"]["node_modules/zod"]
         == template["packages"]["node_modules/zod"]
     )
-    assert rendered["packages"]["node_modules/kaji"]["integrity"].startswith("sha512-")
+    assert rendered["packages"]["node_modules/@irogane/kaji"]["integrity"].startswith("sha512-")
     assert lock.read_text() == json.dumps(template)
 
 
@@ -1248,11 +1248,11 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
 
     assert lock["lockfileVersion"] == 3
     assert lock["packages"][""]["dependencies"] == manifest["dependencies"]
-    assert lock["packages"]["node_modules/kaji"]["resolved"] == (
-        "file:kaji-0.2.0-beta.11.tgz"
+    assert lock["packages"]["node_modules/@irogane/kaji"]["resolved"] == (
+        "file:irogane-kaji-0.2.0-beta.11.tgz"
     )
     for name, package in lock["packages"].items():
-        if not name or name == "node_modules/kaji":
+        if not name or name == "node_modules/@irogane/kaji":
             continue
         assert package["resolved"].startswith("https://registry.npmjs.org/")
         assert re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", package["integrity"])
@@ -1380,7 +1380,7 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     module = _load_root_script("installed_release_runtime.py")
     wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
     sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
-    tarball = tmp_path / "kaji-0.2.0-beta.11.tgz"
+    tarball = tmp_path / "irogane-kaji-0.2.0-beta.11.tgz"
     for path in (wheel, sdist, tarball):
         path.write_bytes(b"artifact")
 
@@ -3593,7 +3593,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
                 "sha256": "c" * 64,
             },
             "typescript": {
-                "file": "kaji-0.2.0-beta.11.tgz",
+                "file": "irogane-kaji-0.2.0-beta.11.tgz",
                 "sha256": "d" * 64,
             },
         },
@@ -3865,7 +3865,7 @@ def test_soak_report_reuses_complete_performance_provenance(
                 "sha256": "d" * 64,
             },
             "typescript": {
-                "file": "kaji-0.2.0-beta.11.tgz",
+                "file": "irogane-kaji-0.2.0-beta.11.tgz",
                 "sha256": "e" * 64,
             },
         },

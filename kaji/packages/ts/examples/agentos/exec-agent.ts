@@ -7,7 +7,7 @@
  *   npm install
  *   OPENAI_API_KEY=... npm start        # or ANTHROPIC_API_KEY=...
  */
-import { AgentBuilder, anthropic, openai, type ModelProvider } from "kaji";
+import { AgentBuilder, anthropic, openai, type ModelProvider } from "@irogane/kaji";
 
 import { AgentOsIntegration, createLockedDownVm } from "./agentos-integration.ts";
 

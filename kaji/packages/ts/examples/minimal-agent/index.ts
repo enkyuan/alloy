@@ -2,13 +2,13 @@
  * Minimal Kaji agent — generated example.
  *
  * Prerequisites:
- *   npm install kaji zod openai @dotenvx/dotenvx
+ *   npm install @irogane/kaji zod openai @dotenvx/dotenvx
  *   cp .env.example .env               # fill OpenAI or Anthropic key
  *
  * Run:
  *   npx dotenvx run -- npx tsx index.ts
  */
-import { AgentBuilder, anthropic, functionTool, openai, type ModelProvider } from "kaji";
+import { AgentBuilder, anthropic, functionTool, openai, type ModelProvider } from "@irogane/kaji";
 import * as z from "zod";
 
 const getWeather = functionTool(

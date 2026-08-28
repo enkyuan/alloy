@@ -46,7 +46,7 @@ PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "gmail-proof-v1.schema
 # tag drives these. (TS tarball tracks beta.11; Python wheel/sdist track 0.2.0b1.)
 PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
 PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "kaji-0.2.0-beta.11.tgz"
+TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 
 # Child runners that must exist before this proof can run. Neither is written.
 PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_gmail_live.py"

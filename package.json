@@ -20,7 +20,7 @@
     "clean": "turbo run clean",
     "test:kaji-python": "uv run --package kaji pytest",
     "test:kaji-serve": "uv run --package kaji-serve pytest",
-    "test:kaji-typescript": "bun --filter kaji test",
+    "test:kaji-typescript": "bun --filter @irogane/kaji test",
     "ast-grep:test": "sg test -t tools/ast-grep/rule-tests --skip-snapshot-tests",
     "ast-grep:scan": "sg scan --config sgconfig.yml kaji",
     "audit:ast-grep": "bun run ast-grep:test && bun run ast-grep:scan",
