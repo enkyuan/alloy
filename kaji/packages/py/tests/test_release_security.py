@@ -356,7 +356,7 @@ async def test_gemini_failure_does_not_retain_vendor_exception(
             raise RuntimeError(secret)
 
     service = object.__new__(GeminiService)
-    service.client = SimpleNamespace(models=Models())
+    service.client = cast(Any, SimpleNamespace(models=Models()))
     service.model = "gemini-test"
     service.embedding_model = "gemini-embedding-test"
 
@@ -716,7 +716,7 @@ async def test_gemini_context_cache_exception_log_is_redacted(
             raise RuntimeError(secret)
 
     service = object.__new__(GeminiService)
-    service.client = SimpleNamespace(models=Models())
+    service.client = cast(Any, SimpleNamespace(models=Models()))
     service.model = "gemini-test"
     service._active_caches = {}
     caplog.set_level(logging.WARNING)

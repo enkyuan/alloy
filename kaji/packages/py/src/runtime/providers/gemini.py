@@ -7,7 +7,7 @@ import logging
 
 from importlib import import_module
 from time import monotonic
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 from kaji.core.config import get_settings
 from kaji.runtime.providers.base import (
@@ -139,7 +139,7 @@ class GeminiService:
             cache = await asyncio.to_thread(
                 self.client.caches.create,
                 model=self.model,
-                config=cache_config,
+                config=cast(Any, cache_config),
             )
             if not cache.name:
                 return None

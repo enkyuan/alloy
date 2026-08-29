@@ -369,7 +369,7 @@ async def test_gemini_service_applies_chat_output_limits():
             return iter(())
 
     service = object.__new__(GeminiService)
-    service.client = SimpleNamespace(models=Models())
+    service.client = cast(Any, SimpleNamespace(models=Models()))
     service.model = "gemini-test"
     service._active_caches = {}
 
@@ -409,11 +409,11 @@ async def test_gemini_context_cache_is_owned_by_service_instance():
     contents = [{"role": "user", "parts": [str(index)]} for index in range(3)]
     client = SimpleNamespace(models=Models(), caches=Caches())
     first = object.__new__(GeminiService)
-    first.client = client
+    first.client = cast(Any, client)
     first.model = "gemini-first"
     first._active_caches = {}
     second = object.__new__(GeminiService)
-    second.client = client
+    second.client = cast(Any, client)
     second.model = "gemini-second"
     second._active_caches = {}
 
@@ -444,7 +444,7 @@ async def test_gemini_context_cache_recreates_before_remote_expiry():
 
     contents = [{"role": "user", "parts": [str(index)]} for index in range(3)]
     service = object.__new__(GeminiService)
-    service.client = SimpleNamespace(models=Models(), caches=Caches())
+    service.client = cast(Any, SimpleNamespace(models=Models(), caches=Caches()))
     service.model = "gemini-test"
     service._active_caches = {}
 
