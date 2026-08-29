@@ -152,7 +152,7 @@ jobs:
         id: reference
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: kaji-artifacts
+          name: kaji-beta-artifacts
           path: .artifacts/kaji-reference
           repository: ${{ github.repository }}
           run-id: 30081423771

@@ -354,7 +354,7 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
     assert anchor["githubArtifact"] == {
         "runId": 30081423771,
         "artifactId": 8592160276,
-        "name": "kaji-artifacts",
+        "name": "kaji-beta-artifacts",
         "digest": (
             "sha256:03c122caacce77608eded3511e56183f022739164d387a28a83c27a06a86e721"
         ),
