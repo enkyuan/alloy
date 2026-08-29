@@ -288,8 +288,8 @@ def _install_typescript(
                 "import { realpathSync } from 'node:fs'; "
                 "import { dirname, join } from 'node:path'; "
                 "import { fileURLToPath } from 'node:url'; "
-                "await import('kaji'); "
-                "const entry=fileURLToPath(import.meta.resolve('kaji')); "
+                "await import('@irogane/kaji'); "
+                "const entry=fileURLToPath(import.meta.resolve('@irogane/kaji')); "
                 "console.log(JSON.stringify(realpathSync(join(dirname(entry), '..'))));"
             ),
         ],

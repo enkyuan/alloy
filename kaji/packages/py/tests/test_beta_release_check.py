@@ -1259,6 +1259,10 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
         assert package["resolved"].startswith("https://registry.npmjs.org/")
         assert re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", package["integrity"])
     source = module._install_typescript.__code__.co_consts
+    assert any(isinstance(value, str) and "@irogane/kaji" in value for value in source)
+    assert not any(
+        isinstance(value, str) and "import('kaji')" in value for value in source
+    )
     assert "ci" in source
     assert "install" not in source
 
