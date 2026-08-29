@@ -55,7 +55,7 @@ def test_reusable_performance_workflow_runs_three_independent_replicas() -> None
         '"$KAJI_PAIRED_DIR/replica-${{ matrix.replica }}-imagedata.json"' in paired
     )
     assert "run-id: 30081423771" in paired
-    assert "name: kaji-artifacts" in paired
+    assert "name: kaji-beta-artifacts" in paired
     assert "github-token: ${{ github.token }}" in paired
     assert "actions: read" in paired
     assert "artifact-ids: ${{ inputs.candidate-artifact-id }}" in paired
