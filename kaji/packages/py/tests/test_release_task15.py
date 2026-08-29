@@ -3109,7 +3109,7 @@ def _task7_provenance_statement(
     workflow_path: str = ".github/workflows/kaji.publish.yml",
     run_id: int = 123,
     run_attempt: int = 1,
-    subject_name: str = "pkg:npm/kaji@0.2.0-beta.11",
+    subject_name: str = "pkg:npm/%40irogane%2Fkaji@0.2.0-beta.11",
     digest_algorithm: str = "sha512",
 ) -> dict[str, object]:
     del workflow_sha  # The signed statement binds it through the peeled commit.
@@ -3276,14 +3276,14 @@ def _task7_npm_audit(
         "missing": [],
         "verified": [
             {
-                "name": "kaji",
+                "name": "@irogane/kaji",
                 "version": "0.2.0-beta.11",
                 "location": "node_modules/@irogane/kaji",
                 "registry": "https://registry.npmjs.org/",
                 "attestations": {
                     "url": (
                         "https://registry.npmjs.org/-/npm/v1/attestations/"
-                        "kaji@0.2.0-beta.11"
+                        "@irogane/kaji@0.2.0-beta.11"
                     ),
                     "provenance": {"predicateType": "https://slsa.dev/provenance/v1"},
                 },
@@ -3375,11 +3375,11 @@ def test_npm_missing_target_is_retryable_propagation(
     ("audit", "expected_error"),
     [
         (
-            {"missing": [{"name": "kaji", "version": "0.2.0-beta.11"}]},
+            {"missing": [{"name": "@irogane/kaji", "version": "0.2.0-beta.11"}]},
             "VerificationUnavailable",
         ),
         (
-            {"invalid": [{"name": "kaji", "version": "0.2.0-beta.11"}]},
+            {"invalid": [{"name": "@irogane/kaji", "version": "0.2.0-beta.11"}]},
             "VerificationMismatch",
         ),
     ],
@@ -3516,14 +3516,14 @@ def test_npm_audit_retries_dependency_attestation_when_kaji_entry_has_none(
                     "missing": [],
                     "verified": [
                         {
-                            "name": "kaji",
+                            "name": "@irogane/kaji",
                             "version": "0.2.0-beta.11",
                             "location": "node_modules/@irogane/kaji",
                             "registry": "https://registry.npmjs.org/",
                             "attestations": {
                                 "url": (
                                     "https://registry.npmjs.org/-/npm/v1/"
-                                    "attestations/kaji@0.2.0-beta.11"
+                                    "attestations/@irogane/kaji@0.2.0-beta.11"
                                 ),
                                 "provenance": {
                                     "predicateType": ("https://slsa.dev/provenance/v1")

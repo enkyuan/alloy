@@ -437,7 +437,7 @@
       "additionalProperties": false,
       "required": ["name", "version", "exports", "publicSymbols"],
       "properties": {
-        "name": { "const": "kaji" },
+        "name": { "const": "@irogane/kaji" },
         "version": { "$ref": "#/$defs/semver" },
         "exports": { "$ref": "#/$defs/exactExports" },
         "publicSymbols": {
@@ -715,7 +715,7 @@
           "additionalProperties": false,
           "required": ["name", "version"],
           "properties": {
-            "name": { "const": "kaji" },
+            "name": { "const": "@irogane/kaji" },
             "version": { "$ref": "#/$defs/semver" }
           }
         },

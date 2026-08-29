@@ -186,10 +186,15 @@ def _write_release_artifacts(
     typescript_version: str,
 ) -> None:
     root.mkdir()
+    typescript_filename = (
+        f"kaji-{typescript_version}.tgz"
+        if typescript_version == "0.2.0-beta.2"
+        else f"irogane-kaji-{typescript_version}.tgz"
+    )
     payloads = {
         "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
         "kaji-0.2.0b1.tar.gz": b"sdist",
-        f"kaji-{typescript_version}.tgz": b"npm",
+        typescript_filename: b"npm",
     }
     entries = []
     for name, payload in payloads.items():
@@ -430,7 +435,10 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
     )
     reference_manifest = json.loads((reference_consumer / "package.json").read_text())
     reference_lock = json.loads((reference_consumer / "package-lock.json").read_text())
-    assert reference_manifest["dependencies"]["kaji"] == "file:kaji-0.2.0-beta.2.tgz"
+    assert (
+        reference_manifest["dependencies"]["@irogane/kaji"]
+        == "file:kaji-0.2.0-beta.2.tgz"
+    )
     assert (
         reference_lock["packages"]["node_modules/@irogane/kaji"]["version"]
         == "0.2.0-beta.2"

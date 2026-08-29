@@ -3695,10 +3695,10 @@ def test_typescript_source_benchmark_maps_every_public_subpath() -> None:
     config = (REPO_ROOT / "kaji" / "packages" / "ts" / "tsconfig.json").read_text()
 
     for package, source in {
-        "kaji": "./src/index.ts",
-        "kaji/openai": "./src/providers/openai.ts",
-        "kaji/anthropic": "./src/providers/anthropic.ts",
-        "kaji/testing": "./src/testing.ts",
+        "@irogane/kaji": "./src/index.ts",
+        "@irogane/kaji/openai": "./src/providers/openai.ts",
+        "@irogane/kaji/anthropic": "./src/providers/anthropic.ts",
+        "@irogane/kaji/testing": "./src/testing.ts",
     }.items():
         assert f'"{package}": ["{source}"]' in config
 
