@@ -181,7 +181,7 @@ def verify_release_member_bytes(
         fail("manifest build audit binding is malformed")
     expected_build_audit = (
         (REFERENCE_BUILD_AUDIT, EXPECTED_BUILD_AUDIT_SHA256)
-        if artifact_contract is BETA2_REFERENCE_RELEASE_CONTRACT
+        if artifact_contract == BETA2_REFERENCE_RELEASE_CONTRACT
         else (
             EXPECTED_BUILD_AUDIT,
             sha256(Path(__file__).resolve().parents[2] / EXPECTED_BUILD_AUDIT),
