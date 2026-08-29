@@ -1,15 +1,15 @@
 {
   "artifacts": {
     "pythonSdist": {
-      "file": "kaji-0.2.0b1.tar.gz",
+      "file": "kaji_sdk-0.2.0b1.tar.gz",
       "sha256": "58540d729bc1eb64fd02c0bc153fdbcf826a997e2ef91c4bc06254e94079be1d"
     },
     "pythonWheel": {
-      "file": "kaji-0.2.0b1-py3-none-any.whl",
+      "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
       "sha256": "2a092b49c2c87666db9178bb8233f0b42551b683fa69475739582a8678ff0945"
     },
     "typescript": {
-      "file": "kaji-0.2.0-beta.2.tgz",
+      "file": "kaji-sdk-0.2.0-beta.2.tgz",
       "sha256": "266c9931456bef6f1abe9bbc96c6407d8ec98240ffdb164bad1f7785ca44d369"
     }
   },
