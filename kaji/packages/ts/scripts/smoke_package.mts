@@ -567,7 +567,7 @@ const LOCAL_TIMEOUT_MS = 60_000;
 const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const PACKAGE_VERSION = "0.2.0-beta.11";
-const PACKAGE_TARBALL = `kaji-${PACKAGE_VERSION}.tgz`;
+const PACKAGE_TARBALL = `irogane-kaji-${PACKAGE_VERSION}.tgz`;
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
 
 function markedSnippet(path: string, name: string, language: string): string {
@@ -589,13 +589,13 @@ const GITHUB_ESM_TYPES_SOURCE = `import {
   type CliApprovalInput,
   type CliApprovalOptions,
   type CliApprovalOutput,
-} from "kaji";
+} from "@irogane/kaji";
 import {
   GitHubIntegration,
   createGithubIntegration,
   inspectIntegration,
   type CreateGitHubIntegrationOptions,
-} from "kaji/integrations/github";
+} from "@irogane/kaji/integrations/github";
 
 const options: CreateGitHubIntegrationOptions = {
   tokenFor: async () => "installed-type-proof",
@@ -641,8 +641,8 @@ direct.close();
 created.close();
 inspected.close();
 `;
-const GITHUB_CJS_TYPES_SOURCE = `import sdk = require("kaji");
-import github = require("kaji/integrations/github");
+const GITHUB_CJS_TYPES_SOURCE = `import sdk = require("@irogane/kaji");
+import github = require("@irogane/kaji/integrations/github");
 
 const options: github.CreateGitHubIntegrationOptions = {
   tokenFor: async () => "installed-type-proof",
@@ -722,8 +722,8 @@ const LIFECYCLE_SMOKE_SOURCE = `import {
   AgentBuilder,
   InMemoryEventStore,
   type TurnAccounting,
-} from "kaji";
-import { MockProvider } from "kaji/testing";
+} from "@irogane/kaji";
+import { MockProvider } from "@irogane/kaji/testing";
 
 const graceMs = 10_000;
 const sessionId = "installed-purge-session";
@@ -779,7 +779,7 @@ const FAILURE_HISTORY_SMOKE_SOURCE = `import {
   type ModelResponse,
   type ModelResponseChunk,
   type StoredKajiEvent,
-} from "kaji";
+} from "@irogane/kaji";
 
 async function pageHistory(
   runtime: AgentRuntime,
@@ -925,7 +925,7 @@ console.log("failure_history=ok");
 const LEGACY_LEDGER_TYPES_SOURCE = `import {
   InMemoryToolIdempotencyLedger,
   type ToolIdempotencyLedger,
-} from "kaji";
+} from "@irogane/kaji";
 
 const backing = new InMemoryToolIdempotencyLedger();
 const legacyLedger: ToolIdempotencyLedger = {
@@ -1966,13 +1966,13 @@ function handoffDependencyClosure(
   }
   const local = mirrored.map(({ name, path }) => [name, `file:${path}`] as const);
   return {
-    dependencies: Object.fromEntries([["kaji", `file:${tarball}`], ...local]),
+    dependencies: Object.fromEntries([["@irogane/kaji", `file:${tarball}`], ...local]),
     installArgs: [tarball, ...local.map(([, spec]) => spec)],
   };
 }
 
 function assertRealInstalledCopy(root: string): string {
-  const path = join(root, "node_modules/kaji");
+  const path = join(root, "node_modules/@irogane/kaji");
   const stat = lstatSync(path);
   if (stat.isSymbolicLink() || !stat.isDirectory()) {
     throw new Error("supplied artifact was not installed as a real package directory");
@@ -2436,8 +2436,8 @@ function nodeFixtureSource(kind: "esm" | "commonjs", artifactSha256: string): st
     return `import { realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { inspectIntegration } from "kaji/integrations/github";
-const entry = fileURLToPath(import.meta.resolve("kaji"));
+import { inspectIntegration } from "@irogane/kaji/integrations/github";
+const entry = fileURLToPath(import.meta.resolve("@irogane/kaji"));
 const integration = inspectIntegration();
 const tools = integration.tools().map(([spec]) => spec);
 integration.close();
@@ -2456,8 +2456,8 @@ console.log(JSON.stringify({
   }
   return `const { realpathSync } = require("node:fs");
 const { dirname } = require("node:path");
-const { inspectIntegration } = require("kaji/integrations/github");
-const entry = require.resolve("kaji");
+const { inspectIntegration } = require("@irogane/kaji/integrations/github");
+const entry = require.resolve("@irogane/kaji");
 const integration = inspectIntegration();
 const tools = integration.tools().map(([spec]) => spec);
 integration.close();
@@ -2607,16 +2607,16 @@ function assertGeneratedVersions(
   installed: PackageManifest,
 ): void {
   const expected = {
-    kaji: installed.version,
+    "@irogane/kaji": installed.version,
     zod: installed.peerDependencies.zod,
   };
   if (JSON.stringify(generated.dependencies) !== JSON.stringify(expected)) {
     throw new Error("generated mock dependency versions do not match installed package metadata");
   }
-  if (generated.dependencies?.["kaji"] !== PACKAGE_VERSION) {
+  if (generated.dependencies?.["@irogane/kaji"] !== PACKAGE_VERSION) {
     throw new Error("generated scaffold did not use the exact installed prerelease version");
   }
-  if (generated.dependencies["kaji"].startsWith("^") || "openai" in generated.dependencies) {
+  if (generated.dependencies["@irogane/kaji"].startsWith("^") || "openai" in generated.dependencies) {
     throw new Error("generated mock scaffold added an unrequested provider or version caret");
   }
   if (generated.devDependencies.typescript57 !== "npm:typescript@5.7.3") {
@@ -3754,7 +3754,7 @@ async function runScaffold(
   }
 
   const cliCommand = "bun";
-  const cli = ["--no-install", "-e", 'import("kaji/cli")', "--"];
+  const cli = ["--no-install", "-e", 'import("@irogane/kaji/cli")', "--"];
   const ownerOutput = await runCommand(
     `${manager}:cli-owner-qualified`,
     cliCommand,
@@ -3775,7 +3775,7 @@ async function runScaffold(
   );
   assertCliInitOutput(initOutput, generated);
 
-  const installedPackageRoot = join(bootstrap, "node_modules/kaji");
+  const installedPackageRoot = join(bootstrap, "node_modules/@irogane/kaji");
   const echo = join(generated, "echo");
   const addOutput = await runCommand(
     `${manager}:cli-add`,
@@ -3838,7 +3838,7 @@ async function runScaffold(
   // Validate the registry-facing versions before replacing only the SDK entry
   // with the exact local tarball used by this release smoke.
   assertGeneratedVersions(generatedManifest, installed);
-  generatedManifest.dependencies["kaji"] = tarball;
+  generatedManifest.dependencies["@irogane/kaji"] = tarball;
   writeFileSync(generatedManifestPath, JSON.stringify(generatedManifest, null, 2));
   await install(manager, "generated", generated, [], environment);
   writeFileSync(join(generated, "lifecycle.ts"), LIFECYCLE_SMOKE_SOURCE);
@@ -4197,10 +4197,10 @@ async function main(rawArguments = process.argv.slice(2)): Promise<void> {
         [tarball, "zod@4.3.6", "openai@6.42.0", "@anthropic-ai/sdk@0.104.1", nodeTypesPackage],
         npmEnvironment,
       );
-      if (!existsSync(join(installRoot, "node_modules/kaji/dist/cli/init-worker.js"))) {
+      if (!existsSync(join(installRoot, "node_modules/@irogane/kaji/dist/cli/init-worker.js"))) {
         throw new Error("installed package is missing the pinned init worker");
       }
-      installedPackagePath = realpathSync(join(installRoot, "node_modules/kaji"));
+      installedPackagePath = realpathSync(join(installRoot, "node_modules/@irogane/kaji"));
       await runCommand(
         "npm:audit",
         "npm",
@@ -4211,12 +4211,12 @@ async function main(rawArguments = process.argv.slice(2)): Promise<void> {
       );
 
       const esm = `
-import * as sdk from "kaji";
-import * as testing from "kaji/testing";
-import * as openai from "kaji/openai";
-import * as anthropic from "kaji/anthropic";
-import * as integrations from "kaji/integrations";
-import * as github from "kaji/integrations/github";
+import * as sdk from "@irogane/kaji";
+import * as testing from "@irogane/kaji/testing";
+import * as openai from "@irogane/kaji/openai";
+import * as anthropic from "@irogane/kaji/anthropic";
+import * as integrations from "@irogane/kaji/integrations";
+import * as github from "@irogane/kaji/integrations/github";
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 15) process.exit(1);
@@ -4228,12 +4228,12 @@ gmailRequester.close();
 gmailRequester.close();
 `;
       const cjs = `
-const sdk = require("kaji");
-const testing = require("kaji/testing");
-const openai = require("kaji/openai");
-const anthropic = require("kaji/anthropic");
-const integrations = require("kaji/integrations");
-const github = require("kaji/integrations/github");
+const sdk = require("@irogane/kaji");
+const testing = require("@irogane/kaji/testing");
+const openai = require("@irogane/kaji/openai");
+const anthropic = require("@irogane/kaji/anthropic");
+const integrations = require("@irogane/kaji/integrations");
+const github = require("@irogane/kaji/integrations/github");
 if (sdk.VERSION !== "${PACKAGE_VERSION}" || !sdk.AgentRuntime || !sdk.supportsSessionPurge || !sdk.SessionPurgeBusyError || !sdk.SessionPurgeUnsupportedError || !testing.MockProvider || !openai.OpenAIProvider || !anthropic.AnthropicProvider) process.exit(1);
 if (JSON.stringify(Object.keys(integrations).sort()) !== JSON.stringify(["INTEGRATION_RECOVERY", "IntegrationAuthRequiredError", "IntegrationExecutionError", "IntegrationPolicyError", "IntegrationRateLimitedError", "IntegrationTransientReadError", "closedRecoveryFields", "createGitHubRequester", "createGmailRequester", "snapshotIntegrationResult"].sort())) process.exit(1);
 if (JSON.stringify(Object.keys(github).sort()) !== JSON.stringify(["GitHubIntegration", "createGithubIntegration", "inspectIntegration"].sort()) || github.inspectIntegration().tools().length !== 15) process.exit(1);
@@ -4251,7 +4251,7 @@ gmailRequester.close();
       const ownerOutput = await runCommand(
         "cli:help",
         "bun",
-        ["--no-install", "-e", 'import("kaji/cli")', "--", "--help"],
+        ["--no-install", "-e", 'import("@irogane/kaji/cli")', "--", "--help"],
         installRoot,
         { ...npmEnvironment, BUN_CONFIG_REGISTRY: "http://127.0.0.1:9" },
       );
@@ -4259,7 +4259,7 @@ gmailRequester.close();
       const cjsOwnerOutput = await runCommand(
         "cli:help-cjs",
         nodeBinary,
-        ["--eval", 'process.argv=[process.execPath,"--help"]; require("kaji/cli");'],
+        ["--eval", 'process.argv=[process.execPath,"--help"]; require("@irogane/kaji/cli");'],
         installRoot,
         npmEnvironment,
       );
@@ -4299,7 +4299,7 @@ gmailRequester.close();
 
       const npmTiming = await runScaffold("npm", tarball, nodeTypesPackage);
       const bunTiming = await runScaffold("bun", tarball, nodeTypesPackage);
-      assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/kaji"));
+      assertRootDeclarationsVendorNeutral(join(installRoot, "node_modules/@irogane/kaji"));
       pending = {
         kind: "ordinary",
         output: arguments_.output,

@@ -138,9 +138,9 @@ function installedMetadata(): PackageMetadata {
 
 function agentSource(provider: Provider): string {
   const providerImports = {
-    mock: 'import { MockProvider } from "kaji/testing";',
-    openai: 'import { OpenAIProvider } from "kaji/openai";',
-    anthropic: 'import { AnthropicProvider } from "kaji/anthropic";',
+    mock: 'import { MockProvider } from "@irogane/kaji/testing";',
+    openai: 'import { OpenAIProvider } from "@irogane/kaji/openai";',
+    anthropic: 'import { AnthropicProvider } from "@irogane/kaji/anthropic";',
   } as const;
   const providerSetup = {
     mock: "const provider = new MockProvider();",
@@ -154,7 +154,7 @@ if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the anthropic sc
 const provider = new AnthropicProvider({ apiKey });`,
   } as const;
 
-  return `import { AgentBuilder } from "kaji";
+  return `import { AgentBuilder } from "@irogane/kaji";
 ${providerImports[provider]}
 
 ${providerSetup[provider]}
@@ -181,7 +181,7 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
   }
 
   const dependencies: Record<string, string> = {
-    kaji: metadata.version,
+    "@irogane/kaji": metadata.version,
     zod: zodRange,
   };
   if (provider === "openai") {

@@ -296,7 +296,7 @@
   "releaseManifestSha256": "fc0527cb950600f7d1984abdfbc4216996408ec0ac20ad28c0ddd9d64265d6b4",
   "resolvedPackages": {
     "python": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/python/lib/python3.11/site-packages/kaji/__init__.py",
-    "typescript": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/typescript/node_modules/kaji"
+    "typescript": "/private/var/folders/pd/2_nlvl1s4k121pdk4d5_2c8m0000gn/T/kaji-installed-release-6d9szkv0/typescript/node_modules/@irogane/kaji"
   },
   "runner": {
     "arch": "arm64",

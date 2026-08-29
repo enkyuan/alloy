@@ -30,12 +30,12 @@ from process_runner import METADATA_BUDGET, CommandError, run_checked
 PYPI_PROJECT = "kaji"
 PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
-NPM_PACKAGE = "kaji"
+NPM_PACKAGE = "@irogane/kaji"
 NPM_VERSION = "0.2.0-beta.11"
 NPM_SPEC = f"{NPM_PACKAGE}@{NPM_VERSION}"
 NPM_REGISTRY = "https://registry.npmjs.org/"
-NPM_TARBALL = "kaji-0.2.0-beta.11.tgz"
-NPM_PURL = "pkg:npm/kaji@0.2.0-beta.11"
+NPM_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
+NPM_PURL = "pkg:npm/%40irogane/kaji@0.2.0-beta.11"
 USER_AGENT = "kaji-release-verifier/1"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
@@ -1300,7 +1300,7 @@ def verify_npm(
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or parsed.path != f"/{NPM_PACKAGE}/-/{NPM_TARBALL}"
+        or urllib.parse.unquote(parsed.path) != f"/{NPM_PACKAGE}/-/{NPM_TARBALL}"
     ):
         raise VerificationMismatch("npm tarball URL is outside the expected registry")
     entry = entries.get(NPM_TARBALL)

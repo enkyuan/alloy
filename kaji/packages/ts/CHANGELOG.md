@@ -207,7 +207,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
   implementation; both now call a single `withRetry()` in `providers/base.ts`.
   `RetryOptions` moved from `providers/openai.ts` to `providers/base.ts` for
   the same reason (`AnthropicProvider` was already importing it cross-file),
-  while the `kaji/openai` subpath continues to re-export the type.
+  while the `@irogane/kaji/openai` subpath continues to re-export the type.
 
 ### Documentation
 

@@ -66,7 +66,7 @@ PROTOCOL_INPUTS = (
 IDENTITY_FILES = {
     "pythonWheel": "kaji-0.2.0b1-py3-none-any.whl",
     "pythonSdist": "kaji-0.2.0b1.tar.gz",
-    "typescript": "kaji-0.2.0-beta.11.tgz",
+    "typescript": "irogane-kaji-0.2.0-beta.11.tgz",
 }
 REFERENCE_IDENTITY_FILES = {
     "pythonWheel": "kaji-0.2.0b1-py3-none-any.whl",

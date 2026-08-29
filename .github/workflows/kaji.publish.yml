@@ -255,7 +255,7 @@ jobs:
               !/^sha256:[0-9a-f]{64}$/.test(authorization.candidateArtifact.digest) ||
               !/^sha256:[0-9a-f]{64}$/.test(authorization.evidenceArtifact.digest) ||
               !/^[0-9a-f]{64}$/.test(authorization.releaseManifestSha256) ||
-              authorization.npmTarball.name !== "kaji-0.2.0-beta.11.tgz" ||
+              authorization.npmTarball.name !== "irogane-kaji-0.2.0-beta.11.tgz" ||
               !/^[0-9a-f]{64}$/.test(authorization.npmTarball.sha256) ||
               canonicalize(authorization) + "\n" !== body
             ) {
@@ -350,7 +350,7 @@ jobs:
             scalarOutput("evidence-artifact-name", authorization.evidenceArtifact.name, /^kaji-release-candidate-evidence$/);
             scalarOutput("evidence-artifact-digest", authorization.evidenceArtifact.digest, /^sha256:[0-9a-f]{64}$/);
             scalarOutput("release-manifest-sha256", authorization.releaseManifestSha256, /^[0-9a-f]{64}$/);
-            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^kaji-0\.2\.0-beta\.11\.tgz$/);
+            scalarOutput("npm-tarball-name", authorization.npmTarball.name, /^irogane-kaji-0\.2\.0-beta\.11\.tgz$/);
             scalarOutput("npm-tarball-sha256", authorization.npmTarball.sha256, /^[0-9a-f]{64}$/);
             core.summary
               .addHeading("Verified immutable beta authorization", 2)
@@ -614,7 +614,7 @@ jobs:
           destination = Path(sys.argv[2])
           expected = {
               "SHA256SUMS",
-              "kaji-0.2.0-beta.11.tgz",
+              "irogane-kaji-0.2.0-beta.11.tgz",
               "kaji-0.2.0b1-py3-none-any.whl",
               "kaji-0.2.0b1.tar.gz",
               "manifest.json",
@@ -680,7 +680,7 @@ jobs:
           for filename in \
             kaji-0.2.0b1-py3-none-any.whl \
             kaji-0.2.0b1.tar.gz \
-            kaji-0.2.0-beta.11.tgz \
+            irogane-kaji-0.2.0-beta.11.tgz \
             manifest.json \
             SHA256SUMS; do
             cp "$signed/$filename" "$carrier/$filename"
@@ -721,11 +721,11 @@ jobs:
           name: kaji-authorized-rehearsal-source
           path: |
             .artifacts/kaji-authorized-rehearsal/source.zip
-            .artifacts/kaji-authorized-rehearsal/kaji-0.2.0-beta.11.tgz
+            .artifacts/kaji-authorized-rehearsal/irogane-kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-authorized-rehearsal-evidence/source.zip
             .artifacts/kaji-authorized-rehearsal-node-22/source.zip
             .artifacts/kaji-authorized-rehearsal-node-24/source.zip
-            .artifacts/kaji-rebuilt/kaji-0.2.0-beta.11.tgz
+            .artifacts/kaji-rebuilt/irogane-kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-offline-evidence/signed-source-carrier.json
           if-no-files-found: error
       - name: Upload offline gate/test summary
@@ -1021,7 +1021,7 @@ jobs:
                 else
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.2.0-beta.11.tgz"] and
+                    keys == ["irogane-kaji-0.2.0-beta.11.tgz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1243,7 +1243,7 @@ jobs:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
         run: >-
           bun kaji/packages/ts/scripts/smoke_package.mts
-          .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+          .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           --release-manifest .artifacts/kaji-release/manifest.json
           --expected-commit "$EXPECTED_COMMIT"
           --protected
@@ -1259,7 +1259,7 @@ jobs:
         env:
           KAJI_COMPAT_RECEIPT_DIR: ${{ runner.temp }}/kaji-node-compat-${{ matrix.node-version }}
           KAJI_COMPAT_RUNTIME_VERSION: ${{ matrix.node-version }}
-          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+          KAJI_COMPAT_CANDIDATE_TARBALL: .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           KAJI_COMPAT_RUNNER_LABEL: ${{ matrix.runner }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
           KAJI_COMPAT_PRODUCER_ARTIFACT_DIGEST: ${{ needs.offline-gates.outputs.artifact-digest }}
@@ -2483,7 +2483,7 @@ jobs:
         run: |
           bun run --cwd kaji/packages/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           python3 kaji/scripts/verify_archives.py \
             .artifacts/kaji-release
       - name: Validate one canonical current-run evidence set
@@ -2535,8 +2535,8 @@ jobs:
           --signed-release-manifest-sha256 "${{ needs.verify-tag.outputs.release-manifest-sha256 }}"
           --signed-npm-tarball-name "${{ needs.verify-tag.outputs.npm-tarball-name }}"
           --signed-npm-tarball-sha256 "${{ needs.verify-tag.outputs.npm-tarball-sha256 }}"
-          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/kaji-0.2.0-beta.11.tgz
-          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/kaji-0.2.0-beta.11.tgz
+          --signed-npm-tarball .artifacts/kaji-authorized-rehearsal/irogane-kaji-0.2.0-beta.11.tgz
+          --rebuilt-npm-tarball .artifacts/kaji-rebuilt/irogane-kaji-0.2.0-beta.11.tgz
           --workspace "$GITHUB_WORKSPACE"
           --output .artifacts/kaji-evidence/release-evidence-validation.json
       - name: Generate SBOM
@@ -2553,7 +2553,7 @@ jobs:
           subject-path: |
             .artifacts/kaji-release/kaji-0.2.0b1-py3-none-any.whl
             .artifacts/kaji-release/kaji-0.2.0b1.tar.gz
-            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
             .artifacts/kaji-release/manifest.json
             .artifacts/kaji-release/SHA256SUMS
             .artifacts/kaji-evidence/offline-gates.log
@@ -2686,7 +2686,7 @@ jobs:
           PACKUMENT_BODY="$RUNNER_TEMP/kaji-npm-packument.json"
           PACKUMENT_METADATA="$RUNNER_TEMP/kaji-npm-packument.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji \
+            https://registry.npmjs.org/@irogane%2Fkaji \
             "$PACKUMENT_BODY" "$PACKUMENT_METADATA" 65536
           PACKUMENT_HTTP="$FETCH_HTTP_STATUS"
           case "$PACKUMENT_HTTP" in
@@ -2707,7 +2707,7 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji/0.2.0-beta.11 \
+            https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
@@ -2870,7 +2870,7 @@ jobs:
         run: |
           bun run --cwd kaji/packages/ts build
           python kaji/scripts/verify_npm_package.py \
-            .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+            .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
       - name: Verify exact npm publisher identity
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -3102,7 +3102,7 @@ jobs:
           PACKUMENT_BODY="$RUNNER_TEMP/kaji-npm-packument.json"
           PACKUMENT_METADATA="$RUNNER_TEMP/kaji-npm-packument.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji \
+            https://registry.npmjs.org/@irogane%2Fkaji \
             "$PACKUMENT_BODY" "$PACKUMENT_METADATA" 65536
           PACKUMENT_HTTP="$FETCH_HTTP_STATUS"
           case "$PACKUMENT_HTTP" in
@@ -3123,7 +3123,7 @@ jobs:
           TARGET_BODY="$RUNNER_TEMP/kaji-npm-target.json"
           TARGET_METADATA="$RUNNER_TEMP/kaji-npm-target.metadata"
           fetch_registry_json \
-            https://registry.npmjs.org/kaji/0.2.0-beta.11 \
+            https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11 \
             "$TARGET_BODY" "$TARGET_METADATA" 65536
           TARGET_HTTP="$FETCH_HTTP_STATUS"
           case "$TARGET_HTTP" in
@@ -3147,7 +3147,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$NODE_AUTH_TOKEN"
-          npm publish .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
+          npm publish .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -3549,12 +3549,12 @@ jobs:
             NPM_BODY="$RUNNER_TEMP/kaji-npm-classification.json"
             NPM_METADATA="$RUNNER_TEMP/kaji-npm-classification.metadata"
             if fetch_classification_json \
-              https://registry.npmjs.org/kaji/0.2.0-beta.11 \
+              https://registry.npmjs.org/@irogane%2Fkaji/0.2.0-beta.11 \
               "$NPM_BODY" "$NPM_METADATA" 262144; then
               case "$FETCH_HTTP_STATUS" in
                 200)
                   if jq --exit-status \
-                    'type == "object" and .name == "kaji" and
+                    'type == "object" and .name == "@irogane/kaji" and
                      .version == "0.2.0-beta.11"' \
                     "$NPM_BODY" >/dev/null 2>&1; then
                     NPM_STATE=present
@@ -3941,7 +3941,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --tag "$EXPECTED_TAG"
           --title "Kaji $EXPECTED_TAG"
-          .artifacts/kaji-release/kaji-0.2.0-beta.11.tgz
+          .artifacts/kaji-release/irogane-kaji-0.2.0-beta.11.tgz
           .artifacts/kaji-release/manifest.json
           .artifacts/kaji-release/SHA256SUMS
           .artifacts/kaji-evidence/offline-gates.log
@@ -3965,6 +3965,6 @@ jobs:
           .artifacts/kaji-publication-status/registry-verification.json
           .artifacts/kaji-publication-status/publication-status.json
           .artifacts/kaji-publication-status/publication-status.md
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz
-          .artifacts/kaji-publication-status/downloaded/registry-kaji-0.2.0-beta.11.tgz.github-attestation.json
+          .artifacts/kaji-publication-status/downloaded/registry-irogane-kaji-0.2.0-beta.11.tgz
+          .artifacts/kaji-publication-status/downloaded/registry-irogane-kaji-0.2.0-beta.11.tgz.github-attestation.json
           .artifacts/kaji-publication-status/downloaded/npm-signature-audit.json

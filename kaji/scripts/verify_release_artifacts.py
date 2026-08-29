@@ -17,7 +17,7 @@ from typing import Mapping, NoReturn
 EXPECTED_ARTIFACTS = {
     "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
     "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
+    "irogane-kaji-0.2.0-beta.11.tgz": ("typescript", "0.2.0-beta.11"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",

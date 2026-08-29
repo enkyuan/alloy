@@ -96,7 +96,7 @@
       ],
       "properties": {
         "name": {
-          "const": "kaji-0.2.0-beta.11.tgz"
+          "const": "irogane-kaji-0.2.0-beta.11.tgz"
         },
         "size": {
           "$ref": "#/$defs/positiveSafeInteger"

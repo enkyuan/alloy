@@ -197,9 +197,9 @@ def _manifest(mode: str) -> dict[str, Any]:
     reproducibility = {"comparison": "not-run"}
     pack_evidence = {
         "mode": mode,
-        "package": {"name": "kaji", "version": "0.2.0"},
+        "package": {"name": "@irogane/kaji", "version": "0.2.0"},
         "artifact": {
-            "filename": "kaji-0.2.0.tgz",
+            "filename": "irogane-kaji-0.2.0.tgz",
             "size": 1024,
             "npmIntegrity": "sha512-QUFBQQ==",
         },
@@ -334,7 +334,7 @@ def _manifest(mode: str) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "artifact": {
-            "filename": "kaji-0.2.0.tgz",
+            "filename": "irogane-kaji-0.2.0.tgz",
             "size": 1024,
             "sha256": ARTIFACT_SHA256,
             "npmIntegrity": "sha512-QUFBQQ==",
@@ -342,7 +342,7 @@ def _manifest(mode: str) -> dict[str, Any]:
             "reproducibility": reproducibility,
         },
         "package": {
-            "name": "kaji",
+            "name": "@irogane/kaji",
             "version": "0.2.0",
             "exports": exports,
             "publicSymbols": {"github": PUBLIC_SYMBOLS},
@@ -409,11 +409,11 @@ def _independent_alias_valid(
 
 
 def _npm_pack_basename_v1(schema: dict[str, Any], name: str, version: str) -> str:
-    if name != "kaji":
+    if name != "@irogane/kaji":
         raise ValueError("unexpected package name")
     if not _independent_alias_valid(schema, "semver", version):
         raise ValueError("invalid package version")
-    return f"{name}-{version}.tgz"
+    return f"{name.removeprefix('@').replace('/', '-')}-{version}.tgz"
 
 
 def _walk_schema(value: Any) -> list[dict[str, Any]]:
@@ -569,14 +569,14 @@ def test_handoff_semver_basename_and_alias_tables_are_shared_and_closed() -> Non
         assert semver.is_valid(case["value"]) is case["valid"]
         if case["valid"]:
             assert _independent_alias_valid(schema, "semver", case["value"])
-            derived = _npm_pack_basename_v1(schema, "kaji", case["value"])
+            derived = _npm_pack_basename_v1(schema, "@irogane/kaji", case["value"])
             assert derived == case["basename"]
             assert basename.is_valid(derived)
         else:
             assert "basename" not in case
             assert not _independent_alias_valid(schema, "semver", case["value"])
             with pytest.raises(ValueError, match="invalid package version"):
-                _npm_pack_basename_v1(schema, "kaji", case["value"])
+                _npm_pack_basename_v1(schema, "@irogane/kaji", case["value"])
 
     for definition, cases in conformance["aliases"].items():
         validator = _fragment_validator(schema, definition)
@@ -687,7 +687,7 @@ def _preflight_fixture(
             "producer": "ts-handoff-preflight",
             "origin": handoff.REGISTRY_ORIGIN,
             "requestPath": handoff.REGISTRY_PATH,
-            "package": "kaji",
+            "package": "@irogane/kaji",
             "version": "0.2.0-beta.11",
             "httpStatus": 404 if registry_result == "package-absent" else 200,
             "result": registry_result,
@@ -705,7 +705,7 @@ def _preflight_fixture(
         "sourceCommit": HEAD,
         "treeSha": TREE,
         "trustedVerifierCommit": VERIFIER,
-        "package": {"name": "kaji", "version": "0.2.0-beta.11"},
+        "package": {"name": "@irogane/kaji", "version": "0.2.0-beta.11"},
         "rawInputs": {
             "source": {
                 "filename": handoff.RAW_SOURCE_NAME,
@@ -746,7 +746,7 @@ def _patch_source_boundary(
         handoff,
         "_package_metadata",
         lambda _root: {
-            "name": "kaji",
+            "name": "@irogane/kaji",
             "version": "0.2.0-beta.11",
             "scripts": {"prebuild": "bun run validate:registry"},
         },
@@ -788,7 +788,7 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
     monkeypatch.setattr(
         handoff,
         "_package_metadata",
-        lambda _root: {"name": "kaji", "version": "0.2.0-beta.11"},
+        lambda _root: {"name": "@irogane/kaji", "version": "0.2.0-beta.11"},
     )
     monkeypatch.setattr(
         handoff,
@@ -824,39 +824,39 @@ def test_internal_preflight_never_calls_registry_and_records_no_claim(
     [
         (
             200,
-            "https://registry.npmjs.org/kaji",
-            {"name": "kaji", "versions": {}},
+            "https://registry.npmjs.org/@irogane%2Fkaji",
+            {"name": "@irogane/kaji", "versions": {}},
             "version-unused",
         ),
         (
             404,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"error": "Not found"},
             "package-absent",
         ),
-        (404, "https://registry.npmjs.org/kaji", {}, None),
+        (404, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
         (404, "https://example.com/redirect", {"error": "Not found"}, None),
         (302, "https://example.com/redirect", {}, None),
-        (401, "https://registry.npmjs.org/kaji", {}, None),
-        (403, "https://registry.npmjs.org/kaji", {}, None),
-        (429, "https://registry.npmjs.org/kaji", {}, None),
-        (500, "https://registry.npmjs.org/kaji", {}, None),
+        (401, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (403, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (429, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
+        (500, "https://registry.npmjs.org/@irogane%2Fkaji", {}, None),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             {"name": "wrong", "versions": {}},
             None,
         ),
         (
             200,
-            "https://registry.npmjs.org/kaji",
-            {"name": "kaji", "versions": []},
+            "https://registry.npmjs.org/@irogane%2Fkaji",
+            {"name": "@irogane/kaji", "versions": []},
             None,
         ),
         (
             200,
-            "https://registry.npmjs.org/kaji",
-            {"name": "kaji", "versions": {"0.2.0-beta.11": {}}},
+            "https://registry.npmjs.org/@irogane%2Fkaji",
+            {"name": "@irogane/kaji", "versions": {"0.2.0-beta.11": {}}},
             None,
         ),
     ],
@@ -941,10 +941,10 @@ def test_release_registry_rejects_missing_token_without_network(
 @pytest.mark.parametrize(
     "result",
     [
-        (200, "https://registry.npmjs.org/kaji", b"{"),
+        (200, "https://registry.npmjs.org/@irogane%2Fkaji", b"{"),
         (
             200,
-            "https://registry.npmjs.org/kaji",
+            "https://registry.npmjs.org/@irogane%2Fkaji",
             b"x" * (5 * 1024 * 1024 + 1),
         ),
         TimeoutError("registry timeout"),
@@ -1088,7 +1088,7 @@ def _stage_fixture(
         assert "NODE_AUTH_TOKEN" not in environment
         if command_tuple[:2] == ("npm", "pack"):
             pack_root = Path(command_tuple[-1])
-            filename = "kaji-0.2.0-beta.11.tgz"
+            filename = "irogane-kaji-0.2.0-beta.11.tgz"
             (pack_root / filename).write_bytes(tarball_payload)
             output = json.dumps(
                 [
@@ -1157,7 +1157,7 @@ def test_stage_runs_frozen_commands_builds_once_and_packs_once(
         "source-equivalence.json",
         "signature-verification.json",
         "pack-once.json",
-        "kaji-0.2.0-beta.11.tgz",
+        "irogane-kaji-0.2.0-beta.11.tgz",
     }
 
 
@@ -1173,7 +1173,7 @@ def test_stage_fsyncs_tarball_before_receipts_and_atomic_publication(
 
     def fsync_file(path: Path) -> None:
         events.append(("file-fsync", path, None))
-        assert path.name == "kaji-0.2.0-beta.11.tgz"
+        assert path.name == "irogane-kaji-0.2.0-beta.11.tgz"
         assert path.parent.name.startswith(".stage.tmp-")
         assert not (path.parent / ".pack" / path.name).exists()
         original_fsync_file(path)
@@ -1257,7 +1257,7 @@ def test_stage_rejects_pack_metadata_disagreement_and_cleans_owned_temp(
 
     def runner(command: Any, _cwd: Path, _environment: Any) -> Any:
         if tuple(command)[:2] == ("npm", "pack"):
-            path = Path(command[-1]) / "kaji-0.2.0-beta.11.tgz"
+            path = Path(command[-1]) / "irogane-kaji-0.2.0-beta.11.tgz"
             path.write_bytes(b"artifact")
             return handoff.CompletedCommand(
                 returncode=0,
@@ -1388,7 +1388,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         assert path.parent != stage_dir
         return (
             {
-                "name": "kaji",
+                "name": "@irogane/kaji",
                 "version": "0.2.0-beta.11",
                 "exports": _exports(),
             },
@@ -1411,7 +1411,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         output_dir=output,
     )
     assert set(path.name for path in output.iterdir()) == {
-        "kaji-0.2.0-beta.11.tgz",
+        "irogane-kaji-0.2.0-beta.11.tgz",
         "kaji.manifest.json",
         "kaji-ts-consumer-handoff-v1.schema.json",
     }
@@ -1507,7 +1507,7 @@ def test_finalize_rejects_copied_package_or_license_identity_mismatch(
     def mismatched_identity(path: Path) -> tuple[dict[str, Any], bytes]:
         assert path.parent.name.startswith(".bundle.tmp-")
         package = {
-            "name": "kaji",
+            "name": "@irogane/kaji",
             "version": "0.2.0-beta.11",
             "exports": _exports(),
         }
@@ -1590,7 +1590,7 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
     elif mutation == "package-version":
         pack["evidence"]["package"]["version"] = "0.2.0-beta.2"
     elif mutation == "artifact-filename":
-        pack["evidence"]["artifact"]["filename"] = "kaji-0.2.0-beta.2.tgz"
+        pack["evidence"]["artifact"]["filename"] = "irogane-kaji-0.2.0-beta.2.tgz"
     elif mutation == "artifact-size":
         pack["evidence"]["artifact"]["size"] += 1
     elif mutation == "artifact-integrity":
@@ -1656,7 +1656,7 @@ def test_finalize_binds_pack_and_source_evidence_to_preflight_stage_and_copy(
         "_verify_archive_identity",
         lambda _path: (
             {
-                "name": "kaji",
+                "name": "@irogane/kaji",
                 "version": "0.2.0-beta.11",
                 "exports": _exports(),
             },

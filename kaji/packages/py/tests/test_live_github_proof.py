@@ -125,12 +125,12 @@ def _compatibility_receipt(
     return {
         **common,
         "artifactSha256": {
-            "kaji-0.2.0-beta.11.tgz": "3" * 64,
+            "irogane-kaji-0.2.0-beta.11.tgz": "3" * 64,
         },
         "runtime": {"version": "v22.14.0"},
         "artifacts": {
-            "tarball": "/artifacts/kaji-0.2.0-beta.11.tgz",
-            "package": "/tmp/installed/node_modules/kaji",
+            "tarball": "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+            "package": "/tmp/installed/node_modules/@irogane/kaji",
         },
     }
 
@@ -152,11 +152,11 @@ def _release(tmp_path: Path) -> VerifiedReleaseArtifacts:
         manifest_sha256=MANIFEST,
         python_wheel=tmp_path / "artifacts/kaji-0.2.0b1-py3-none-any.whl",
         python_sdist=tmp_path / "artifacts/kaji-0.2.0b1.tar.gz",
-        npm_tarball=tmp_path / "artifacts/kaji-0.2.0-beta.11.tgz",
+        npm_tarball=tmp_path / "artifacts/irogane-kaji-0.2.0-beta.11.tgz",
         artifact_sha256={
             "kaji-0.2.0b1-py3-none-any.whl": "1" * 64,
             "kaji-0.2.0b1.tar.gz": "2" * 64,
-            "kaji-0.2.0-beta.11.tgz": "3" * 64,
+            "irogane-kaji-0.2.0-beta.11.tgz": "3" * 64,
         },
     )
 
@@ -267,7 +267,7 @@ def test_prerequisites_bind_raw_receipts_to_one_exact_candidate(
         (
             "source-path",
             lambda value: value["artifacts"].update(
-                package=str(ROOT / "kaji/packages/ts/src/node_modules/kaji")
+                package=str(ROOT / "kaji/packages/ts/src/node_modules/@irogane/kaji")
             ),
         ),
     ),
@@ -488,7 +488,7 @@ def test_installed_children_have_no_source_fallback_or_issue_creation_call() -> 
         assert "github_add_comment" in source
         assert "KAJI_GITHUB_PROOF_TOKEN" in source
     assert 'Path(kaji.__file__ or "").resolve().parent != package_root' in python
-    assert 'import.meta.resolve("kaji")' in typescript
+    assert 'import.meta.resolve("@irogane/kaji")' in typescript
     assert "KAJI_GITHUB_PROOF_INPUT" in typescript
     assert "readFileSync" not in typescript
     assert "/.artifacts/private/" not in typescript
@@ -917,7 +917,7 @@ def _runtime_identity() -> dict[str, Any]:
                 "sha256": "1" * 64,
             },
             "typescript": {
-                "file": "kaji-0.2.0-beta.11.tgz",
+                "file": "irogane-kaji-0.2.0-beta.11.tgz",
                 "sha256": "3" * 64,
             },
         },

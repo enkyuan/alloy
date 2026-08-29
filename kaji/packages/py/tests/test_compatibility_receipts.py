@@ -20,7 +20,7 @@ TARBALL_SHA256 = "c" * 64
 PRODUCER_DIGEST = "sha256:" + "d" * 64
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "kaji-0.2.0-beta.11.tgz"
+TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 
 
@@ -268,7 +268,7 @@ def node_v2_receipt(
         "runtime": {"version": node_version},
         "artifacts": {
             "tarball": f"/artifacts/{TARBALL}",
-            "package": f"/opt/node/{major}/node_modules/kaji",
+            "package": f"/opt/node/{major}/node_modules/@irogane/kaji",
         },
         "githubPackageProofs": {
             "npm": proof,

@@ -6,8 +6,8 @@ import {
   type MetricsSink,
   type ToolExecutionContext,
   type TraceSink,
-} from "kaji";
-import { createGitHubRequester, type FixedOriginRequester } from "kaji/integrations";
+} from "@irogane/kaji";
+import { createGitHubRequester, type FixedOriginRequester } from "@irogane/kaji/integrations";
 
 import { GitHubClient, type GitHubClientOptions } from "../../registry/github/client";
 import type { PackageGitHubClient } from "../../registry/github/package-tools";

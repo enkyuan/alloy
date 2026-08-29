@@ -20,7 +20,7 @@ import {
   snapshotIntegrationResult,
   type BoundedResponse,
   type FixedOriginRequester,
-} from "kaji/integrations";
+} from "@irogane/kaji/integrations";
 
 type ToolExecutionContext = Parameters<FixedOriginRequester["request"]>[2];
 

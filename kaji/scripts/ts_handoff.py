@@ -35,7 +35,7 @@ from process_runner import (
 )
 
 
-PACKAGE_NAME = "kaji"
+PACKAGE_NAME = "@irogane/kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 BASE_REF = "refs/remotes/origin/main"
 SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
@@ -79,9 +79,9 @@ RECEIPT_DIGEST_KEYS = (
     "node24",
 )
 
-REGISTRY_URL = "https://registry.npmjs.org/kaji"
+REGISTRY_URL = "https://registry.npmjs.org/@irogane%2Fkaji"
 REGISTRY_ORIGIN = "https://registry.npmjs.org"
-REGISTRY_PATH = "/kaji"
+REGISTRY_PATH = "/@irogane%2Fkaji"
 REGISTRY_MAX_BYTES = 5 * 1024 * 1024
 REGISTRY_DEADLINE_SECONDS = 30.0
 
@@ -240,7 +240,7 @@ def _positive_integer(value: str | None) -> int:
 def npm_pack_basename_v1(name: str, version: str) -> str:
     if name != PACKAGE_NAME or not _valid_semver(version):
         _reject("INVALID_ARGUMENT")
-    return f"{name}-{version}.tgz"
+    return f"{name.removeprefix('@').replace('/', '-')}-{version}.tgz"
 
 
 def _canonical_json(document: Any) -> bytes:

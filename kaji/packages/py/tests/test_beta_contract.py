@@ -196,7 +196,7 @@ def _onboarding_document() -> dict[str, Any]:
         "commit": "a" * 40,
         "releaseManifestSha256": "b" * 64,
         "packageArtifact": {
-            "name": "kaji-0.2.0-beta.11.tgz",
+            "name": "irogane-kaji-0.2.0-beta.11.tgz",
             "size": 123,
             "sha256": "c" * 64,
         },

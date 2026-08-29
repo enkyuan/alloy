@@ -200,9 +200,9 @@ def main() -> None:
     sdist = find_one(
         sdk / "dist", f"{PYTHON_DISTRIBUTION}-{python_version}.tar.gz", "Python sdist"
     )
-    tarballs = sorted(artifacts.glob("kaji-*.tgz"))
+    tarballs = sorted(artifacts.glob("irogane-kaji-*.tgz"))
     if not tarballs:
-        tarballs = sorted(ts.glob("kaji-*.tgz"))
+        tarballs = sorted(ts.glob("irogane-kaji-*.tgz"))
     if len(tarballs) != 1:
         fail(f"expected exactly one TypeScript tarball, found {len(tarballs)}")
     npm_tarball = tarballs[0]

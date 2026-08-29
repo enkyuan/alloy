@@ -28,7 +28,7 @@ VERIFIER = "4" * 40
 DIGEST = "a" * 64
 EMAIL = "release.signer@example.com"
 VERSION = "0.2.0"
-ARTIFACT_NAME = f"kaji-{VERSION}.tgz"
+ARTIFACT_NAME = f"irogane-kaji-{VERSION}.tgz"
 SIGNER = {
     "repository": "enkyuan/alloy",
     "filePath": ".github/workflows/kaji.handoff.trusted.yml",
@@ -174,7 +174,7 @@ def _tar_files(
 ) -> dict[str, bytes]:
     exports = _exports()
     package = {
-        "name": "kaji",
+        "name": "@irogane/kaji",
         "version": VERSION,
         "license": "FSL-1.1-ALv2",
         "exports": exports,
@@ -338,7 +338,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         }
     pack = {
         "mode": mode,
-        "package": {"name": "kaji", "version": VERSION},
+        "package": {"name": "@irogane/kaji", "version": VERSION},
         "artifact": {
             "filename": ARTIFACT_NAME,
             "size": size,
@@ -462,7 +462,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
             "reproducibility": reproducibility,
         },
         "package": {
-            "name": "kaji",
+            "name": "@irogane/kaji",
             "version": VERSION,
             "exports": exports,
             "publicSymbols": {"github": PUBLIC_SYMBOLS},

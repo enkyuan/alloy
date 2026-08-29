@@ -90,7 +90,7 @@ FAILURE_CODES = frozenset(
     }
 )
 
-PACKAGE_NAME = "kaji"
+PACKAGE_NAME = "@irogane/kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 SIGNER_REPOSITORY = "enkyuan/alloy"
 SIGNER_FILE_PATH = ".github/workflows/kaji.handoff.trusted.yml"
@@ -117,9 +117,7 @@ SCHEMA_PATH = (
     Path(__file__).resolve().parents[1]
     / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
 )
-TRUSTED_LICENSE_PATH = (
-    Path(__file__).resolve().parents[1] / "packages/ts/LICENSE"
-)
+TRUSTED_LICENSE_PATH = Path(__file__).resolve().parents[1] / "packages/ts/LICENSE"
 
 
 class ValidationError(Exception):
@@ -256,7 +254,7 @@ def _safe_stable_strings(value: Any) -> None:
 def _npm_pack_basename(version: str) -> str:
     if SEMVER.fullmatch(version) is None:
         _reject("SCHEMA_INVALID")
-    return f"kaji-{version}.tgz"
+    return f"irogane-kaji-{version}.tgz"
 
 
 def _checked_archive_name(raw_name: str) -> str:

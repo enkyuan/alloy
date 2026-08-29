@@ -38,9 +38,9 @@ request, run every row that corresponds to a changed path.
 
 | Changed area                           | Commands                                                                                                                                                                |
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/cli`                             | `bun --filter @kaji/cli format:check && bun --filter @kaji/cli lint && bun --filter @kaji/cli typecheck && bun --filter @kaji/cli test && bun --filter @kaji/cli smoke` |
+| `apps/cli`                             | `bun --filter @irogane/kaji/cli format:check && bun --filter @irogane/kaji/cli lint && bun --filter @irogane/kaji/cli typecheck && bun --filter @irogane/kaji/cli test && bun --filter @irogane/kaji/cli smoke` |
 | `apps/docs`                            | `bun --filter @kaji/docs format:check && bun --filter @kaji/docs lint && bun --filter @kaji/docs typecheck && bun --filter @kaji/docs build`                            |
-| `kaji/packages/ts`             | `bun --filter kaji format:check && bun --filter kaji lint && bun --filter kaji typecheck && bun --filter kaji test`                                     |
+| `kaji/packages/ts`             | `bun --filter @irogane/kaji format:check && bun --filter @irogane/kaji lint && bun --filter @irogane/kaji typecheck && bun --filter @irogane/kaji test`                                     |
 | `kaji/packages/py`                 | `uv run --package kaji ruff format --check . && uv run --package kaji ruff check src tests && uv run --package kaji ty check && uv run --package kaji pytest -m "not integration"` |
 | `kaji/packages/serve`                  | `uv run --package kaji-serve ruff format --check . && uv run --package kaji-serve ruff check src tests alembic && uv run --package kaji-serve pytest`                   |
 | `packages/ui`                          | `bun --filter @kaji/ui format:check && bun --filter @kaji/ui typecheck`                                                                                                 |
