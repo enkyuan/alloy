@@ -4059,6 +4059,8 @@ def test_release_metadata_queries_and_records_actual_build_tool_versions() -> No
         assert f'"{command}": actual_tools["{command}"]' in verifier
     assert 'BUN_VERSION = "1.3.11"' in verifier
     assert 'UV_VERSION = "0.11.25"' in verifier
+    assert 'artifacts.glob("irogane-kaji-*.tgz")' in verifier
+    assert 'ts.glob("irogane-kaji-*.tgz")' in verifier
 
 
 def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> None:
