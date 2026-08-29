@@ -3109,7 +3109,7 @@ def _task7_provenance_statement(
     workflow_path: str = ".github/workflows/kaji.publish.yml",
     run_id: int = 123,
     run_attempt: int = 1,
-    subject_name: str = "pkg:npm/%40irogane%2Fkaji@0.2.0-beta.11",
+    subject_name: str = "pkg:npm/%40irogane/kaji@0.2.0-beta.11",
     digest_algorithm: str = "sha512",
 ) -> dict[str, object]:
     del workflow_sha  # The signed statement binds it through the peeled commit.
