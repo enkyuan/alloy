@@ -240,7 +240,7 @@ def _positive_integer(value: str | None) -> int:
 def npm_pack_basename_v1(name: str, version: str) -> str:
     if name != PACKAGE_NAME or not _valid_semver(version):
         _reject("INVALID_ARGUMENT")
-    return f"{name}-{version}.tgz"
+    return f"{name.removeprefix('@').replace('/', '-')}-{version}.tgz"
 
 
 def _canonical_json(document: Any) -> bytes:

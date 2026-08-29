@@ -1300,7 +1300,7 @@ def verify_npm(
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or parsed.path != f"/{NPM_PACKAGE}/-/{NPM_TARBALL}"
+        or urllib.parse.unquote(parsed.path) != f"/{NPM_PACKAGE}/-/{NPM_TARBALL}"
     ):
         raise VerificationMismatch("npm tarball URL is outside the expected registry")
     entry = entries.get(NPM_TARBALL)
