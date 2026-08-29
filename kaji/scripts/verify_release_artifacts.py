@@ -179,14 +179,13 @@ def verify_release_member_bytes(
     build_audit = manifest.get("buildAudit")
     if not isinstance(build_audit, dict) or set(build_audit) != {"file", "sha256"}:
         fail("manifest build audit binding is malformed")
-    expected_build_audit = (
-        (REFERENCE_BUILD_AUDIT, EXPECTED_BUILD_AUDIT_SHA256)
-        if artifact_contract == BETA2_REFERENCE_RELEASE_CONTRACT
-        else (
-            EXPECTED_BUILD_AUDIT,
-            sha256(Path(__file__).resolve().parents[2] / EXPECTED_BUILD_AUDIT),
-        )
-    )
+    if artifact_contract == BETA2_REFERENCE_RELEASE_CONTRACT:
+        expected_build_audit = (REFERENCE_BUILD_AUDIT, EXPECTED_BUILD_AUDIT_SHA256)
+    else:
+        audit_path = Path(__file__).resolve().parents[2] / EXPECTED_BUILD_AUDIT
+        if not audit_path.is_file() or audit_path.is_symlink():
+            fail("manifest build audit file is missing or unsafe")
+        expected_build_audit = (EXPECTED_BUILD_AUDIT, sha256(audit_path))
     if (build_audit.get("file"), build_audit.get("sha256")) != expected_build_audit:
         fail("manifest build audit binding mismatch")
 
