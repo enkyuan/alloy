@@ -153,9 +153,10 @@ def test_abi_index_rejects_unsafe_or_missing_contract_paths(
         root / "kaji/tooling/integrations/abi/check.py",
         monkeypatch,
     )
-    contracts = tmp_path / "contracts"
-    contracts.mkdir()
-    index = contracts / "integrations/v1/abi/index.json"
+    contracts = tmp_path / "contracts/integrations/v1"
+    contracts.mkdir(parents=True)
+    index = contracts / "abi/index.json"
+    index.parent.mkdir(parents=True)
     index.write_text(
         json.dumps(
             {
@@ -237,6 +238,7 @@ def test_typescript_cli_mismatch_reaches_python_explain_redacted(
     shutil.copytree(source_ts / "contracts", temporary_ts / "contracts")
     (temporary_ts / "scripts").mkdir(parents=True)
     (temporary_ts / "registry/echo").mkdir(parents=True)
+    shutil.copy2(source_ts / "registry/echo/manifest.json", temporary_ts / "registry/echo")
     shutil.copy2(source_ts / "scripts/integration-abi.ts", temporary_ts / "scripts")
     shutil.copy2(source_ts / "package.json", temporary_ts)
     shutil.copy2(source_ts / "tsconfig.json", temporary_ts)

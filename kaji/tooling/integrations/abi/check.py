@@ -19,8 +19,8 @@ from kaji.tooling.shared.process import CommandError, METADATA_BUDGET, run_check
 
 ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 KAJI = ROOT / "kaji"
-CONTRACTS = KAJI / "contracts" / "integrations"
-ABI_INDEX = CONTRACTS / "v1/abi/index.json"
+CONTRACTS = KAJI / "contracts" / "integrations" / "v1"
+ABI_INDEX = CONTRACTS / "abi/index.json"
 PYTHON_SDK = KAJI / "packages" / "py"
 TYPESCRIPT_SDK = KAJI / "packages" / "ts"
 PYTHON_REGISTRY = PYTHON_SDK / "src" / "integrations" / "registry"
@@ -241,7 +241,7 @@ def _runtime_documents(integration_name: str) -> tuple[dict[str, Any], dict[str,
 def _python_document(integration_name: str) -> dict[str, Any]:
     try:
         module = importlib.import_module(
-            f"kaji.integrations.registry.{integration_name}.{integration_name}"
+            f"kaji.integrations.registry.{integration_name}.handler"
         )
     except Exception as error:
         raise IntegrationAbiMismatchError(

@@ -767,7 +767,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
   expect(effectivePermissions(workflow, job)).toEqual({ contents: "read" });
 
   const steps = job.steps ?? [];
-  expect(steps).toHaveLength(5);
+  expect(steps).toHaveLength(6);
   for (const [index, step] of steps.entries()) {
     expect(step.if, `gate step ${index} must execute normally`).toBeUndefined();
     expect(step["continue-on-error"] ?? false, `gate step ${index} must fail closed`).toBe(false);
@@ -795,6 +795,7 @@ function assertProtectionReadyGate(workflow: Workflow): void {
     "install-args": "--frozen-lockfile",
   });
   expect(steps.flatMap((step) => (step.run ? [step.run.trim()] : []))).toEqual([
+    "uv run --project kaji/packages/py --no-sync python -m kaji.tooling.quality.filenames",
     requiredGateCommand,
   ]);
 }
