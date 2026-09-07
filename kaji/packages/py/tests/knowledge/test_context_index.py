@@ -492,7 +492,7 @@ def test_projector_state_snapshot_preserves_replay_cursor_semantics() -> None:
 
 
 def test_context_index_incremental_rss_is_bounded_in_fresh_processes() -> None:
-    worker = Path(__file__).with_name("context_rss_probe.py")
+    worker = Path(__file__).with_name("rss-probe.py")
 
     def measure(mode: str) -> dict[str, int]:
         completed = subprocess.run(

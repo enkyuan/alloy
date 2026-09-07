@@ -30,7 +30,6 @@ EXEMPT_FILES = {
     "packages/serve/tests/test_api_auth_jwt.py",
     "packages/serve/tests/test_modalities_voice_stt.py",
     "packages/serve/tests/test_modalities_voice_stt_helpers.py",
-    "packages/py/tests/context_rss_probe.py",
     "packages/py/tests/contracts/test_cross_sdk_fixtures.py",
     "packages/py/tests/events/test_event_payload_limits.py",
     "packages/py/tests/integrations/test_github_proof_cleanup.py",
