@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 import importlib.util
 import json
 from pathlib import Path
@@ -11,6 +12,20 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+@pytest.fixture(autouse=True)
+def _restore_kaji_modules() -> Iterator[None]:
+    saved = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == "kaji" or name.startswith("kaji.")
+    }
+    yield
+    for name in tuple(sys.modules):
+        if name == "kaji" or name.startswith("kaji."):
+            del sys.modules[name]
+    sys.modules.update(saved)
 
 
 def _source_kaji() -> Any:
