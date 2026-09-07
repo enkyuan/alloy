@@ -1347,7 +1347,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             pass
         return 2
     except (ApprovalError, onboarding.EvidenceError) as error:
-        print(f"FAIL: {error}")
+        try:
+            print(f"FAIL: {error}")
+        except BaseException:
+            pass
         return 1
     return 0
 
