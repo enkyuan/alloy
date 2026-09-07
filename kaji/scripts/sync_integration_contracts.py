@@ -12,9 +12,9 @@ from pathlib import Path, PurePosixPath
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACTS = ROOT / "kaji" / "contracts" / "integrations"
+CONTRACTS = ROOT / "kaji" / "contracts" / "integrations" / "v1"
 COPIES = {
-    CONTRACTS / "manifest.schema.json": (
+    CONTRACTS / "schema" / "manifest.json": (
         ROOT
         / "kaji"
         / "packages"
@@ -25,7 +25,7 @@ COPIES = {
         / "schema.json",
         ROOT / "kaji" / "packages" / "ts" / "registry" / "schema.json",
     ),
-    CONTRACTS / "index.schema.json": (
+    CONTRACTS / "schema" / "index.json": (
         ROOT
         / "kaji"
         / "packages"
@@ -93,7 +93,7 @@ COPIES = {
         / "owner-fixtures.json",
     ),
 }
-ABI_INDEX = CONTRACTS / "abi-index-v1.json"
+ABI_INDEX = CONTRACTS / "abi" / "index.json"
 PYTHON_REGISTRY = (
     ROOT / "kaji" / "packages" / "py" / "src" / "integrations" / "registry"
 )
