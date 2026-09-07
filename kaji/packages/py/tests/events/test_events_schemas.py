@@ -43,10 +43,10 @@ INVALID_CONFORMANCE_FIXTURE = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "invalid.json"
 )
 NEW_EVENT_SCHEMA = (
-    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/new.json"
+    REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/new.json"
 )
 STORED_EVENT_SCHEMA = (
-    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/stored.json"
+    REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/stored.json"
 )
 
 

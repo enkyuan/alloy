@@ -53,7 +53,7 @@ from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
 
-REPO_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent.parent
+REPO_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 CONTRACTS = REPO_ROOT / "kaji" / "contracts"
 SCENARIOS_PATH = CONTRACTS / "parity" / "v1/scenarios.json"
 EVENT_ADAPTER = TypeAdapter(KajiEvent)

@@ -45,7 +45,7 @@ def test_echo_py_template_sets_echo_namespace():
 def test_echo_executable_specs_match_authoritative_abi() -> None:
     from kaji.integrations.registry.echo import handler as echo_mod
 
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     contract = json.loads(
         (root / "kaji/contracts/integrations/v1/abi/echo.json").read_text()
     )
@@ -73,7 +73,7 @@ def test_echo_executable_specs_match_authoritative_abi() -> None:
 
 
 def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     contract = json.loads(
         (root / "kaji/contracts/integrations/v1/abi/echo.json").read_text()
     )
@@ -95,7 +95,7 @@ def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
 
 
 def test_registry_sources_are_owned_by_their_runtime() -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     python_registry = root / "kaji/packages/py/src/integrations/registry"
     typescript_registry = root / "kaji/packages/ts/registry"
 
@@ -124,7 +124,7 @@ def test_integration_sync_detects_newline_byte_drift(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     sync = _load_repo_script(
         "sync_integration_contracts_bytes",
         root / "kaji/tooling/integrations/contracts/sync.py",
@@ -147,7 +147,7 @@ def test_integration_sync_detects_newline_byte_drift(
 def test_abi_index_rejects_unsafe_or_missing_contract_paths(
     relative: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     checker = _load_repo_script(
         "check_integration_abi_index_paths",
         root / "kaji/tooling/integrations/abi/check.py",
@@ -174,7 +174,7 @@ def test_abi_index_rejects_unsafe_or_missing_contract_paths(
 def test_python_abi_inspector_is_required_and_redacts_top_level_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     checker = _load_repo_script(
         "check_integration_abi_inspector_errors",
         root / "kaji/tooling/integrations/abi/check.py",
@@ -206,7 +206,7 @@ def test_python_abi_inspector_is_required_and_redacts_top_level_errors(
 def test_abi_normalization_rejects_duplicate_manifest_tool_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     checker = _load_repo_script(
         "check_integration_abi_duplicate_names",
         root / "kaji/tooling/integrations/abi/check.py",
@@ -230,7 +230,7 @@ def test_typescript_cli_mismatch_reaches_python_explain_redacted(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     source_ts = root / "kaji/packages/ts"
     temporary_ts = tmp_path / "ts"
     shutil.copytree(source_ts / "src", temporary_ts / "src")
