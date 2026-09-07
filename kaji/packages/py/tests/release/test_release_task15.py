@@ -475,14 +475,14 @@ def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None
             "## [0.2.0-beta.7]",
             2,
         ),
-        Path("kaji/packages/py/tests/test_release_task15.py"): (
+        Path("kaji/packages/py/tests/release/test_release_task15.py"): (
             "\ndef test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None:\n"
             "    allowed_beta8_sections = {",
             "\ndef test_protected_release_workflows_fail_closed_and_attach_provenance()"
             " -> None:\n",
             4,
         ),
-        Path("kaji/packages/py/tests/test_beta_contract.py"): (
+        Path("kaji/packages/py/tests/release/test_beta_contract.py"): (
             "\ndef test_publisher_identity_schema_accepts_only_closed_fail_safe_states()"
             " -> None:\n",
             "\ndef test_typescript_handoff_policy_receipt_names_the_executed_regression()"
