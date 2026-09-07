@@ -1,1 +1,0 @@
-"""Packaged tool contract data."""

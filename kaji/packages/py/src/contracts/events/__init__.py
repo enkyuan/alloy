@@ -1,1 +1,0 @@
-"""Packaged event contract data."""

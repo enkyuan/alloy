@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kaji:contracts:operations:v1:schema",
+  "title": "Operation trace entry",
+  "description": "Format of entries in a parity snapshot's operation_trace array. Each entry is '<component>:<action>:<id>' marking the start or end of one provider or tool operation observed during a turn replay.",
+  "type": "string",
+  "pattern": "^(provider|tool):(start|end):[0-9]+$"
+}
