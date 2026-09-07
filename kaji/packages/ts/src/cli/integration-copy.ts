@@ -85,7 +85,7 @@ interface ReservationIdentity {
 
 const SIDECAR = ".kaji-integration-provenance.json";
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const CONTRACTS_ROOT = join(PACKAGE_ROOT, "contracts/integrations");
+const CONTRACTS_ROOT = join(PACKAGE_ROOT, "contracts/integrations/v1");
 const PACKAGE_LICENSE = join(PACKAGE_ROOT, "LICENSE");
 const LICENSE_IDENTIFIER = "FSL-1.1-ALv2";
 const LICENSE_URL = "https://spdx.org/licenses/FSL-1.1-ALv2.html";
@@ -119,7 +119,7 @@ let provenanceValidator: ValidateFunction | undefined;
 async function validateProvenance(value: unknown): Promise<boolean> {
   if (provenanceValidator === undefined) {
     const schema = JSON.parse(
-      await readFile(join(CONTRACTS_ROOT, "copy-provenance-v1.schema.json"), "utf8"),
+      await readFile(join(CONTRACTS_ROOT, "schema/provenance.json"), "utf8"),
     );
     const ajv = new Ajv2020({ allErrors: true, strict: true });
     addFormats(ajv);
@@ -139,7 +139,7 @@ async function packageVersion(): Promise<string> {
 }
 
 async function abiDigest(name: string): Promise<string> {
-  const index = JSON.parse(await readFile(join(CONTRACTS_ROOT, "abi-index-v1.json"), "utf8")) as {
+  const index = JSON.parse(await readFile(join(CONTRACTS_ROOT, "abi/index.json"), "utf8")) as {
     integrations: Record<string, string>;
   };
   const relativePath = index.integrations[name];

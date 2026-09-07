@@ -77,13 +77,7 @@ kaji = [
     "integrations/registry/**/*.py",
     "integrations/registry/**/LICENSE",
 ]
-"kaji.contracts" = ["*.json", "*.md", "cli/*.json", "release/*.json"]
-"kaji.contracts.errors" = ["*.json"]
-"kaji.contracts.events" = ["*.json"]
-"kaji.contracts.integrations" = ["*.json"]
-"kaji.contracts.parity" = ["*.json"]
-"kaji.contracts.providers" = ["*.json"]
-"kaji.contracts.tools" = ["*.json"]
+"kaji.contracts" = ["**/*.json", "**/*.md"]
 
 [dependency-groups]
 dev = [

@@ -473,8 +473,8 @@ def _load_wire_schema(filename: str) -> dict[str, Any]:
     return json.loads(package_file.read_text(encoding="utf-8"))
 
 
-_NEW_EVENT_SCHEMA = _load_wire_schema("new-kaji-event-v1.schema.json")
-_STORED_EVENT_SCHEMA = _load_wire_schema("stored-kaji-event-v1.schema.json")
+_NEW_EVENT_SCHEMA = _load_wire_schema("v1/schema/new.json")
+_STORED_EVENT_SCHEMA = _load_wire_schema("v1/schema/stored.json")
 
 
 def _schema_def_name(event_type: str) -> str:

@@ -35,7 +35,7 @@ export interface SafeReplayEvent {
 }
 
 const SAFE_EVENT_TYPES = new Set<string>(Object.values(EventType));
-/** Kept byte-for-byte in order with contracts/errors/error-codes.json by tests. */
+/** Kept byte-for-byte in order with contracts/errors/v1/codes.json by tests. */
 export const REPLAY_SAFE_ERROR_CODES = [
   "INVALID_TOOL_SCHEMA",
   "INVALID_TOOL_ARGUMENTS",
