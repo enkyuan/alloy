@@ -340,16 +340,26 @@ def _render_typescript_consumer(
     packages = template.get("packages")
     root_package = packages.get("") if isinstance(packages, dict) else None
     sdk_package = (
-        packages.get("node_modules/@irogane/kaji") if isinstance(packages, dict) else None
+        packages.get("node_modules/@irogane/kaji")
+        if isinstance(packages, dict)
+        else None
+    )
+    manifest_dependencies = (
+        manifest.get("dependencies") if isinstance(manifest, dict) else None
+    )
+    template_dependency = (
+        manifest_dependencies.get("@irogane/kaji")
+        if isinstance(manifest_dependencies, dict)
+        else None
     )
     if (
         not isinstance(manifest, dict)
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
-        or root_package.get("dependencies") != manifest.get("dependencies")
-        or manifest["dependencies"].get("@irogane/kaji") != "file:irogane-kaji-0.2.0-beta.11.tgz"
+        or root_package.get("dependencies") != manifest_dependencies
+        or template_dependency != "file:irogane-kaji-0.2.0-beta.11.tgz"
         or sdk_package.get("version") != "0.2.0-beta.11"
-        or sdk_package.get("resolved") != "file:irogane-kaji-0.2.0-beta.11.tgz"
+        or sdk_package.get("resolved") != template_dependency
         or not isinstance(sdk_package.get("integrity"), str)
     ):
         raise RuntimeError("installed TypeScript consumer fixture is inconsistent")
@@ -362,7 +372,9 @@ def _render_typescript_consumer(
         json.dumps(rendered_manifest, indent=2) + "\n"
     )
     rendered = copy.deepcopy(template)
-    rendered["packages"][""]["dependencies"]["@irogane/kaji"] = f"file:{typescript_tarball}"
+    rendered["packages"][""]["dependencies"]["@irogane/kaji"] = (
+        f"file:{typescript_tarball}"
+    )
     rendered_sdk = rendered["packages"]["node_modules/@irogane/kaji"]
     rendered_sdk["version"] = typescript_version
     rendered_sdk["resolved"] = f"file:{typescript_tarball}"
@@ -370,10 +382,10 @@ def _render_typescript_consumer(
     rendered_sdk["integrity"] = "sha512-" + base64.b64encode(digest).decode("ascii")
 
     comparison = copy.deepcopy(rendered)
-    comparison["packages"][""]["dependencies"]["@irogane/kaji"] = "file:irogane-kaji-0.2.0-beta.11.tgz"
+    comparison["packages"][""]["dependencies"]["@irogane/kaji"] = template_dependency
     comparison_sdk = comparison["packages"]["node_modules/@irogane/kaji"]
-    comparison_sdk["version"] = "0.2.0-beta.11"
-    comparison_sdk["resolved"] = "file:irogane-kaji-0.2.0-beta.11.tgz"
+    comparison_sdk["version"] = sdk_package["version"]
+    comparison_sdk["resolved"] = template_dependency
     comparison_sdk["integrity"] = sdk_package["integrity"]
     if comparison != template:
         raise RuntimeError("rendered consumer lock changed frozen registry packages")

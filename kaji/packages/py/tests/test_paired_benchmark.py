@@ -186,14 +186,19 @@ def _write_release_artifacts(
     typescript_version: str,
 ) -> None:
     root.mkdir()
+    is_reference = typescript_version == "0.2.0-beta.2"
     typescript_filename = (
-        f"kaji-{typescript_version}.tgz"
-        if typescript_version == "0.2.0-beta.2"
+        f"kaji-sdk-{typescript_version}.tgz"
+        if is_reference
         else f"irogane-kaji-{typescript_version}.tgz"
     )
     payloads = {
-        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
-        "kaji-0.2.0b1.tar.gz": b"sdist",
+        (
+            "kaji_sdk-0.2.0b1-py3-none-any.whl"
+            if is_reference
+            else "kaji-0.2.0b1-py3-none-any.whl"
+        ): b"wheel",
+        "kaji_sdk-0.2.0b1.tar.gz" if is_reference else "kaji-0.2.0b1.tar.gz": b"sdist",
         typescript_filename: b"npm",
     }
     entries = []
@@ -223,7 +228,11 @@ def _write_release_artifacts(
             "uv": "0.11.25",
         },
         "buildAudit": {
-            "file": "kaji/packages/py/build-requirements.txt",
+            "file": (
+                "kaji/build-requirements.txt"
+                if is_reference
+                else "kaji/packages/py/build-requirements.txt"
+            ),
             "sha256": hashlib.sha256(
                 (ROOT / "kaji/packages/py/build-requirements.txt").read_bytes()
             ).hexdigest(),
@@ -362,25 +371,25 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
     }
     assert anchor["artifacts"] == {
         "pythonWheel": {
-            "file": "kaji-0.2.0b1-py3-none-any.whl",
+            "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
             "sha256": (
                 "2a092b49c2c87666db9178bb8233f0b42551b683fa69475739582a8678ff0945"
             ),
         },
         "pythonSdist": {
-            "file": "kaji-0.2.0b1.tar.gz",
+            "file": "kaji_sdk-0.2.0b1.tar.gz",
             "sha256": (
                 "58540d729bc1eb64fd02c0bc153fdbcf826a997e2ef91c4bc06254e94079be1d"
             ),
         },
         "typescript": {
-            "file": "kaji-0.2.0-beta.2.tgz",
+            "file": "kaji-sdk-0.2.0-beta.2.tgz",
             "sha256": (
                 "266c9931456bef6f1abe9bbc96c6407d8ec98240ffdb164bad1f7785ca44d369"
             ),
         },
     }
-    assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-0.2.0-beta.2.tgz"
+    assert pair.REFERENCE_IDENTITY_FILES["typescript"] == "kaji-sdk-0.2.0-beta.2.tgz"
     assert pair.IDENTITY_FILES["typescript"] == "irogane-kaji-0.2.0-beta.11.tgz"
     assert "resolved" not in json.dumps(anchor).lower()
 
@@ -430,14 +439,14 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
     reference_consumer.mkdir()
     runtime_module._render_typescript_consumer(
         reference_consumer,
-        reference / "kaji-0.2.0-beta.2.tgz",
+        reference / "kaji-sdk-0.2.0-beta.2.tgz",
         artifact_contract=pair.BETA2_REFERENCE_RELEASE_CONTRACT,
     )
     reference_manifest = json.loads((reference_consumer / "package.json").read_text())
     reference_lock = json.loads((reference_consumer / "package-lock.json").read_text())
     assert (
         reference_manifest["dependencies"]["@irogane/kaji"]
-        == "file:kaji-0.2.0-beta.2.tgz"
+        == "file:kaji-sdk-0.2.0-beta.2.tgz"
     )
     assert (
         reference_lock["packages"]["node_modules/@irogane/kaji"]["version"]
@@ -456,7 +465,7 @@ def test_installed_reference_runtime_uses_only_the_fixed_beta2_contract(
         expected_commit=reference_commit,
         artifact_contract=pair.BETA2_REFERENCE_RELEASE_CONTRACT,
     ) as installed:
-        assert installed.release.npm_tarball.name == "kaji-0.2.0-beta.2.tgz"
+        assert installed.release.npm_tarball.name == "kaji-sdk-0.2.0-beta.2.tgz"
 
     with pair.installed_release_runtime(
         candidate,
