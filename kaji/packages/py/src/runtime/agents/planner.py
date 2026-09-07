@@ -11,7 +11,7 @@ import logging
 import math
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
-from kaji.core.safe_logging import log_no_throw
+from kaji.core.logging import log_no_throw
 from kaji.events.json import canonical_json
 from kaji.events.schemas import (
     MAX_DURABLE_TOOL_ARGUMENT_BYTES,

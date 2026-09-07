@@ -50,6 +50,8 @@ packages = [
     "kaji.events.store",
     "kaji.observability",
     "kaji.realtime",
+    "kaji.realtime.cache",
+    "kaji.realtime.history",
     "kaji.integrations",
     "kaji.integrations.registry",
     "kaji.integrations.registry.echo",

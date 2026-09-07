@@ -1,6 +1,6 @@
 import logging
 
-from kaji.realtime.history_ops import append_history, get_history, history_key
+from kaji.realtime.history.ops import append_history, get_history, history_key
 
 
 class FakeRedisList:

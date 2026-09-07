@@ -1,7 +1,7 @@
 """OpenAI TTS service — holds the client/config for speech synthesis.
 
 Mirrors :class:`GeminiTTSService`: this class owns credentials and the chosen
-voice/model; the streaming/synthesis transport lives in ``openai_provider``.
+voice/model; the streaming/synthesis transport lives in ``openai``.
 Unlike the Gemini SDK, the OpenAI SDK is natively async, so the provider calls
 it directly without a worker thread.
 """

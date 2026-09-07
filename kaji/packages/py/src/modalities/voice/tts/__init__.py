@@ -32,11 +32,11 @@ def get_tts_provider(provider: str | None = None) -> TTSProvider:
     name = (provider or settings.TTS_PROVIDER or "none").lower()
 
     if name == "gemini":
-        from kaji.modalities.voice.tts.gemini_provider import GeminiTTSProvider
+        from kaji.modalities.voice.tts.gemini import GeminiTTSProvider
 
         return GeminiTTSProvider()
     if name == "openai":
-        from kaji.modalities.voice.tts.openai_provider import OpenAITTSProvider
+        from kaji.modalities.voice.tts.openai import OpenAITTSProvider
 
         return OpenAITTSProvider()
     if name == "none":

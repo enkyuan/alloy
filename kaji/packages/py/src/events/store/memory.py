@@ -15,7 +15,7 @@ from kaji.events.errors import (
     SessionPurgeBusyError,
 )
 from kaji.events.lanes import SessionLanePool
-from kaji.events.session_lifecycle import (
+from kaji.events.lifecycle import (
     SessionPurgeAuthorization,
     assert_physical_purge_authorized,
     authorized_session_teardown,

@@ -9,7 +9,7 @@ import math
 import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
-from kaji.core.safe_logging import log_no_throw, log_redacted_failure
+from kaji.core.logging import log_no_throw, log_redacted_failure
 from kaji.events.errors import DurableJsonLimitError, InvalidDurableValueError
 from kaji.events.json import durable_json_snapshot
 from kaji.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES

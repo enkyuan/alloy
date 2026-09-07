@@ -10,7 +10,7 @@ from kaji.events.store.base import (
     PurgeableEventStore,
     supports_session_purge,
 )
-from kaji.events.store.inmem import InMemoryEventStore
+from kaji.events.store.memory import InMemoryEventStore
 
 __all__ = [
     "AppendResult",

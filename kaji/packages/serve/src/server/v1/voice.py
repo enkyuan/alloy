@@ -11,7 +11,7 @@ import websockets
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketState
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,

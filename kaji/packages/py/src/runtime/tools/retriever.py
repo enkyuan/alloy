@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Protocol, Tuple
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji.runtime.tools._vector_math import cosine_similarity
 from kaji.runtime.tools.registry import list_tool_specs
 

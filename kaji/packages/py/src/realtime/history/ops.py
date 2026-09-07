@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 
 logger = logging.getLogger(__name__)
 

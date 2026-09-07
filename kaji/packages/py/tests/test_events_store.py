@@ -10,7 +10,7 @@ from kaji.events.errors import (
     SessionPurgeBusyError,
 )
 from kaji.events.lanes import NestedEventTransactionError
-from kaji.events.session_lifecycle import (
+from kaji.events.lifecycle import (
     SessionPurgeAuthorization,
     finish_session_cleanup,
     store_session_purge,

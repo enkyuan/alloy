@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from kaji.events import session_lifecycle
+from kaji.events import lifecycle
 from kaji.events.errors import (
     SessionPurgeBusyError,
     SessionPurgeUnsupportedError,
@@ -24,7 +24,7 @@ from kaji.events.store import (
     InMemoryEventStore,
     supports_session_purge,
 )
-from kaji.events.session_lifecycle import SessionPurgeAuthorization
+from kaji.events.lifecycle import SessionPurgeAuthorization
 from kaji.events.types import EventType
 from kaji.runtime.agents import AgentBuilder, InMemoryTurnCoordinator, TurnContext
 from kaji.runtime.tools.errors import UnclassifiedToolRiskError

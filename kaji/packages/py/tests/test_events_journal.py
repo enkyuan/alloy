@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-import kaji.events.session_lifecycle as session_lifecycle
+import kaji.events.lifecycle as session_lifecycle
 from kaji.events.bus import InMemoryEventBus
 from kaji.events.errors import (
     EventBufferOverflowError,
@@ -18,7 +18,7 @@ from kaji.events.errors import (
     SessionPurgeUnsupportedError,
 )
 from kaji.events.journal import InMemoryEventJournal, SplitEventJournal
-from kaji.events.session_lifecycle import SessionPurgeAuthorization
+from kaji.events.lifecycle import SessionPurgeAuthorization
 from kaji.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
 from kaji.events.store import AppendResult, InMemoryEventStore
 

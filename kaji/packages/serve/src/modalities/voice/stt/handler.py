@@ -10,7 +10,7 @@ from typing import Any, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.websockets import WebSocketState
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.config import settings
 from kaji_serve.server.auth_utils import decode_bearer_token
 

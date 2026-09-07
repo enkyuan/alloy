@@ -37,7 +37,7 @@ def test_factory_selects_openai():
 
 
 def test_factory_is_case_insensitive():
-    from kaji.modalities.voice.tts.openai_provider import OpenAITTSProvider
+    from kaji.modalities.voice.tts.openai import OpenAITTSProvider
 
     assert isinstance(get_tts_provider("OpenAI"), OpenAITTSProvider)
 
@@ -61,7 +61,7 @@ def test_providers_use_their_own_voice_model_defaults():
 
 
 async def test_openai_provider_rejects_empty_text():
-    from kaji.modalities.voice.tts.openai_provider import OpenAITTSProvider
+    from kaji.modalities.voice.tts.openai import OpenAITTSProvider
 
     provider = OpenAITTSProvider()
     with pytest.raises(ValueError):

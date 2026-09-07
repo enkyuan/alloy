@@ -8,7 +8,7 @@ import math
 from types import MappingProxyType
 from typing import Literal, Mapping, Protocol, TypeAlias, runtime_checkable
 
-from kaji.core.safe_logging import log_no_throw
+from kaji.core.logging import log_no_throw
 
 
 logger = logging.getLogger(__name__)

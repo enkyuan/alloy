@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable
 import websockets
 from fastapi import WebSocket
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.modalities.voice.stt.handler import (
     TranscriptionSessionState,
     compose_final_text,

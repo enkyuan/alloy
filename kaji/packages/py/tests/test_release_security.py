@@ -21,9 +21,9 @@ from kaji.events.errors import EventSchemaIncompatibleError
 from kaji.events.schemas import validate_event_json
 from kaji.events.store import InMemoryEventStore
 from kaji.observability.protocols import TraceSink, start_span
-from kaji.realtime.history_ops import get_history
+from kaji.realtime.history.ops import get_history
 from kaji.knowledge.rag import DocumentRAG
-from kaji.modalities.voice.tts.gemini_provider import GeminiTTSProvider
+from kaji.modalities.voice.tts.gemini import GeminiTTSProvider
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation

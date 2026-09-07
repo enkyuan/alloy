@@ -14,7 +14,7 @@ from kaji.events.errors import (
     EventInfrastructureError,
     EventStoreCapacityError,
 )
-from kaji.events.session_lifecycle import (
+from kaji.events.lifecycle import (
     SessionPurgeAuthorization,
     authorized_session_teardown,
     register_purge_blocker,

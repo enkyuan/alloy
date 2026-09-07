@@ -6,7 +6,7 @@ import logging
 from functools import lru_cache
 from typing import Any
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.config import get_settings
 from kaji_serve.server.errors import ServiceAuthError, ServiceError
 from kaji_serve.server.http import HTTPService

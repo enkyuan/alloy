@@ -3,7 +3,7 @@ import pytest
 from types import SimpleNamespace
 
 from kaji.realtime import embedding_cache
-from kaji.realtime.embedding_cache import RedisEmbeddingCache
+from kaji.realtime.cache.embeddings import RedisEmbeddingCache
 
 
 class _FakeRedis:

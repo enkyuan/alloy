@@ -6,7 +6,7 @@ from typing import List, Optional, Protocol, runtime_checkable
 
 from kaji.events.protocols import EventJournal
 from kaji.events.store import EventStore
-from kaji.events.store.inmem import InMemoryEventStore
+from kaji.events.store.memory import InMemoryEventStore
 from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,

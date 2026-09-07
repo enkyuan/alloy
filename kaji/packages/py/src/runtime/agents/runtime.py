@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji.runtime.agents.cancellation import CancellationToken, ProviderDeadlineScope
 from kaji.runtime.agents.coordinator import (
     TurnCoordinator,
@@ -39,7 +39,7 @@ from kaji.events.errors import (
 )
 from kaji.events.journal import InMemoryEventJournal
 from kaji.events.protocols import EventJournal
-from kaji.events.session_lifecycle import (
+from kaji.events.lifecycle import (
     SessionPurgeAuthorization,
     StoreSessionPurgeLease,
     finish_session_cleanup,

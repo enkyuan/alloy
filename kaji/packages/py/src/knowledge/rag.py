@@ -11,7 +11,7 @@ retrieve and inject context into the system prompt on every turn.
 import logging
 from typing import List, Optional
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji.knowledge.chunking import chunk_text
 from kaji.knowledge.store import InMemoryVectorStore, VectorStore
 from kaji.knowledge.types import Chunk, Document

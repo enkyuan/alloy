@@ -11,7 +11,7 @@ import weakref
 
 import pytest
 
-from kaji.events.store.inmem import InMemoryEventStore
+from kaji.events.store.memory import InMemoryEventStore
 from kaji.events.errors import SessionPurgeBusyError
 from kaji.events.schemas import UserMessage
 from kaji.runtime.sessions.replay import replay_session

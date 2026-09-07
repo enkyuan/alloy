@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji.runtime.providers.base import ModelProvider
 from kaji.runtime.providers.errors import ProviderError
 from kaji.runtime.providers.gemini import GeminiProvider
