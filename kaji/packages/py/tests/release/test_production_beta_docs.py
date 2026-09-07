@@ -570,7 +570,7 @@ def test_public_onboarding_uses_published_npm_beta_and_defers_pypi() -> None:
     combined = "\n".join(path.read_text() for path in paths)
     combined_compact = " ".join(combined.split())
 
-    assert set(re.findall(r"kaji@0\.2\.0-beta\.\d+", combined)) == {
+    assert set(re.findall(r"@irogane/kaji@0\.2\.0-beta\.\d+", combined)) == {
         "@irogane/kaji@0.2.0-beta.11"
     }
     assert "https://www.npmjs.com/package/@irogane/kaji/v/0.2.0-beta.11" in combined
@@ -1054,7 +1054,7 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
     }
     combined = "\n".join(documents.values())
     assert "kaji==0.2.0b1" in combined
-    assert set(re.findall(r"kaji@0\.2\.0-beta\.\d+", combined)) == {
+    assert set(re.findall(r"@irogane/kaji@0\.2\.0-beta\.\d+", combined)) == {
         "@irogane/kaji@0.2.0-beta.11"
     }
 

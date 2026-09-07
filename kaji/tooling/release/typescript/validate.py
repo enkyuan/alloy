@@ -22,7 +22,7 @@ from jsonschema import Draft202012Validator
 
 
 MANIFEST_NAME = "kaji.manifest.json"
-SCHEMA_NAME = "v1/typescript/handoff.json"
+SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
 RECEIPT_NAMES = (
     "source-equivalence.json",
     "signature-verification.json",
@@ -114,12 +114,10 @@ WINDOWS_DRIVE = re.compile(r"[A-Za-z]:[/\\]")
 DANGEROUS_PREFIXES = ("/Users/", "/private/", "/tmp/", "/home/", "file:")
 
 SCHEMA_PATH = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
-    / "contracts/release/v1/typescript/handoff.json"
+    Path(__file__).resolve().parents[1]
+    / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
 )
-TRUSTED_LICENSE_PATH = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())) / "packages/ts/LICENSE"
-)
+TRUSTED_LICENSE_PATH = Path(__file__).resolve().parents[1] / "packages/ts/LICENSE"
 
 
 class ValidationError(Exception):
@@ -256,7 +254,7 @@ def _safe_stable_strings(value: Any) -> None:
 def _npm_pack_basename(version: str) -> str:
     if SEMVER.fullmatch(version) is None:
         _reject("SCHEMA_INVALID")
-    return f"kaji-{version}.tgz"
+    return f"irogane-kaji-{version}.tgz"
 
 
 def _checked_archive_name(raw_name: str) -> str:

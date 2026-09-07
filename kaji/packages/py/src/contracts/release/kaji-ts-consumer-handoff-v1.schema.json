@@ -956,7 +956,7 @@
       "additionalProperties": false,
       "required": ["testFile", "testName", "tokenLookups", "requestAttempts"],
       "properties": {
-        "testFile": { "const": "kaji/packages/ts/tests/integrations/github-registry.test.ts" },
+        "testFile": { "const": "kaji/packages/ts/tests/github-registry.test.ts" },
         "testName": {
           "const": "rejects approval for github_create_issue before token or HTTP"
         },
@@ -1227,7 +1227,7 @@
             "testFile", "testName", "result", "tokenLookups", "requestAttempts"
           ],
           "properties": {
-            "testFile": { "const": "kaji/packages/ts/tests/integrations/github-registry.test.ts" },
+            "testFile": { "const": "kaji/packages/ts/tests/github-registry.test.ts" },
             "testName": {
               "const": "rejects approval for github_create_issue before token or HTTP"
             },

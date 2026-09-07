@@ -38,7 +38,7 @@ interface InitCase {
 }
 
 const CLI_CASES = JSON.parse(
-  readFileSync(resolve(import.meta.dirname, "../../../../contracts/cli/v1/init.json"), "utf8"),
+  readFileSync(resolve(import.meta.dirname, "../../../contracts/cli/init-cases-v1.json"), "utf8"),
 ) as { readonly cases: InitCase[] };
 const TYPESCRIPT_CASES = CLI_CASES.cases.filter(({ pythonOnly }) => pythonOnly !== true);
 
@@ -136,10 +136,10 @@ describe("kaji init", () => {
     }
     const pkg = JSON.parse(readFileSync(join(out, "package.json"), "utf8"));
     const installed = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../../package.json"), "utf8"),
+      readFileSync(join(import.meta.dirname, "../package.json"), "utf8"),
     );
     expect(pkg.dependencies).toEqual({
-      "@irogane/kaji": installed.version,
+      "@irogane/kaji": "0.2.0-beta.11",
       zod: ">=4.3 <5",
     });
     expect(pkg.devDependencies["@types/node"]).toBe(installed.devDependencies["@types/node"]);
@@ -383,19 +383,19 @@ describe("kaji init", () => {
       registryRoot: "",
       log: () => {},
     });
-    const installed = JSON.parse(
-      readFileSync(join(import.meta.dirname, "../../package.json"), "utf8"),
-    );
     const pkg = JSON.parse(readFileSync(join(out, "package.json"), "utf8"));
 
     expect(code).toBe(0);
     expect(pkg.dependencies).toEqual({
-      "@irogane/kaji": installed.version,
+      "@irogane/kaji": "0.2.0-beta.11",
       zod: ">=4.3 <5",
       [peer]: range,
     });
     const key = provider === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
     expect(readFileSync(join(out, ".env.example"), "utf8")).toContain(`${key}=\n`);
+    const installed = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../package.json"), "utf8"),
+    );
     expect(pkg.devDependencies["@types/node"]).toBe(installed.devDependencies["@types/node"]);
   });
 
@@ -547,7 +547,7 @@ describe("kaji init", () => {
     const out = mkdtempSync(join(tmpdir(), "kaji-init-worker-timeout-"));
     writeFileSync(join(out, "agent.ts"), "original agent\n");
     writeFileSync(join(out, "package.json"), "original package\n");
-    const workerSource = resolve(import.meta.dirname, "../../src/cli/init-worker.ts");
+    const workerSource = resolve(import.meta.dirname, "../src/cli/init-worker.ts");
     let prepared = false;
 
     await expect(
