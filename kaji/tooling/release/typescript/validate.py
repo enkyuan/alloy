@@ -179,21 +179,33 @@ def _regular_directory(path: Path, *, code: str = "UNSAFE_PATH") -> Path:
 
 def _directory_files(path: Path, expected: set[str], *, code: str) -> dict[str, Path]:
     root = _regular_directory(path, code=code)
-    try:
-        children = list(root.iterdir())
-    except OSError:
-        _reject(code)
-    if {child.name for child in children} != expected:
-        _reject(code)
     files: dict[str, Path] = {}
-    for child in children:
+
+    def walk(directory: Path, prefix: str) -> None:
         try:
-            metadata = child.lstat()
+            children = sorted(directory.iterdir())
         except OSError:
             _reject(code)
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            _reject(code)
-        files[child.name] = child
+        for child in children:
+            relative = f"{prefix}{child.name}"
+            try:
+                metadata = child.lstat()
+            except OSError:
+                _reject(code)
+            if stat.S_ISLNK(metadata.st_mode):
+                _reject(code)
+            if stat.S_ISDIR(metadata.st_mode):
+                walk(child, f"{relative}/")
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                _reject(code)
+            if relative not in expected:
+                _reject(code)
+            files[relative] = child
+
+    walk(root, "")
+    if set(files) != expected:
+        _reject(code)
     return files
 
 
@@ -690,16 +702,21 @@ def validate_bundle(
 
     bundle_root = _regular_directory(bundle_dir)
     try:
-        names = {child.name for child in bundle_root.iterdir()}
+        top_names = {child.name for child in bundle_root.iterdir()}
     except OSError:
         _reject("UNSAFE_PATH")
-    if MANIFEST_NAME not in names or SCHEMA_NAME not in names or len(names) != 3:
+    schema_root = SCHEMA_NAME.split("/", 1)[0]
+    if MANIFEST_NAME not in top_names or schema_root not in top_names or len(top_names) != 3:
         _reject("UNSAFE_PATH")
-    tarball_names = names - {MANIFEST_NAME, SCHEMA_NAME}
+    tarball_names = top_names - {MANIFEST_NAME, schema_root}
     if len(tarball_names) != 1:
         _reject("UNSAFE_PATH")
     artifact_name = next(iter(tarball_names))
-    bundle_files = _directory_files(bundle_root, names, code="UNSAFE_PATH")
+    bundle_files = _directory_files(
+        bundle_root,
+        {MANIFEST_NAME, SCHEMA_NAME, artifact_name},
+        code="UNSAFE_PATH",
+    )
 
     trusted_schema_bytes = _read_regular(
         SCHEMA_PATH, limit=MAX_JSON_BYTES, code="SCHEMA_INVALID"

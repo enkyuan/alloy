@@ -198,7 +198,7 @@ def _github_package_proof(runtime: str) -> dict[str, object]:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
+            "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
             "testName": "rejects approval for github_create_issue before token or HTTP",
             "tokenLookups": 0,
             "requestAttempts": 0,
@@ -489,7 +489,7 @@ def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None
             " -> None:\n",
             1,
         ),
-        Path("kaji/packages/ts/tests/release-security.test.ts"): (
+        Path("kaji/packages/ts/tests/contracts/release-security.test.ts"): (
             '  it("binds the current TypeScript candidate to beta.11 and preserves prior incident history"',
             '  it("smokes compatibility matrices only from verified producer artifacts"',
             5,
@@ -537,7 +537,7 @@ def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None
         REPO_ROOT / "kaji/contracts" / onboarding_contract_name
     ).read_bytes()
     for contract_directory in (
-        REPO_ROOT / "kaji/contracts/release",
+        REPO_ROOT / "kaji/contracts/release/v1",
         REPO_ROOT / "kaji/packages/py/src/contracts/release/v1",
         REPO_ROOT / "kaji/packages/ts/contracts/release/v1",
     ):
@@ -722,7 +722,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     assert "environment: kaji-release" in rehearsal
     assert "OPENAI_API_KEY" in rehearsal
     assert "ANTHROPIC_API_KEY" not in rehearsal
-    assert "providers/openai/live.py" in rehearsal
+    assert "kaji.tooling.providers.openai.live" in rehearsal
     assert rehearsal.count("environment: kaji-onboarding") == 1
     assert rehearsal.count("environment: kaji-release\n") == 1
     assert "environment: kaji-publish" not in rehearsal
@@ -762,7 +762,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
         "sbom",
-        "providers/openai/live.py",
+        "kaji.tooling.providers.openai.live",
         "group: kaji-publish-${{ github.ref_name }}",
         "KAJI_RELEASE_SIGNER_EMAIL",
         "context.payload.repository?.private !== false",
@@ -783,7 +783,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "provenance.json",
         "provider-evidence.json",
         "kaji-typescript-onboarding-evidence",
-        "release/typescript/onboarding.py",
+        "kaji.tooling.release.typescript.onboarding",
         "typescript-onboarding/typescript-onboarding-evidence.json",
         "npm@11.16.0",
         "--downloads-dir .artifacts/kaji-publication-status/downloaded",
@@ -1042,7 +1042,7 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     assert f"EXPECTED_COMMIT: {expected_commit}" in calibration
     assert "Resolve exact current-run onboarding archives" in calibration
     assert (
-        calibration.count("kaji/tooling/release/typescript/onboarding.py")
+        calibration.count("kaji.tooling.release.typescript.onboarding")
         == 1
     )
     assert "Independently validate and recompute calibration aggregate" in calibration
@@ -1158,8 +1158,8 @@ def test_release_runbook_orders_archive_onboarding_tag_and_publisher_approvals()
     assert "Never use a broad free-form `-m` tag message" in runbook
 
     helper_prefix = (
-        "uv run --project kaji/packages/py --no-sync python \\\n     "
-        "kaji/tooling/release/typescript/approve.py gate"
+        "uv run --project kaji/packages/py --no-sync python "
+        "-m kaji.tooling.release.typescript.approve gate"
     )
     assert runbook_source.count(helper_prefix) == 2
     for mode, run_id, root in (
@@ -4289,8 +4289,8 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
     assert "needs: [verify-tag, offline-gates]" in publish_node
 
     for job, smoke in (
-        (rehearsal_python, "kaji/tooling/release/smoke.py"),
-        (publish_python, "kaji/tooling/release/smoke.py"),
+        (rehearsal_python, "kaji.tooling.release.smoke"),
+        (publish_python, "kaji.tooling.release.smoke"),
         (rehearsal_node, "kaji/packages/ts/scripts/smoke_package.mts"),
         (publish_node, "kaji/packages/ts/scripts/smoke_package.mts"),
     ):
@@ -4307,7 +4307,7 @@ def test_compatibility_matrices_consume_and_retain_frozen_artifacts() -> None:
         assert initialize < initial_upload < checkout
         assert (
             job.index("actions/download-artifact@")
-            < job.index("release/verify/artifacts.py")
+            < job.index("kaji.tooling.release.verify.artifacts")
             < job.index(smoke)
             < terminal
             < final_upload

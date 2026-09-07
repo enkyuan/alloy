@@ -47,7 +47,7 @@ def test_reusable_performance_workflow_runs_three_independent_replicas() -> None
     assert "timeout-minutes: 90" in paired
     assert "fail-fast: false" in paired
     assert "replica: [1, 2, 3]" in paired
-    assert paired.count("kaji/tooling/performance/bench/pairs.py") == 1
+    assert paired.count("kaji.tooling.performance.bench.pairs") == 1
     assert '--replica "${{ matrix.replica }}"' in paired
     assert '--runner-image-data "$HOME/imagedata.json"' in paired
     assert (
@@ -69,7 +69,7 @@ def test_paired_workflow_verifies_reference_before_default_candidate() -> None:
     verify_step = paired.split(
         "- name: Verify exact reference and candidate artifacts", 1
     )[1].split("- name: Measure protected paired replica", 1)[0]
-    verifier = "python3 kaji/tooling/release/verify/artifacts.py"
+    verifier = "python3 -m kaji.tooling.release.verify.artifacts"
     calls = verify_step.split(verifier)[1:]
 
     assert len(calls) == 2
@@ -95,7 +95,7 @@ def test_reusable_performance_workflow_retains_raw_receipts_and_aggregates_once(
     assert "needs: paired-replica" in aggregate
     assert "if: ${{ always() && inputs.run-paired }}" in aggregate
     assert aggregate.count("--replica-report") == 3
-    assert aggregate.count("kaji/tooling/performance/aggregate.py") == 1
+    assert aggregate.count("kaji.tooling.performance.aggregate") == 1
     assert "name: kaji-paired-aggregate" in aggregate
     assert "if: ${{ always() && github.run_attempt == 1 }}" in aggregate
 
@@ -106,7 +106,7 @@ def test_reusable_performance_workflow_keeps_soak_independent_and_hard() -> None
 
     assert "needs: candidate-artifact" in soak
     assert "runs-on: macos-15" in soak
-    assert "performance/run/soak.py" in soak
+    assert "kaji.tooling.performance.run.soak" in soak
     assert "--minutes 30 --protected" in soak
     assert "continue-on-error" not in soak
     assert "name: kaji-soak-receipt" in soak

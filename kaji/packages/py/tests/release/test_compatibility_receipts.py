@@ -150,6 +150,7 @@ def github_package_proof() -> dict[str, Any]:
         },
         "githubObservabilitySinksVerified": True,
         "unknownMutationPreserved": True,
+        "sourceRuntimeDetected": False,
         "mutationRetries": 0,
         "lifecycle": {
             "githubFailure": {
@@ -166,7 +167,7 @@ def github_package_proof() -> dict[str, Any]:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
+            "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
             "testName": (
                 "rejects approval for github_create_issue before token or HTTP"
             ),

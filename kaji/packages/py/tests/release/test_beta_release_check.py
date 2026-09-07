@@ -44,7 +44,7 @@ def _load_beta_gate():
 
 
 def _load_root_script(name: str):
-    path = BETA_GATE.parent / name
+    path = BETA_GATE.parents[1] / name
     scripts = str(path.parent)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)

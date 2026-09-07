@@ -11,7 +11,7 @@ from types import MappingProxyType, ModuleType, SimpleNamespace
 import pytest
 
 
-SDK_ROOT = Path(__file__).resolve().parents[1]
+SDK_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = SDK_ROOT.parents[2]
 KAJI_ROOT = REPO_ROOT / "kaji"
 
@@ -35,7 +35,7 @@ GITHUB_PACKAGE_PROOF = {
 
 
 def _load_script(name: str) -> ModuleType:
-    path = KAJI_ROOT / "scripts" / name
+    path = KAJI_ROOT / "tooling" / name
     scripts = str(path.parent)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
@@ -54,10 +54,10 @@ def test_release_smoke_preserves_build_verify_install_order(
 ) -> None:
     module = _load_script("release/smoke.py")
     sdk_root = tmp_path / "sdk"
-    scripts = sdk_root / "scripts"
+    tooling = sdk_root / "tooling"
     dist = sdk_root / "dist"
-    scripts.mkdir(parents=True)
-    (scripts / "integrations/github/smoke.py").write_text("# fixture\n")
+    tooling.mkdir(parents=True)
+    (tooling / "integrations/github/smoke.py").write_text("# fixture\n")
     dist.mkdir()
     wheel = dist / "kaji.whl"
     sdist = dist / "kaji.tar.gz"
@@ -67,7 +67,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     receipt_path = tmp_path / "receipt.json"
 
     monkeypatch.setattr(module, "SDK_ROOT", sdk_root)
-    monkeypatch.setattr(module, "SCRIPTS", scripts)
+    monkeypatch.setattr(module, "TOOLING", tooling)
     monkeypatch.setattr(
         module,
         "run",
@@ -107,22 +107,22 @@ def test_release_smoke_preserves_build_verify_install_order(
     )
     receipt = json.loads(receipt_path.read_text())
 
-    assert commands[0] == [sys.executable, str(scripts / "shared/clean.py")]
+    assert commands[0] == [sys.executable, str(tooling / "shared/clean.py")]
     assert commands[1][:4] == ["uv", "build", "--sdist", "--wheel"]
     verify = [
         index
         for index, command in enumerate(commands)
-        if str(scripts / "release/verify/archives.py") in command
+        if str(tooling / "release/verify/archives.py") in command
     ]
     archive = next(
         index
         for index, command in enumerate(commands)
-        if str(scripts / "release/verify/test_archives.py") in command
+        if str(tooling / "release/verify/test_archives.py") in command
     )
     installed_smokes = [
         index
         for index, command in enumerate(commands)
-        if str(scripts / "package/python/verify.py") in command
+        if str(tooling / "package/python/verify.py") in command
     ]
     assert len(verify) == 2
     assert len(installed_smokes) == 2
@@ -607,7 +607,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
 
 
 def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> None:
-    script = (KAJI_ROOT / "scripts" / "release/smoke.py").read_text()
+    script = (KAJI_ROOT / "tooling" / "release/smoke.py").read_text()
     tiers = json.loads(
         (REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json").read_text()
     )
@@ -699,7 +699,7 @@ def test_release_smoke_normalizes_signal_exit_status(
 
 
 def test_installed_smoke_requires_the_missing_key_failure() -> None:
-    script = (KAJI_ROOT / "scripts" / "package/python/verify.py").read_text()
+    script = (KAJI_ROOT / "tooling" / "package/python/verify.py").read_text()
 
     assert 'kaji.get_provider("openai")' in script
     assert "except kaji.ProviderConfigError as error:" in script
@@ -708,7 +708,7 @@ def test_installed_smoke_requires_the_missing_key_failure() -> None:
 
 
 def test_archive_verifier_compares_all_packaged_contract_bytes() -> None:
-    script = (KAJI_ROOT / "scripts" / "release/verify/archives.py").read_text()
+    script = (KAJI_ROOT / "tooling" / "release/verify/archives.py").read_text()
 
     assert "argparse.ArgumentParser" in script
     assert "def load_archives(dist_dir: Path)" in script
@@ -790,7 +790,7 @@ def test_archive_verifier_allows_only_declared_github_owner_fixture() -> None:
 def test_adversarial_archive_verifier_covers_generated_metadata_and_size_bombs() -> (
     None
 ):
-    script = (KAJI_ROOT / "scripts" / "release/verify/test_archives.py").read_text()
+    script = (KAJI_ROOT / "tooling" / "release/verify/test_archives.py").read_text()
 
     for expected in (
         "mutate_metadata",
@@ -1000,10 +1000,10 @@ def test_repo_root_editable_import_resolves_sdk_package() -> None:
 
 def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -> None:
     source_tools = (
-        KAJI_ROOT / "scripts" / "integrations/github/prove.py",
-        KAJI_ROOT / "scripts" / "integrations/github/cleanup.py",
-        KAJI_ROOT / "scripts" / "integrations/github/control.py",
-        KAJI_ROOT / "scripts" / "integrations/github/live.py",
+        KAJI_ROOT / "tooling" / "integrations/github/prove.py",
+        KAJI_ROOT / "tooling" / "integrations/github/cleanup.py",
+        KAJI_ROOT / "tooling" / "integrations/github/control.py",
+        KAJI_ROOT / "tooling" / "integrations/github/live.py",
         REPO_ROOT
         / "kaji"
         / "packages"
@@ -1015,7 +1015,7 @@ def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -
     assert all(not path.is_relative_to(SDK_ROOT / "src") for path in source_tools)
 
     canonical = (
-        REPO_ROOT / "kaji" / "contracts" / "release" / "release/v1/github.json"
+        REPO_ROOT / "kaji" / "contracts" / "release/v1/github.json"
     ).read_bytes()
     assert (
         SDK_ROOT / "src" / "contracts" / "release" / "release/v1/github.json"

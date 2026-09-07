@@ -69,6 +69,8 @@ def _repository(root: Path) -> str:
     _git(root, "config", "user.email", SIGNER)
     _git(root, "config", "commit.gpgsign", "false")
     (root / ".gitignore").write_text("__pycache__/\n")
+    (root / "kaji" / "contracts").mkdir(parents=True)
+    (root / "kaji" / "packages").mkdir(parents=True)
     (root / "tracked.txt").write_text("base\n")
     _git(root, "add", ".gitignore", "tracked.txt")
     _git(root, "commit", "-q", "-m", "base")
@@ -162,7 +164,7 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
     _repository(trusted)
     _repository(candidate)
 
-    trusted_script = trusted / "kaji" / "scripts" / VERIFIER.name
+    trusted_script = trusted / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
     trusted_script.parent.mkdir(parents=True)
     shutil.copyfile(VERIFIER, trusted_script)
     _git(trusted, "add", trusted_script.relative_to(trusted).as_posix())
@@ -263,7 +265,7 @@ def test_verifier_entrypoint_freezes_identity_and_uses_bounded_process_runner() 
     assert verifier.REPOSITORY == REPOSITORY
     assert verifier.REPOSITORY_URL == REPOSITORY_URL
     assert verifier.BASE_REF == BASE_REF
-    assert "from process_runner import" in source
+    assert "from kaji.tooling.shared.process import" in source
     assert "run_checked" in source
     assert "subprocess." not in source
 
@@ -353,7 +355,7 @@ def test_empty_range_verifies_singleton_head_and_writes_exact_closed_raw_files(
     assert (
         signature_document["verifierScriptSha256"]
         == hashlib.sha256(
-            (case.trusted / "kaji" / "scripts" / VERIFIER.name).read_bytes()
+            (case.trusted / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name).read_bytes()
         ).hexdigest()
     )
     assert signature_document["mechanism"] == "github-rest-commit-verification"
@@ -457,7 +459,7 @@ def test_candidate_local_verifier_copy_cannot_substitute_for_trusted_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     case = _case(tmp_path, monkeypatch)
-    candidate_script = case.candidate / "kaji" / "scripts" / VERIFIER.name
+    candidate_script = case.candidate / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
     candidate_script.parent.mkdir(parents=True)
     shutil.copyfile(VERIFIER, candidate_script)
     case.verifier = _load_verifier(candidate_script)

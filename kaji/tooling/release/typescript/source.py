@@ -109,7 +109,20 @@ def _valid_tag(value: object) -> bool:
 
 
 def _trusted_root() -> Path:
-    return (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    toplevel = _git_text(
+        Path(__file__).resolve().parent,
+        "rev-parse",
+        "--show-toplevel",
+        failure_code="SOURCE_NOT_ISOLATED",
+    )
+    try:
+        root = Path(toplevel).resolve(strict=True)
+    except OSError:
+        _reject("SOURCE_NOT_ISOLATED")
+    kaji = root / "kaji"
+    if not ((kaji / "contracts").is_dir() and (kaji / "packages").is_dir()):
+        _reject("SOURCE_NOT_ISOLATED")
+    return root
 
 
 def _git_environment() -> dict[str, str]:

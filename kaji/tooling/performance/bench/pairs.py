@@ -18,7 +18,7 @@ import sys
 from typing import Any
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from kaji.tooling.performance.platform import runner_fingerprint, validate_retained_runner
 from kaji.tooling.performance.gate.benchmark import (

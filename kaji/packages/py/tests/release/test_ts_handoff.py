@@ -215,7 +215,7 @@ def _manifest(mode: str) -> dict[str, Any]:
         "sourceTreeRecheck": "passed",
     }
     policy = {
-        "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
+        "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
         "testName": "rejects approval for github_create_issue before token or HTTP",
         "tokenLookups": 0,
         "requestAttempts": 0,
@@ -476,7 +476,7 @@ def test_handoff_schema_accepts_first_publication_registry_evidence() -> None:
 def test_handoff_schema_accepts_exact_root_policy_projection() -> None:
     manifest = _manifest("release")
     assert manifest["securityEvidence"]["policyBeforeRequest"] == {
-        "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
+        "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
         "testName": "rejects approval for github_create_issue before token or HTTP",
         "result": "passed",
         "tokenLookups": 0,

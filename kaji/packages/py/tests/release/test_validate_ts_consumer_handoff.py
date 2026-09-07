@@ -16,10 +16,10 @@ import pytest
 
 SCRIPT = Path(__file__).parents[4] / "tooling" / "release/typescript/validate.py"
 SCHEMA = (
-    Path(__file__).parents[3]
+    Path(__file__).parents[4]
     / "contracts/release/v1/typescript/handoff.json"
 )
-LICENSE = Path(__file__).parents[3] / "packages/ts/LICENSE"
+LICENSE = Path(__file__).parents[4] / "packages/ts/LICENSE"
 
 HEAD = "1" * 40
 TREE = "2" * 40
@@ -277,7 +277,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "uv": "0.11.25",
     }
     policy = {
-        "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
+        "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
         "testName": "rejects approval for github_create_issue before token or HTTP",
         "tokenLookups": 0,
         "requestAttempts": 0,
@@ -513,9 +513,9 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "mode": mode,
     }
     _persist(fx)
-    (bundle / "release/v1/typescript/handoff.json").write_bytes(
-        SCHEMA.read_bytes()
-    )
+    schema_copy = bundle / "v1/typescript/handoff.json"
+    schema_copy.parent.mkdir(parents=True, exist_ok=True)
+    schema_copy.write_bytes(SCHEMA.read_bytes())
     return fx
 
 
@@ -689,7 +689,7 @@ def test_rejects_root_and_external_signature_mechanism_disagreement(
         ),
         (
             lambda fx: (
-                fx["bundle"] / "release/v1/typescript/handoff.json"
+                fx["bundle"] / "v1/typescript/handoff.json"
             ).write_text("{}\n"),
             "SCHEMA_INVALID",
         ),

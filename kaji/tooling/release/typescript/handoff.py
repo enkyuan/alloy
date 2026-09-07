@@ -185,7 +185,7 @@ def _trusted_root() -> Path:
 
 
 def _schema_path() -> Path:
-    return _trusted_root() / "kaji" / "contracts" / "release" / SCHEMA_NAME
+    return _trusted_root() / "contracts" / "release" / SCHEMA_NAME
 
 
 def _schema() -> dict[str, Any]:

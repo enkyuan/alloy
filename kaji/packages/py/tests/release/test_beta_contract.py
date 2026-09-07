@@ -457,7 +457,7 @@ def test_typescript_handoff_policy_receipt_names_the_executed_regression() -> No
 
     for policy_properties in (properties, root_properties):
         assert policy_properties["testFile"] == {
-            "const": "kaji/packages/ts/tests/github-registry.test.ts"
+            "const": "kaji/packages/ts/tests/integrations/github-registry.test.ts"
         }
         assert policy_properties["testName"] == {
             "const": "rejects approval for github_create_issue before token or HTTP"

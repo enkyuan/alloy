@@ -175,7 +175,7 @@ def _load_script(name: str) -> Any:
 def test_github_proof_contract_is_closed_and_orders_two_cells() -> None:
     schema = json.loads(
         (
-            ROOT / "kaji" / "contracts" / "release" / "release/v1/github.json"
+            ROOT / "kaji" / "contracts" / "release/v1/github.json"
         ).read_text()
     )
     Draft202012Validator.check_schema(schema)

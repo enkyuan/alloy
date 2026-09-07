@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 
 
-SDK_ROOT = Path(__file__).resolve().parents[1]
+SDK_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = SDK_ROOT.parents[2]
 PACKAGE_ROOT = SDK_ROOT / "src"
 
@@ -196,7 +196,11 @@ def test_core_package_has_no_infra_or_runtime_dependencies():
 
 def test_sdk_does_not_configure_host_process_logging() -> None:
     """The embedded SDK must not mutate host logging or create log files."""
-    assert not (PACKAGE_ROOT / "core" / "logging.py").exists()
+    for path in _python_files(PACKAGE_ROOT):
+        source = path.read_text(encoding="utf-8")
+        assert "basicConfig(" not in source, path
+        assert "addHandler(" not in source, path
+        assert "StreamHandler(" not in source, path
 
 
 def test_redis_client_is_confined_to_realtime_boundary():
