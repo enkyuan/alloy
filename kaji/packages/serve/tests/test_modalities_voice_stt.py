@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from kaji_serve.modalities.voice.stt.soniox_service import (
+from kaji_serve.modalities.voice.stt.service import (
     SonioxConfigError,
     SonioxService,
 )
