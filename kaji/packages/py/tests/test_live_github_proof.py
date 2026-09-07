@@ -488,7 +488,7 @@ def test_installed_children_have_no_source_fallback_or_issue_creation_call() -> 
         assert "github_add_comment" in source
         assert "KAJI_GITHUB_PROOF_TOKEN" in source
     assert 'Path(kaji.__file__ or "").resolve().parent != package_root' in python
-    assert 'import.meta.resolve("kaji")' in typescript
+    assert 'import.meta.resolve("@irogane/kaji")' in typescript
     assert "KAJI_GITHUB_PROOF_INPUT" in typescript
     assert "readFileSync" not in typescript
     assert "/.artifacts/private/" not in typescript

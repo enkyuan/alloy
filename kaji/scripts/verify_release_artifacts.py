@@ -25,9 +25,9 @@ EXPECTED_PACKAGES = {
     "typescript": "0.2.0-beta.11",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
-    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
-    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
-    "kaji-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
+    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
+    "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 REFERENCE_EXPECTED_PACKAGES = {
     "contract": "1.0.0",
@@ -42,6 +42,10 @@ EXPECTED_FIXED_BUILD_TOOLS = {
     "uv": "0.11.25",
 }
 EXPECTED_BUILD_AUDIT = "kaji/packages/py/build-requirements.txt"
+REFERENCE_BUILD_AUDIT = "kaji/build-requirements.txt"
+EXPECTED_BUILD_AUDIT_SHA256 = (
+    "b8d86c05f2f61794915f97cbfe02667e35d22f0393b85186358a235665a050a8"
+)
 ENTRY_KEYS = {
     "commit",
     "contractVersion",
@@ -175,13 +179,15 @@ def verify_release_member_bytes(
     build_audit = manifest.get("buildAudit")
     if not isinstance(build_audit, dict) or set(build_audit) != {"file", "sha256"}:
         fail("manifest build audit binding is malformed")
-    if build_audit["file"] != EXPECTED_BUILD_AUDIT:
-        fail("manifest build audit names an unexpected file")
-    audit_path = Path(__file__).resolve().parents[2] / EXPECTED_BUILD_AUDIT
-    if not audit_path.is_file() or audit_path.is_symlink():
-        fail("manifest build audit file is missing or unsafe")
-    if build_audit["sha256"] != sha256(audit_path):
-        fail("manifest build audit hash mismatch")
+    if artifact_contract == BETA2_REFERENCE_RELEASE_CONTRACT:
+        expected_build_audit = (REFERENCE_BUILD_AUDIT, EXPECTED_BUILD_AUDIT_SHA256)
+    else:
+        audit_path = Path(__file__).resolve().parents[2] / EXPECTED_BUILD_AUDIT
+        if not audit_path.is_file() or audit_path.is_symlink():
+            fail("manifest build audit file is missing or unsafe")
+        expected_build_audit = (EXPECTED_BUILD_AUDIT, sha256(audit_path))
+    if (build_audit.get("file"), build_audit.get("sha256")) != expected_build_audit:
+        fail("manifest build audit binding mismatch")
 
     entries = manifest.get("artifacts")
     if not isinstance(entries, list) or len(entries) != len(expected_artifacts):

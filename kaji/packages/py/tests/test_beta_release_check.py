@@ -1237,7 +1237,9 @@ def test_installed_runtime_renders_only_verified_tarball_integrity(
         rendered["packages"]["node_modules/zod"]
         == template["packages"]["node_modules/zod"]
     )
-    assert rendered["packages"]["node_modules/@irogane/kaji"]["integrity"].startswith("sha512-")
+    assert rendered["packages"]["node_modules/@irogane/kaji"]["integrity"].startswith(
+        "sha512-"
+    )
     assert lock.read_text() == json.dumps(template)
 
 
@@ -1257,6 +1259,10 @@ def test_installed_typescript_consumer_uses_frozen_npm_ci_contract() -> None:
         assert package["resolved"].startswith("https://registry.npmjs.org/")
         assert re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", package["integrity"])
     source = module._install_typescript.__code__.co_consts
+    assert any(isinstance(value, str) and "@irogane/kaji" in value for value in source)
+    assert not any(
+        isinstance(value, str) and "import('kaji')" in value for value in source
+    )
     assert "ci" in source
     assert "install" not in source
 
@@ -3693,10 +3699,10 @@ def test_typescript_source_benchmark_maps_every_public_subpath() -> None:
     config = (REPO_ROOT / "kaji" / "packages" / "ts" / "tsconfig.json").read_text()
 
     for package, source in {
-        "kaji": "./src/index.ts",
-        "kaji/openai": "./src/providers/openai.ts",
-        "kaji/anthropic": "./src/providers/anthropic.ts",
-        "kaji/testing": "./src/testing.ts",
+        "@irogane/kaji": "./src/index.ts",
+        "@irogane/kaji/openai": "./src/providers/openai.ts",
+        "@irogane/kaji/anthropic": "./src/providers/anthropic.ts",
+        "@irogane/kaji/testing": "./src/testing.ts",
     }.items():
         assert f'"{package}": ["{source}"]' in config
 
