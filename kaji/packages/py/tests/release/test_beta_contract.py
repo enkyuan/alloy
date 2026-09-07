@@ -12,7 +12,7 @@ from jsonschema import Draft202012Validator
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACT = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
-ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors" / "errors/v1/codes.json"
+ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors/v1/codes.json"
 EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts/migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts/check.py"
@@ -24,8 +24,8 @@ GITHUB_TYPESCRIPT_ABI = (
     / "integrations/v1/abi/typescript/github.json"
 )
 EVENT_SCHEMAS = (
-    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/new.json",
-    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/stored.json",
+    REPO_ROOT / "kaji" / "contracts" / "events/v1/schema/new.json",
+    REPO_ROOT / "kaji" / "contracts" / "events/v1/schema/stored.json",
 )
 TS_HANDOFF_SCHEMA_RELATIVE = Path("release/v1/typescript/handoff.json")
 TS_HANDOFF_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_HANDOFF_SCHEMA_RELATIVE
@@ -305,9 +305,9 @@ def test_publisher_identity_schema_is_required_closed_and_exactly_packaged() -> 
         REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts",
         REPO_ROOT / "kaji" / "packages" / "ts" / "contracts",
     ):
-        release_root = package_root / "release"
         assert {
-            path.name for path in release_root.iterdir() if path.is_file()
+            path.relative_to(package_root).as_posix()
+            for path in package_root.joinpath("release").rglob("*.json")
         } == expected_release_inventory
         assert (
             package_root / PUBLISHER_IDENTITY_SCHEMA_RELATIVE

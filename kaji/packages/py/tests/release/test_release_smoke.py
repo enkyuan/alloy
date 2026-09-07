@@ -56,7 +56,7 @@ def test_release_smoke_preserves_build_verify_install_order(
     sdk_root = tmp_path / "sdk"
     tooling = sdk_root / "tooling"
     dist = sdk_root / "dist"
-    tooling.mkdir(parents=True)
+    (tooling / "integrations/github").mkdir(parents=True)
     (tooling / "integrations/github/smoke.py").write_text("# fixture\n")
     dist.mkdir()
     wheel = dist / "kaji.whl"
@@ -78,7 +78,11 @@ def test_release_smoke_preserves_build_verify_install_order(
         commands.append(command)
         if command == ["uv", "--version"]:
             return "uv 0.11.25 (Homebrew 2026-07-25)\n"
-        if any("integrations/github/smoke.py" in part for part in command):
+        if any(
+            "integrations/github/smoke.py" in part
+            or part.endswith("installed_github_smoke.py")
+            for part in command
+        ):
             return json.dumps(GITHUB_PACKAGE_PROOF)
         if command == ["kaji", "--help"]:
             return "kaji (conflicting fixture) 9.9.9\n"
@@ -137,7 +141,11 @@ def test_release_smoke_preserves_build_verify_install_order(
     installed_github_smokes = [
         command
         for command in commands
-        if any("integrations/github/smoke.py" in part for part in command)
+        if any(
+            "integrations/github/smoke.py" in part
+            or part.endswith("installed_github_smoke.py")
+            for part in command
+        )
     ]
     assert len(installed_github_smokes) == 2
     assert all(command[1] == "-I" for command in installed_github_smokes)
@@ -906,7 +914,7 @@ def test_clean_caches_removes_project_caches_without_touching_venv(
     generated = [
         tmp_path / "src" / "package" / "__pycache__" / "module.pyc",
         tmp_path / "tests" / "case.pyc",
-        tmp_path / "scripts" / "__pycache__" / "tool.pyo",
+        tmp_path / "tooling" / "__pycache__" / "tool.pyo",
         tmp_path / "benchmarks" / "__pycache__" / "runtime.pyc",
         tmp_path / ".pytest_cache" / "state",
         tmp_path / ".ruff_cache" / "state",
@@ -953,26 +961,24 @@ def test_parity_contract_package_is_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
     package_data = pyproject["tool"]["setuptools"]["package-data"]
 
-    assert (SDK_ROOT / "src/contracts/parity/__init__.py").is_file()
-    assert (SDK_ROOT / "src/contracts/integrations/__init__.py").is_file()
-    assert package_data["kaji.contracts.parity"] == ["*.json"]
-    assert package_data["kaji.contracts.integrations"] == ["*.json"]
+    assert (SDK_ROOT / "src/contracts/parity/v1/scenarios.json").is_file()
+    assert (SDK_ROOT / "src/contracts/integrations/v1/schema/index.json").is_file()
+    assert package_data["kaji.contracts"] == ["**/*.json", "**/*.md"]
 
 
 def test_provider_cost_contract_package_is_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
     package_data = pyproject["tool"]["setuptools"]["package-data"]
 
-    assert (SDK_ROOT / "src/contracts/providers/__init__.py").is_file()
-    assert package_data["kaji.contracts.providers"] == ["*.json"]
+    assert (SDK_ROOT / "src/contracts/providers/v1/costs.json").is_file()
+    assert package_data["kaji.contracts"] == ["**/*.json", "**/*.md"]
 
 
 def test_cli_and_release_contract_data_are_declared() -> None:
     pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
     package_data = pyproject["tool"]["setuptools"]["package-data"]
 
-    assert "cli/*.json" in package_data["kaji.contracts"]
-    assert "release/*.json" in package_data["kaji.contracts"]
+    assert package_data["kaji.contracts"] == ["**/*.json", "**/*.md"]
 
 
 def test_repo_root_editable_import_resolves_sdk_package() -> None:
@@ -1018,7 +1024,7 @@ def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -
         REPO_ROOT / "kaji" / "contracts" / "release/v1/github.json"
     ).read_bytes()
     assert (
-        SDK_ROOT / "src" / "contracts" / "release" / "release/v1/github.json"
+        SDK_ROOT / "src" / "contracts" / "release/v1/github.json"
     ).read_bytes() == canonical
     assert (
         REPO_ROOT

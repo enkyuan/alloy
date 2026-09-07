@@ -976,11 +976,11 @@ async def test_redis_bus_rejects_cross_session_rows() -> None:
 
 
 def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() -> None:
-    sdk_root = Path(__file__).resolve().parents[1]
+    sdk_root = REPO_ROOT / "kaji/packages/py"
     relatives = (
         "src/integrations/keychain.py",
         "src/integrations/oauth.py",
-        "src/infra/realtime/history.ops.py",
+        "src/runtime/agents/history.py",
     )
     for relative in relatives:
         source = (sdk_root / relative).read_text()
@@ -1254,7 +1254,7 @@ def _assert_trusted_handoff_workflow_source(source: str) -> None:
     subjects = [
         ".artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}",
         ".artifacts/kaji-handoff/kaji.manifest.json",
-        ".artifacts/kaji-handoff/release/v1/typescript/handoff.json",
+        ".artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json",
     ]
     assert _literal_paths(consumer_upload[0], "path") == subjects
     assert _literal_paths(attestation[0], "subject-path") == subjects

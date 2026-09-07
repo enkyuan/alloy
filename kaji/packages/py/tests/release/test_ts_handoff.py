@@ -1410,10 +1410,14 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
         node24_path=node24,
         output_dir=output,
     )
-    assert set(path.name for path in output.iterdir()) == {
+    assert {
+        path.relative_to(output).as_posix()
+        for path in output.rglob("*")
+        if path.is_file()
+    } == {
         "irogane-kaji-0.2.0-beta.11.tgz",
         "kaji.manifest.json",
-        "release/v1/typescript/handoff.json",
+        "v1/typescript/handoff.json",
     }
     manifest = json.loads((output / "kaji.manifest.json").read_text())
     assert manifest["artifact"]["sha256"] == artifact_sha

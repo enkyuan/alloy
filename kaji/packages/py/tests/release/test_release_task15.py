@@ -198,7 +198,7 @@ def _github_package_proof(runtime: str) -> dict[str, object]:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
+            "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
             "testName": "rejects approval for github_create_issue before token or HTTP",
             "tokenLookups": 0,
             "requestAttempts": 0,
@@ -788,7 +788,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "npm@11.16.0",
         "--downloads-dir .artifacts/kaji-publication-status/downloaded",
         '--repository "$GITHUB_REPOSITORY"',
-        "verify_published_packages.py state",
+        "kaji.tooling.release.verify.published state",
         "steps.classify.outputs.publication-state || steps.initial-status.outputs.publication-state",
         "needs.publication-status.outputs.state == 'npm_byte_verified'",
         "installation recommendations remain withheld",
@@ -797,14 +797,14 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "npm whoami --registry=https://registry.npmjs.org/",
         "npm identity does not match KAJI_NPM_PUBLISHER",
         "KAJI_NPM_PUBLISHER must name the approved npm identity",
-        "release/verify/artifacts.py",
-        "release/verify/npm.py",
-        "release/verify/archives.py",
+        "kaji.tooling.release.verify.artifacts",
+        "kaji.tooling.release.verify.npm",
+        "kaji.tooling.release.verify.archives",
         "Rebuild and verify exact package contents against the clean checkout",
         "Rebuild and verify npm archive contents against the clean checkout",
-        "release/verify/published.py",
+        "kaji.tooling.release.verify.published",
         "--attempts 45 --initial-delay 2 --max-delay 20",
-        "release/assets.py",
+        "kaji.tooling.release.assets",
         "registry-verification.json",
         "Initialize fail-closed publication status before setup",
         "--target npm",
@@ -907,7 +907,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         "if: ${{ always() && needs.verify-tag.result == 'success' && "
         "needs.supply-chain.result == 'success' }}" in publish
     )
-    assert "release/validate/evidence.py" in publish
+    assert "kaji.tooling.release.validate.evidence" in publish
     _assert_external_actions_are_sha_pinned(publish)
 
     attach = _read("kaji/tooling/release/assets.py")

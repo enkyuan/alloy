@@ -150,7 +150,6 @@ def github_package_proof() -> dict[str, Any]:
         },
         "githubObservabilitySinksVerified": True,
         "unknownMutationPreserved": True,
-        "sourceRuntimeDetected": False,
         "mutationRetries": 0,
         "lifecycle": {
             "githubFailure": {
@@ -167,7 +166,7 @@ def github_package_proof() -> dict[str, Any]:
             },
         },
         "policyBeforeRequest": {
-            "testFile": "kaji/packages/ts/tests/integrations/github-registry.test.ts",
+            "testFile": "kaji/packages/ts/tests/github-registry.test.ts",
             "testName": (
                 "rejects approval for github_create_issue before token or HTTP"
             ),
@@ -296,6 +295,26 @@ def node_v2_receipt(
     }
 
 
+def python_github_package_proof() -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "evidenceClass": "offline_exact_artifact_smoke",
+        "integration": "github",
+        "runtime": "python",
+        "network": "scripted",
+        "liveProvider": False,
+        "contractVersion": "1.0.0",
+        "caseCount": 23,
+        "toolCount": 6,
+        "approvalDeniedBeforeCredentialAccess": True,
+        "mutationRetries": 0,
+        "unknownMutationPreserved": True,
+        "sourceRuntimeDetected": False,
+        "conclusion": "passed",
+        "failureCode": None,
+    }
+
+
 def python_v1_receipt() -> dict[str, Any]:
     hashes = {
         "kaji-0.2.0b1-py3-none-any.whl": "e" * 64,
@@ -315,7 +334,10 @@ def python_v1_receipt() -> dict[str, Any]:
             "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
             "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
         },
-        "githubPackageProofs": {"wheel": {}, "sdist": {}},
+        "githubPackageProofs": {
+            "wheel": python_github_package_proof(),
+            "sdist": python_github_package_proof(),
+        },
         "timings": {
             "wheel": {"coldSetupToOutputMs": 10_001, "warmRunMs": 501},
             "sdist": {"coldSetupToOutputMs": 10_002, "warmRunMs": 502},

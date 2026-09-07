@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,30 @@ INDEX_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schem
 MANIFEST_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "manifest.json"
 )
+
+
+def _execute_with_source_package(source: str, filename: str) -> None:
+    saved = {
+        name: module
+        for name, module in tuple(sys.modules.items())
+        if name == "kaji" or name.startswith("kaji.")
+    }
+    for name in saved:
+        del sys.modules[name]
+    spec = importlib.util.spec_from_file_location(
+        "kaji", REPO_ROOT / "kaji/packages/py/src/__init__.py"
+    )
+    assert spec is not None and spec.loader is not None
+    package = importlib.util.module_from_spec(spec)
+    sys.modules["kaji"] = package
+    spec.loader.exec_module(package)
+    try:
+        exec(compile(source, filename, "exec"), {"__name__": "__main__"})
+    finally:
+        for name in tuple(sys.modules):
+            if name == "kaji" or name.startswith("kaji."):
+                del sys.modules[name]
+        sys.modules.update(saved)
 
 
 def _snippet(path: Path, name: str, language: str) -> str:
@@ -51,7 +76,7 @@ def test_exact_python_onboarding_echo_snippet_runs_offline(tmp_path: Path) -> No
     echo = tmp_path / "echo"
     echo.mkdir()
     shutil.copyfile(
-        REPO_ROOT / "kaji/packages/py/src/integrations/registry/echo/echo.py",
+        REPO_ROOT / "kaji/packages/py/src/integrations/registry/echo/handler.py",
         echo / "handler.py",
     )
     script = tmp_path / "echo_loop.py"
@@ -617,7 +642,7 @@ def test_exact_installed_python_quickstart_runs() -> None:
     source = _snippet(PRODUCTION_BETA, "installed-quickstart:python", "python")
     assert "kaji.ToolExecutionContext" in source
     assert "kaji.ToolContext" not in source
-    exec(compile(source, str(PRODUCTION_BETA), "exec"), {"__name__": "__main__"})
+    _execute_with_source_package(source, str(PRODUCTION_BETA))
 
 
 def test_python_migration_examples_execute() -> None:
@@ -631,7 +656,7 @@ def test_python_migration_examples_execute() -> None:
     )
     for name in names:
         source = _snippet(MIGRATION, name, "python")
-        exec(compile(source, f"{MIGRATION}:{name}", "exec"), {"__name__": "__main__"})
+        _execute_with_source_package(source, f"{MIGRATION}:{name}")
 
 
 def test_manifest_and_index_migrations_are_executable_contract_cases() -> None:

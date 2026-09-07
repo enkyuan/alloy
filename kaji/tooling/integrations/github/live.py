@@ -54,7 +54,7 @@ def _load_copied_modules(bundle: Path) -> tuple[ModuleType, ModuleType]:
     if (
         Path(client.__file__ or "").resolve() != (bundle / "client.py").resolve()
         or Path(integration.__file__ or "").resolve()
-        != (bundle / "github.py").resolve()
+        != (bundle / "handler.py").resolve()
     ):
         raise RuntimeError("bundle_identity_invalid")
     return client, integration

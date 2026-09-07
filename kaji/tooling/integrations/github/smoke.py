@@ -49,7 +49,7 @@ def _load_copied_modules(bundle: Path) -> tuple[ModuleType, ModuleType]:
     integration = importlib.import_module("owner_integrations.github.handler")
     if Path(client.__file__ or "").resolve() != (bundle / "client.py").resolve():
         raise RuntimeError("copied GitHub client did not resolve from its owner bundle")
-    if Path(integration.__file__ or "").resolve() != (bundle / "github.py").resolve():
+    if Path(integration.__file__ or "").resolve() != (bundle / "handler.py").resolve():
         raise RuntimeError(
             "copied GitHub integration did not resolve from its owner bundle"
         )

@@ -103,14 +103,14 @@ def test_local_ci_entrypoints_use_the_canonical_python_checks() -> None:
     package = json.loads(ROOT_PACKAGE.read_text())
 
     assert package["scripts"]["check:workflows"] == (
-        "uv run --project kaji/packages/py --no-sync python kaji/tooling/quality/workflows.py"
+        "uv run --project kaji/packages/py --no-sync python -m kaji.tooling.quality.workflows"
     )
     assert package["scripts"]["ci:kaji"] == (
         "uv run --project kaji/packages/py --no-sync python "
-        "kaji/tooling/release/check.py --gate"
+        "-m kaji.tooling.release.check --gate"
     )
     assert package["scripts"]["ci:local"] == (
-        "uv run --project kaji/packages/py --no-sync python kaji/tooling/quality/workflows.py --gate"
+        "uv run --project kaji/packages/py --no-sync python -m kaji.tooling.quality.workflows --gate"
     )
     assert WORKFLOW_CHECK.is_file()
 
@@ -276,7 +276,7 @@ def test_protected_provider_proof_requires_openai_key_before_success(
     env.pop("OPENAI_API_KEY", None)
     env["ANTHROPIC_API_KEY"] = "wip-provider-key-must-not-satisfy-beta-proof"
     env["KAJI_RELEASE_COMMIT"] = "a" * 40
-    proof = REPO_ROOT / "kaji" / "tooling" / "providers/openai/live.py"
+    proof = REPO_ROOT / "kaji" / "tooling" / "providers" / "openai" / "live.py"
     result = subprocess.run(
         [
             sys.executable,
@@ -304,7 +304,7 @@ def test_protected_provider_proof_uses_one_installed_runtime_for_two_openai_cell
     None
 ):
     module = _load_root_script("providers/openai/live.py")
-    source = (BETA_GATE.parent / "providers/openai/live.py").read_text()
+    source = (REPO_ROOT / "kaji" / "tooling/providers/openai/live.py").read_text()
 
     assert module.CELLS == (
         ("python", "openai"),
@@ -369,7 +369,7 @@ def test_beta_wrapper_passes_protected_artifact_arguments_to_provider_proof(
         (
             [
                 sys.executable,
-                str(BETA_GATE.parent / "providers/openai/live.py"),
+                str(REPO_ROOT / "kaji" / "tooling/providers/openai/live.py"),
                 "--protected",
                 "--artifacts-dir",
                 str(artifacts.resolve()),
@@ -449,8 +449,8 @@ def test_beta_release_check_wraps_required_gates() -> None:
         '"pytest"',
         '"not integration"',
         '"--cov-fail-under=80"',
-        '"scripts/check_types.py"',
-        '"scripts/release_smoke.py"',
+        '"tooling/quality/types.py"',
+        '"tooling/release/smoke.py"',
         '"package:smoke"',
         "providers/openai/live.py",
         "KAJI_REQUIRE_LIVE_KEYS",
@@ -547,21 +547,29 @@ def test_release_wrapper_runs_superset_once_and_builds_before_consumers(
     tmp_path: Path,
 ) -> None:
     checkout = tmp_path / "checkout"
-    scripts = checkout / "kaji" / "scripts"
+    tooling = checkout / "kaji" / "tooling"
     typescript = checkout / "kaji" / "packages" / "ts"
-    scripts.mkdir(parents=True)
+    for directory in (
+        tooling / "release",
+        tooling / "shared",
+        tooling / "quality",
+        tooling / "performance/run",
+        tooling / "providers/openai",
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    (checkout / "kaji" / "contracts").mkdir(parents=True)
     typescript.mkdir(parents=True)
-    shutil.copy2(BETA_GATE, scripts / BETA_GATE.name)
+    shutil.copy2(BETA_GATE, tooling / "release" / BETA_GATE.name)
     shutil.copy2(
         REPO_ROOT / "kaji" / "tooling" / "shared/process.py",
-        scripts / "shared/process.py",
+        tooling / "shared/process.py",
     )
     shutil.copy2(
         REPO_ROOT / "kaji" / "tooling" / "quality/offline.py",
-        scripts / "quality/offline.py",
+        tooling / "quality/offline.py",
     )
-    (scripts / "performance/run/benchmark.py").write_text("raise SystemExit(0)\n")
-    (scripts / "providers/openai/loop.py").write_text(
+    (tooling / "performance/run/benchmark.py").write_text("raise SystemExit(0)\n")
+    (tooling / "providers/openai/loop.py").write_text(
         "import os\n"
         "if os.environ.get('KAJI_REQUIRE_LIVE_KEYS') == '1':\n"
         "    print('FAIL: OPENAI_API_KEY required for live readiness')\n"
@@ -597,7 +605,7 @@ if name == "bun":
         raise SystemExit(17)
 
 if name == "uv":
-    if "scripts/release_smoke.py" in args:
+    if "tooling/release/smoke.py" in args:
         dist = checkout / "kaji" / "packages" / "py" / "dist"
         dist.mkdir(parents=True, exist_ok=True)
         (dist / "kaji.whl").write_bytes(b"wheel")
@@ -631,7 +639,7 @@ if name == "npm" and args and args[0] == "pack":
     environment.pop("GITHUB_SHA", None)
     environment.pop("KAJI_RELEASE_COMMIT", None)
     completed = subprocess.run(
-        [sys.executable, str(scripts / "release/check.py"), "--release"],
+        [sys.executable, str(tooling / "release/check.py"), "--release"],
         cwd=checkout,
         env=environment,
         capture_output=True,
@@ -672,7 +680,7 @@ def test_soak_budget_is_duration_plus_cleanup_margin() -> None:
         with pytest.raises(ValueError):
             module.soak_minutes(invalid)
 
-    source = (BETA_GATE.parent / "performance/run/soak.py").read_text()
+    source = (REPO_ROOT / "kaji" / "tooling/performance/run/soak.py").read_text()
     assert "run_parallel_checked" in source
     assert "minutes * 60 + 120" in source
     assert "subprocess" not in source
@@ -3213,6 +3221,11 @@ def test_python_benchmark_parent_assigns_warmups_to_measured_children(
         }
 
     monkeypatch.setattr(module, "_spawn_sample", spawn_sample)
+    monkeypatch.setattr(
+        module.kaji,
+        "__file__",
+        str(REPO_ROOT / "kaji/packages/py/src/__init__.py"),
+    )
 
     result = module._run_parent("toolArgDeltas10k", samples=2, warmups=2, seed=13)
 
@@ -3700,7 +3713,7 @@ def test_typescript_source_benchmark_maps_every_public_subpath() -> None:
 
     for package, source in {
         "@irogane/kaji": "./src/index.ts",
-        "@irogane/kaji/openai": "./src/providers/openai.ts",
+        "@irogane/kaji/openai": "./src/providers/openai/index.ts",
         "@irogane/kaji/anthropic": "./src/providers/anthropic.ts",
         "@irogane/kaji/testing": "./src/testing.ts",
     }.items():
@@ -3714,12 +3727,12 @@ def test_release_runbook_requires_checkout_bound_single_rehearsal_command() -> N
     assert "Source archives are unsupported" in runbook
     assert (
         runbook.count(
-            "uv run --project kaji/packages/py python kaji/tooling/release/check.py --release"
+            "uv run --project kaji/packages/py python -m kaji.tooling.release.check --release"
         )
         == 1
     )
     assert (
-        "uv run --project kaji/packages/py python kaji/tooling/release/verify/metadata.py"
+        "uv run --project kaji/packages/py python -m kaji.tooling.release.verify.metadata"
         not in runbook
     )
 
@@ -4199,9 +4212,9 @@ def test_root_package_pins_structural_and_benchmark_gates() -> None:
         '"ast-grep:test": "sg test -t tools/ast-grep/rule-tests --skip-snapshot-tests"',
         '"ast-grep:scan": "sg scan --config sgconfig.yml kaji"',
         '"audit:ast-grep": "bun run ast-grep:test && bun run ast-grep:scan"',
-        '"benchmark:kaji": "uv run --project kaji/packages/py python kaji/tooling/performance/run/benchmark.py --quick"',
-        '"benchmark:kaji:full": "uv run --project kaji/packages/py python kaji/tooling/performance/run/benchmark.py --full"',
-        '"soak:kaji": "uv run --project kaji/packages/py python kaji/tooling/performance/run/soak.py --minutes 30"',
+        '"benchmark:kaji": "uv run --project kaji/packages/py python -m kaji.tooling.performance.run.benchmark --quick"',
+        '"benchmark:kaji:full": "uv run --project kaji/packages/py python -m kaji.tooling.performance.run.benchmark --full"',
+        '"soak:kaji": "uv run --project kaji/packages/py python -m kaji.tooling.performance.run.soak --minutes 30"',
     ]:
         assert expected in package
 
@@ -4288,7 +4301,7 @@ def test_release_docs_reference_beta_release_check() -> None:
     )
 
     assert (
-        "uv run --project kaji/packages/py python kaji/tooling/release/check.py"
+        "uv run --project kaji/packages/py python -m kaji.tooling.release.check"
         in combined
     )
     assert "KAJI_RUN_KEYED_LIVE=1" in combined

@@ -154,6 +154,11 @@ def test_python_soak_reclaims_closed_sessions_before_store_capacity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load(PYTHON_SOAK)
+    monkeypatch.setattr(
+        module.kaji,
+        "__file__",
+        str(REPO_ROOT / "kaji/packages/py/src/__init__.py"),
+    )
     store_type = module.InMemoryEventStore
     stores: list[Any] = []
 
@@ -224,6 +229,11 @@ def test_python_soak_samples_after_subscriber_probe_is_purged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load(PYTHON_SOAK)
+    monkeypatch.setattr(
+        module.kaji,
+        "__file__",
+        str(REPO_ROOT / "kaji/packages/py/src/__init__.py"),
+    )
     store_type = module.InMemoryEventStore
     journal_type = module.InMemoryEventJournal
     stores: list[Any] = []
@@ -278,6 +288,11 @@ def test_python_soak_releases_turn_results_before_memory_sampling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     module = _load(PYTHON_SOAK)
+    monkeypatch.setattr(
+        module.kaji,
+        "__file__",
+        str(REPO_ROOT / "kaji/packages/py/src/__init__.py"),
+    )
     result_references: list[weakref.ReferenceType[object]] = []
     live_results_at_sample: list[int] = []
 

@@ -69,12 +69,13 @@ TYPESCRIPT_RUNNER = (
 PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "v1/github.json"
 PYTHON_CHILD_BOOTSTRAP = "\n".join(
     (
-        "import importlib.util, runpy, sys, types",
+        "import importlib, importlib.util, runpy, sys, types",
         "root, helper, runner, *arguments = sys.argv[1:]",
         "sys.path.insert(0, root)",
+        "importlib.import_module('kaji')",
         "package = 'kaji.tooling.integrations.github'",
         "parts = package.split('.')",
-        "for index in range(1, len(parts) + 1):",
+        "for index in range(2, len(parts) + 1):",
         "    name = '.'.join(parts[:index])",
         "    if name not in sys.modules:",
         "        namespace = types.ModuleType(name)",

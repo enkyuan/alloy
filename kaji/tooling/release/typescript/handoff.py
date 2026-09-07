@@ -1720,7 +1720,9 @@ def finalize(
         if not Draft202012Validator(schema).is_valid(manifest):
             _reject("SCHEMA_INVALID")
         _write_file(final_temporary / MANIFEST_NAME, _canonical_json(manifest))
-        _write_file(final_temporary / SCHEMA_NAME, _schema_path().read_bytes())
+        schema_destination = final_temporary / SCHEMA_NAME
+        schema_destination.parent.mkdir(parents=True)
+        _write_file(schema_destination, _schema_path().read_bytes())
         with _owned_directory(receipt_set) as receipt_temporary:
             for filename, encoded in zip(RECEIPT_SET_NAMES, receipt_bytes, strict=True):
                 _write_file(receipt_temporary / filename, encoded)

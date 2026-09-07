@@ -429,7 +429,7 @@ def test_provider_child_environment_does_not_mutate_parent() -> None:
 
 
 def test_installed_provider_runners_use_only_public_package_imports() -> None:
-    python = SDK_ROOT / "scripts/installed_provider_proof.py"
+    python = REPO_ROOT / "kaji/tooling/providers/openai/installed.py"
     typescript = REPO_ROOT / "kaji/packages/ts/scripts/installed-provider-proof.mts"
 
     assert python.is_file()

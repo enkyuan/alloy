@@ -4,13 +4,27 @@ from pathlib import Path
 import re
 import runpy
 import shutil
+import sys
 from typing import Any
 
-import kaji
 import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+def _source_kaji() -> Any:
+    for name in tuple(sys.modules):
+        if name == "kaji" or name.startswith("kaji."):
+            del sys.modules[name]
+    spec = importlib.util.spec_from_file_location(
+        "kaji", REPO_ROOT / "kaji/packages/py/src/__init__.py"
+    )
+    assert spec is not None and spec.loader is not None
+    package = importlib.util.module_from_spec(spec)
+    sys.modules["kaji"] = package
+    spec.loader.exec_module(package)
+    return package
 BETA_CORE = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
 PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "v1" / "scenarios.json"
@@ -182,7 +196,7 @@ def test_python_public_exports_have_one_tier_and_exact_generated_docs() -> None:
     classified = [value for values in tiers.values() for value in values]
 
     assert len(classified) == len(set(classified))
-    assert set(classified) == set(kaji.__all__)
+    assert set(classified) == set(_source_kaji().__all__)
 
     checker = runpy.run_path(str(CONTRACT_CHECKER), run_name="export_fragment_test")
     docs = (REPO_ROOT / "docs" / "kaji" / "api-parity.md").read_text()
@@ -238,8 +252,9 @@ def test_python_session_purge_exports_are_stable() -> None:
     }
 
     assert expected <= stable
+    package = _source_kaji()
     for name in expected:
-        assert getattr(kaji, name) is not None
+        assert getattr(package, name) is not None
 
 
 def test_release_matrix_matches_registry_stability() -> None:
@@ -254,7 +269,7 @@ def test_release_matrix_matches_registry_stability() -> None:
 def test_contract_checker_reports_fixture_path_and_json_pointer(tmp_path: Path) -> None:
     contracts = tmp_path / "contracts"
     shutil.copytree(REPO_ROOT / "kaji" / "contracts", contracts)
-    fixture_path = contracts / "tools" / "conformance-invalid.json"
+    fixture_path = contracts / "tools/v1/cases/invalid.json"
     fixture = json.loads(fixture_path.read_text())
     fixture["cases"][0]["expectedPath"] = "/wrong"
     fixture_path.write_text(json.dumps(fixture))

@@ -72,8 +72,7 @@ Complete these once before creating the release tag:
    secret:
 
    ```bash
-   uv run --project kaji/packages/py --no-sync python \
-     python -m kaji.tooling.release.typescript.approve audit-environments
+   uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.typescript.approve audit-environments
    ```
 
 5. Confirm the exact first-publication registry state. The protected workflow
@@ -114,7 +113,7 @@ From a clean, real Git checkout with its `.git` metadata present, using Bun
 1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters, run:
 
 ```bash
-uv run --project kaji/packages/py python python -m kaji.tooling.release.check --release
+uv run --project kaji/packages/py python -m kaji.tooling.release.check --release
 ```
 
 Source archives are unsupported because the release gate must bind artifacts
@@ -142,8 +141,7 @@ later run is not acceptable evidence.
    ```bash
    test "$(gh api repos/enkyuan/alloy/commits/main --jq .sha)" \
      = "$REVIEWED_COMMIT"
-   uv run --project kaji/packages/py --no-sync python \
-     python -m kaji.tooling.release.typescript.approve audit-environments
+   uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.typescript.approve audit-environments
    ```
 
 2. Dispatch the rehearsal at ref `main`; never dispatch a raw SHA:
@@ -197,8 +195,7 @@ later run is not acceptable evidence.
    read-only rehearsal audit and dry run:
 
    ```bash
-   uv run --project kaji/packages/py --no-sync python \
-     python -m kaji.tooling.release.typescript.approve gate \
+   uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.typescript.approve gate \
      --mode rehearsal \
      --run-id "$REHEARSAL_RUN_ID" \
      --expected-commit "$REVIEWED_COMMIT" \
@@ -409,8 +406,7 @@ reuse this tag after it is pushed.
    publish run's exact IDs, digests, and raw ZIPs:
 
    ```bash
-   uv run --project kaji/packages/py --no-sync python \
-     python -m kaji.tooling.release.typescript.approve gate \
+   uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.typescript.approve gate \
      --mode publish \
      --run-id "$PUBLISH_RUN_ID" \
      --expected-commit "$REVIEWED_COMMIT" \

@@ -705,7 +705,7 @@ def _write_fake_installed_kaji(package: Path) -> None:
 def _write_fake_github_bundle(bundle: Path) -> None:
     bundle.mkdir(parents=True)
     (bundle / "client.py").write_text("# installed fake client\n")
-    (bundle / "github.py").write_text(
+    (bundle / "handler.py").write_text(
         textwrap.dedent(
             """
             TOOL_RISKS = {
@@ -746,8 +746,9 @@ def test_python_installed_child_bootstrap_runs_isolated_help_and_fake_package(
     root.mkdir()
     helper = root / "integrations/github/control.py"
     runner = root / "integrations/github/live.py"
-    shutil.copy2(SCRIPTS / helper.name, helper)
-    shutil.copy2(SCRIPTS / runner.name, runner)
+    helper.parent.mkdir(parents=True)
+    shutil.copy2(SCRIPTS / "integrations/github/control.py", helper)
+    shutil.copy2(SCRIPTS / "integrations/github/live.py", runner)
     package = root / "kaji"
     _write_fake_installed_kaji(package)
     bundle = root / "owner_integrations" / "github"
