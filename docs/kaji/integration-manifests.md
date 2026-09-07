@@ -1,8 +1,8 @@
 # Integration Manifests
 
 The canonical schemas are
-[`manifest.schema.json`](../../kaji/contracts/integrations/manifest.schema.json)
-and [`index.schema.json`](../../kaji/contracts/integrations/index.schema.json).
+[`manifest.schema.json`](../../kaji/contracts/integrations/v1/schema/manifest.json)
+and [`index.schema.json`](../../kaji/contracts/integrations/v1/schema/index.json).
 Both SDK loaders consume byte-identical package copies and normalize manifest
 validation failures to JSON Pointers.
 

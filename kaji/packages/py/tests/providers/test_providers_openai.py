@@ -29,8 +29,8 @@ def test_openai_provider_registered_and_loadable():
 
 def test_openai_provider_constructor_does_not_create_vendor_client():
     with (
-        patch("kaji.runtime.providers.openai.get_settings") as settings,
-        patch("kaji.runtime.providers.openai.import_module") as import_module,
+        patch("kaji.runtime.providers.openai.provider.get_settings") as settings,
+        patch("kaji.runtime.providers.openai.provider.import_module") as import_module,
     ):
         settings.return_value = SimpleNamespace()
         provider = OpenAIProvider(

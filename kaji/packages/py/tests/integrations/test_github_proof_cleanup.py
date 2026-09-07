@@ -13,12 +13,12 @@ SCRIPTS = ROOT / "kaji" / "tooling" / "integrations/github"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from cleanup import (  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.integrations.github.cleanup import (  # noqa: E402  # ty: ignore[unresolved-import]
     main as cleanup_main,
     parse_args,
     reconcile_state,
 )
-from control import (  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.integrations.github.control import (  # noqa: E402  # ty: ignore[unresolved-import]
     GitHubProofError,
     new_proof_state,
     private_state_lock,

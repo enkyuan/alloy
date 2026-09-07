@@ -29,7 +29,7 @@ human, macOS/arm64, Windows, or fully offline onboarding result.
 ## Support boundaries
 
 Stable and experimental features and exports are classified by
-[`feature-tiers-v1.json`](../../kaji/contracts/feature-tiers-v1.json).
+[`feature-tiers-v1.json`](../../kaji/contracts/tiers/v1/features.json).
 OpenAI is Kaji's sole beta-supported primary provider. Keyed OpenAI proof in
 both Python and TypeScript is mandatory release evidence, and a missing
 `OPENAI_API_KEY` blocks release.

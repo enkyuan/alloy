@@ -201,17 +201,17 @@ def test_packaged_schemas_match_canonical_contracts() -> None:
         REPO_ROOT / "kaji/packages/ts/registry/schema.json",
     ):
         assert (
-            packaged.read_bytes() == (CONTRACTS / "manifest.schema.json").read_bytes()
+            packaged.read_bytes() == (CONTRACTS / "v1/schema/manifest.json").read_bytes()
         )
     for packaged in (
         REPO_ROOT / "kaji/packages/py/src/integrations/registry/index.schema.json",
         REPO_ROOT / "kaji/packages/ts/registry/index.schema.json",
     ):
-        assert packaged.read_bytes() == (CONTRACTS / "index.schema.json").read_bytes()
+        assert packaged.read_bytes() == (CONTRACTS / "v1/schema/index.json").read_bytes()
 
 
 def test_copy_provenance_is_closed_and_supports_demotion_detection() -> None:
-    schema = json.loads((CONTRACTS / "integrations/v1/schema/provenance.json").read_text())
+    schema = json.loads((CONTRACTS / "v1/schema/provenance.json").read_text())
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     digest = "0" * 64
     provenance = {

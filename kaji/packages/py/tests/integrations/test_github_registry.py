@@ -157,7 +157,7 @@ def test_github_manifest_is_beta_and_declares_native_owner_bundles() -> None:
     assert python["tools"] == ABI["tools"]
     assert typescript["tools"] == ABI["tools"]
     assert python["files"] == [
-        "github.py",
+        "handler.py",
         "client.py",
         "tests/test_github.py",
         "owner-fixtures.json",

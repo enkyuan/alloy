@@ -26,8 +26,8 @@ for tool_dir in (SCRIPTS / "integrations/github", SCRIPTS / "release/verify"):
     if str(tool_dir) not in sys.path:
         sys.path.insert(0, str(tool_dir))
 
-import control as proof_control  # noqa: E402  # ty: ignore[unresolved-import]
-from control import (  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.integrations.github import control as proof_control  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.integrations.github.control import (  # noqa: E402  # ty: ignore[unresolved-import]
     GitHubProofControl,
     GitHubProofError,
     new_proof_state,
@@ -36,13 +36,13 @@ from control import (  # noqa: E402  # ty: ignore[unresolved-import]
     update_proof_cell,
     write_private_json,
 )
-from prove import (  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.integrations.github.prove import (  # noqa: E402  # ty: ignore[unresolved-import]
     ProofPrerequisites,
     run_proof,
     validate_child_receipt,
     validate_prerequisites,
 )
-from artifacts import (  # noqa: E402  # ty: ignore[unresolved-import]
+from kaji.tooling.release.verify.artifacts import (  # noqa: E402  # ty: ignore[unresolved-import]
     VerifiedReleaseArtifacts,
 )
 

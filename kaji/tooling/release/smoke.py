@@ -23,7 +23,7 @@ from kaji.tooling.shared.process import (
 )
 
 
-KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
+KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
 SDK_ROOT = KAJI_ROOT / "packages" / "py"
 SCRIPTS = KAJI_ROOT / "scripts"
 import verify_release_artifacts  # noqa: E402

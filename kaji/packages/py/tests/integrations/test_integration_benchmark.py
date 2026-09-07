@@ -209,6 +209,7 @@ def test_integration_source_digest_includes_platform_provenance(
 ) -> None:
     budget_bytes = b'{"schemaVersion":1}'
     provenance = tmp_path / "performance/platform.py"
+    provenance.parent.mkdir()
     provenance.write_text("first\n")
     monkeypatch.setattr(integration_benchmark, "BENCHMARK_PLATFORM", provenance)
     first = integration_benchmark.source_digest(budget_bytes)
