@@ -892,7 +892,7 @@ def test_builder_injects_limits_and_ledger_into_runtime_controller() -> None:
 
 def test_vendor_clients_disable_opaque_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     from kaji.runtime.providers import anthropic as anthropic_module
-    from kaji.runtime.providers import openai as openai_module
+    from kaji.runtime.providers.openai import provider as openai_provider_module
 
     captured: dict[str, dict[str, Any]] = {}
 
@@ -905,7 +905,7 @@ def test_vendor_clients_disable_opaque_retries(monkeypatch: pytest.MonkeyPatch) 
         return object()
 
     monkeypatch.setattr(
-        openai_module,
+        openai_provider_module,
         "import_module",
         lambda _name: SimpleNamespace(AsyncOpenAI=openai_client),
     )
@@ -914,7 +914,7 @@ def test_vendor_clients_disable_opaque_retries(monkeypatch: pytest.MonkeyPatch) 
         "import_module",
         lambda _name: SimpleNamespace(AsyncAnthropic=anthropic_client),
     )
-    assert openai_module.OpenAIProvider(api_key="key").client is not None
+    assert openai_provider_module.OpenAIProvider(api_key="key").client is not None
     assert anthropic_module.AnthropicProvider(api_key="key").client is not None
     assert captured["openai"]["max_retries"] == 0
     assert captured["anthropic"]["max_retries"] == 0

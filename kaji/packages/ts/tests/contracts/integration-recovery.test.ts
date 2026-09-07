@@ -7,10 +7,7 @@ import { INTEGRATION_RECOVERY } from "@/integrations/recovery";
 describe("integration recovery contract", () => {
   it("matches every canonical packaged recovery row and field", () => {
     const contract = JSON.parse(
-      readFileSync(
-        resolve(import.meta.dirname, "../../contracts/errors/v1/recovery.json"),
-        "utf8",
-      ),
+      readFileSync(resolve(import.meta.dirname, "../../contracts/errors/v1/recovery.json"), "utf8"),
     ) as { entries: Record<string, Record<string, string>> };
     const runtime = Object.fromEntries(
       Object.entries(INTEGRATION_RECOVERY).map(([reason, recovery]) => [

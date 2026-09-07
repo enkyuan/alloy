@@ -25,10 +25,7 @@ const abi = JSON.parse(
   readFileSync(resolve(kajiRoot, "contracts/integrations/v1/abi/github.json"), "utf8"),
 ) as { namespace: string; tools: Array<Record<string, unknown>> };
 const packageAbi = JSON.parse(
-  readFileSync(
-    resolve(kajiRoot, "contracts/integrations/v1/abi/typescript/github.json"),
-    "utf8",
-  ),
+  readFileSync(resolve(kajiRoot, "contracts/integrations/v1/abi/typescript/github.json"), "utf8"),
 ) as {
   schema_version: string;
   catalog_version: string;

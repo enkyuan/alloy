@@ -15,10 +15,7 @@ import { EventBus } from "@/events/bus";
 import type { EventBusProtocol, EventBusSubscribeOptions } from "@/events/protocols";
 import { KajiEvent, type NewKajiEvent, type StoredKajiEvent } from "@/events/schemas";
 import { InMemoryEventStore, type AppendResult, type EventStoreSession } from "@/events/store";
-import {
-  coordinatedSessionPurge,
-  type SessionPurgeAuthorization,
-} from "@/events/lifecycle";
+import { coordinatedSessionPurge, type SessionPurgeAuthorization } from "@/events/lifecycle";
 import { EventType } from "@/events/types";
 import type { MetricMeasurement, MetricsSink } from "@/observability";
 

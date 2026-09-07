@@ -28,8 +28,7 @@ import {
 } from "../../scripts/smoke_package.mts";
 
 const handoffSchemaRelative = "contracts/release/v1/typescript/handoff.json";
-const canonicalHandoffSchemaRelative =
-  "../../contracts/release/v1/typescript/handoff.json";
+const canonicalHandoffSchemaRelative = "../../contracts/release/v1/typescript/handoff.json";
 
 type HandoffSchemaRule = {
   type?: string;
@@ -3318,7 +3317,9 @@ describe("Kaji workflow contracts", () => {
         const download = steps.findIndex((step) =>
           step.uses?.startsWith("actions/download-artifact@"),
         );
-        const verify = steps.findIndex((step) => step.run?.includes("kaji.tooling.release.verify.artifacts"));
+        const verify = steps.findIndex((step) =>
+          step.run?.includes("kaji.tooling.release.verify.artifacts"),
+        );
         const smoke = steps.findIndex((step) => step.run?.includes(smokeScript));
         const normalizerName =
           jobId === "node-compat"
@@ -3442,7 +3443,9 @@ describe("Kaji workflow contracts", () => {
         const download = steps.findIndex((step) =>
           step.uses?.startsWith("actions/download-artifact@"),
         );
-        const verify = steps.findIndex((step) => step.run?.includes("kaji.tooling.release.verify.artifacts"));
+        const verify = steps.findIndex((step) =>
+          step.run?.includes("kaji.tooling.release.verify.artifacts"),
+        );
         const smoke = steps.findIndex((step) =>
           step.run?.includes("kaji/packages/ts/scripts/smoke_package.mts"),
         );

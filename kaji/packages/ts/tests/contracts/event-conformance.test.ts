@@ -15,9 +15,7 @@ const contracts = new URL("../../../../contracts/events/", import.meta.url);
 const valid = JSON.parse(readFileSync(new URL("v1/cases/valid.json", contracts), "utf8")) as {
   events: Record<string, unknown>[];
 };
-const invalid = JSON.parse(
-  readFileSync(new URL("v1/cases/invalid.json", contracts), "utf8"),
-) as {
+const invalid = JSON.parse(readFileSync(new URL("v1/cases/invalid.json", contracts), "utf8")) as {
   cases: Array<{
     name: string;
     kind: "new" | "stored";
@@ -43,9 +41,7 @@ function errorPointers(errors: ErrorObject[] | null | undefined): Set<string> {
 function canonicalValidators() {
   const ajv = new Ajv2020({ allErrors: true, strict: false });
   return {
-    new: ajv.compile(
-      JSON.parse(readFileSync(new URL("v1/schema/new.json", contracts), "utf8")),
-    ),
+    new: ajv.compile(JSON.parse(readFileSync(new URL("v1/schema/new.json", contracts), "utf8"))),
     stored: ajv.compile(
       JSON.parse(readFileSync(new URL("v1/schema/stored.json", contracts), "utf8")),
     ),
@@ -71,9 +67,7 @@ describe("frozen event wire contract", () => {
     const storedSchema = JSON.parse(
       readFileSync(new URL("v1/schema/stored.json", contracts), "utf8"),
     );
-    const newSchema = JSON.parse(
-      readFileSync(new URL("v1/schema/new.json", contracts), "utf8"),
-    );
+    const newSchema = JSON.parse(readFileSync(new URL("v1/schema/new.json", contracts), "utf8"));
     const canonical = new Ajv2020({ allErrors: true, strict: false }).compile(storedSchema);
     const canonicalNew = new Ajv2020({ allErrors: true, strict: false }).compile(newSchema);
 
@@ -90,9 +84,7 @@ describe("frozen event wire contract", () => {
   it("rejects every negative fixture at the same normalized pointer", () => {
     const schemas = {
       new: JSON.parse(readFileSync(new URL("v1/schema/new.json", contracts), "utf8")),
-      stored: JSON.parse(
-        readFileSync(new URL("v1/schema/stored.json", contracts), "utf8"),
-      ),
+      stored: JSON.parse(readFileSync(new URL("v1/schema/stored.json", contracts), "utf8")),
     };
     const ajv = new Ajv2020({ allErrors: true, strict: false });
     const canonical = { new: ajv.compile(schemas.new), stored: ajv.compile(schemas.stored) };
