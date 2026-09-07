@@ -22,7 +22,7 @@ from jsonschema import Draft202012Validator
 
 
 MANIFEST_NAME = "kaji.manifest.json"
-SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
+SCHEMA_NAME = "v1/typescript/handoff.json"
 RECEIPT_NAMES = (
     "source-equivalence.json",
     "signature-verification.json",
@@ -115,7 +115,7 @@ DANGEROUS_PREFIXES = ("/Users/", "/private/", "/tmp/", "/home/", "file:")
 
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[1]
-    / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
+    / "contracts/release/v1/typescript/handoff.json"
 )
 TRUSTED_LICENSE_PATH = (
     Path(__file__).resolve().parents[1] / "packages/ts/LICENSE"

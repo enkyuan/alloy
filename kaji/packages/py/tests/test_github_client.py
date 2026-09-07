@@ -16,10 +16,10 @@ from kaji.integrations.errors import (
     IntegrationPolicyError,
     IntegrationTransportError,
 )
-from kaji.integrations.fixed_origin import IntegrationResponse
-from kaji.contracts.integration_recovery import recovery_for_reason
+from kaji.integrations.origin import IntegrationResponse
+from kaji.integrations.recovery import recovery_for_reason
 from kaji.integrations.registry.github.client import GitHubClient
-from kaji.runtime.agents.cancellation import CancellationToken, CancelledError
+from kaji.runtime.agents.cancel import CancellationToken, CancelledError
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.tools.execution import ToolExecutionError
 
@@ -33,7 +33,7 @@ FIXTURE = cast(
             / "kaji"
             / "contracts"
             / "integrations"
-            / "github-api-conformance-v1.json"
+            / "v1/api/github.json"
         ).read_text()
     ),
 )

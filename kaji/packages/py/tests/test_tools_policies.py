@@ -4,7 +4,7 @@ from kaji.runtime.tools.errors import (
     ToolSchemaValidationError,
     UnclassifiedToolRiskError,
 )
-from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+from kaji.runtime.tools.policy import ToolPolicy, ToolPolicyViolation
 
 
 def test_tool_policy_allowlist():

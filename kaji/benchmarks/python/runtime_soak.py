@@ -33,7 +33,7 @@ from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.types import GenerateResponse, ModelResponseChunk
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import InMemoryToolIdempotencyLedger
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 
 

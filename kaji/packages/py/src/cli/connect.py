@@ -17,8 +17,8 @@ from kaji.integrations import (
 from kaji.integrations.errors import IntegrationExecutionError
 from kaji.integrations.keychain import MacOSKeychainTokenStorage
 from kaji.integrations.oauth import GoogleOAuthClient, OAuthError, _require_principal
-from kaji.contracts.integration_recovery import recovery_for_reason
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.integrations.recovery import recovery_for_reason
+from kaji.runtime.agents.cancel import CancellationToken
 
 
 _environment: Mapping[str, str] = os.environ

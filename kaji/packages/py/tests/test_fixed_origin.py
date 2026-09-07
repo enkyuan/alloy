@@ -11,8 +11,8 @@ from kaji.integrations.errors import (
     IntegrationPolicyError,
     IntegrationTransportError,
 )
-from kaji.integrations.fixed_origin import FixedOriginClient
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.integrations.origin import FixedOriginClient
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.tools.execution import ToolExecutionError
 

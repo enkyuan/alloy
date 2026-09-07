@@ -242,7 +242,7 @@ def _raw_beta8_identity_files(repo_root: Path) -> dict[Path, bytes]:
 
 def _normative_semver_pattern() -> str:
     schema = json.loads(
-        _read("kaji/contracts/release/kaji-ts-consumer-handoff-v1.schema.json")
+        _read("kaji/contracts/release/v1/typescript/handoff.json")
     )
     pattern = schema["$defs"]["semver"]["pattern"]
     assert isinstance(pattern, str)
@@ -521,31 +521,31 @@ def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None
         == 'version = "0.2.0b1"'
     )
     assert '__version__ = "0.2.0b1"' in _read("kaji/packages/py/src/__init__.py")
-    onboarding_contract_name = "typescript-onboarding-evidence-v1.schema.json"
+    onboarding_contract_name = "release/v1/typescript/onboarding.json"
     legacy_contract_names = {
         "tthw-evidence-v1.schema.json",
         "tthw-participant.template.json",
     }
     release_contract_names = {
-        "github-proof-v1.schema.json",
-        "gmail-proof-v1.schema.json",
-        "kaji-ts-consumer-handoff-v1.schema.json",
-        "publisher-identity-receipt-v1.schema.json",
+        "release/v1/github.json",
+        "release/v1/gmail.json",
+        "release/v1/typescript/handoff.json",
+        "release/v1/publisher.json",
         onboarding_contract_name,
     }
     canonical_release_contract = (
-        REPO_ROOT / "kaji/contracts/release" / onboarding_contract_name
+        REPO_ROOT / "kaji/contracts" / onboarding_contract_name
     ).read_bytes()
     for contract_directory in (
         REPO_ROOT / "kaji/contracts/release",
-        REPO_ROOT / "kaji/packages/py/src/contracts/release",
-        REPO_ROOT / "kaji/packages/ts/contracts/release",
+        REPO_ROOT / "kaji/packages/py/src/contracts/release/v1",
+        REPO_ROOT / "kaji/packages/ts/contracts/release/v1",
     ):
         assert {path.name for path in contract_directory.iterdir()} == (
-            release_contract_names
+            {"github.json", "gmail.json", "typescript", "publisher.json"}
         )
         assert (
-            contract_directory / onboarding_contract_name
+            contract_directory / "typescript" / "onboarding.json"
         ).read_bytes() == canonical_release_contract
         for legacy_contract_name in legacy_contract_names:
             assert not (contract_directory / legacy_contract_name).exists()
@@ -7444,7 +7444,7 @@ def test_release_evidence_closes_every_compatibility_receipt_shape(
 
 def test_github_exact_artifact_proof_contract_and_operator_wiring() -> None:
     contract_checker = _load_root_script("check_beta_contract.py")
-    assert "release/github-proof-v1.schema.json" in contract_checker.REQUIRED_JSON
+    assert "release/v1/github.json" in contract_checker.REQUIRED_JSON
 
     live = _read("kaji/scripts/live_github_proof.py")
     cleanup = _read("kaji/scripts/github_proof_cleanup.py")
@@ -7464,6 +7464,6 @@ def test_github_exact_artifact_proof_contract_and_operator_wiring() -> None:
     assert "--expected-commit" in cleanup
     assert "--confirm-absence" in cleanup
     assert "does not promote GitHub by itself" in documentation
-    assert "gmail-proof-v1.schema.json" in documentation
+    assert "release/v1/gmail.json" in documentation
     assert "confirm-absence" in documentation
     assert "Exact-artifact GitHub proof" in release_matrix

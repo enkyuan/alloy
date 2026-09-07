@@ -557,7 +557,7 @@ def smoke_archives(
                 [
                     str(python),
                     "-c",
-                    "from kaji.integrations.registry.github.github import inspect_integration; "
+                    "from kaji.integrations.registry.github.handler import inspect_integration; "
                     "assert len(inspect_integration().tools()) == 6",
                 ],
                 cwd=artifact_workdir,
@@ -570,7 +570,7 @@ def smoke_archives(
                     "import sys; from pathlib import Path; "
                     "sys.path.insert(0, sys.argv[1]); "
                     "import owner_integrations.github.client as owner_client; "
-                    "from owner_integrations.github.github import "
+                    "from owner_integrations.github.handler import "
                     "GitHubClient, inspect_integration; "
                     "assert GitHubClient.__module__ == "
                     "'owner_integrations.github.client'; "

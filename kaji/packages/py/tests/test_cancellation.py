@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from kaji.runtime.agents.cancellation import CancellationToken, CancelledError
+from kaji.runtime.agents.cancel import CancellationToken, CancelledError
 
 
 def test_starts_not_cancelled() -> None:

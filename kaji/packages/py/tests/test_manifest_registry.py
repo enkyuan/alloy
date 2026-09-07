@@ -30,8 +30,8 @@ from kaji.integrations.validation import (
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CONTRACTS = REPO_ROOT / "kaji" / "contracts" / "integrations"
-VALID_CASES = json.loads((CONTRACTS / "conformance-valid.json").read_text())["cases"]
-INVALID_CASES = json.loads((CONTRACTS / "conformance-invalid.json").read_text())[
+VALID_CASES = json.loads((CONTRACTS / "v1/cases/valid.json").read_text())["cases"]
+INVALID_CASES = json.loads((CONTRACTS / "v1/cases/invalid.json").read_text())[
     "cases"
 ]
 
@@ -104,7 +104,7 @@ def test_load_manifest_returns_parsed_manifest() -> None:
     assert manifest.name == "echo"
     assert manifest.namespace == "echo"
     assert manifest.auth.kind == "none"
-    assert manifest.files == ("echo.py",)
+    assert manifest.files == ("handler.py",)
     assert manifest.peer_deps == {}
     assert manifest.stability == "beta"
     assert manifest.runtimes == ("python", "typescript")
@@ -211,7 +211,7 @@ def test_packaged_schemas_match_canonical_contracts() -> None:
 
 
 def test_copy_provenance_is_closed_and_supports_demotion_detection() -> None:
-    schema = json.loads((CONTRACTS / "copy-provenance-v1.schema.json").read_text())
+    schema = json.loads((CONTRACTS / "integrations/v1/schema/provenance.json").read_text())
     validator = Draft202012Validator(schema, format_checker=FormatChecker())
     digest = "0" * 64
     provenance = {
@@ -306,8 +306,8 @@ def test_load_manifest_unknown_raises_integration_not_found() -> None:
 
 def test_install_integration_copies_files(tmp_path: Path) -> None:
     written = install_integration("echo", tmp_path)
-    assert {path.name for path in written} == {"echo.py"}
-    target = tmp_path / "echo.py"
+    assert {path.name for path in written} == {"handler.py"}
+    target = tmp_path / "handler.py"
     assert "async def say" in target.read_text()
     assert "kaji.function_tool" in target.read_text()
     assert (tmp_path / ".kaji-integration-provenance.json").is_file()
@@ -320,7 +320,7 @@ def test_install_integration_current_bundle_is_a_safe_noop(tmp_path: Path) -> No
 
 def test_install_integration_force_rejects_local_modifications(tmp_path: Path) -> None:
     install_integration("echo", tmp_path)
-    target = tmp_path / "echo.py"
+    target = tmp_path / "handler.py"
     target.write_text("# modified by user\n")
     with pytest.raises(FileExistsError, match="modified"):
         install_integration("echo", tmp_path, force=True)
@@ -467,9 +467,9 @@ def test_install_rejects_destination_symlink_escape(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     destination.mkdir()
     outside.mkdir()
-    (destination / "echo.py").symlink_to(outside / "echo.py")
+    (destination / "handler.py").symlink_to(outside / "handler.py")
 
     with pytest.raises(FileExistsError, match="modified"):
         install_integration("echo", destination, force=True)
 
-    assert not (outside / "echo.py").exists()
+    assert not (outside / "handler.py").exists()

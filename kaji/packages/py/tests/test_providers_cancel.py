@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +226,7 @@ _PROVIDERS: dict[str, Callable[[list[str] | None], tuple[Any, Callable[[], None]
 @pytest.mark.parametrize(
     ("module_name", "provider_name", "client_name"),
     [
-        ("kaji.runtime.providers.openai", "OpenAIProvider", "AsyncOpenAI"),
+        ("kaji.runtime.providers.openai.provider", "OpenAIProvider", "AsyncOpenAI"),
         ("kaji.runtime.providers.anthropic", "AnthropicProvider", "AsyncAnthropic"),
     ],
 )
@@ -261,7 +261,7 @@ def test_provider_request_timeout_is_forwarded_to_vendor_client(
 @pytest.mark.parametrize(
     ("module_name", "provider_name", "client_name"),
     [
-        ("kaji.runtime.providers.openai", "OpenAIProvider", "AsyncOpenAI"),
+        ("kaji.runtime.providers.openai.provider", "OpenAIProvider", "AsyncOpenAI"),
         ("kaji.runtime.providers.anthropic", "AnthropicProvider", "AsyncAnthropic"),
     ],
 )

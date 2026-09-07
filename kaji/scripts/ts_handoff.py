@@ -38,7 +38,7 @@ from process_runner import (
 PACKAGE_NAME = "@irogane/kaji"
 REPOSITORY_URL = "https://github.com/enkyuan/alloy.git"
 BASE_REF = "refs/remotes/origin/main"
-SCHEMA_NAME = "kaji-ts-consumer-handoff-v1.schema.json"
+SCHEMA_NAME = "v1/typescript/handoff.json"
 MANIFEST_NAME = "kaji.manifest.json"
 STAGE_INDEX_NAME = "stage.json"
 RAW_SOURCE_NAME = "source-equivalence.raw.json"

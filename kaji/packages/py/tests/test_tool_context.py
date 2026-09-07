@@ -15,14 +15,14 @@ from kaji.runtime.agents.context import (
     ToolExecutionContext,
     TurnContext,
 )
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.context import ToolInvocation
 from kaji.runtime.tools.errors import (
     ToolSchemaValidationError,
     UnclassifiedToolRiskError,
 )
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from kaji.events.types import EventType
 from tests.helpers.mock_provider import MockProvider

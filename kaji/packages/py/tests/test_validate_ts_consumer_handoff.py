@@ -17,7 +17,7 @@ import pytest
 SCRIPT = Path(__file__).parents[3] / "scripts" / "validate_ts_consumer_handoff.py"
 SCHEMA = (
     Path(__file__).parents[3]
-    / "contracts/release/kaji-ts-consumer-handoff-v1.schema.json"
+    / "contracts/release/v1/typescript/handoff.json"
 )
 LICENSE = Path(__file__).parents[3] / "packages/ts/LICENSE"
 
@@ -513,7 +513,7 @@ def _fixture(tmp_path: Path, mode: str = "release") -> dict[str, Any]:
         "mode": mode,
     }
     _persist(fx)
-    (bundle / "kaji-ts-consumer-handoff-v1.schema.json").write_bytes(
+    (bundle / "release/v1/typescript/handoff.json").write_bytes(
         SCHEMA.read_bytes()
     )
     return fx
@@ -689,7 +689,7 @@ def test_rejects_root_and_external_signature_mechanism_disagreement(
         ),
         (
             lambda fx: (
-                fx["bundle"] / "kaji-ts-consumer-handoff-v1.schema.json"
+                fx["bundle"] / "release/v1/typescript/handoff.json"
             ).write_text("{}\n"),
             "SCHEMA_INVALID",
         ),

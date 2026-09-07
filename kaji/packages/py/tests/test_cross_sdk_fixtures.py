@@ -13,7 +13,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SDK_ROOT = REPO_ROOT / "kaji"
 EXPORTER = SDK_ROOT / "scripts" / "export_parity.py"
-SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "scenarios.json"
+SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "v1" / "scenarios.json"
 TOOLS = REPO_ROOT / "kaji" / "contracts" / "tools"
 SNAPSHOT_KEYS = {
     "events",
@@ -118,7 +118,7 @@ def test_python_exporter_is_byte_stable_and_covers_every_scenario() -> None:
     }
     canonical = {
         (filename, case["name"])
-        for filename in ("conformance-valid.json", "conformance-invalid.json")
+        for filename in ("v1/cases/valid.json", "v1/cases/invalid.json")
         for case in json.loads((TOOLS / filename).read_text())["cases"]
     }
     assert referenced == canonical
@@ -141,7 +141,7 @@ def test_python_exporter_has_no_environment_or_network_client_boundary() -> None
         assert forbidden not in source
     assert "object.__new__(OpenAIProvider)" in source
     assert "object.__new__(AnthropicProvider)" in source
-    assert "expected-normalized.json" not in source
+    assert "parity/v1/expected.json" not in source
 
 
 def test_orchestrator_child_environment_is_a_minimal_allowlist(

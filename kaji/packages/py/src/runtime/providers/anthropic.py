@@ -35,10 +35,10 @@ from kaji.runtime.providers.types import (
     ProviderResponseLimits,
     TokenMetrics,
 )
-from kaji.runtime.providers._cancellation import (
+from kaji.runtime.providers.cancellation import (
     raise_if_cancelled as _raise_if_cancelled,
 )
-from kaji.runtime.providers._translate import format_messages_anthropic
+from kaji.runtime.providers.openai.translate import format_messages_anthropic
 from kaji.runtime.tools.payload import to_anthropic
 
 logger = logging.getLogger(__name__)

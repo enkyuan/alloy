@@ -18,7 +18,7 @@ from kaji.runtime.sessions.replay import replay_session
 from kaji.events.types import EventType
 from kaji.observability import InMemoryMetrics
 from kaji.runtime.sessions.projector import SessionProjector
-from kaji.runtime.agents.cancellation import (
+from kaji.runtime.agents.cancel import (
     CancelledError,
     CancellationToken,
     ProviderDeadlineScope,

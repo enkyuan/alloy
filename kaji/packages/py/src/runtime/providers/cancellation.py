@@ -2,7 +2,7 @@
 
 Providers accept an opaque ``cancellation_token`` so callers can plug in any
 compatible token type. The SDK's own
-:class:`kaji.runtime.agents.cancellation.CancellationToken` exposes a
+:class:`kaji.runtime.agents.cancel.CancellationToken` exposes a
 ``raise_if_cancelled()`` method that raises its own
 :class:`asyncio.CancelledError` subclass for discoverability; we prefer it
 when present and fall back to the duck-typed ``is_cancelled`` attribute.

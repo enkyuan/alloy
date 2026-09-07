@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, cast
 
 from kaji.core.logging import log_redacted_failure
-from kaji.runtime.agents.cancellation import CancellationToken, ProviderDeadlineScope
+from kaji.runtime.agents.cancel import CancellationToken, ProviderDeadlineScope
 from kaji.runtime.agents.coordinator import (
     TurnCoordinator,
     TurnLease,
@@ -86,7 +86,7 @@ from kaji.runtime.providers.base import (
 )
 from kaji.runtime.providers.errors import ProviderOutputLimitError
 from kaji.runtime.providers.types import ProviderResponseLimits, TokenMetrics
-from kaji.runtime.sessions.context_index import ContextIndexStats
+from kaji.runtime.sessions.context import ContextIndexStats
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger

@@ -46,7 +46,7 @@ def _load_copied_modules(bundle: Path) -> tuple[ModuleType, ModuleType]:
     sys.modules[owner.__name__] = owner
     sys.modules[package.__name__] = package
     client = importlib.import_module("owner_integrations.github.client")
-    integration = importlib.import_module("owner_integrations.github.github")
+    integration = importlib.import_module("owner_integrations.github.handler")
     if Path(client.__file__ or "").resolve() != (bundle / "client.py").resolve():
         raise RuntimeError("copied GitHub client did not resolve from its owner bundle")
     if Path(integration.__file__ or "").resolve() != (bundle / "github.py").resolve():
@@ -57,7 +57,7 @@ def _load_copied_modules(bundle: Path) -> tuple[ModuleType, ModuleType]:
 
 
 def _context() -> object:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
     from kaji.runtime.context import ToolExecutionContext
 
     return ToolExecutionContext(
@@ -91,8 +91,8 @@ class _ScriptedHttp:
         context: object,
     ) -> object:
         from kaji.integrations.errors import IntegrationTransportError
-        from kaji.integrations.fixed_origin import IntegrationResponse
-        from kaji.runtime.agents.cancellation import CancelledError
+        from kaji.integrations.origin import IntegrationResponse
+        from kaji.runtime.agents.cancel import CancelledError
 
         self.requests.append(
             {
@@ -213,7 +213,7 @@ async def _approval_precedes_credentials(
     from kaji.events.journal import InMemoryEventJournal
     from kaji.events.store import InMemoryEventStore
     from kaji.events.types import EventType
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
     from kaji.runtime.agents.context import TurnContext
     from kaji.runtime.agents.approval import (
         ApprovalDecision,
@@ -221,7 +221,7 @@ async def _approval_precedes_credentials(
     )
     from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
     from kaji.runtime.context import ToolInvocation
-    from kaji.runtime.tools.policies import ToolPolicy
+    from kaji.runtime.tools.policy import ToolPolicy
     from kaji.runtime.tools.registry import ToolRegistry
 
     credential_calls = 0
@@ -372,7 +372,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     if Path(kaji.__file__ or "").resolve().parent != package:
         raise RuntimeError("Kaji did not resolve from the installed artifact")
     fixture_path = _contained(
-        package / "contracts/integrations/github-api-conformance-v1.json",
+        package / "contracts/integrations/v1/api/github.json",
         package,
         "GitHub conformance contract",
     )

@@ -15,7 +15,7 @@ from kaji.runtime.agents.context import (
     ContextWindow,
 )
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.runtime.sessions.context_index import ContextIndex, ContextIndexStats
+from kaji.runtime.sessions.context import ContextIndex, ContextIndexStats
 from kaji.runtime.sessions.replay import SessionState, apply_event
 
 

@@ -41,7 +41,7 @@ from kaji.runtime.tools.idempotency import (
 from kaji.runtime.tools.registry import ToolSpec
 
 if TYPE_CHECKING:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
 
 ToolExecutor = Callable[[ToolInvocation], Awaitable[Any]]
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 
 def _integration_recovery_fields(value: object) -> dict[str, str]:
-    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+    from kaji.integrations.recovery import (  # noqa: PLC0415
         closed_recovery_fields,
     )
 
@@ -68,7 +68,7 @@ def _integration_recovery_fields(value: object) -> dict[str, str]:
 
 
 def _integration_transport_failure_fields(value: object) -> dict[str, str]:
-    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+    from kaji.integrations.recovery import (  # noqa: PLC0415
         closed_transport_failure_fields,
     )
 
@@ -808,7 +808,7 @@ class ToolExecutionController:
                 claim_resolved = True
                 return _ToolExecutionOutcome(failure=failure)
 
-            from kaji.runtime.agents.cancellation import (  # noqa: PLC0415
+            from kaji.runtime.agents.cancel import (  # noqa: PLC0415
                 CancellationToken,
             )
 

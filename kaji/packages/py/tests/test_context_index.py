@@ -28,7 +28,7 @@ from kaji.events.schemas import (
 from kaji.runtime.sessions.replay import apply_event
 from kaji.runtime.agents.context import ContextWindow
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.runtime.sessions.context_index import build_context_from_messages
+from kaji.runtime.sessions.context import build_context_from_messages
 from kaji.runtime.sessions.projector import SessionProjector
 
 

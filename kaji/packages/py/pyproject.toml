@@ -67,6 +67,7 @@ packages = [
     "kaji.runtime.agents",
     "kaji.runtime.integrations",
     "kaji.runtime.providers",
+    "kaji.runtime.providers.openai",
     "kaji.runtime.sessions",
     "kaji.runtime.tools",
 ]

@@ -24,8 +24,8 @@ from kaji.integrations.errors import (
     IntegrationTransportError,
     IntegrationTransientReadError,
 )
-from kaji.integrations.fixed_origin import IntegrationResponse
-from kaji.runtime.agents.cancellation import CancelledError
+from kaji.integrations.origin import IntegrationResponse
+from kaji.runtime.agents.cancel import CancelledError
 from kaji.runtime.context import ToolExecutionContext
 from kaji.runtime.tools.execution import ToolExecutionError
 

@@ -11,9 +11,9 @@ from kaji.events.schemas import (
 )
 from kaji.events.types import EventType
 from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import ToolInvocation, TurnContext
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 from tests.helpers.approval import StaticApprovalHandler
 

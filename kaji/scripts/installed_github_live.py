@@ -50,7 +50,7 @@ def _load_copied_modules(bundle: Path) -> tuple[ModuleType, ModuleType]:
     sys.modules[owner.__name__] = owner
     sys.modules[package.__name__] = package
     client = importlib.import_module("owner_integrations.github.client")
-    integration = importlib.import_module("owner_integrations.github.github")
+    integration = importlib.import_module("owner_integrations.github.handler")
     if (
         Path(client.__file__ or "").resolve() != (bundle / "client.py").resolve()
         or Path(integration.__file__ or "").resolve()
@@ -100,11 +100,11 @@ async def _execute(
     from kaji.events.journal import InMemoryEventJournal
     from kaji.events.store import InMemoryEventStore
     from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
     from kaji.runtime.agents.context import TurnContext
     from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
     from kaji.runtime.context import ToolInvocation
-    from kaji.runtime.tools.policies import ToolPolicy
+    from kaji.runtime.tools.policy import ToolPolicy
     from kaji.runtime.tools.registry import ToolRegistry
 
     async def token_for(_context: object) -> str:

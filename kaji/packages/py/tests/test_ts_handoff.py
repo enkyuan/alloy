@@ -22,7 +22,7 @@ from jsonschema.protocols import Validator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-SCHEMA_RELATIVE = "release/kaji-ts-consumer-handoff-v1.schema.json"
+SCHEMA_RELATIVE = "release/v1/typescript/handoff.json"
 CANONICAL_SCHEMA = REPO_ROOT / "kaji" / "contracts" / SCHEMA_RELATIVE
 SCHEMA_MIRRORS = (
     REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts" / SCHEMA_RELATIVE,
@@ -1413,7 +1413,7 @@ def test_finalize_aggregates_six_receipts_and_writes_exact_three_file_bundle(
     assert set(path.name for path in output.iterdir()) == {
         "irogane-kaji-0.2.0-beta.11.tgz",
         "kaji.manifest.json",
-        "kaji-ts-consumer-handoff-v1.schema.json",
+        "release/v1/typescript/handoff.json",
     }
     manifest = json.loads((output / "kaji.manifest.json").read_text())
     assert manifest["artifact"]["sha256"] == artifact_sha

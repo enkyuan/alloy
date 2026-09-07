@@ -12,7 +12,7 @@ and validated against the live Gmail API on the real release commit, inside the
 What IS real and testable here now:
   * the CLI surface (mirrors the GitHub proof's flags exactly),
   * the receipt shape and its validation against the shipped contract
-    ``kaji/contracts/release/gmail-proof-v1.schema.json``,
+    ``kaji/contracts/release/v1/gmail.json``,
   * the ordered proof sequence, encoded as functions with explicit contracts.
 
 What is STUBBED (raises OperatorTodo so it fails closed, never a silent pass):
@@ -40,7 +40,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "gmail-proof-v1.schema.json"
+PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "v1/gmail.json"
 
 # Release artifact names. Keep in lockstep with live_github_proof.py; the beta
 # tag drives these. (TS tarball tracks beta.11; Python wheel/sdist track 0.2.0b1.)
@@ -120,7 +120,7 @@ def validate_receipt(receipt: dict[str, Any]) -> None:
 
     Uses jsonschema like the GitHub proof. This is the one guarantee the
     skeleton fully enforces today: whatever the finished proof emits must satisfy
-    gmail-proof-v1.schema.json or this raises.
+    v1/gmail.json or this raises.
     """
     try:
         from jsonschema import Draft202012Validator

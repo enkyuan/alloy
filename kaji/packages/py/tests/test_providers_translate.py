@@ -1,6 +1,6 @@
 """Tests for the shared role translator."""
 
-from kaji.runtime.providers._translate import normalize_role, to_gemini_role
+from kaji.runtime.providers.openai.translate import normalize_role, to_gemini_role
 
 
 def test_normalize_user():

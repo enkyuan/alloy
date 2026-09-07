@@ -15,7 +15,7 @@
     "docs": "https://developers.google.com/gmail/api/auth/scopes"
   },
   "files": [
-    "gmail.py",
+    "handler.py",
     "client.py",
     "tests/test_gmail.py",
     "owner-fixtures.json",

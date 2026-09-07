@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.providers.errors import (
@@ -381,7 +381,7 @@ async def test_openai_stream_yields_usage_metadata_chunk(
 
 def test_format_messages_openai_preserves_tool_call_id():
     """Tool messages must carry tool_call_id so multi-turn loops work."""
-    from kaji.runtime.providers._translate import format_messages_openai
+    from kaji.runtime.providers.openai.translate import format_messages_openai
 
     messages = [
         {"role": "user", "content": "hello"},
@@ -399,7 +399,7 @@ def test_format_messages_openai_preserves_tool_call_id():
 
 
 def test_format_messages_openai_falls_back_to_name_when_no_id():
-    from kaji.runtime.providers._translate import format_messages_openai
+    from kaji.runtime.providers.openai.translate import format_messages_openai
 
     messages = [{"role": "tool", "name": "lookup", "content": "ok"}]
     formatted = format_messages_openai(messages)

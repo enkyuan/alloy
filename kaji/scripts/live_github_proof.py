@@ -66,7 +66,7 @@ CONTROL_HELPER = ROOT / "kaji" / "scripts" / "github_proof_control.py"
 TYPESCRIPT_RUNNER = (
     ROOT / "kaji" / "packages" / "ts" / "scripts" / "installed-github-live.mts"
 )
-PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
+PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "v1/github.json"
 PYTHON_CHILD_BOOTSTRAP = "\n".join(
     (
         "import importlib.util, runpy, sys",

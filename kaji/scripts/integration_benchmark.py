@@ -619,7 +619,7 @@ def require_protected_calibration() -> dict[str, str]:
 
 
 def _python_context(principal: str = "benchmark-principal") -> Any:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
     from kaji.runtime.context import ToolExecutionContext
 
     return ToolExecutionContext(
@@ -647,7 +647,7 @@ async def _fixed_origin_preflight(
     import httpx
 
     from kaji.integrations.errors import IntegrationPolicyError
-    from kaji.integrations.fixed_origin import FixedOriginClient
+    from kaji.integrations.origin import FixedOriginClient
 
     transport_calls = 0
 
@@ -695,7 +695,7 @@ async def _fixed_origin_cap(inputs: Mapping[str, Any]) -> tuple[_Operation, _Clo
     import httpx
 
     from kaji.integrations.errors import IntegrationTransportError
-    from kaji.integrations.fixed_origin import FixedOriginClient
+    from kaji.integrations.origin import FixedOriginClient
 
     payload = b"x" * (inputs["limitBytes"] + inputs["overflowBytes"])
     transport_calls = 0
@@ -748,7 +748,7 @@ async def _fixed_origin_cap(inputs: Mapping[str, Any]) -> tuple[_Operation, _Clo
 
 
 async def _github_dto(inputs: Mapping[str, Any]) -> tuple[_Operation, _Closer]:
-    from kaji.integrations.fixed_origin import IntegrationResponse
+    from kaji.integrations.origin import IntegrationResponse
     from kaji.integrations.registry.github.client import GitHubClient
 
     repository = cast(str, inputs["repository"])
@@ -806,7 +806,7 @@ async def _keychain_parse(inputs: Mapping[str, Any]) -> tuple[_Operation, _Close
         OAuthTokenSet,
         _canonical_wire,
     )
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
     record = OAuthCredentialRecord(
         1,

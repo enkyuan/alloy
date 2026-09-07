@@ -134,7 +134,7 @@ for entry in list_integrations():
             sys.exit(1)
         print(f"  ok: {entry}/{rel}")
 
-from kaji.integrations.registry.github.github import inspect_integration  # noqa: E402
+from kaji.integrations.registry.github.handler import inspect_integration  # noqa: E402
 
 github_tools = inspect_integration().tools()
 if len(github_tools) != 6:

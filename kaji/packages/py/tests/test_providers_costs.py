@@ -15,8 +15,7 @@ FIXTURE = json.loads(
     (
         Path(__file__).resolve().parents[3]
         / "contracts"
-        / "providers"
-        / "cost-conformance.json"
+        / "providers/v1/costs.json"
     ).read_text()
 )
 

@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.contracts.integration_recovery import recovery_for_reason
+from kaji.integrations.recovery import recovery_for_reason
 from kaji.integrations.errors import (
     IntegrationAuthRequiredError,
     IntegrationExecutionError,
@@ -17,9 +17,9 @@ from kaji.integrations.errors import (
     IntegrationTransientReadError,
     IntegrationTransportError,
 )
-from kaji.integrations.fixed_origin import IntegrationResponse
+from kaji.integrations.origin import IntegrationResponse
 from kaji.integrations.registry.gmail.client import GmailClient
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.context import ToolExecutionContext
 
 
@@ -308,7 +308,7 @@ _FIXTURE = json.loads(
         Path(__file__).resolve().parents[3]
         / "contracts"
         / "integrations"
-        / "gmail-api-conformance-v1.json"
+        / "v1/api/gmail.json"
     ).read_text()
 )
 _CASES = cast(list[dict[str, Any]], _FIXTURE["cases"])

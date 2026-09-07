@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kaji.events.schemas import KajiEvent, ToolCallFailed, ToolCallStarted
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
     ToolInvocation,
@@ -26,10 +26,10 @@ from kaji.runtime.tools.validation import ToolSchemaValidator
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 CONTRACTS_ROOT = REPO_ROOT / "kaji" / "contracts" / "tools"
-VALID_CASES = json.loads((CONTRACTS_ROOT / "conformance-valid.json").read_text())[
+VALID_CASES = json.loads((CONTRACTS_ROOT / "v1/cases/valid.json").read_text())[
     "cases"
 ]
-INVALID_CASES = json.loads((CONTRACTS_ROOT / "conformance-invalid.json").read_text())[
+INVALID_CASES = json.loads((CONTRACTS_ROOT / "v1/cases/invalid.json").read_text())[
     "cases"
 ]
 

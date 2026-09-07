@@ -9,10 +9,10 @@ from . import add as _add
 from . import connect as _connect
 from . import doctor as _doctor
 from . import disconnect as _disconnect
-from . import gen as _gen
+from . import generate as _generate
 from . import info as _info
 from . import init as _init
-from . import list_integrations as _list_integrations
+from . import list as _list_integrations
 from . import secret as _secret
 from . import upgrade as _upgrade
 from ._style import set_color_enabled
@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     _init.add_parser(sub)
-    _gen.add_parser(sub)
+    _generate.add_parser(sub)
     _add.add_parser(sub)
     _connect.add_parser(sub)
     _disconnect.add_parser(sub)

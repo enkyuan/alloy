@@ -11,7 +11,7 @@ _LAZY: dict[str, str] = {
     "ApprovalDecision": "kaji.runtime.agents.approval",
     "ApprovalHandler": "kaji.runtime.agents.approval",
     "ApprovalRequestContext": "kaji.runtime.agents.approval",
-    "CancellationToken": "kaji.runtime.agents.cancellation",
+    "CancellationToken": "kaji.runtime.agents.cancel",
     "ContextDiagnostics": "kaji.runtime.agents.context",
     "ContextIntegrityError": "kaji.runtime.agents.context",
     "ContextWindow": "kaji.runtime.agents.context",

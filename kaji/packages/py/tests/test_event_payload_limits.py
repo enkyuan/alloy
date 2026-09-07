@@ -32,7 +32,7 @@ from kaji.events.schemas import (
 )
 from kaji.events.store import InMemoryEventStore
 from kaji.events.store.base import EventStore
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.errors import ToolArgumentValidationError

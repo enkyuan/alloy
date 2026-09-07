@@ -36,7 +36,7 @@ from kaji.runtime.agents.approval import (
     EventApprovalHandler,
 )
 from kaji.runtime.agents.builder import AgentBuilder
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
@@ -51,7 +51,7 @@ from kaji.runtime.agents.planner import (
 from kaji.runtime.providers.mock import MockProvider
 from kaji.core.determinism import Clock, ScheduledCallback, TimerScheduler
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 
 

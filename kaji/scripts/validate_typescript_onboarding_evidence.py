@@ -31,7 +31,7 @@ SCHEMA_PATH = (
     / "kaji"
     / "contracts"
     / "release"
-    / "typescript-onboarding-evidence-v1.schema.json"
+    / "v1/typescript/onboarding.json"
 )
 TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 PRODUCER_NAME = "kaji-artifacts"

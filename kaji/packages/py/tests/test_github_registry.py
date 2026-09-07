@@ -21,7 +21,7 @@ from tests.helpers.approval import StaticApprovalHandler
 
 ROOT = Path(__file__).resolve().parents[4]
 ABI = json.loads(
-    (ROOT / "kaji/contracts/integrations/github-tool-abi-v1.json").read_text()
+    (ROOT / "kaji/contracts/integrations/v1/abi/github.json").read_text()
 )
 
 
@@ -46,8 +46,8 @@ def _document(integration: Integration) -> dict[str, object]:
 def test_github_inspector_matches_canonical_abi_without_global_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kaji.integrations import fixed_origin
-    from kaji.integrations.registry.github.github import inspect_integration
+    from kaji.integrations import origin as fixed_origin
+    from kaji.integrations.registry.github.handler import inspect_integration
 
     monkeypatch.setattr(
         fixed_origin.FixedOriginClient,
@@ -72,7 +72,7 @@ def test_github_inspector_matches_canonical_abi_without_global_registration(
 
 @pytest.mark.asyncio
 async def test_each_wrapper_delegates_once_with_the_execution_context() -> None:
-    from kaji.integrations.registry.github.github import GitHubIntegration
+    from kaji.integrations.registry.github.handler import GitHubIntegration
 
     client = type("Client", (), {})()
     calls = {
@@ -105,8 +105,8 @@ async def test_each_wrapper_delegates_once_with_the_execution_context() -> None:
 async def test_production_integration_closes_its_owned_http_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kaji.integrations import fixed_origin
-    from kaji.integrations.registry.github.github import create_github_integration
+    from kaji.integrations import origin as fixed_origin
+    from kaji.integrations.registry.github.handler import create_github_integration
 
     http = type(
         "Http",
@@ -220,10 +220,10 @@ def test_copied_python_bundle_uses_its_owner_client(
         "owner_integrations",
         "owner_integrations.github",
         "owner_integrations.github.client",
-        "owner_integrations.github.github",
+        "owner_integrations.github.handler",
     )
     try:
-        module = importlib.import_module("owner_integrations.github.github")
+        module = importlib.import_module("owner_integrations.github.handler")
         assert module.GitHubClient.__module__ == "owner_integrations.github.client"
         assert len(module.inspect_integration().tools()) == 6
     finally:
@@ -251,13 +251,13 @@ async def test_mutation_approval_rejection_never_reads_token_or_runs_http(
     from kaji.events.journal import InMemoryEventJournal
     from kaji.events.store import InMemoryEventStore
     from kaji.events.types import EventType
-    from kaji.integrations.registry.github.github import (
+    from kaji.integrations.registry.github.handler import (
         _create_github_integration_for_test,
     )
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
     from kaji.runtime.agents.context import TurnContext
     from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
-    from kaji.runtime.tools.policies import ToolPolicy
+    from kaji.runtime.tools.policy import ToolPolicy
     from kaji.runtime.tools.registry import ToolRegistry
 
     token_for = AsyncMock(side_effect=AssertionError("token must not be read"))

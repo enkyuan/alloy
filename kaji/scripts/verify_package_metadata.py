@@ -113,7 +113,7 @@ def main() -> None:
         fail("release uv version is not exactly pinned")
 
     contract_version = json.loads(
-        (repo / "kaji/contracts/beta-core-v1.json").read_text()
+        (repo / "kaji/contracts/core/v1/beta.json").read_text()
     )["contractVersion"]
     if f"## [{python_version}]" not in (sdk / "CHANGELOG.md").read_text():
         fail("Python beta version is missing from its changelog")

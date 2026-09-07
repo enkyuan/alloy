@@ -5,10 +5,10 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, cast
 
 
 from kaji.core.config import get_settings
-from kaji.runtime.providers._cancellation import (
+from kaji.runtime.providers.cancellation import (
     raise_if_cancelled as _raise_if_cancelled,
 )
-from kaji.runtime.providers._translate import format_messages_openai
+from kaji.runtime.providers.openai.translate import format_messages_openai
 from kaji.runtime.providers.base import (
     LinearStringParts,
     ModelProvider,

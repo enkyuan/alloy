@@ -13,7 +13,7 @@ import kaji
 from kaji.events.json import canonical_json
 from kaji.events.store import InMemoryEventStore
 from kaji.events.types import EventType
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.limits import TurnExecutionLimits
 from kaji.runtime.agents.planner import ToolPlanner

@@ -25,7 +25,7 @@ from kaji.realtime.history.ops import get_history
 from kaji.knowledge.rag import DocumentRAG
 from kaji.modalities.voice.tts.gemini import GeminiTTSProvider
 from kaji.runtime.agents.runtime import AgentRuntime
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation
 from kaji.runtime.providers.anthropic import AnthropicProvider
 from kaji.runtime.providers.errors import (
@@ -1254,7 +1254,7 @@ def _assert_trusted_handoff_workflow_source(source: str) -> None:
     subjects = [
         ".artifacts/kaji-handoff/${{ env.KAJI_HANDOFF_TARBALL }}",
         ".artifacts/kaji-handoff/kaji.manifest.json",
-        ".artifacts/kaji-handoff/kaji-ts-consumer-handoff-v1.schema.json",
+        ".artifacts/kaji-handoff/release/v1/typescript/handoff.json",
     ]
     assert _literal_paths(consumer_upload[0], "path") == subjects
     assert _literal_paths(attestation[0], "subject-path") == subjects

@@ -22,8 +22,8 @@ from process_runner import (
 
 ROOT = Path(__file__).resolve().parents[2]
 KAJI = ROOT / "kaji"
-SCENARIOS = KAJI / "contracts" / "parity" / "scenarios.json"
-EXPECTED = KAJI / "contracts" / "parity" / "expected-normalized.json"
+SCENARIOS = KAJI / "contracts" / "parity" / "v1/scenarios.json"
+EXPECTED = KAJI / "contracts" / "parity" / "v1/expected.json"
 PYTHON_SDK = KAJI
 TYPESCRIPT_SDK = KAJI / "packages" / "ts"
 PYTHON_EXPORTER = PYTHON_SDK / "scripts" / "export_parity.py"

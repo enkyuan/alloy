@@ -13,7 +13,7 @@ from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ToolExecutionContext, TurnContext
 from kaji.runtime.agents.runtime import AgentRuntime
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from tests.helpers.approval import StaticApprovalHandler
 from tests.helpers.mock_provider import MockProvider

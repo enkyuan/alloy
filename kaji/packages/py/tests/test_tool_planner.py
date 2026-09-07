@@ -12,10 +12,10 @@ from kaji.events.journal import InMemoryEventJournal
 from kaji.events.store import InMemoryEventStore
 from kaji.events.types import EventType
 from kaji.runtime.agents.approval import ApprovalDecision
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import JournalEventEmitter, ToolPlanner
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 from tests.helpers.approval import RaisingApprovalHandler, StaticApprovalHandler
 

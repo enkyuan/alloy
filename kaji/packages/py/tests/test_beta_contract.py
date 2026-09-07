@@ -10,10 +10,10 @@ import pytest
 from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-CONTRACT = REPO_ROOT / "kaji" / "contracts" / "beta-core-v1.json"
-FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json"
-ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors" / "error-codes.json"
-EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "conformance.json"
+CONTRACT = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
+FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
+ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors" / "errors/v1/codes.json"
+EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_event_migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts"
@@ -21,21 +21,20 @@ GITHUB_TYPESCRIPT_ABI = (
     REPO_ROOT
     / "kaji"
     / "contracts"
-    / "integrations"
-    / "github-tool-abi-typescript-v1.json"
+    / "integrations/v1/abi/typescript/github.json"
 )
 EVENT_SCHEMAS = (
-    REPO_ROOT / "kaji" / "contracts" / "events" / "new-kaji-event-v1.schema.json",
-    REPO_ROOT / "kaji" / "contracts" / "events" / "stored-kaji-event-v1.schema.json",
+    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/new.json",
+    REPO_ROOT / "kaji" / "contracts" / "events" / "events/v1/schema/stored.json",
 )
-TS_HANDOFF_SCHEMA_RELATIVE = Path("release/kaji-ts-consumer-handoff-v1.schema.json")
+TS_HANDOFF_SCHEMA_RELATIVE = Path("release/v1/typescript/handoff.json")
 TS_HANDOFF_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_HANDOFF_SCHEMA_RELATIVE
 TS_ONBOARDING_SCHEMA_RELATIVE = Path(
-    "release/typescript-onboarding-evidence-v1.schema.json"
+    "release/v1/typescript/onboarding.json"
 )
 TS_ONBOARDING_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_ONBOARDING_SCHEMA_RELATIVE
 PUBLISHER_IDENTITY_SCHEMA_RELATIVE = Path(
-    "release/publisher-identity-receipt-v1.schema.json"
+    "release/v1/publisher.json"
 )
 PUBLISHER_IDENTITY_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / PUBLISHER_IDENTITY_SCHEMA_RELATIVE
@@ -295,11 +294,11 @@ def test_publisher_identity_schema_is_required_closed_and_exactly_packaged() -> 
     assert schema["additionalProperties"] is False
 
     expected_release_inventory = {
-        "github-proof-v1.schema.json",
-        "gmail-proof-v1.schema.json",
-        "kaji-ts-consumer-handoff-v1.schema.json",
-        "publisher-identity-receipt-v1.schema.json",
-        "typescript-onboarding-evidence-v1.schema.json",
+        "release/v1/github.json",
+        "release/v1/gmail.json",
+        "release/v1/typescript/handoff.json",
+        "release/v1/publisher.json",
+        "release/v1/typescript/onboarding.json",
     }
     for package_root in (
         REPO_ROOT / "kaji" / "contracts",
@@ -479,23 +478,23 @@ def test_typescript_github_package_abi_is_closed_and_rejects_drift() -> None:
     assert sum(tool["risk"] == "read" for tool in package_abi["tools"]) == 13
 
     reordered = deepcopy(documents)
-    reordered["integrations/github-tool-abi-typescript-v1.json"]["tools"][6:8] = (
+    reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8] = (
         reversed(
-            reordered["integrations/github-tool-abi-typescript-v1.json"]["tools"][6:8]
+            reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8]
         )
     )
     with pytest.raises(contract_error, match="tool order differs"):
         check(reordered)
 
     shared_drift = deepcopy(documents)
-    shared_drift["integrations/github-tool-abi-typescript-v1.json"]["tools"][0][
+    shared_drift["integrations/v1/abi/typescript/github.json"]["tools"][0][
         "description"
     ] = "drift"
     with pytest.raises(contract_error, match="shared-six prefix differs"):
         check(shared_drift)
 
     schema_drift = deepcopy(documents)
-    schema_drift["integrations/github-tool-abi-typescript-v1.json"]["tools"][6][
+    schema_drift["integrations/v1/abi/typescript/github.json"]["tools"][6][
         "parameters"
     ]["properties"]["per_page"]["maximum"] = 100
     with pytest.raises(contract_error, match="parameter schema differs"):
@@ -525,7 +524,7 @@ def test_every_packaged_cli_command_has_one_stability_tier() -> None:
 
 def test_cli_init_contract_has_exact_current_cases() -> None:
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="cli_init_contract_test")
-    document = checker["load_contract_documents"]()["cli/init-cases-v1.json"]
+    document = checker["load_contract_documents"]()["cli/v1/init.json"]
     check = checker["check_cli_init_cases"]
     contract_error = checker["ContractError"]
 
@@ -653,7 +652,7 @@ def test_event_contract_checker_rejects_structural_mutations() -> None:
     check_events = checker["check_events"]
 
     rogue_union = deepcopy(documents)
-    rogue_schema = rogue_union["events/new-kaji-event-v1.schema.json"]
+    rogue_schema = rogue_union["events/v1/schema/new.json"]
     rogue_schema["$defs"]["rogueEvent"] = {
         "allOf": [
             {"$ref": "#/$defs/base"},
@@ -670,22 +669,22 @@ def test_event_contract_checker_rejects_structural_mutations() -> None:
         check_events(rogue_union, codes)
 
     stored_drift = deepcopy(documents)
-    stored_drift["events/stored-kaji-event-v1.schema.json"]["$defs"]["sessionCreated"][
+    stored_drift["events/v1/schema/stored.json"]["$defs"]["sessionCreated"][
         "allOf"
     ][1]["properties"]["stored_only"] = {"type": "string"}
     with pytest.raises(contract_error, match="structural parity"):
         check_events(stored_drift, codes)
 
     stored_top_level_drift = deepcopy(documents)
-    stored_top_level_drift["events/stored-kaji-event-v1.schema.json"]["properties"] = {
+    stored_top_level_drift["events/v1/schema/stored.json"]["properties"] = {
         "timestamp": {"minimum": 0}
     }
     with pytest.raises(contract_error, match="structural parity"):
         check_events(stored_top_level_drift, codes)
 
     removed_negative = deepcopy(documents)
-    cases = removed_negative["events/conformance-invalid.json"]["cases"]
-    removed_negative["events/conformance-invalid.json"]["cases"] = [
+    cases = removed_negative["events/v1/cases/invalid.json"]["cases"]
+    removed_negative["events/v1/cases/invalid.json"]["cases"] = [
         case for case in cases if case["name"] != "missing-event-id"
     ]
     with pytest.raises(contract_error, match="required negative cases"):
@@ -694,7 +693,7 @@ def test_event_contract_checker_rejects_structural_mutations() -> None:
 
 def test_provider_cost_checker_rejects_contract_drift() -> None:
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="beta_contract_test")
-    document = checker["load_contract_documents"]()["providers/cost-conformance.json"]
+    document = checker["load_contract_documents"]()["providers/v1/costs.json"]
     contract_error = checker["ContractError"]
     check_provider_costs = checker["check_provider_costs"]
 

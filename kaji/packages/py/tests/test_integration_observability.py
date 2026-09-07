@@ -11,14 +11,14 @@ import pytest
 
 from kaji.observability import Measurement
 from kaji.observability.protocols import record_metric, start_span
-from kaji.integrations.fixed_origin import FixedOriginClient
+from kaji.integrations.origin import FixedOriginClient
 from kaji.integrations.oauth import (
     GoogleOAuthClient,
     OAuthCredentialRecord,
     OAuthTokenSet,
 )
-from kaji.integrations.registry.github.github import create_github_integration
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.integrations.registry.github.handler import create_github_integration
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ToolInvocation
 from kaji.runtime.context import ToolExecutionContext, TurnContext

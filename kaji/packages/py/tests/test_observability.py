@@ -30,7 +30,7 @@ from kaji.observability.protocols import (
 )
 from kaji.observability.tracing import Span
 from kaji.runtime.agents.builder import AgentBuilder
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation
 from kaji.runtime.providers.mock import MockProvider
 from kaji.runtime.sessions import EventTimeline

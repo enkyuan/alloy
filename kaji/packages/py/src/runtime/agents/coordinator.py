@@ -11,7 +11,7 @@ from threading import RLock
 from typing import Any, Dict, Protocol
 from weakref import ReferenceType, ref
 
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.limits import (
     ProviderCancellationContractViolation,
     TurnTimeoutError,

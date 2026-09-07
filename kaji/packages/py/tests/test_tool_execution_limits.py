@@ -10,7 +10,7 @@ import pytest
 from kaji.events.types import EventType
 from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents.builder import AgentBuilder
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import (
     ToolExecutionContext,
     ToolInvocation,

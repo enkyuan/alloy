@@ -56,7 +56,7 @@ MAX_ATTESTATION_JSON_BYTES = 16 * 1024 * 1024
 MAX_DSSE_STATEMENT_BYTES = 256 * 1024
 PUBLISHER_SCHEMA = (
     Path(__file__).resolve().parents[1]
-    / "contracts/release/publisher-identity-receipt-v1.schema.json"
+    / "contracts/release/v1/publisher.json"
 )
 PUBLISHER_STATUS_REASONS = frozenset(
     {

@@ -11,7 +11,7 @@ from kaji.events.schemas import (
 )
 from kaji.events.store import InMemoryEventStore
 from kaji.events.types import EventType
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import ToolInvocation, TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime

@@ -174,7 +174,7 @@ def _load_script(name: str) -> Any:
 def test_github_proof_contract_is_closed_and_orders_two_cells() -> None:
     schema = json.loads(
         (
-            ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
+            ROOT / "kaji" / "contracts" / "release" / "release/v1/github.json"
         ).read_text()
     )
     Draft202012Validator.check_schema(schema)
@@ -442,7 +442,7 @@ async def test_python_installed_cell_reads_then_approves_one_exact_comment() -> 
             del context
             raise AssertionError("unexpected tool")
 
-    from kaji.integrations.registry.github.github import GitHubIntegration
+    from kaji.integrations.registry.github.handler import GitHubIntegration
 
     integration = GitHubIntegration(Client())
     module = SimpleNamespace(create_github_integration=lambda **_kwargs: integration)
@@ -498,8 +498,7 @@ def test_installed_children_have_no_source_fallback_or_issue_creation_call() -> 
             ROOT
             / "kaji"
             / "contracts"
-            / "integrations"
-            / "github-tool-abi-typescript-v1.json"
+            / "integrations/v1/abi/typescript/github.json"
         ).read_text()
     )
     expected = {f"github_{tool['name']}" for tool in abi["tools"]}
@@ -673,7 +672,7 @@ def _write_fake_installed_kaji(package: Path) -> None:
                 ApprovalRequestContext=Box,
             )
             module(
-                "kaji.runtime.agents.cancellation",
+                "kaji.runtime.agents.cancel",
                 CancellationToken=Box,
             )
             module(
@@ -690,7 +689,7 @@ def _write_fake_installed_kaji(package: Path) -> None:
                 ToolInvocation=ToolInvocation,
             )
             module(
-                "kaji.runtime.tools.policies",
+                "kaji.runtime.tools.policy",
                 ToolPolicy=Box,
             )
             module(

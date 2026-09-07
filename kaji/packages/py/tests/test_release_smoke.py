@@ -609,7 +609,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
 def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> None:
     script = (KAJI_ROOT / "scripts" / "release_smoke.py").read_text()
     tiers = json.loads(
-        (REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json").read_text()
+        (REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json").read_text()
     )
 
     assert tiers["cliCommands"]["python"]["stable"] == [
@@ -637,10 +637,10 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         '"add", "echo", "--out"',
         '"add", "github", "--out"',
         "assert_github_cli_output(github_output, github, registry)",
-        "from kaji.integrations.registry.github.github import inspect_integration; ",
+        "from kaji.integrations.registry.github.handler import inspect_integration; ",
         '"assert len(inspect_integration().tools()) == 6"',
         "import owner_integrations.github.client as owner_client; ",
-        "from owner_integrations.github.github import ",
+        "from owner_integrations.github.handler import ",
         "GitHubClient, inspect_integration; ",
         "'owner_integrations.github.client'",
         "Path(owner_client.__file__).resolve() == ",
@@ -1015,10 +1015,10 @@ def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -
     assert all(not path.is_relative_to(SDK_ROOT / "src") for path in source_tools)
 
     canonical = (
-        REPO_ROOT / "kaji" / "contracts" / "release" / "github-proof-v1.schema.json"
+        REPO_ROOT / "kaji" / "contracts" / "release" / "release/v1/github.json"
     ).read_bytes()
     assert (
-        SDK_ROOT / "src" / "contracts" / "release" / "github-proof-v1.schema.json"
+        SDK_ROOT / "src" / "contracts" / "release" / "release/v1/github.json"
     ).read_bytes() == canonical
     assert (
         REPO_ROOT
@@ -1026,6 +1026,5 @@ def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -
         / "packages"
         / "ts"
         / "contracts"
-        / "release"
-        / "github-proof-v1.schema.json"
+        / "release/v1/github.json"
     ).read_bytes() == canonical

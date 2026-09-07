@@ -22,7 +22,7 @@ from kaji.integrations.oauth import (
     _OAuthHttpResponse,
     _create_google_oauth_client_for_test,
 )
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.context import ToolExecutionContext
 
 

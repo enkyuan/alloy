@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any, Protocol, cast
 
-from kaji.integrations.fixed_origin import FixedOriginClient
+from kaji.integrations.origin import FixedOriginClient
 from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,

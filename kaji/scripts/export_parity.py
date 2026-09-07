@@ -26,7 +26,7 @@ from kaji.events.schemas import (
 )
 from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator
 from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
@@ -48,14 +48,14 @@ from kaji.runtime.tools.idempotency import (
     InMemoryToolIdempotencyLedger,
     ToolIdempotencyFailure,
 )
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = REPO_ROOT / "kaji" / "contracts"
-SCENARIOS_PATH = CONTRACTS / "parity" / "scenarios.json"
+SCENARIOS_PATH = CONTRACTS / "parity" / "v1/scenarios.json"
 EVENT_ADAPTER = TypeAdapter(KajiEvent)
 SNAPSHOT_KEYS = (
     "result",

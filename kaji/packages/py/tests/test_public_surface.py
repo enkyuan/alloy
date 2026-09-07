@@ -145,7 +145,7 @@ def test_internal_names_still_importable_from_subpackages() -> None:
         SessionRecord,
         SessionStore,
     )
-    from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+    from kaji.runtime.tools.policy import ToolPolicy, ToolPolicyViolation
     from kaji.runtime.tools.registry import (
         clear_tools,
         execute_tool,

@@ -11,8 +11,8 @@ from kaji.integrations.errors import (
     IntegrationExecutionError,
     IntegrationTransportError,
 )
-from kaji.contracts.integration_recovery import recovery_for_reason
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.integrations.recovery import recovery_for_reason
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import ToolInvocation, TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.tools.registry import ToolSpec

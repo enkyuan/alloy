@@ -20,7 +20,7 @@ from process_runner import CommandError, METADATA_BUDGET, run_checked
 ROOT = Path(__file__).resolve().parents[2]
 KAJI = ROOT / "kaji"
 CONTRACTS = KAJI / "contracts" / "integrations"
-ABI_INDEX = CONTRACTS / "abi-index-v1.json"
+ABI_INDEX = CONTRACTS / "v1/abi/index.json"
 PYTHON_SDK = KAJI / "packages" / "py"
 TYPESCRIPT_SDK = KAJI / "packages" / "ts"
 PYTHON_REGISTRY = PYTHON_SDK / "src" / "integrations" / "registry"

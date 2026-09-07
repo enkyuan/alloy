@@ -11,9 +11,9 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-BETA_CORE = REPO_ROOT / "kaji" / "contracts" / "beta-core-v1.json"
-FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "feature-tiers-v1.json"
-PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "scenarios.json"
+BETA_CORE = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
+FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
+PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "v1" / "scenarios.json"
 RELEASE_MATRIX = REPO_ROOT / "kaji" / "RELEASE_MATRIX.md"
 CONTRACT_CHECKER = REPO_ROOT / "kaji" / "scripts" / "check_beta_contract.py"
 PACKAGED_CONTRACT_ROOTS = (
@@ -220,7 +220,7 @@ def test_session_purge_lifecycle_is_frozen_in_beta_contract() -> None:
 
 def test_beta_contract_package_copies_are_byte_identical() -> None:
     canonical_root = REPO_ROOT / "kaji" / "contracts"
-    for name in ("beta-core-v1.json", "feature-tiers-v1.json"):
+    for name in ("core/v1/beta.json", "tiers/v1/features.json"):
         expected = (canonical_root / name).read_bytes()
         for packaged_root in PACKAGED_CONTRACT_ROOTS:
             assert (packaged_root / name).read_bytes() == expected
@@ -279,7 +279,7 @@ def test_contract_checker_rejects_unknown_integration_error_code(
 ) -> None:
     contracts = tmp_path / "contracts"
     shutil.copytree(REPO_ROOT / "kaji" / "contracts", contracts)
-    fixture_path = contracts / "integrations" / "conformance-invalid.json"
+    fixture_path = contracts / "integrations" / "v1" / "cases" / "invalid.json"
     fixture = json.loads(fixture_path.read_text())
     fixture["cases"][0]["expectedCode"] = "UNKNOWN_INTEGRATION_ERROR"
     fixture_path.write_text(json.dumps(fixture))
@@ -329,7 +329,7 @@ def test_contract_checker_rejects_corrupt_integration_fixture_metadata(
     tmp_path: Path, field: str, value: str
 ) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    fixture_path = contracts / "integrations" / "conformance-invalid.json"
+    fixture_path = contracts / "integrations" / "v1" / "cases" / "invalid.json"
     fixture = json.loads(fixture_path.read_text())
     fixture["cases"][0][field] = value
     fixture_path.write_text(json.dumps(fixture))
@@ -345,8 +345,8 @@ def test_contract_checker_rejects_valid_document_in_invalid_integration_fixture(
     tmp_path: Path,
 ) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    invalid_path = contracts / "integrations" / "conformance-invalid.json"
-    valid_path = contracts / "integrations" / "conformance-valid.json"
+    invalid_path = contracts / "integrations" / "v1" / "cases" / "invalid.json"
+    valid_path = contracts / "integrations" / "v1" / "cases" / "valid.json"
     fixture = json.loads(invalid_path.read_text())
     valid_fixture = json.loads(valid_path.read_text())
     fixture["cases"][0]["document"] = valid_fixture["cases"][0]["document"]
@@ -361,7 +361,7 @@ def test_contract_checker_rejects_valid_document_in_invalid_integration_fixture(
 
 def test_contract_checker_rejects_integration_schema_drift(tmp_path: Path) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    schema_path = contracts / "integrations" / "manifest.schema.json"
+    schema_path = contracts / "integrations" / "v1" / "schema" / "manifest.json"
     schema = json.loads(schema_path.read_text())
     schema["properties"]["description"]["minLength"] = 100
     schema_path.write_text(json.dumps(schema))
@@ -369,7 +369,7 @@ def test_contract_checker_rejects_integration_schema_drift(tmp_path: Path) -> No
     with pytest.raises(checker.ContractError) as caught:
         _check_integration_contracts(checker)
 
-    valid_path = contracts / "integrations" / "conformance-valid.json"
+    valid_path = contracts / "integrations" / "v1" / "cases" / "valid.json"
     assert str(valid_path) in str(caught.value)
     assert "/cases/0/document/description" in str(caught.value)
 
@@ -378,7 +378,7 @@ def test_contract_checker_rejects_invalid_echo_abi_parameter_schema(
     tmp_path: Path,
 ) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    abi_path = contracts / "integrations" / "echo-tool-abi-v1.json"
+    abi_path = contracts / "integrations" / "v1" / "abi" / "echo.json"
     abi = json.loads(abi_path.read_text())
     abi["tools"][0]["parameters"]["type"] = "not-a-json-type"
     abi_path.write_text(json.dumps(abi))
@@ -444,7 +444,7 @@ def test_contract_checker_rejects_wrong_registry_fixture_pointer(
     tmp_path: Path, case_name: str
 ) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    fixture_path = contracts / "integrations" / "conformance-invalid.json"
+    fixture_path = contracts / "integrations" / "v1" / "cases" / "invalid.json"
     fixture = json.loads(fixture_path.read_text())
     case_index, case = _find_integration_case(fixture, case_name)
     case["expectedPath"] = "/wrong"
@@ -462,7 +462,7 @@ def test_contract_checker_rejects_repaired_registry_invalid_fixture(
     tmp_path: Path, case_name: str
 ) -> None:
     checker, contracts = _integration_checker(tmp_path)
-    fixture_path = contracts / "integrations" / "conformance-invalid.json"
+    fixture_path = contracts / "integrations" / "v1" / "cases" / "invalid.json"
     fixture = json.loads(fixture_path.read_text())
     case_index, case = _find_integration_case(fixture, case_name)
     _repair_registry_case(case)

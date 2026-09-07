@@ -36,39 +36,39 @@ PACKAGE_CONTRACT_TARGETS = (
 )
 DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
 REQUIRED_JSON = {
-    "beta-core-v1.json",
-    "cli/init-cases-v1.json",
-    "feature-tiers-v1.json",
-    "errors/error-codes.json",
-    "errors/integration-recovery-v1.json",
-    "errors/provider-normalization.json",
-    "events/conformance.json",
-    "events/conformance-invalid.json",
-    "events/new-kaji-event-v1.schema.json",
-    "events/stored-kaji-event-v1.schema.json",
-    "integrations/conformance-invalid.json",
-    "integrations/conformance-valid.json",
-    "integrations/abi-index-v1.json",
-    "integrations/copy-provenance-v1.schema.json",
-    "integrations/echo-tool-abi-v1.json",
-    "integrations/gmail-tool-abi-v1.json",
-    "integrations/github-tool-abi-v1.json",
-    "integrations/github-tool-abi-typescript-v1.json",
-    "parity/expected-normalized.json",
-    "parity/scenarios.json",
-    "parity/scenarios.schema.json",
-    "providers/cost-conformance.json",
-    "release/github-proof-v1.schema.json",
-    "release/publisher-identity-receipt-v1.schema.json",
-    "release/typescript-onboarding-evidence-v1.schema.json",
-    "release/kaji-ts-consumer-handoff-v1.schema.json",
-    "tools/conformance-invalid.json",
-    "tools/conformance-valid.json",
-    "tools/tool-schema-v1.schema.json",
+    "core/v1/beta.json",
+    "cli/v1/init.json",
+    "tiers/v1/features.json",
+    "errors/v1/codes.json",
+    "errors/v1/recovery.json",
+    "errors/v1/normalization.json",
+    "events/v1/cases/valid.json",
+    "events/v1/cases/invalid.json",
+    "events/v1/schema/new.json",
+    "events/v1/schema/stored.json",
+    "integrations/v1/cases/invalid.json",
+    "integrations/v1/cases/valid.json",
+    "integrations/v1/abi/index.json",
+    "integrations/v1/schema/provenance.json",
+    "integrations/v1/abi/echo.json",
+    "integrations/v1/abi/gmail.json",
+    "integrations/v1/abi/github.json",
+    "integrations/v1/abi/typescript/github.json",
+    "parity/v1/expected.json",
+    "parity/v1/scenarios.json",
+    "parity/v1/schema.json",
+    "providers/v1/costs.json",
+    "release/v1/github.json",
+    "release/v1/publisher.json",
+    "release/v1/typescript/onboarding.json",
+    "release/v1/typescript/handoff.json",
+    "tools/v1/cases/invalid.json",
+    "tools/v1/cases/valid.json",
+    "tools/v1/schema.json",
 }
 DATA_DOCUMENTS = {
-    "integrations/abi-index-v1.json",
-    "parity/expected-normalized.json",
+    "integrations/v1/abi/index.json",
+    "parity/v1/expected.json",
 }
 APPROVAL_FAILURE_RETRYABILITY = {
     "APPROVAL_REJECTED": False,
@@ -225,20 +225,20 @@ def check_schema(schema: Any) -> SchemaError | None:
 
 def check_tool_risk_vocabulary(documents: dict[str, dict[str, Any]]) -> None:
     locations = {
-        "tools/tool-schema-v1.schema.json": (
+        "tools/v1/schema.json": (
             "/properties/risk/enum",
-            documents["tools/tool-schema-v1.schema.json"]["properties"]["risk"]["enum"],
+            documents["tools/v1/schema.json"]["properties"]["risk"]["enum"],
         ),
-        "integrations/manifest.schema.json": (
+        "integrations/v1/schema/manifest.json": (
             "/properties/tools/items/properties/risk/enum",
-            documents["integrations/manifest.schema.json"]["properties"]["tools"][
+            documents["integrations/v1/schema/manifest.json"]["properties"]["tools"][
                 "items"
             ]["properties"]["risk"]["enum"],
         ),
     }
     for relative in (
-        "events/new-kaji-event-v1.schema.json",
-        "events/stored-kaji-event-v1.schema.json",
+        "events/v1/schema/new.json",
+        "events/v1/schema/stored.json",
     ):
         approval_rule = (
             documents[relative].get("$defs", {}).get("toolApprovalRequested")
@@ -265,7 +265,7 @@ def check_tool_risk_vocabulary(documents: dict[str, dict[str, Any]]) -> None:
 
 
 def check_provider_costs(document: dict[str, Any]) -> None:
-    path = CONTRACTS / "providers" / "cost-conformance.json"
+    path = CONTRACTS / "providers" / "cost-v1/cases/valid.json"
     if set(document) != {
         "$schema",
         "contractVersion",
@@ -404,9 +404,9 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
     for path in paths:
         relative = path.relative_to(CONTRACTS).as_posix()
         document = load_json(path)
-        if relative == "parity/scenarios.json":
-            if document.get("$schema") != "./scenarios.schema.json":
-                raise fail(path, "/$schema", "expected './scenarios.schema.json'")
+        if relative == "parity/v1/scenarios.json":
+            if document.get("$schema") != "./v1/schema.json":
+                raise fail(path, "/$schema", "expected './v1/schema.json'")
             documents[relative] = document
             continue
         if relative in DATA_DOCUMENTS:
@@ -433,10 +433,10 @@ def load_contract_documents() -> dict[str, dict[str, Any]]:
 
 
 def check_parity(documents: dict[str, dict[str, Any]]) -> None:
-    scenarios_path = CONTRACTS / "parity" / "scenarios.json"
-    expected_path = CONTRACTS / "parity" / "expected-normalized.json"
-    scenarios = documents["parity/scenarios.json"]
-    schema = documents["parity/scenarios.schema.json"]
+    scenarios_path = CONTRACTS / "parity" / "v1/scenarios.json"
+    expected_path = CONTRACTS / "parity" / "v1/expected.json"
+    scenarios = documents["parity/v1/scenarios.json"]
+    schema = documents["parity/v1/schema.json"]
     validate_instance(scenarios_path, "/", schema, scenarios)
 
     normalization = scenarios["normalization"]
@@ -482,7 +482,7 @@ def check_parity(documents: dict[str, dict[str, Any]]) -> None:
     }
     canonical_tool_cases = {
         (filename, case["name"])
-        for filename in ("conformance-valid.json", "conformance-invalid.json")
+        for filename in ("v1/cases/valid.json", "v1/cases/invalid.json")
         for case in documents[f"tools/{filename}"]["cases"]
     }
     if referenced_tool_cases != canonical_tool_cases:
@@ -494,7 +494,7 @@ def check_parity(documents: dict[str, dict[str, Any]]) -> None:
             f"tool fixture coverage mismatch; missing={missing}, extra={extra}",
         )
 
-    expected = documents["parity/expected-normalized.json"]
+    expected = documents["parity/v1/expected.json"]
     if expected.get("version") != scenarios["version"]:
         raise fail(expected_path, "/version", "must match scenario contract version")
     snapshots = expected.get("scenarios")
@@ -515,7 +515,7 @@ def check_parity(documents: dict[str, dict[str, Any]]) -> None:
         "replay",
         "result",
     }
-    known_error_codes = set(documents["errors/error-codes.json"]["codes"])
+    known_error_codes = set(documents["errors/v1/codes.json"]["codes"])
     for index, item in enumerate(snapshots):
         if not isinstance(item, dict) or set(item) != {"id", "snapshot"}:
             raise fail(
@@ -623,7 +623,7 @@ def check_packaged_contracts() -> None:
 
 
 def check_github_typescript_abi(documents: dict[str, dict[str, Any]]) -> None:
-    relative = "integrations/github-tool-abi-typescript-v1.json"
+    relative = "integrations/v1/abi/typescript/github.json"
     path = CONTRACTS / relative
     document = documents[relative]
     if set(document) != {
@@ -650,7 +650,7 @@ def check_github_typescript_abi(documents: dict[str, dict[str, Any]]) -> None:
     if len(names) != len(set(names)):
         raise fail(path, "/tools", "TypeScript GitHub package tools are not unique")
 
-    shared_tools = documents["integrations/github-tool-abi-v1.json"]["tools"]
+    shared_tools = documents["integrations/v1/abi/github.json"]["tools"]
     if tools[:6] != shared_tools:
         raise fail(path, "/tools", "shared-six prefix differs from the cross-SDK ABI")
 
@@ -831,8 +831,8 @@ def validate_instance(
 
 
 def error_codes(documents: dict[str, dict[str, Any]]) -> set[str]:
-    path = CONTRACTS / "errors" / "error-codes.json"
-    codes = documents["errors/error-codes.json"].get("codes")
+    path = CONTRACTS / "errors" / "v1/codes.json"
+    codes = documents["errors/v1/codes.json"].get("codes")
     if (
         not isinstance(codes, list)
         or not codes
@@ -847,7 +847,7 @@ def error_codes(documents: dict[str, dict[str, Any]]) -> set[str]:
 def integration_recovery_entries(
     document: dict[str, Any], codes: set[str]
 ) -> dict[str, dict[str, str]]:
-    path = CONTRACTS / "errors" / "integration-recovery-v1.json"
+    path = CONTRACTS / "errors" / "v1/recovery.json"
     if set(document) != {"$schema", "$id", "version", "entries"}:
         raise fail(path, "/", "unexpected integration recovery contract fields")
     if document.get("version") != "1.0.0":
@@ -886,7 +886,7 @@ def integration_recovery_entries(
                 raise fail(
                     path, f"{location}/{field}", "expected fixed redaction-safe text"
                 )
-    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+    from kaji.integrations.recovery import (  # noqa: PLC0415
         INTEGRATION_RECOVERY,
     )
 
@@ -1015,8 +1015,8 @@ def check_event_schema_structure(
     event_types: set[str],
 ) -> None:
     schemas = (
-        (CONTRACTS / "events" / "new-kaji-event-v1.schema.json", new_schema),
-        (CONTRACTS / "events" / "stored-kaji-event-v1.schema.json", stored_schema),
+        (CONTRACTS / "events" / "v1/schema/new.json", new_schema),
+        (CONTRACTS / "events" / "v1/schema/stored.json", stored_schema),
     )
     for path, schema in schemas:
         discriminants = _event_schema_union_discriminants(path, schema)
@@ -1128,10 +1128,10 @@ def check_events(
 ) -> None:
     if recoveries is None:
         recoveries = integration_recovery_entries(
-            documents["errors/integration-recovery-v1.json"], codes
+            documents["errors/v1/recovery.json"], codes
         )
-    path = CONTRACTS / "events" / "conformance.json"
-    events = documents["events/conformance.json"].get("events")
+    path = CONTRACTS / "events" / "v1/cases/valid.json"
+    events = documents["events/v1/cases/valid.json"].get("events")
     if not isinstance(events, list) or not events:
         raise fail(path, "/events", "expected a non-empty array")
 
@@ -1146,8 +1146,8 @@ def check_events(
             f"extra={sorted(fixture_types - event_types)}",
         )
 
-    new_schema = documents["events/new-kaji-event-v1.schema.json"]
-    stored_schema = documents["events/stored-kaji-event-v1.schema.json"]
+    new_schema = documents["events/v1/schema/new.json"]
+    stored_schema = documents["events/v1/schema/stored.json"]
     check_event_schema_structure(new_schema, stored_schema, event_types)
     new_validator = Draft202012Validator(new_schema, format_checker=FormatChecker())
     stored_validator = Draft202012Validator(
@@ -1369,8 +1369,8 @@ def check_events(
                     "approval-coded tool failure has no matching rejection",
                 )
 
-    invalid_path = CONTRACTS / "events" / "conformance-invalid.json"
-    invalid_cases = documents["events/conformance-invalid.json"].get("cases")
+    invalid_path = CONTRACTS / "events" / "v1/cases/invalid.json"
+    invalid_cases = documents["events/v1/cases/invalid.json"].get("cases")
     if not isinstance(invalid_cases, list) or not invalid_cases:
         raise fail(invalid_path, "/cases", "expected a non-empty array")
     names: set[str] = set()
@@ -1428,8 +1428,8 @@ def check_events(
 
 
 def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
-    valid_path = CONTRACTS / "tools" / "conformance-valid.json"
-    valid_cases = documents["tools/conformance-valid.json"].get("cases")
+    valid_path = CONTRACTS / "tools" / "v1/cases/valid.json"
+    valid_cases = documents["tools/v1/cases/valid.json"].get("cases")
     if not isinstance(valid_cases, list) or not valid_cases:
         raise fail(valid_path, "/cases", "expected a non-empty array")
     for index, case in enumerate(valid_cases):
@@ -1452,8 +1452,8 @@ def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
                 error.message,
             )
 
-    invalid_path = CONTRACTS / "tools" / "conformance-invalid.json"
-    invalid_cases = documents["tools/conformance-invalid.json"].get("cases")
+    invalid_path = CONTRACTS / "tools" / "v1/cases/invalid.json"
+    invalid_cases = documents["tools/v1/cases/invalid.json"].get("cases")
     if not isinstance(invalid_cases, list) or not invalid_cases:
         raise fail(invalid_path, "/cases", "expected a non-empty array")
     for index, case in enumerate(invalid_cases):
@@ -1520,8 +1520,8 @@ def check_tools(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
 
 
 def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) -> None:
-    manifest_schema = documents["integrations/manifest.schema.json"]
-    index_schema = documents["integrations/index.schema.json"]
+    manifest_schema = documents["integrations/v1/schema/manifest.json"]
+    index_schema = documents["integrations/v1/schema/index.json"]
     validators = {
         "manifest": Draft202012Validator(
             manifest_schema, format_checker=FormatChecker()
@@ -1538,8 +1538,8 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
             return None
         return pointer(schema_error.absolute_path)
 
-    valid_path = CONTRACTS / "integrations" / "conformance-valid.json"
-    valid_cases = documents["integrations/conformance-valid.json"].get("cases")
+    valid_path = CONTRACTS / "integrations" / "v1/cases/valid.json"
+    valid_cases = documents["integrations/v1/cases/valid.json"].get("cases")
     if not isinstance(valid_cases, list) or not valid_cases:
         raise fail(valid_path, "/cases", "expected a non-empty array")
     for index, case in enumerate(valid_cases):
@@ -1575,8 +1575,8 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
                     valid_path, location, "invalid Draft 2020-12 parameter schema"
                 )
 
-    abi_index_path = CONTRACTS / "integrations" / "abi-index-v1.json"
-    abi_index = documents["integrations/abi-index-v1.json"]
+    abi_index_path = CONTRACTS / "integrations" / "v1/abi/index.json"
+    abi_index = documents["integrations/v1/abi/index.json"]
     if set(abi_index) != {"schemaVersion", "integrations"}:
         raise fail(abi_index_path, "/", "expected the closed ABI index envelope")
     if abi_index.get("schemaVersion") != "1.0.0":
@@ -1642,8 +1642,8 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
                     location += schema_path
                 raise fail(abi_path, location, "invalid Draft 2020-12 parameter schema")
 
-    provenance_path = CONTRACTS / "integrations" / "copy-provenance-v1.schema.json"
-    provenance = documents["integrations/copy-provenance-v1.schema.json"]
+    provenance_path = CONTRACTS / "integrations" / "v1/schema/provenance.json"
+    provenance = documents["integrations/v1/schema/provenance.json"]
     provenance_validator = Draft202012Validator(
         provenance, format_checker=FormatChecker()
     )
@@ -1696,19 +1696,19 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
             provenance_path, "/properties/files", "schema permits self-reference"
         )
 
-    invalid_path = CONTRACTS / "integrations" / "conformance-invalid.json"
-    invalid_cases = documents["integrations/conformance-invalid.json"].get("cases")
+    invalid_path = CONTRACTS / "integrations" / "v1/cases/invalid.json"
+    invalid_cases = documents["integrations/v1/cases/invalid.json"].get("cases")
     if not isinstance(invalid_cases, list) or not invalid_cases:
         raise fail(invalid_path, "/cases", "expected a non-empty array")
     if "INTEGRATION_SCHEMA_INVALID" not in codes:
         raise fail(
-            CONTRACTS / "errors" / "error-codes.json",
+            CONTRACTS / "errors" / "v1/codes.json",
             "/codes",
             "missing INTEGRATION_SCHEMA_INVALID",
         )
     if "INTEGRATION_ABI_MISMATCH" not in codes:
         raise fail(
-            CONTRACTS / "errors" / "error-codes.json",
+            CONTRACTS / "errors" / "v1/codes.json",
             "/codes",
             "missing INTEGRATION_ABI_MISMATCH",
         )
@@ -1875,7 +1875,7 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
 
 
 def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
-    path = CONTRACTS / "feature-tiers-v1.json"
+    path = CONTRACTS / "tiers/v1/features.json"
     result: dict[str, set[str]] = {}
     all_ids: set[str] = set()
     for tier in ("stable", "experimental"):
@@ -1902,7 +1902,7 @@ def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
 
 
 def check_cli_command_tiers(document: dict[str, Any]) -> None:
-    path = CONTRACTS / "feature-tiers-v1.json"
+    path = CONTRACTS / "tiers/v1/features.json"
     matrix = document.get("cliCommands")
     if not isinstance(matrix, dict) or set(matrix) != {"python", "typescript"}:
         raise fail(path, "/cliCommands", "expected python and typescript command tiers")
@@ -1966,7 +1966,7 @@ def check_cli_command_tiers(document: dict[str, Any]) -> None:
 
 
 def check_package_subpaths(document: dict[str, Any]) -> None:
-    path = CONTRACTS / "feature-tiers-v1.json"
+    path = CONTRACTS / "tiers/v1/features.json"
     package_path = ROOT / "kaji" / "packages" / "ts" / "package.json"
     package = load_json(package_path)
     package_exports = package.get("exports")
@@ -2053,7 +2053,7 @@ def check_package_subpaths(document: dict[str, Any]) -> None:
 
 
 def check_cli_init_cases(document: dict[str, Any]) -> None:
-    path = CONTRACTS / "cli" / "init-cases-v1.json"
+    path = CONTRACTS / "cli" / "v1/init.json"
     if document.get("schemaVersion") != 1:
         raise fail(path, "/schemaVersion", "expected 1")
     if document.get("grammar") != (
@@ -2125,7 +2125,7 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
 
 
 def public_export_tiers(document: dict[str, Any]) -> dict[str, dict[str, list[str]]]:
-    path = CONTRACTS / "feature-tiers-v1.json"
+    path = CONTRACTS / "tiers/v1/features.json"
     matrix = document.get("publicExports")
     if not isinstance(matrix, dict) or set(matrix) != {"python", "typescript"}:
         raise fail(path, "/publicExports", "expected python and typescript exports")
@@ -2176,7 +2176,7 @@ def render_public_exports_fragment(runtime: str, tiers: dict[str, list[str]]) ->
 def check_public_exports(document: dict[str, Any]) -> None:
     import kaji
 
-    path = CONTRACTS / "feature-tiers-v1.json"
+    path = CONTRACTS / "tiers/v1/features.json"
     matrix = public_export_tiers(document)
     python_exports = {value for values in matrix["python"].values() for value in values}
     if python_exports != set(kaji.__all__):
@@ -2210,7 +2210,7 @@ def check_public_exports(document: dict[str, Any]) -> None:
 
 
 def check_beta_limits(document: dict[str, Any]) -> None:
-    path = CONTRACTS / "beta-core-v1.json"
+    path = CONTRACTS / "core/v1/beta.json"
     expected = {
         "runtime": {
             "turnTimeoutMs": 120_000,
@@ -2306,13 +2306,13 @@ def check_release_matrix(features: dict[str, Any], beta_core: dict[str, Any]) ->
     configured_stable = beta_core.get("integrations", {}).get("stable")
     if configured_stable != sorted(integration_sets["beta"]):
         raise fail(
-            CONTRACTS / "beta-core-v1.json",
+            CONTRACTS / "core/v1/beta.json",
             "/integrations/stable",
             "must exactly match beta registry integrations",
         )
     if beta_core.get("integrations", {}).get("experimentalRequiresOptIn") is not True:
         raise fail(
-            CONTRACTS / "beta-core-v1.json",
+            CONTRACTS / "core/v1/beta.json",
             "/integrations/experimentalRequiresOptIn",
             "experimental integrations must require opt-in",
         )
@@ -2349,27 +2349,27 @@ def check_release_matrix(features: dict[str, Any], beta_core: dict[str, Any]) ->
 
 def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     documents = load_contract_documents()
-    beta_path = CONTRACTS / "beta-core-v1.json"
-    if documents["beta-core-v1.json"].get("contractVersion") != "1.0.0":
+    beta_path = CONTRACTS / "core/v1/beta.json"
+    if documents["core/v1/beta.json"].get("contractVersion") != "1.0.0":
         raise fail(beta_path, "/contractVersion", "expected 1.0.0")
-    check_beta_limits(documents["beta-core-v1.json"])
+    check_beta_limits(documents["core/v1/beta.json"])
     check_tool_risk_vocabulary(documents)
     codes = error_codes(documents)
     recoveries = integration_recovery_entries(
-        documents["errors/integration-recovery-v1.json"], codes
+        documents["errors/v1/recovery.json"], codes
     )
     check_events(documents, codes, recoveries)
     check_tools(documents, codes)
     check_integrations(documents, codes)
     check_github_typescript_abi(documents)
     check_parity(documents)
-    check_provider_costs(documents["providers/cost-conformance.json"])
+    check_provider_costs(documents["providers/v1/costs.json"])
     check_packaged_contracts()
-    check_cli_command_tiers(documents["feature-tiers-v1.json"])
-    check_package_subpaths(documents["feature-tiers-v1.json"])
-    check_cli_init_cases(documents["cli/init-cases-v1.json"])
-    check_public_exports(documents["feature-tiers-v1.json"])
-    return documents, feature_sets(documents["feature-tiers-v1.json"])
+    check_cli_command_tiers(documents["tiers/v1/features.json"])
+    check_package_subpaths(documents["tiers/v1/features.json"])
+    check_cli_init_cases(documents["cli/v1/init.json"])
+    check_public_exports(documents["tiers/v1/features.json"])
+    return documents, feature_sets(documents["tiers/v1/features.json"])
 
 
 def main() -> int:
@@ -2380,7 +2380,7 @@ def main() -> int:
         documents, _ = check_contracts()
         if not args.contracts_only:
             check_release_matrix(
-                documents["feature-tiers-v1.json"], documents["beta-core-v1.json"]
+                documents["tiers/v1/features.json"], documents["core/v1/beta.json"]
             )
     except ContractError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

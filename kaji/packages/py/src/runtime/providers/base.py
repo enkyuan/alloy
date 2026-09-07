@@ -27,7 +27,7 @@ from kaji.runtime.providers.types import (
 )
 
 if TYPE_CHECKING:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
 
 # Re-export the neutral payload shapes here so callers can write
@@ -314,7 +314,7 @@ class ModelProvider(Protocol):
 
     ``cancellation_token`` is structurally typed: any object with an
     ``is_cancelled`` boolean attribute is accepted, but the canonical type
-    is ``kaji.runtime.agents.cancellation.CancellationToken``.
+    is ``kaji.runtime.agents.cancel.CancellationToken``.
 
     Custom providers are cooperative cancellation boundaries. Both methods
     must observe ``cancellation_token`` while opening and streaming, stop the

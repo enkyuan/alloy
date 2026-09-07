@@ -18,10 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 DOCS = REPO_ROOT / "docs" / "kaji"
 PRODUCTION_BETA = DOCS / "production-beta.md"
 MIGRATION = DOCS / "migrating-to-beta.md"
-CONTRACT = REPO_ROOT / "kaji" / "contracts" / "beta-core-v1.json"
-INDEX_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "integrations" / "index.schema.json"
+CONTRACT = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
+INDEX_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "index.json"
 MANIFEST_SCHEMA = (
-    REPO_ROOT / "kaji" / "contracts" / "integrations" / "manifest.schema.json"
+    REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "manifest.json"
 )
 
 
@@ -52,7 +52,7 @@ def test_exact_python_onboarding_echo_snippet_runs_offline(tmp_path: Path) -> No
     echo.mkdir()
     shutil.copyfile(
         REPO_ROOT / "kaji/packages/py/src/integrations/registry/echo/echo.py",
-        echo / "echo.py",
+        echo / "handler.py",
     )
     script = tmp_path / "echo_loop.py"
     script.write_text(source)
@@ -161,7 +161,7 @@ def test_public_site_states_the_openai_only_beta_provider_boundary() -> None:
     )
 
     feature_tiers = json.loads(
-        (REPO_ROOT / "kaji/contracts/feature-tiers-v1.json").read_text()
+        (REPO_ROOT / "kaji/contracts/tiers/v1/features.json").read_text()
     )
     assert (
         feature_tiers["packageSubpaths"]["typescript"]["./openai"]["tier"] == "stable"

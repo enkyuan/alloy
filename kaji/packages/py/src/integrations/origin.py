@@ -23,7 +23,7 @@ from kaji.observability.protocols import (
     record_metric,
     start_span,
 )
-from kaji.runtime.agents.cancellation import CancelledError
+from kaji.runtime.agents.cancel import CancelledError
 from kaji.runtime.context import ToolExecutionContext
 
 

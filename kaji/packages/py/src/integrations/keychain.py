@@ -16,7 +16,7 @@ from kaji.integrations.oauth import (
     _canonical_wire,
     _require_principal,
 )
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 
 
 _SECURITY = "/usr/bin/security"

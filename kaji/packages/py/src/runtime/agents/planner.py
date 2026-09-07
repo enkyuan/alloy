@@ -37,7 +37,7 @@ from kaji.runtime.agents.approval import (
     ApprovalHandler,
     ApprovalRequestContext,
 )
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 from kaji.runtime.agents.context import (
     MissingToolIdentityError,
     ToolExecutionContext,
@@ -57,7 +57,7 @@ from kaji.runtime.tools.execution import (
     _ToolExecutionOutcome,
 )
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger
-from kaji.runtime.tools.policies import ToolPolicy, ToolPolicyViolation
+from kaji.runtime.tools.policy import ToolPolicy, ToolPolicyViolation
 from kaji.runtime.tools.registry import ToolSpec, _snapshot_tool_spec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 from kaji.core.determinism import (

@@ -18,15 +18,15 @@ def test_echo_manifest_loads():
     assert m.name == "echo"
     assert m.namespace == "echo"
     assert m.auth.kind == "none"
-    assert m.files == ("echo.py",)
+    assert m.files == ("handler.py",)
     assert {t.name for t in m.tools} == {"say", "shout"}
 
 
 def test_echo_install_copies_python_file(tmp_path: Path):
     written = install_integration("echo", tmp_path)
     names = {p.name for p in written}
-    assert names == {"echo.py"}
-    assert (tmp_path / "echo.py").read_text().startswith('"""Echo integration')
+    assert names == {"handler.py"}
+    assert (tmp_path / "handler.py").read_text().startswith('"""Echo integration')
 
 
 def test_echo_py_template_sets_echo_namespace():
@@ -34,7 +34,7 @@ def test_echo_py_template_sets_echo_namespace():
     through to function_tool's default 'fn' namespace. That default would
     break the cross-language contract: the TS template registers under
     echo.say / echo.shout; the Python template must match."""
-    from kaji.integrations.registry.echo import echo as echo_mod
+    from kaji.integrations.registry.echo import handler as echo_mod
 
     assert echo_mod.say.namespace == "echo"
     assert echo_mod.shout.namespace == "echo"
@@ -43,11 +43,11 @@ def test_echo_py_template_sets_echo_namespace():
 
 
 def test_echo_executable_specs_match_authoritative_abi() -> None:
-    from kaji.integrations.registry.echo import echo as echo_mod
+    from kaji.integrations.registry.echo import handler as echo_mod
 
     root = Path(__file__).resolve().parents[4]
     contract = json.loads(
-        (root / "kaji/contracts/integrations/echo-tool-abi-v1.json").read_text()
+        (root / "kaji/contracts/integrations/v1/abi/echo.json").read_text()
     )
     actual = []
     for tool in echo_mod.tools:
@@ -75,7 +75,7 @@ def test_echo_executable_specs_match_authoritative_abi() -> None:
 def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
     root = Path(__file__).resolve().parents[4]
     contract = json.loads(
-        (root / "kaji/contracts/integrations/echo-tool-abi-v1.json").read_text()
+        (root / "kaji/contracts/integrations/v1/abi/echo.json").read_text()
     )
     python_manifest = json.loads(
         (
@@ -89,7 +89,7 @@ def test_echo_manifests_share_only_the_canonical_abi_fields() -> None:
     for manifest in (python_manifest, typescript_manifest):
         assert manifest["namespace"] == contract["namespace"]
         assert manifest["tools"] == contract["tools"]
-    assert python_manifest["files"] == ["echo.py"]
+    assert python_manifest["files"] == ["handler.py"]
     assert typescript_manifest["files"] == ["index.ts"]
     assert typescript_manifest["peerDeps"] == {}
 
@@ -155,7 +155,7 @@ def test_abi_index_rejects_unsafe_or_missing_contract_paths(
     )
     contracts = tmp_path / "contracts"
     contracts.mkdir()
-    index = contracts / "abi-index-v1.json"
+    index = contracts / "integrations/v1/abi/index.json"
     index.write_text(
         json.dumps(
             {
@@ -269,7 +269,7 @@ def test_typescript_cli_mismatch_reaches_python_explain_redacted(
 
 def test_echo_py_tools_register_without_collision(tmp_path: Path):
     """The two bound tools must both register cleanly into a fresh registry."""
-    from kaji.integrations.registry.echo import echo as echo_mod
+    from kaji.integrations.registry.echo import handler as echo_mod
     from kaji.runtime.tools.registry import ToolRegistry
 
     registry = ToolRegistry()

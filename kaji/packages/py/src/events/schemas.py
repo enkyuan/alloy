@@ -332,7 +332,7 @@ class ToolCallFailed(BaseEvent):
 
     @model_validator(mode="after")
     def _closed_recovery_tuple(self) -> "ToolCallFailed":
-        from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+        from kaji.integrations.recovery import (  # noqa: PLC0415
             is_closed_recovery_tuple,
         )
 
@@ -541,7 +541,7 @@ def _wire_preflight(value: object, *, stored: bool) -> dict[str, Any]:
         raise EventSchemaIncompatibleError("/")
     document = cast(dict[str, Any], value)
     if any(field in document for field in ("reason_code", "recovery_code", "doc_url")):
-        from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+        from kaji.integrations.recovery import (  # noqa: PLC0415
             is_closed_recovery_tuple,
         )
 

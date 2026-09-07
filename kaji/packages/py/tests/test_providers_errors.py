@@ -24,7 +24,7 @@ PROVIDER_NORMALIZATION_CASES = json.loads(
         / "kaji"
         / "contracts"
         / "errors"
-        / "provider-normalization.json"
+        / "v1/normalization.json"
     ).read_text()
 )["cases"]
 

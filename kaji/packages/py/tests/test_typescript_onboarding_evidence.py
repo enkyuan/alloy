@@ -27,8 +27,7 @@ SCHEMA = (
     REPO_ROOT
     / "kaji"
     / "contracts"
-    / "release"
-    / "typescript-onboarding-evidence-v1.schema.json"
+    / "release/v1/typescript/onboarding.json"
 )
 COMMIT = "a" * 40
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"

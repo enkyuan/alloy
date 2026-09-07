@@ -12,7 +12,7 @@ from kaji.integrations.keychain import (
     _create_macos_keychain_storage_for_test,
 )
 from kaji.integrations.oauth import OAuthCredentialRecord, OAuthTokenSet
-from kaji.runtime.agents.cancellation import CancellationToken
+from kaji.runtime.agents.cancel import CancellationToken
 
 
 PRINCIPAL = "User:123"
