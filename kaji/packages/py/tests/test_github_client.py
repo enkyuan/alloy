@@ -8,9 +8,9 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events.errors import DurableJsonLimitError
-from kaji.infra.events.json import canonical_json, durable_json_snapshot
-from kaji.infra.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
+from kaji.events.errors import DurableJsonLimitError
+from kaji.events.json import canonical_json, durable_json_snapshot
+from kaji.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
 from kaji.integrations.errors import (
     IntegrationAuthRequiredError,
     IntegrationPolicyError,

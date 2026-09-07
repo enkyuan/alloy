@@ -24,7 +24,7 @@ from kaji.runtime.tools.errors import (
 )
 from kaji.runtime.tools.policies import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
-from kaji.infra.events.types import EventType
+from kaji.events.types import EventType
 from tests.helpers.mock_provider import MockProvider
 
 

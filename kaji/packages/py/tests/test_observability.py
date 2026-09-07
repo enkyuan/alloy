@@ -7,28 +7,28 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events.errors import EventDeliveryError, EventStoreCapacityError
-from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
-from kaji.infra.events.schemas import (
+from kaji.events.errors import EventDeliveryError, EventStoreCapacityError
+from kaji.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.events.schemas import (
     SessionCreated,
     StoredKajiEvent,
     UserMessage,
     require_stored_event,
 )
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.observability import (
+from kaji.events.store import InMemoryEventStore
+from kaji.observability import (
     InMemoryMetrics,
     Measurement,
     NOOP_METRICS,
     NOOP_TRACE,
     trace_span,
 )
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     metric_error_code,
     record_metric,
     start_span,
 )
-from kaji.infra.observability.tracing import Span
+from kaji.observability.tracing import Span
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation
@@ -132,7 +132,7 @@ def test_throwing_logger_does_not_break_observability_isolation() -> None:
         def record(self, measurement: Measurement) -> None:
             raise RuntimeError("metrics unavailable")
 
-    logger = logging.getLogger("kaji.infra.observability.protocols")
+    logger = logging.getLogger("kaji.observability.protocols")
     previous_handlers = logger.handlers[:]
     previous_propagate = logger.propagate
     logger.handlers = [ExplodingLogHandler()]

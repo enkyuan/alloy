@@ -23,7 +23,7 @@ from kaji.integrations.errors import (
     IntegrationExecutionError,
     IntegrationPolicyError,
 )
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,

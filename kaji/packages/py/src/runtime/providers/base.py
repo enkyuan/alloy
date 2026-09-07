@@ -14,7 +14,7 @@ from typing import (
     TYPE_CHECKING,
 )
 
-from kaji.infra.events.json import canonical_json
+from kaji.events.json import canonical_json
 from kaji.runtime.providers.errors import ProviderOutputLimitError
 
 from kaji.runtime.providers.types import (

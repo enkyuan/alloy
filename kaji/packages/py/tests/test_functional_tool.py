@@ -85,7 +85,7 @@ async def test_function_tool_executes_through_agent_builder() -> None:
     events = await runtime.history("s1")
     types = [e.type for e in events]
 
-    from kaji.infra.events.types import EventType
+    from kaji.events.types import EventType
 
     assert EventType.TOOL_CALL_COMPLETED in types
 

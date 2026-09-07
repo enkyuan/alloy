@@ -8,14 +8,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, runtime_checkable
 from weakref import ReferenceType, ref
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     SessionPurgeBusyError,
     SessionPurgeComponent,
     SessionPurgeUnsupportedError,
 )
 
 if TYPE_CHECKING:
-    from kaji.infra.events.store.base import EventStore
+    from kaji.events.store.base import EventStore
 else:
     EventStore = Any
 

@@ -15,16 +15,16 @@ from typing import Any, AsyncIterator, Mapping, cast
 
 from pydantic import TypeAdapter
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.journal import InMemoryEventJournal
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.journal import InMemoryEventJournal
 from kaji.runtime.sessions.replay import ApprovalKey, SessionState, replay_session
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     KajiEvent,
     StoredKajiEvent,
     ToolApprovalApproved,
     require_stored_event,
 )
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.coordinator import InMemoryTurnCoordinator

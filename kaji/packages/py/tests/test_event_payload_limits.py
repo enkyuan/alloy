@@ -8,17 +8,17 @@ from typing import Any, Literal, Never, cast
 import pytest
 from pydantic import ValidationError
 
-from kaji.infra.events import json as event_json
-from kaji.infra.events import schemas as event_schemas
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.errors import (
+from kaji.events import json as event_json
+from kaji.events import schemas as event_schemas
+from kaji.events.bus import InMemoryEventBus
+from kaji.events.errors import (
     DurableJsonLimitError,
     EventSchemaIncompatibleError,
     InvalidDurableValueError,
 )
-from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.events.journal import InMemoryEventJournal, SplitEventJournal
 from kaji.runtime.sessions.replay import replay_session
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     BaseEvent,
     EventType,
     MAX_DURABLE_TOOL_ARGUMENT_BYTES,
@@ -30,8 +30,8 @@ from kaji.infra.events.schemas import (
     validate_event_json,
     validate_event_python,
 )
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.store.base import EventStore
+from kaji.events.store import InMemoryEventStore
+from kaji.events.store.base import EventStore
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.planner import ToolPlanner

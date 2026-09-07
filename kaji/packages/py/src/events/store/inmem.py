@@ -9,13 +9,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     EventIdConflictError,
     EventStoreCapacityError,
     SessionPurgeBusyError,
 )
-from kaji.infra.events.lanes import SessionLanePool
-from kaji.infra.events.session_lifecycle import (
+from kaji.events.lanes import SessionLanePool
+from kaji.events.session_lifecycle import (
     SessionPurgeAuthorization,
     assert_physical_purge_authorized,
     authorized_session_teardown,
@@ -24,13 +24,13 @@ from kaji.infra.events.session_lifecycle import (
     store_session_operation,
     store_session_purge,
 )
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     revalidate_new_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.store.base import (
+from kaji.events.store.base import (
     AppendResult,
     SessionEventListener,
     prepare_stored_event,

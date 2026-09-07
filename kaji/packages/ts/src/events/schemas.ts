@@ -1,6 +1,6 @@
 /**
  * Zod schemas for all Kaji events, mirroring
- * `kaji.infra.events.schemas`. Field names stay snake_case because they are
+ * `kaji.events.schemas`. Field names stay snake_case because they are
  * the shared wire format with the Python SDK.
  *
  * `BaseEvent` is `.strict()` to match Pydantic's `extra="forbid"`. The

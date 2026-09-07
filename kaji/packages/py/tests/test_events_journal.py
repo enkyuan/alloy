@@ -6,9 +6,9 @@ from typing import Any, cast
 
 import pytest
 
-import kaji.infra.events.session_lifecycle as session_lifecycle
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.errors import (
+import kaji.events.session_lifecycle as session_lifecycle
+from kaji.events.bus import InMemoryEventBus
+from kaji.events.errors import (
     EventBufferOverflowError,
     EventDeliveryError,
     EventSchemaIncompatibleError,
@@ -17,10 +17,10 @@ from kaji.infra.events.errors import (
     SessionPurgeComponent,
     SessionPurgeUnsupportedError,
 )
-from kaji.infra.events.journal import InMemoryEventJournal, SplitEventJournal
-from kaji.infra.events.session_lifecycle import SessionPurgeAuthorization
-from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
-from kaji.infra.events.store import AppendResult, InMemoryEventStore
+from kaji.events.journal import InMemoryEventJournal, SplitEventJournal
+from kaji.events.session_lifecycle import SessionPurgeAuthorization
+from kaji.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
+from kaji.events.store import AppendResult, InMemoryEventStore
 
 
 async def _close(stream: object) -> None:

@@ -10,7 +10,7 @@ from kaji.runtime.context import (
     TurnContext as TurnContext,
 )
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,

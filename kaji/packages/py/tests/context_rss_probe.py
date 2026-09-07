@@ -8,7 +8,7 @@ import resource
 import sys
 
 from kaji.runtime.sessions.replay import SessionState, apply_event
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentMessageCompleted,
     AgentReasoningStarted,
     KajiEvent,

@@ -10,11 +10,11 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, cast
 
 import pytest
 
-from kaji.infra.events.schemas import AgentTurnFailed, UserMessage
-from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.store.base import EventStore
-from kaji.infra.events.types import EventType
+from kaji.events.schemas import AgentTurnFailed, UserMessage
+from kaji.events.journal import InMemoryEventJournal
+from kaji.events.store import InMemoryEventStore
+from kaji.events.store.base import EventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents import (
     AgentBuilder,
     CancellationToken,

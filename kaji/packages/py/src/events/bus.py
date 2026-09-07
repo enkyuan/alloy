@@ -4,16 +4,16 @@ from collections import defaultdict
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from dataclasses import dataclass
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     EventBufferOverflowError,
     EventSchemaIncompatibleError,
 )
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     StoredKajiEvent,
     revalidate_stored_event,
     validate_stored_event_json,
 )
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,
@@ -165,7 +165,7 @@ class EventBus:
         """Publish an event to the Redis stream."""
         stored = revalidate_stored_event(event)
 
-        from kaji.infra.realtime.redis import get_redis_client
+        from kaji.realtime.redis import get_redis_client
 
         redis = await get_redis_client()
         stream_key = self._get_stream_key(stored.session_id)
@@ -188,7 +188,7 @@ class EventBus:
         after_sequence: int = 0,
     ) -> AsyncGenerator[StoredKajiEvent, None]:
         """Subscribe to events for a specific session."""
-        from kaji.infra.realtime.redis import get_redis_stream_client
+        from kaji.realtime.redis import get_redis_stream_client
 
         redis = await get_redis_stream_client()
         stream_key = self._get_stream_key(session_id)

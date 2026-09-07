@@ -8,8 +8,8 @@ import json
 from pathlib import Path
 import sys
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.schemas import validate_stored_event_python
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.schemas import validate_stored_event_python
 
 
 def check_log(path: Path) -> list[tuple[int, str]]:

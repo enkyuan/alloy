@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 import kaji
-from kaji.infra.events.types import EventType
+from kaji.events.types import EventType
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.providers.openai import OpenAIProvider
 

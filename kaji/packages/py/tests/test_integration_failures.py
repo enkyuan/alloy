@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from kaji.infra.events.schemas import ToolCallFailed
+from kaji.events.schemas import ToolCallFailed
 from kaji.integrations.errors import (
     IntegrationAuthRequiredError,
     IntegrationExecutionError,

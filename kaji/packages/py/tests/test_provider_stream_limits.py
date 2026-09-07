@@ -10,9 +10,9 @@ from unittest.mock import patch
 import pytest
 import kaji
 
-from kaji.infra.events.json import canonical_json
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.json import canonical_json
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import TurnContext
 from kaji.runtime.agents.limits import TurnExecutionLimits

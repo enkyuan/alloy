@@ -5,7 +5,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentMessageCompleted,
     AgentReasoningStarted,
     SessionClosed,
@@ -18,8 +18,8 @@ from kaji.infra.events.schemas import (
     require_stored_event,
 )
 from kaji.runtime.sessions.replay import SessionState
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.context import (
     ContextIntegrityError,
     ContextWindow,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from kaji.infra.events import InMemoryEventJournal, UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events import InMemoryEventJournal, UserMessage
+from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents import AgentBuilder, AgentRuntime
 from kaji.runtime.providers.mock import MockProvider
 

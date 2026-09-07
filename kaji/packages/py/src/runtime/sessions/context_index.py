@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import json
 from typing import Any, Dict, Optional
 
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,

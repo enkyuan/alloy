@@ -583,8 +583,7 @@ def _write_fake_installed_kaji(package: Path) -> None:
                 sys.modules[name] = value
 
             for name in (
-                "kaji.infra",
-                "kaji.infra.events",
+                "kaji.events",
                 "kaji.runtime",
                 "kaji.runtime.agents",
                 "kaji.runtime.tools",
@@ -661,11 +660,11 @@ def _write_fake_installed_kaji(package: Path) -> None:
                     pass
 
             module(
-                "kaji.infra.events.journal",
+                "kaji.events.journal",
                 InMemoryEventJournal=Box,
             )
             module(
-                "kaji.infra.events.store",
+                "kaji.events.store",
                 InMemoryEventStore=Box,
             )
             module(

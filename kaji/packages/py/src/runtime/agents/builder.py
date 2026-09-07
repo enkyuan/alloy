@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, runtime_checkable
 
-from kaji.infra.events.protocols import EventJournal
-from kaji.infra.events.store import EventStore
-from kaji.infra.events.store.inmem import InMemoryEventStore
-from kaji.infra.observability.protocols import (
+from kaji.events.protocols import EventJournal
+from kaji.events.store import EventStore
+from kaji.events.store.inmem import InMemoryEventStore
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,

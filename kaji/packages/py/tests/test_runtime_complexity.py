@@ -9,12 +9,12 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     EventBufferOverflowError,
     EventSchemaIncompatibleError,
 )
-from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.schemas import (
+from kaji.events.journal import InMemoryEventJournal
+from kaji.events.schemas import (
     AgentMessageCompleted,
     NewKajiEvent,
     SessionCreated,
@@ -23,9 +23,9 @@ from kaji.infra.events.schemas import (
     require_stored_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.store import EventStore, InMemoryEventStore
-from kaji.infra.events.store.base import AppendResult
-from kaji.infra.observability.protocols import Measurement
+from kaji.events.store import EventStore, InMemoryEventStore
+from kaji.events.store.base import AppendResult
+from kaji.observability.protocols import Measurement
 from kaji.runtime.agents import CancellationToken, InMemoryTurnCoordinator
 from kaji.runtime.agents.context import (
     ContextWindow,

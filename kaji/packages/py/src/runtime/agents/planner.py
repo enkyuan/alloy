@@ -12,8 +12,8 @@ import math
 from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 
 from kaji.core.safe_logging import log_no_throw
-from kaji.infra.events.json import canonical_json
-from kaji.infra.events.schemas import (
+from kaji.events.json import canonical_json
+from kaji.events.schemas import (
     MAX_DURABLE_TOOL_ARGUMENT_BYTES,
     NewKajiEvent,
     StoredKajiEvent,
@@ -28,8 +28,8 @@ from kaji.infra.events.schemas import (
     require_stored_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.protocols import EventJournal
-from kaji.infra.events.types import EventType
+from kaji.events.protocols import EventJournal
+from kaji.events.types import EventType
 from kaji.runtime.agents.approval import (
     ApprovalCode,
     ApprovalDecision,

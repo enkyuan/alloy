@@ -8,34 +8,34 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     EventBufferOverflowError,
     EventDeliveryError,
     EventInfrastructureError,
     EventStoreCapacityError,
 )
-from kaji.infra.events.session_lifecycle import (
+from kaji.events.session_lifecycle import (
     SessionPurgeAuthorization,
     authorized_session_teardown,
     register_purge_blocker,
     store_session_operation,
     supports_authorized_listener_teardown,
 )
-from kaji.infra.events.protocols import EventBusProtocol, EventSubscription
-from kaji.infra.events.schemas import (
+from kaji.events.protocols import EventBusProtocol, EventSubscription
+from kaji.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     require_stored_event,
     revalidate_new_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.store import EventStore, InMemoryEventStore
-from kaji.infra.events.store.base import (
+from kaji.events.store import EventStore, InMemoryEventStore
+from kaji.events.store.base import (
     EventStoreSession,
     SessionEventListener,
     SessionTransactionalEventStore,
 )
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,

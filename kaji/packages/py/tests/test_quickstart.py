@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 import kaji
-from kaji.infra.events.types import EventType
+from kaji.events.types import EventType
 from tests.helpers.mock_provider import MockProvider
 
 

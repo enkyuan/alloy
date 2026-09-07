@@ -2,8 +2,8 @@ import msgpack
 import pytest
 from types import SimpleNamespace
 
-from kaji.infra.realtime import embedding_cache
-from kaji.infra.realtime.embedding_cache import RedisEmbeddingCache
+from kaji.realtime import embedding_cache
+from kaji.realtime.embedding_cache import RedisEmbeddingCache
 
 
 class _FakeRedis:

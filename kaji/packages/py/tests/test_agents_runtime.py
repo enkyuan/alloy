@@ -3,14 +3,14 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import pytest
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.journal import SplitEventJournal
-from kaji.infra.events.schemas import (
+from kaji.events.bus import InMemoryEventBus
+from kaji.events.journal import SplitEventJournal
+from kaji.events.schemas import (
     StoredKajiEvent,
     UserMessage,
 )
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import ToolInvocation, TurnContext
 from kaji.runtime.agents.planner import ToolPlanner
@@ -570,13 +570,13 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
     OpenAI/Anthropic (they require matching IDs on tool results).
     """
     from kaji.runtime.sessions.replay import replay_session
-    from kaji.infra.events.schemas import (
+    from kaji.events.schemas import (
         ToolCallCompleted,
         ToolCallRequested,
         ToolCallStarted,
         UserMessage,
     )
-    from kaji.infra.events.store import InMemoryEventStore
+    from kaji.events.store import InMemoryEventStore
 
     store = InMemoryEventStore()
     session_id = "s-replay-id"
@@ -623,12 +623,12 @@ async def test_tool_call_id_preserved_in_replay_and_second_turn_messages():
 async def test_tool_call_id_preserved_on_failed_tool_replay():
     """TOOL_CALL_FAILED events must also carry tool_call_id through replay."""
     from kaji.runtime.sessions.replay import replay_session
-    from kaji.infra.events.schemas import (
+    from kaji.events.schemas import (
         ToolCallFailed,
         ToolCallRequested,
         UserMessage,
     )
-    from kaji.infra.events.store import InMemoryEventStore
+    from kaji.events.store import InMemoryEventStore
 
     store = InMemoryEventStore()
     session_id = "s-replay-fail"

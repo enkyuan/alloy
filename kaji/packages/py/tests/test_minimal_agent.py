@@ -50,6 +50,6 @@ async def test_function_tool_drives_a_tool_call():
     )
     result = await runtime.turn("What is the weather?")
     # The mock fires one tool call on iteration 1, then terminal text on iteration 2.
-    from kaji.infra.events.types import EventType
+    from kaji.events.types import EventType
 
     assert any(e.type == EventType.TOOL_CALL_REQUESTED for e in result.tool_call_events)

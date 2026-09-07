@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Protocol, TypeGuard, runtime_checkable
 
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     revalidate_stored_event_for_append,

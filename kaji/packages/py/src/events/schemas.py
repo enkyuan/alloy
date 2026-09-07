@@ -32,13 +32,13 @@ from pydantic import (
     model_validator,
 )
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     DurableJsonLimitError,
     EventSchemaIncompatibleError,
     InvalidDurableValueError,
 )
-from kaji.infra.events.json import canonical_json, durable_json_snapshot
-from kaji.infra.events.types import EventType
+from kaji.events.json import canonical_json, durable_json_snapshot
+from kaji.events.types import EventType
 from kaji.core.determinism import (
     Clock,
     IdFactory,

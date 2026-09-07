@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from kaji.infra.events.protocols import EventSubscription
+from kaji.events.protocols import EventSubscription
 
 
 def test_event_subscription_declares_portable_async_iterator_contract() -> None:

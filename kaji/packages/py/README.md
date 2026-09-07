@@ -549,7 +549,7 @@ export REDIS_URL=redis://localhost:6379/0
 ```
 
 ```python
-from kaji.infra.events.bus import EventBus
+from kaji.events.bus import EventBus
 bus = EventBus()  # Redis-backed; same interface as InMemoryEventBus
 ```
 

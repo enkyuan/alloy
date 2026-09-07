@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from kaji import EffectiveRuntimeLimits
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ContextWindow
 from kaji.runtime.agents.planner import ToolPlanner

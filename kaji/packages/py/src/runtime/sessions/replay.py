@@ -2,14 +2,14 @@ from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Optional, Sequence
 
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     EventType,
     StoredKajiEvent,
     require_stored_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.json import canonical_json
-from kaji.infra.observability.protocols import (
+from kaji.events.json import canonical_json
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,

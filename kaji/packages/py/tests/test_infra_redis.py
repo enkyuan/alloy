@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kaji.infra.realtime.redis import close_redis_client
+from kaji.realtime.redis import close_redis_client
 
 try:
     import fakeredis.aioredis as _fakeredis_async  # type: ignore[import]
@@ -24,7 +24,7 @@ except ImportError:
 
 @pytest.mark.asyncio
 async def test_get_redis_client_returns_connected_client() -> None:
-    import kaji.infra.realtime.redis as _redis_module
+    import kaji.realtime.redis as _redis_module
 
     original = _redis_module.redis_client
     _redis_module.redis_client = None  # reset singleton
@@ -55,7 +55,7 @@ async def test_get_redis_client_returns_connected_client() -> None:
 
 @pytest.mark.asyncio
 async def test_get_redis_client_raises_when_redis_not_installed() -> None:
-    import kaji.infra.realtime.redis as _redis_module
+    import kaji.realtime.redis as _redis_module
 
     original = _redis_module.redis_client
     _redis_module.redis_client = None
@@ -79,7 +79,7 @@ async def test_get_redis_client_raises_when_redis_not_installed() -> None:
 
 @pytest.mark.asyncio
 async def test_close_redis_client_resets_singletons() -> None:
-    import kaji.infra.realtime.redis as _redis_module
+    import kaji.realtime.redis as _redis_module
     from unittest.mock import AsyncMock
 
     fake_main = AsyncMock()

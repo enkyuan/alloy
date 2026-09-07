@@ -210,9 +210,9 @@ async def _run_cases(
 async def _approval_precedes_credentials(
     client_module: ModuleType, integration_module: ModuleType, repository: str
 ) -> bool:
-    from kaji.infra.events.journal import InMemoryEventJournal
-    from kaji.infra.events.store import InMemoryEventStore
-    from kaji.infra.events.types import EventType
+    from kaji.events.journal import InMemoryEventJournal
+    from kaji.events.store import InMemoryEventStore
+    from kaji.events.types import EventType
     from kaji.runtime.agents.cancellation import CancellationToken
     from kaji.runtime.agents.context import TurnContext
     from kaji.runtime.agents.approval import (

@@ -6,7 +6,7 @@ import json
 import math
 from typing import Any, TypeAlias, cast
 
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     DURABLE_JSON_SUBJECTS,
     DurableJsonLimitError,
     DurableJsonSubject,

@@ -13,9 +13,9 @@ from typing import Any, Callable, Literal, Protocol
 import uuid
 from weakref import WeakKeyDictionary
 
-from kaji.infra.events.errors import DurableJsonSubject
-from kaji.infra.events.json import durable_json_snapshot
-from kaji.infra.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
+from kaji.events.errors import DurableJsonSubject
+from kaji.events.json import durable_json_snapshot
+from kaji.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
 
 
 _DEFAULT_MAX_ENTRIES = 10_000

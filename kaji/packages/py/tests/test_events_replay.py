@@ -2,9 +2,9 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
+from kaji.events.errors import EventSchemaIncompatibleError
 from kaji.runtime.sessions.replay import replay_session
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentMessageCompleted,
     KajiEvent,
     SessionClosed,

@@ -10,15 +10,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.journal import InMemoryEventJournal
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.journal import InMemoryEventJournal
 from kaji.runtime.sessions.replay import (
     ApprovalKey,
     SessionState,
     apply_event,
     replay_session,
 )
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     KajiEvent,
     StoredKajiEvent,
     ToolCallFailed,
@@ -27,8 +27,8 @@ from kaji.infra.events.schemas import (
     ToolApprovalRequested,
     require_stored_event,
 )
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.approval import (
     ApprovalDecision,
     ApprovalHandler,

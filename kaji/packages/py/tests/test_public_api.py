@@ -206,7 +206,7 @@ def test_import_kaji_does_not_eagerly_load_heavy_submodules() -> None:
         "kaji.runtime",
         "kaji.runtime.providers.openai",
         "kaji.runtime.providers.anthropic",
-        "kaji.infra.realtime",
+        "kaji.realtime",
     )
     saved = {name: mod for name, mod in sys.modules.items() if name.startswith("kaji")}
     try:
@@ -216,7 +216,7 @@ def test_import_kaji_does_not_eagerly_load_heavy_submodules() -> None:
         importlib.import_module("kaji")
         assert "kaji.knowledge.rag" not in sys.modules
         assert "kaji.runtime.providers.openai" not in sys.modules
-        assert "kaji.infra.realtime.redis" not in sys.modules
+        assert "kaji.realtime.redis" not in sys.modules
     finally:
         # Restore everything we cleared so monkeypatch.setattr targets in
         # later tests still resolve to the same module objects.

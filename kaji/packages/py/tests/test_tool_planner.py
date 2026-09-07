@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallRequested
-from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.schemas import KajiEvent, ToolCallFailed, ToolCallRequested
+from kaji.events.journal import InMemoryEventJournal
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import TurnContext

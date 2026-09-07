@@ -2,10 +2,10 @@ import asyncio
 
 import pytest
 
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.errors import EventBufferOverflowError
-from kaji.infra.events.schemas import UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.bus import InMemoryEventBus
+from kaji.events.errors import EventBufferOverflowError
+from kaji.events.schemas import UserMessage
+from kaji.events.store import InMemoryEventStore
 
 
 async def _close(stream: object) -> None:

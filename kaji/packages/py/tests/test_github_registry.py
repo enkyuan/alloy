@@ -248,9 +248,9 @@ def test_copied_python_bundle_uses_its_owner_client(
 async def test_mutation_approval_rejection_never_reads_token_or_runs_http(
     name: str, arguments: dict[str, object]
 ) -> None:
-    from kaji.infra.events.journal import InMemoryEventJournal
-    from kaji.infra.events.store import InMemoryEventStore
-    from kaji.infra.events.types import EventType
+    from kaji.events.journal import InMemoryEventJournal
+    from kaji.events.store import InMemoryEventStore
+    from kaji.events.types import EventType
     from kaji.integrations.registry.github.github import (
         _create_github_integration_for_test,
     )

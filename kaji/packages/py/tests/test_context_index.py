@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentMessageCompleted,
     AgentReasoningStarted,
     KajiEvent,

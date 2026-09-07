@@ -7,8 +7,8 @@ when Redis semantics fit their application.
 
 from typing import Any, Dict, List, Optional
 
-from kaji.infra.realtime.redis import get_redis_client
-from kaji.infra.realtime.history_ops import append_history, get_history
+from kaji.realtime.redis import get_redis_client
+from kaji.realtime.history_ops import append_history, get_history
 
 
 class RedisHistoryStore:

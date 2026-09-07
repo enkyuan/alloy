@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from kaji.infra.observability import Measurement
-from kaji.infra.observability.protocols import record_metric, start_span
+from kaji.observability import Measurement
+from kaji.observability.protocols import record_metric, start_span
 from kaji.integrations.fixed_origin import FixedOriginClient
 from kaji.integrations.oauth import (
     GoogleOAuthClient,

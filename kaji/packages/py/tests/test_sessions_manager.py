@@ -1,7 +1,7 @@
 import pytest
 
-from kaji.infra.events.schemas import SessionCreated, UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.schemas import SessionCreated, UserMessage
+from kaji.events.store import InMemoryEventStore
 from kaji.runtime.sessions.manager import SessionManager
 from kaji.runtime.sessions.store import InMemorySessionStore, SessionRecord
 

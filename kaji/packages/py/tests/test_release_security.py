@@ -16,12 +16,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from kaji.infra.events.bus import EventBus
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.schemas import validate_event_json
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.observability.protocols import TraceSink, start_span
-from kaji.infra.realtime.history_ops import get_history
+from kaji.events.bus import EventBus
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.schemas import validate_event_json
+from kaji.events.store import InMemoryEventStore
+from kaji.observability.protocols import TraceSink, start_span
+from kaji.realtime.history_ops import get_history
 from kaji.knowledge.rag import DocumentRAG
 from kaji.modalities.voice.tts.gemini_provider import GeminiTTSProvider
 from kaji.runtime.agents.runtime import AgentRuntime
@@ -667,7 +667,7 @@ async def test_tool_execution_and_retriever_failure_logs_are_redacted(
 async def test_redis_connection_logs_redact_credential_bearing_url(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from kaji.infra.realtime import redis as redis_module
+    from kaji.realtime import redis as redis_module
 
     secret = "sk-redis-password-secret"
     url = f"redis://user:{secret}@redis.example:6379/0"
@@ -879,7 +879,7 @@ async def test_redis_bus_rejects_an_entire_batch_before_yielding(
     redis = Redis()
     caplog.set_level(logging.ERROR)
     with patch(
-        "kaji.infra.realtime.redis.get_redis_stream_client",
+        "kaji.realtime.redis.get_redis_stream_client",
         new=AsyncMock(return_value=redis),
     ):
         stream = EventBus().subscribe("session", after_sequence=after_sequence)
@@ -922,11 +922,11 @@ async def test_redis_bus_normalizes_malformed_payloads(
     )
     with (
         patch(
-            "kaji.infra.realtime.redis.get_redis_stream_client",
+            "kaji.realtime.redis.get_redis_stream_client",
             new=raw_client,
         ),
         patch(
-            "kaji.infra.realtime.redis.get_redis_client",
+            "kaji.realtime.redis.get_redis_client",
             new=decoded_client,
         ),
     ):
@@ -964,7 +964,7 @@ async def test_redis_bus_rejects_cross_session_rows() -> None:
             return [[b"stream", [(b"1-0", {b"payload": raw})]]]
 
     with patch(
-        "kaji.infra.realtime.redis.get_redis_stream_client",
+        "kaji.realtime.redis.get_redis_stream_client",
         new=AsyncMock(return_value=Redis()),
     ):
         stream = EventBus().subscribe("session")

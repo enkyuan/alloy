@@ -97,8 +97,8 @@ async def _execute(
     marker: str,
     token: str,
 ) -> dict[str, object]:
-    from kaji.infra.events.journal import InMemoryEventJournal
-    from kaji.infra.events.store import InMemoryEventStore
+    from kaji.events.journal import InMemoryEventJournal
+    from kaji.events.store import InMemoryEventStore
     from kaji.runtime.agents.approval import ApprovalDecision, ApprovalRequestContext
     from kaji.runtime.agents.cancellation import CancellationToken
     from kaji.runtime.agents.context import TurnContext

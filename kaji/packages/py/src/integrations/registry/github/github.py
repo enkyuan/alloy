@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable, Collection, Mapping
 from typing import Any, Protocol, cast
 
 from kaji.integrations.fixed_origin import FixedOriginClient
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,

@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlsplit
 import httpx
 
 from kaji.integrations.errors import IntegrationPolicyError, IntegrationTransportError
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,

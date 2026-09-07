@@ -20,16 +20,16 @@ from typing import Any
 
 import kaji
 
-from kaji.infra.events.journal import InMemoryEventJournal
+from kaji.events.journal import InMemoryEventJournal
 from kaji.runtime.sessions.replay import replay_session
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentMessageCompleted,
     NewKajiEvent,
     UserMessage,
     require_stored_event,
 )
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents import (
     AgentBuilder,
     AgentRuntime,

@@ -32,14 +32,14 @@ from kaji.runtime.agents.prompts import SystemPrompt
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.agents.stream import RuntimeStreamAccumulator, StreamDiagnostics
 from kaji.runtime.tools.registry import ToolSpec
-from kaji.infra.events.errors import (
+from kaji.events.errors import (
     SessionPurgeBusyError,
     SessionPurgeComponent,
     SessionPurgeUnsupportedError,
 )
-from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.protocols import EventJournal
-from kaji.infra.events.session_lifecycle import (
+from kaji.events.journal import InMemoryEventJournal
+from kaji.events.protocols import EventJournal
+from kaji.events.session_lifecycle import (
     SessionPurgeAuthorization,
     StoreSessionPurgeLease,
     finish_session_cleanup,
@@ -49,7 +49,7 @@ from kaji.infra.events.session_lifecycle import (
     store_session_purge,
     supports_coordinated_session_purge,
 )
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     NewKajiEvent,
     StoredKajiEvent,
     AgentMessageCompleted,
@@ -65,9 +65,9 @@ from kaji.infra.events.schemas import (
     require_stored_event,
     revalidate_stored_event,
 )
-from kaji.infra.events.store import EventStore
-from kaji.infra.events.types import EventType
-from kaji.infra.observability.protocols import (
+from kaji.events.store import EventStore
+from kaji.events.types import EventType
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,

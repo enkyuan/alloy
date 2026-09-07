@@ -3,25 +3,25 @@ from typing import Any, cast
 
 import pytest
 
-from kaji.infra.events import errors as event_errors
-from kaji.infra.events.errors import (
+from kaji.events import errors as event_errors
+from kaji.events.errors import (
     EventIdConflictError,
     EventStoreCapacityError,
     SessionPurgeBusyError,
 )
-from kaji.infra.events.lanes import NestedEventTransactionError
-from kaji.infra.events.session_lifecycle import (
+from kaji.events.lanes import NestedEventTransactionError
+from kaji.events.session_lifecycle import (
     SessionPurgeAuthorization,
     finish_session_cleanup,
     store_session_purge,
 )
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     NewKajiEvent,
     SessionClosed,
     ToolCallCompleted,
     UserMessage,
 )
-from kaji.infra.events.store import (
+from kaji.events.store import (
     AppendResult,
     InMemoryEventStore,
     supports_session_purge,

@@ -3,9 +3,9 @@
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
-from kaji.infra.events.store import EventStore
-from kaji.infra.observability.protocols import (
+from kaji.events.schemas import StoredKajiEvent, revalidate_stored_event
+from kaji.events.store import EventStore
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,

@@ -10,22 +10,22 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from kaji.infra.events import session_lifecycle
-from kaji.infra.events.errors import (
+from kaji.events import session_lifecycle
+from kaji.events.errors import (
     SessionPurgeBusyError,
     SessionPurgeUnsupportedError,
 )
-from kaji.infra.events.bus import InMemoryEventBus
-from kaji.infra.events.journal import SplitEventJournal
-from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
-from kaji.infra.events.store import (
+from kaji.events.bus import InMemoryEventBus
+from kaji.events.journal import SplitEventJournal
+from kaji.events.schemas import NewKajiEvent, StoredKajiEvent, UserMessage
+from kaji.events.store import (
     AppendResult,
     EventStore,
     InMemoryEventStore,
     supports_session_purge,
 )
-from kaji.infra.events.session_lifecycle import SessionPurgeAuthorization
-from kaji.infra.events.types import EventType
+from kaji.events.session_lifecycle import SessionPurgeAuthorization
+from kaji.events.types import EventType
 from kaji.runtime.agents import AgentBuilder, InMemoryTurnCoordinator, TurnContext
 from kaji.runtime.tools.errors import UnclassifiedToolRiskError
 from kaji.runtime.providers.base import ModelProvider

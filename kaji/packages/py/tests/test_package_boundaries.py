@@ -90,7 +90,7 @@ def test_runtime_sessions_owns_session_projection() -> None:
     assert infra_runtime_imports == []
 
     removed_import_roots = {
-        "kaji.infra.events.replay",
+        "kaji.events.replay",
         "kaji.runtime.sessions.state",
     }
     stale_imports: list[str] = []
@@ -108,10 +108,10 @@ def test_runtime_sessions_owns_session_projection() -> None:
 def test_observability_and_provider_import_order_is_acyclic() -> None:
     """Session exports must stay lazy across observability/provider imports."""
     imports = (
-        "import kaji.infra.observability\n"
+        "import kaji.observability\n"
         "from kaji.runtime.providers.errors import ProviderConfigError\n",
         "from kaji.runtime.providers.errors import ProviderConfigError\n"
-        "import kaji.infra.observability\n",
+        "import kaji.observability\n",
         "from kaji.runtime.sessions.replay import SessionState\n"
         "from kaji.runtime.sessions.projector import SessionProjector\n"
         "from kaji.runtime.sessions import EventTimeline\n",
@@ -173,7 +173,9 @@ def test_sdk_settings_do_not_own_service_infrastructure() -> None:
 
 def test_core_package_has_no_infra_or_runtime_dependencies():
     banned_roots = {
-        "kaji.infra",
+        "kaji.events",
+        "kaji.observability",
+        "kaji.realtime",
         "kaji.knowledge",
         "kaji.modalities",
         "kaji.runtime",
@@ -321,7 +323,7 @@ def test_non_integration_tests_do_not_use_redis_event_bus() -> None:
         for node in ast.walk(tree):
             if (
                 isinstance(node, ast.ImportFrom)
-                and node.module == "kaji.infra.events.bus"
+                and node.module == "kaji.events.bus"
             ):
                 for alias in node.names:
                     if alias.name == "EventBus":

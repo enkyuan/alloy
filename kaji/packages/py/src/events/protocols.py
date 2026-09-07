@@ -10,8 +10,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Protocol, runtime_checkable
 
-from kaji.infra.events.schemas import NewKajiEvent, StoredKajiEvent
-from kaji.infra.events.store.base import EventStore
+from kaji.events.schemas import NewKajiEvent, StoredKajiEvent
+from kaji.events.store.base import EventStore
 
 
 @runtime_checkable
@@ -27,8 +27,8 @@ class EventSubscription(Protocol):
 
 @runtime_checkable
 class EventBusProtocol(Protocol):
-    """Structural interface shared by :class:`~kaji.infra.events.bus.InMemoryEventBus`
-    and :class:`~kaji.infra.events.bus.EventBus` (Redis-backed).
+    """Structural interface shared by :class:`~kaji.events.bus.InMemoryEventBus`
+    and :class:`~kaji.events.bus.EventBus` (Redis-backed).
 
     Any object that implements ``publish`` and ``subscribe`` with these
     signatures satisfies this protocol.

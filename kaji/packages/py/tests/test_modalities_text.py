@@ -2,10 +2,10 @@ from typing import cast
 
 import pytest
 
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.types import EventType
-from kaji.infra.events.schemas import StoredKajiEvent, UserMessage
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.types import EventType
+from kaji.events.schemas import StoredKajiEvent, UserMessage
+from kaji.events.store import InMemoryEventStore
 from kaji.modalities.text import TextModalityAdapter, TextSession
 
 

@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from kaji.infra.events.schemas import UserMessage
-from kaji.infra.events.store import InMemoryEventStore
-from kaji.infra.events.types import EventType
+from kaji.events.schemas import UserMessage
+from kaji.events.store import InMemoryEventStore
+from kaji.events.types import EventType
 from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.builder import AgentBuilder
 from kaji.runtime.agents.context import ToolExecutionContext, TurnContext

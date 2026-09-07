@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from kaji.infra.observability.protocols import Measurement
+from kaji.observability.protocols import Measurement
 
 __all__ = ["InMemoryMetrics"]
 

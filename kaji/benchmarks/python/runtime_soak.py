@@ -19,11 +19,11 @@ from typing import Any
 
 import kaji
 
-from kaji.infra.events.errors import EventBufferOverflowError
-from kaji.infra.events.journal import InMemoryEventJournal
-from kaji.infra.events.schemas import SessionClosed, UserMessage
-from kaji.infra.observability.protocols import Measurement
-from kaji.infra.events.store import InMemoryEventStore
+from kaji.events.errors import EventBufferOverflowError
+from kaji.events.journal import InMemoryEventJournal
+from kaji.events.schemas import SessionClosed, UserMessage
+from kaji.observability.protocols import Measurement
+from kaji.events.store import InMemoryEventStore
 from kaji.runtime.agents import CancellationToken, InMemoryTurnCoordinator
 from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.context import TurnContext

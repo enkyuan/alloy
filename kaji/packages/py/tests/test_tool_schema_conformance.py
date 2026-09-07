@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from kaji.infra.events.schemas import KajiEvent, ToolCallFailed, ToolCallStarted
+from kaji.events.schemas import KajiEvent, ToolCallFailed, ToolCallStarted
 from kaji.runtime.agents.cancellation import CancellationToken
 from kaji.runtime.agents.context import (
     ToolExecutionContext,

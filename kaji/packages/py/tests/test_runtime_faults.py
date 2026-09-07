@@ -11,12 +11,12 @@ import weakref
 
 import pytest
 
-from kaji.infra.events.store.inmem import InMemoryEventStore
-from kaji.infra.events.errors import SessionPurgeBusyError
-from kaji.infra.events.schemas import UserMessage
+from kaji.events.store.inmem import InMemoryEventStore
+from kaji.events.errors import SessionPurgeBusyError
+from kaji.events.schemas import UserMessage
 from kaji.runtime.sessions.replay import replay_session
-from kaji.infra.events.types import EventType
-from kaji.infra.observability import InMemoryMetrics
+from kaji.events.types import EventType
+from kaji.observability import InMemoryMetrics
 from kaji.runtime.sessions.projector import SessionProjector
 from kaji.runtime.agents.cancellation import (
     CancelledError,

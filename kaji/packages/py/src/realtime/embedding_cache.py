@@ -5,7 +5,7 @@ realtime/Redis layer, so importing ``runtime.tools.retriever`` pulls in no Redis
 dependency — the SDK's default cache is in-memory. Wire this in explicitly when
 you want tool embeddings to survive restarts::
 
-    from kaji.infra.realtime.embedding_cache import RedisEmbeddingCache
+    from kaji.realtime.embedding_cache import RedisEmbeddingCache
     from kaji.runtime.providers.gemini import GeminiService
     from kaji.runtime.tools.retriever import ToolRetriever
 
@@ -22,7 +22,7 @@ from urllib.parse import quote
 import msgpack
 
 from kaji.core.config import get_settings
-from kaji.infra.realtime.redis import get_redis_binary_client
+from kaji.realtime.redis import get_redis_binary_client
 
 _CACHE_GENERATION = "v3"
 _DEFAULT_PROVIDER = "gemini"

@@ -7,9 +7,9 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import TypeAdapter, ValidationError
 
-from kaji.infra.events import schemas as event_schemas
+from kaji.events import schemas as event_schemas
 from kaji.runtime.sessions.replay import replay_session
-from kaji.infra.events.schemas import (
+from kaji.events.schemas import (
     AgentTurnExhausted,
     AgentTurnFailed,
     KajiEvent,
@@ -30,9 +30,9 @@ from kaji.infra.events.schemas import (
     validate_new_event_python,
     validate_stored_event_python,
 )
-from kaji.infra.events import errors as event_errors
-from kaji.infra.events.errors import EventSchemaIncompatibleError
-from kaji.infra.events.types import EventType
+from kaji.events import errors as event_errors
+from kaji.events.errors import EventSchemaIncompatibleError
+from kaji.events.types import EventType
 from kaji.core.determinism import SYSTEM_CLOCK
 
 

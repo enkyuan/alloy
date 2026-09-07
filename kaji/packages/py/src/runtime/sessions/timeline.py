@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from kaji.infra.events.schemas import StoredKajiEvent
+from kaji.events.schemas import StoredKajiEvent
 from kaji.runtime.sessions.replay import SessionState, replay_session
 
 __all__ = ["EventTimeline"]
