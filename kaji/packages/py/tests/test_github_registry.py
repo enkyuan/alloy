@@ -46,11 +46,11 @@ def _document(integration: Integration) -> dict[str, object]:
 def test_github_inspector_matches_canonical_abi_without_global_registration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kaji.integrations import origin as fixed_origin
+    from kaji.integrations import origin as origin
     from kaji.integrations.registry.github.handler import inspect_integration
 
     monkeypatch.setattr(
-        fixed_origin.FixedOriginClient,
+        origin.FixedOriginClient,
         "for_github",
         lambda: pytest.fail("inspector constructed production HTTP"),
     )
@@ -105,7 +105,7 @@ async def test_each_wrapper_delegates_once_with_the_execution_context() -> None:
 async def test_production_integration_closes_its_owned_http_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kaji.integrations import origin as fixed_origin
+    from kaji.integrations import origin as origin
     from kaji.integrations.registry.github.handler import create_github_integration
 
     http = type(
@@ -117,7 +117,7 @@ async def test_production_integration_closes_its_owned_http_once(
         },
     )()
     monkeypatch.setattr(
-        fixed_origin.FixedOriginClient,
+        origin.FixedOriginClient,
         "for_github",
         lambda **_kwargs: http,
     )

@@ -33,7 +33,7 @@ def test_redis_embedding_cache_defaults_to_new_embedding_generation():
 
 def test_redis_embedding_cache_key_changes_with_configured_model(monkeypatch):
     monkeypatch.setattr(
-        embedding_cache,
+        embeddings,
         "get_settings",
         lambda: SimpleNamespace(GEMINI_EMBEDDING_MODEL="gemini-embedding-custom"),
     )
@@ -52,7 +52,7 @@ async def test_redis_embedding_cache_uses_binary_msgpack_client(monkeypatch):
         return redis
 
     monkeypatch.setattr(
-        embedding_cache,
+        embeddings,
         "get_redis_binary_client",
         fake_binary_client,
     )
@@ -80,7 +80,7 @@ async def test_redis_embedding_cache_rejects_model_identity_change(monkeypatch):
         return redis
 
     monkeypatch.setattr(
-        embedding_cache,
+        embeddings,
         "get_redis_binary_client",
         fake_binary_client,
     )
@@ -101,7 +101,7 @@ async def test_redis_embedding_cache_discards_malformed_msgpack(monkeypatch):
         return redis
 
     monkeypatch.setattr(
-        embedding_cache,
+        embeddings,
         "get_redis_binary_client",
         fake_binary_client,
     )
@@ -121,7 +121,7 @@ async def test_redis_embedding_cache_rejects_mixed_dimensions(monkeypatch):
         return redis
 
     monkeypatch.setattr(
-        embedding_cache,
+        embeddings,
         "get_redis_binary_client",
         fake_binary_client,
     )

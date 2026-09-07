@@ -980,7 +980,7 @@ def test_production_logging_calls_have_no_raw_exception_or_traceback_fields() ->
     relatives = (
         "src/integrations/keychain.py",
         "src/integrations/oauth.py",
-        "src/infra/realtime/history_ops.py",
+        "src/infra/realtime/history.ops.py",
     )
     for relative in relatives:
         source = (sdk_root / relative).read_text()

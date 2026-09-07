@@ -250,31 +250,31 @@ async def test_runtime_lifecycle_accepts_identity_only_event_stores(
     assert await store.last_sequence("identity-store") > 0
 
     store_identity = id(store)
-    assert store_identity in session_lifecycle._STORES
+    assert store_identity in lifecycle._STORES
     runtime_reference = weakref.ref(runtime)
     del runtime
     gc.collect()
     assert runtime_reference() is None
-    assert store_identity not in session_lifecycle._STORES
+    assert store_identity not in lifecycle._STORES
 
 
 def test_lifecycle_registry_replaces_a_stale_identity_entry() -> None:
     stale_store = _SlotsOnlyEventStore()
     store = _SlotsOnlyEventStore()
-    stale_entry = session_lifecycle._StoreEntry(
+    stale_entry = lifecycle._StoreEntry(
         identity=id(stale_store),
         strong_store=stale_store,
     )
-    session_lifecycle._STORES[id(store)] = stale_entry
+    lifecycle._STORES[id(store)] = stale_entry
 
     try:
-        with session_lifecycle.store_session_operation(store, "reused-identity"):
-            current = session_lifecycle._STORES[id(store)]
+        with lifecycle.store_session_operation(store, "reused-identity"):
+            current = lifecycle._STORES[id(store)]
             assert current is not stale_entry
             assert current.resolve() is store
-        assert id(store) not in session_lifecycle._STORES
+        assert id(store) not in lifecycle._STORES
     finally:
-        session_lifecycle._STORES.pop(id(store), None)
+        lifecycle._STORES.pop(id(store), None)
 
 
 def test_non_weakref_store_retains_post_delete_cleanup_targets() -> None:
@@ -285,18 +285,18 @@ def test_non_weakref_store_retains_post_delete_cleanup_targets() -> None:
         .coordinator(InMemoryTurnCoordinator())
         .build(store=store)
     )
-    with session_lifecycle.store_session_purge(
+    with lifecycle.store_session_purge(
         store,
         "cleanup-pending",
         coordinated=True,
     ) as initial_lease:
         assert initial_lease.cleanup_targets == (runtime,)
-        session_lifecycle.assert_physical_purge_authorized(
+        lifecycle.assert_physical_purge_authorized(
             store,
             "cleanup-pending",
             initial_lease.authorization,
         )
-        session_lifecycle.mark_physical_purge_committed(initial_lease)
+        lifecycle.mark_physical_purge_committed(initial_lease)
 
     del initial_lease
     runtime_reference = weakref.ref(runtime)
@@ -304,22 +304,22 @@ def test_non_weakref_store_retains_post_delete_cleanup_targets() -> None:
     gc.collect()
     retained_runtime = runtime_reference()
     assert retained_runtime is not None
-    assert id(store) in session_lifecycle._STORES
+    assert id(store) in lifecycle._STORES
 
-    with session_lifecycle.store_session_purge(
+    with lifecycle.store_session_purge(
         store,
         "cleanup-pending",
         coordinated=True,
         retry_cleanup=True,
     ) as recovery_lease:
         assert recovery_lease.cleanup_targets == (retained_runtime,)
-        session_lifecycle.finish_session_cleanup(recovery_lease)
+        lifecycle.finish_session_cleanup(recovery_lease)
 
     del recovery_lease
     del retained_runtime
     gc.collect()
     assert runtime_reference() is None
-    assert id(store) not in session_lifecycle._STORES
+    assert id(store) not in lifecycle._STORES
 
 
 @pytest.mark.asyncio

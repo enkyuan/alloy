@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-import kaji.events.lifecycle as session_lifecycle
+import kaji.events.lifecycle as lifecycle
 from kaji.events.bus import InMemoryEventBus
 from kaji.events.errors import (
     EventBufferOverflowError,
@@ -855,14 +855,14 @@ async def test_split_unteardownable_candidate_poison_survives_journal_collection
     store_reference, store_identity = await exercise()
     gc.collect()
     assert store_reference() is None
-    assert store_identity not in session_lifecycle._STORES
+    assert store_identity not in lifecycle._STORES
 
 
 @pytest.mark.asyncio
 async def test_explicit_purge_blocker_unregister_releases_store_registry() -> None:
     async def exercise() -> tuple[weakref.ReferenceType[InMemoryEventStore], int]:
         store = InMemoryEventStore()
-        unregister = session_lifecycle.register_purge_blocker(
+        unregister = lifecycle.register_purge_blocker(
             store,
             _EventDeliveryPurgeBlocker(),
         )
@@ -876,17 +876,17 @@ async def test_explicit_purge_blocker_unregister_releases_store_registry() -> No
     store_reference, store_identity = await exercise()
     gc.collect()
     assert store_reference() is None
-    assert store_identity not in session_lifecycle._STORES
+    assert store_identity not in lifecycle._STORES
 
 
 @pytest.mark.asyncio
 async def test_same_component_purge_blockers_unregister_by_identity() -> None:
     store = InMemoryEventStore()
-    unregister_first = session_lifecycle.register_purge_blocker(
+    unregister_first = lifecycle.register_purge_blocker(
         store,
         _EventDeliveryPurgeBlocker(),
     )
-    unregister_second = session_lifecycle.register_purge_blocker(
+    unregister_second = lifecycle.register_purge_blocker(
         store,
         _EventDeliveryPurgeBlocker(),
     )
