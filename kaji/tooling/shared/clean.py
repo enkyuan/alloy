@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""Remove Python caches and generated analysis output from the SDK checkout."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import shutil
+
+
+SDK_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT_CACHE_PATHS = (
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".ty",
+    ".coverage",
+    "htmlcov",
+    "logs",
+)
+
+
+def remove_path(path: Path) -> None:
+    """Remove one file, symlink, or directory if it exists."""
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def clean_caches(root: Path) -> None:
+    """Remove caches under source/test trees and known project-root caches."""
+    for tree_name in ("src", "tests", "scripts", "benchmarks"):
+        tree = root / tree_name
+        if not tree.is_dir():
+            continue
+
+        cache_dirs = sorted(
+            (
+                path
+                for path in tree.rglob("__pycache__")
+                if path.is_dir() and not path.is_symlink()
+            ),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        )
+        for cache_dir in cache_dirs:
+            shutil.rmtree(cache_dir)
+
+        for suffix in ("*.pyc", "*.pyo"):
+            for artifact in tree.rglob(suffix):
+                if artifact.is_file() or artifact.is_symlink():
+                    artifact.unlink(missing_ok=True)
+
+        for egg_info in tree.rglob("*.egg-info"):
+            remove_path(egg_info)
+
+    for relative in ROOT_CACHE_PATHS:
+        remove_path(root / relative)
+
+    for egg_info in root.glob("*.egg-info"):
+        remove_path(egg_info)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=SDK_ROOT,
+        help=argparse.SUPPRESS,
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    clean_caches(args.root.resolve())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
