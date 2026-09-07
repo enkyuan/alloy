@@ -13,7 +13,11 @@ Public surface follows PEP 8: classes are CapWords (``AgentRuntime``,
 """
 
 import importlib
+from pathlib import Path
 from typing import Any
+
+# Tooling lives at the Kaji workspace root but is invoked as ``kaji.tooling``.
+__path__.append(str(Path(__file__).resolve().parents[3]))
 
 __version__ = "0.2.0b1"
 

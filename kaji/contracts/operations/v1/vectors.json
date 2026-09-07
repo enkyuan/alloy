@@ -22,7 +22,7 @@
     "default": "in-memory",
     "durable": {
       "backend": "redis",
-      "implementation": "kaji.infra.realtime.embedding_cache.RedisEmbeddingCache",
+      "implementation": "kaji.realtime.embedding_cache.RedisEmbeddingCache",
       "cacheGeneration": "v3",
       "defaultTtlSeconds": 2592000,
       "keyFormat": "agent:tool_embeddings:{generation}:{provider}:{model}",
