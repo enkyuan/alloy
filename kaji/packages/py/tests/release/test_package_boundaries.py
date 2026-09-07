@@ -200,7 +200,7 @@ def test_sdk_does_not_configure_host_process_logging() -> None:
 
 
 def test_redis_client_is_confined_to_realtime_boundary():
-    allowed = Path("src/infra/realtime/redis.py")
+    allowed = Path("src/realtime/redis.py")
     violations: list[str] = []
 
     for path in _python_files(PACKAGE_ROOT):

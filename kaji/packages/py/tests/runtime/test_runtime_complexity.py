@@ -149,7 +149,7 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
             1,
             "revalidate_stored_event",
         ),
-        "kaji/packages/py/src/infra/events/journal.py": (
+        "kaji/packages/py/src/events/journal.py": (
             ".get_events(",
             2,
             "revalidate_stored_event",

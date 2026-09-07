@@ -908,7 +908,7 @@ def integration_recovery_entries(
 
 def runtime_event_types() -> set[str]:
     python_source = (
-        ROOT / "kaji" / "packages" / "py" / "src" / "infra" / "events" / "types.py"
+        ROOT / "kaji" / "packages" / "py" / "src" / "events" / "types.py"
     ).read_text()
     typescript_source = (
         ROOT / "kaji" / "packages" / "ts" / "src" / "events" / "types.ts"
@@ -1602,7 +1602,7 @@ def check_integrations(documents: dict[str, dict[str, Any]], codes: set[str]) ->
             or any(part in {"", ".", ".."} for part in relative.split("/"))
         ):
             raise fail(abi_index_path, entry_path, "expected a safe relative path")
-        relative_key = f"integrations/{posix_path.as_posix()}"
+        relative_key = f"integrations/v1/{posix_path.as_posix()}"
         if relative_key not in documents:
             raise fail(abi_index_path, entry_path, "referenced ABI file is missing")
         abi_path = CONTRACTS / relative_key

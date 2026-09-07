@@ -1,5 +1,5 @@
 {
-  "$schema": "./scenarios.schema.json",
+  "$schema": "./v1/schema.json",
   "version": "1.0.0",
   "normalization": {
     "stripKeys": ["timestamp", "duration_ms"],
