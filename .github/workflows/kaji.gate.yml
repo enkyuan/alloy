@@ -38,4 +38,4 @@ jobs:
           install-args: --frozen-lockfile
 
       - name: Run the canonical local Kaji CI gate
-        run: uv run --project kaji/packages/py --no-sync python kaji/scripts/beta_release_check.py --gate
+        run: uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.check --gate
