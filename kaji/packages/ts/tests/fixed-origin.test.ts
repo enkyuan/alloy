@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ToolExecutionContext } from "@/runtime/context";
-import { ToolExecutionError } from "@/tools/execution-errors";
+import { ToolExecutionError } from "@/tools/execution/errors";
 import { IntegrationPolicyError, IntegrationTransportError } from "@/integrations/errors";
 import {
   createGitHubRequester,
@@ -9,7 +9,7 @@ import {
   fixedOriginForTest,
   type FixedOriginTestResponse,
   type FixedOriginTestTransport,
-} from "@/integrations/fixed-origin";
+} from "@/integrations/origin";
 
 function context(overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext {
   return {

@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { INTEGRATION_RECOVERY } from "@/contracts/integration-recovery";
+import { INTEGRATION_RECOVERY } from "@/integrations/recovery";
 
 describe("integration recovery contract", () => {
   it("matches every canonical packaged recovery row and field", () => {
     const contract = JSON.parse(
       readFileSync(
-        resolve(import.meta.dirname, "../contracts/errors/integration-recovery-v1.json"),
+        resolve(import.meta.dirname, "../contracts/errors/v1/recovery.json"),
         "utf8",
       ),
     ) as { entries: Record<string, Record<string, string>> };

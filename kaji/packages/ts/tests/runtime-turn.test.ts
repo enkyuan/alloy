@@ -29,7 +29,7 @@ import {
   authorizedListenerTeardown,
   coordinatedSessionPurge,
   type SessionPurgeAuthorization,
-} from "@/events/session-lifecycle";
+} from "@/events/lifecycle";
 import { pageHistory } from "./helpers/history";
 
 class NonPurgeableStore implements EventStore {

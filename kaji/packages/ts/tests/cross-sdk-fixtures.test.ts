@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const SDK_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const EXPORTER = fileURLToPath(new URL("../scripts/export_parity.ts", import.meta.url));
 const SCENARIOS = fileURLToPath(
-  new URL("../../../contracts/parity/scenarios.json", import.meta.url),
+  new URL("../../../contracts/parity/v1/scenarios.json", import.meta.url),
 );
 const TOOLS = new URL("../../../contracts/tools/", import.meta.url);
 const SNAPSHOT_KEYS = [
@@ -123,7 +123,7 @@ describe("cross-SDK fixture exporter", () => {
       .filter((row: any) => row.kind === "tool-schema")
       .map((row: any) => `${row.fixtureFile}:${row.fixture}`)
       .sort();
-    const canonical = ["conformance-valid.json", "conformance-invalid.json"]
+    const canonical = ["v1/cases/valid.json", "v1/cases/invalid.json"]
       .flatMap((filename) =>
         JSON.parse(readFileSync(new URL(filename, TOOLS), "utf8")).cases.map(
           (fixture: any) => `${filename}:${fixture.name}`,

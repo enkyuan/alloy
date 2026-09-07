@@ -20,7 +20,7 @@ import type {
   ToolCall,
 } from "@/providers/base";
 import { getProviderResponseDiagnostics } from "@/providers/base";
-import { LinearStringParts, ProviderResponseBudget } from "@/providers/response-budget";
+import { LinearStringParts, ProviderResponseBudget } from "@/providers/response/budget";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 

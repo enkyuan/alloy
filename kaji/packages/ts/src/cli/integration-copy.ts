@@ -26,7 +26,7 @@ import {
   resolveManifestFile,
   type LoadedIntegrationManifest,
   type RegistryIndexEntry,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 
 export type BundleState = "current" | "absent" | "outdated" | "modified" | "demoted";
 

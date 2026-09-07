@@ -27,7 +27,7 @@ interface CostFixture {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(
-  readFileSync(resolve(__dirname, "../../../contracts/providers/cost-conformance.json"), "utf8"),
+  readFileSync(resolve(__dirname, "../../../contracts/providers/v1/costs.json"), "utf8"),
 ) as CostFixture;
 
 describe("model cost table", () => {

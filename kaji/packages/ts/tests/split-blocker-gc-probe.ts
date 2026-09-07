@@ -2,7 +2,7 @@ import { SplitEventCommitter } from "@/events/committer";
 import { SessionPurgeUnsupportedError } from "@/events/errors";
 import type { EventBusProtocol } from "@/events/protocols";
 import { KajiEvent, type StoredKajiEvent } from "@/events/schemas";
-import { beginStoreSessionPurge, registerPurgeBlocker } from "@/events/session-lifecycle";
+import { beginStoreSessionPurge, registerPurgeBlocker } from "@/events/lifecycle";
 import { InMemoryEventStore } from "@/events/store";
 import { EventType } from "@/events/types";
 

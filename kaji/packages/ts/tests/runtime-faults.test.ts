@@ -26,7 +26,7 @@ import {
   type SessionTurnCoordinator,
   type SessionTurnLease,
   type TurnLeaseOptions,
-} from "@/runtime/session-turn-coordinator";
+} from "@/runtime/session/coordinator";
 import { replaySession } from "@/sessions/replay";
 import { SessionProjector } from "@/sessions/projector";
 import { ToolExecutionController } from "@/tools/execution";
@@ -34,7 +34,7 @@ import {
   IdempotencyCapacityError,
   IdempotencyConflictError,
   toolTimedOut,
-} from "@/tools/execution-errors";
+} from "@/tools/execution/errors";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
 import type { MetricMeasurement, MetricsSink } from "@/observability";

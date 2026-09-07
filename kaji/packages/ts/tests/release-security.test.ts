@@ -27,9 +27,9 @@ import {
   SmokeCommandError,
 } from "../scripts/smoke_package.mts";
 
-const handoffSchemaRelative = "contracts/release/kaji-ts-consumer-handoff-v1.schema.json";
+const handoffSchemaRelative = "contracts/release/v1/typescript/handoff.json";
 const canonicalHandoffSchemaRelative =
-  "../../contracts/release/kaji-ts-consumer-handoff-v1.schema.json";
+  "../../contracts/release/v1/typescript/handoff.json";
 
 type HandoffSchemaRule = {
   type?: string;

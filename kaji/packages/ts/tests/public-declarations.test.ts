@@ -38,7 +38,7 @@ function declarationExportNames(declaration: string): string[] {
 describe("public declarations", () => {
   it("matches every non-CLI subpath contract in both module formats", () => {
     const contract = JSON.parse(
-      readFileSync(resolve(root, "../../contracts/feature-tiers-v1.json"), "utf8"),
+      readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
     ) as {
       packageSubpaths: {
         typescript: Record<string, { exports: string[] }>;
@@ -75,9 +75,9 @@ describe("public declarations", () => {
 
   it("exposes only the experimental fixed-origin and closed recovery surface", () => {
     const sources = [
-      "src/contracts/integration-recovery.ts",
+      "src/integrations/recovery.ts",
       "src/integrations/public.ts",
-      "src/integrations/fixed-origin.ts",
+      "src/integrations/origin.ts",
       "src/integrations/safe-fetch.ts",
     ];
     for (const declaration of [
@@ -121,7 +121,7 @@ describe("public declarations", () => {
   it("exposes only safe GitHub package construction options", () => {
     const sources = [
       "src/integrations/github.ts",
-      "src/integrations/github-package-internal.ts",
+      "src/integrations/github/internal.ts",
       "registry/github/index.ts",
       "registry/github/client.ts",
     ];
@@ -148,7 +148,7 @@ describe("public declarations", () => {
     const declaredExports = declarationExportNames(declaration);
     const exports = new Set(declaredExports);
     const contract = JSON.parse(
-      readFileSync(resolve(root, "../../contracts/feature-tiers-v1.json"), "utf8"),
+      readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
     );
     const tiers = contract.publicExports.typescript as Record<string, string[]>;
     const classified = Object.values(tiers).flat();
@@ -239,7 +239,7 @@ describe("public declarations", () => {
   });
 
   it("does not expose provider test hooks after build", () => {
-    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai.ts"]);
+    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai/index.ts"]);
     const anthropic = readFreshDeclaration("anthropic.d.ts", ["src/providers/anthropic.ts"]);
 
     expect(openai).not.toContain("OpenAIProviderTestHooks");
@@ -247,12 +247,12 @@ describe("public declarations", () => {
   });
 
   it("preserves RetryOptions on the OpenAI provider subpath", () => {
-    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai.ts"]);
+    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai/index.ts"]);
     expect(openai).toContain("RetryOptions");
   });
 
   it("keeps optional provider peers out of root declarations", () => {
-    const sources = ["src/index.ts", "src/providers/openai.ts", "src/providers/anthropic.ts"];
+    const sources = ["src/index.ts", "src/providers/openai/index.ts", "src/providers/anthropic.ts"];
     for (const declaration of [
       readFreshDeclaration("index.d.ts", sources),
       readFreshDeclaration("index.d.cts", sources),

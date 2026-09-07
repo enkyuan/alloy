@@ -1,8 +1,8 @@
-import { ToolExecutionError } from "@/tools/execution-errors";
+import { ToolExecutionError } from "@/tools/execution/errors";
 import {
   recoveryForReason,
   type IntegrationRecoveryReason,
-} from "@/contracts/integration-recovery";
+} from "@/integrations/recovery";
 
 type CertifiedFailureKind =
   | "api"

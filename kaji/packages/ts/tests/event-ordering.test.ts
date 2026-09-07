@@ -26,7 +26,7 @@ function message(id: string, sessionId = "s1", timestamp = 1) {
 
 const eventFixturePath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../../contracts/events/conformance.json",
+  "../../../contracts/events/v1/cases/valid.json",
 );
 
 describe("event ordering contract", () => {

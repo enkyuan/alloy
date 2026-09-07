@@ -6,7 +6,7 @@ import {
   formatIntegrationError,
   loadManifest,
   loadRegistryIndex,
-} from "../src/integrations/registry-loader";
+} from "../src/integrations/registry/loader";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
 const registryRoot = join(scriptsDirectory, "..", "registry");

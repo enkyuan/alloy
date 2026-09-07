@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { GoogleOAuthClient, type OAuthCredentialRecord } from "@/auth/oauth";
-import { fixedOriginForTest, type FixedOriginTestTransport } from "@/integrations/fixed-origin";
+import { fixedOriginForTest, type FixedOriginTestTransport } from "@/integrations/origin";
 import {
   recordMetric,
   startSpan,

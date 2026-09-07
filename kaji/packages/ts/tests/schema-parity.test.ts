@@ -21,7 +21,7 @@ function readFixture(name: string): unknown {
 
 describe("shared event schema fixtures", () => {
   it("pins and packages the cross-SDK session lifecycle contract byte-for-byte", () => {
-    for (const name of ["beta-core-v1.json", "feature-tiers-v1.json"] as const) {
+    for (const name of ["core/v1/beta.json", "tiers/v1/features.json"] as const) {
       const canonical = readFileSync(new URL(`../../../contracts/${name}`, import.meta.url));
       expect(readFileSync(new URL(`../../py/src/contracts/${name}`, import.meta.url))).toEqual(
         canonical,
@@ -30,7 +30,7 @@ describe("shared event schema fixtures", () => {
     }
 
     const contract = JSON.parse(
-      readFileSync(new URL("../../../contracts/beta-core-v1.json", import.meta.url), "utf8"),
+      readFileSync(new URL("../../../contracts/core/v1/beta.json", import.meta.url), "utf8"),
     ) as { events: Record<string, unknown> };
     expect(contract.events).toMatchObject(lifecycleContract);
   });

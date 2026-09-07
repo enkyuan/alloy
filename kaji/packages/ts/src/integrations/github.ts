@@ -13,7 +13,7 @@ import {
   createPackageGitHubToolBindings,
   type PackageGitHubClient,
 } from "../../registry/github/package-tools";
-import { createPackageGitHubState } from "./github-package-internal";
+import { createPackageGitHubState } from "./github/internal";
 
 export interface CreateGitHubIntegrationOptions {
   readonly tokenFor: (context: ToolExecutionContext) => Promise<string>;

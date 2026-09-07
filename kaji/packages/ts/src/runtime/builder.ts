@@ -11,7 +11,7 @@ import { ToolRegistry } from "@/tools/registry";
 import type { EventCommitter } from "@/events/protocols";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { InMemoryEventStore, type EventStore } from "@/events/store";
-import type { SessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import type { SessionTurnCoordinator } from "@/runtime/session/coordinator";
 import type { ContextWindow, TurnContext } from "@/runtime/context";
 import { ToolExecutionController, type ToolExecutionLimits } from "@/tools/execution";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";

@@ -2,14 +2,14 @@ import { GoogleOAuthClient, validateOAuthPrincipal } from "@/auth/oauth";
 import { MacOSKeychainTokenStorage } from "@/auth/keychain";
 import type { RunOptions } from "@/cli/index";
 import { TYPESCRIPT_SDK_CLI } from "@/cli/package-identity";
-import { closedRecoveryFields, recoveryForReason } from "@/contracts/integration-recovery";
+import { closedRecoveryFields, recoveryForReason } from "@/integrations/recovery";
 import {
   formatIntegrationError,
   loadManifest,
   loadRegistryIndex,
   type IntegrationAuth,
   type LoadedIntegrationManifest,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 
 export type OAuthLoadedManifest = Omit<LoadedIntegrationManifest, "auth"> & {
   readonly auth: Extract<IntegrationAuth, { kind: "oauth" }>;

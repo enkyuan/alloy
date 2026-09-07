@@ -12,7 +12,7 @@ import {
   ProviderOutputLimitError,
 } from "@/providers/errors";
 import { OpenAIProvider } from "@/providers/openai";
-import { toOpenAIChatMessages } from "@/providers/openai-format";
+import { toOpenAIChatMessages } from "@/providers/openai/format";
 import type {
   ProviderMessage,
   ProviderResponseDiagnostics,

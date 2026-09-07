@@ -439,7 +439,7 @@ describe("cross-SDK release matrix docs", () => {
   }, 30_000);
 
   it("matches the machine-readable beta feature tiers exactly", () => {
-    const tiers = JSON.parse(read("kaji/contracts/feature-tiers-v1.json")) as Record<
+    const tiers = JSON.parse(read("kaji/contracts/tiers/v1/features.json")) as Record<
       "stable" | "experimental",
       Array<{ id: string; surface: string }>
     >;
@@ -527,10 +527,10 @@ describe("cross-SDK release matrix docs", () => {
     const ajv = new Ajv2020({ allErrors: true, strict: true });
     addFormats(ajv);
     const validateManifest = ajv.compile(
-      JSON.parse(read("kaji/contracts/integrations/manifest.schema.json")),
+      JSON.parse(read("kaji/contracts/integrations/v1/schema/manifest.json")),
     );
     const validateIndex = ajv.compile(
-      JSON.parse(read("kaji/contracts/integrations/index.schema.json")),
+      JSON.parse(read("kaji/contracts/integrations/v1/schema/index.json")),
     );
 
     expect(validateManifest(manifestBefore)).toBe(false);

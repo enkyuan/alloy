@@ -13,9 +13,9 @@ import type {
 } from "@/providers/base";
 import { getProviderResponseDiagnostics } from "@/providers/base";
 import { ProviderOutputLimitError } from "@/providers/errors";
-import { ProviderResponseBudget } from "@/providers/response-budget";
+import { ProviderResponseBudget } from "@/providers/response/budget";
 import { CancellationToken } from "@/runtime/cancellation";
-import { DeltaAccumulator, RuntimeStreamAccumulator } from "@/runtime/delta-accumulator";
+import { DeltaAccumulator, RuntimeStreamAccumulator } from "@/runtime/delta/accumulator";
 import { TurnTimeoutError } from "@/runtime/limits";
 import { AgentRuntime } from "@/runtime/runtime";
 import type { ToolSpec } from "@/tools/registry";

@@ -78,7 +78,7 @@ async function run(args: string[]): Promise<{ code: number; out: string; err: st
 describe("kaji replay", () => {
   it("keeps the replay error allowlist exactly synchronized with the canonical contract", () => {
     const contract = JSON.parse(
-      readFileSync(resolve(import.meta.dirname, "../contracts/errors/error-codes.json"), "utf8"),
+      readFileSync(resolve(import.meta.dirname, "../contracts/errors/v1/codes.json"), "utf8"),
     ) as { codes: string[] };
 
     expect(REPLAY_SAFE_ERROR_CODES).toEqual(contract.codes);

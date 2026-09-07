@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod";
 
-import type { IntegrationManifestDocument } from "@/integrations/registry-loader";
+import type { IntegrationManifestDocument } from "@/integrations/registry/loader";
 import type { ToolSpec } from "@/tools/registry";
 import { functionTool } from "@/integrations/functional";
 import {

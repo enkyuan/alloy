@@ -536,7 +536,7 @@ const PRIVATE_GITHUB_COMPOSITION_PATHS = [
   "registry/github/package.ts",
   "registry/github/package-internal.ts",
   "src/integrations/github.ts",
-  "src/integrations/github-package-internal.ts",
+  "src/integrations/github/internal.ts",
 ] as const;
 const EXPECTED_GITHUB_SOURCE_MAPS = [
   "dist/integrations/github.js.map",

@@ -31,7 +31,7 @@ import {
   closeProviderStream,
   LinearStringParts,
   ProviderResponseBudget,
-} from "@/providers/response-budget";
+} from "@/providers/response/budget";
 import { throwIfCancellationRequested } from "@/runtime/cancellation";
 import type { ToolSpec } from "@/tools/registry";
 

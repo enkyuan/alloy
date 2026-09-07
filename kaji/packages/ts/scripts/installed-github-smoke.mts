@@ -50,14 +50,14 @@ const PRIVATE_GITHUB_COMPOSITION_PATHS = [
   "registry/github/package.ts",
   "registry/github/package-internal.ts",
   "src/integrations/github.ts",
-  "src/integrations/github-package-internal.ts",
+  "src/integrations/github/internal.ts",
 ] as const;
 const PRIVATE_GITHUB_COMPOSITION_SPECIFIERS = [
   "kaji/registry/github/package-tools.ts",
   "kaji/registry/github/package.ts",
   "kaji/registry/github/package-internal.ts",
   "kaji/src/integrations/github.ts",
-  "kaji/src/integrations/github-package-internal.ts",
+  "kaji/src/integrations/github/internal.ts",
 ] as const;
 const EXPECTED_GITHUB_SOURCE_MAPS = [
   "dist/integrations/github.js.map",
@@ -530,7 +530,7 @@ async function runProof(argv: string[]) {
     const fixture = JSON.parse(
       readFileSync(
         contained(
-          join(packageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+          join(packageRoot, "contracts/integrations/v1/api/github.json"),
           packageRoot,
           "GitHub conformance contract",
         ),
@@ -540,7 +540,7 @@ async function runProof(argv: string[]) {
     const abi = JSON.parse(
       readFileSync(
         contained(
-          join(packageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+          join(packageRoot, "contracts/integrations/v1/abi/github.json"),
           packageRoot,
           "GitHub shared ABI",
         ),
@@ -550,7 +550,7 @@ async function runProof(argv: string[]) {
     const packageAbi = JSON.parse(
       readFileSync(
         contained(
-          join(packageRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+          join(packageRoot, "contracts/integrations/v1/abi/typescript/github.json"),
           packageRoot,
           "GitHub TypeScript package ABI",
         ),

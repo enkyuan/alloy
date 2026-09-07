@@ -21,8 +21,8 @@ import {
   finishSessionCleanup,
   markPhysicalPurgeCommitted,
   type SessionPurgeAuthorization,
-} from "@/events/session-lifecycle";
-import { KeyedSerialExecutor } from "@/internal/keyed-serial";
+} from "@/events/lifecycle";
+import { KeyedSerialExecutor } from "@/internal/serial";
 
 export interface AppendResult {
   event: StoredKajiEvent;

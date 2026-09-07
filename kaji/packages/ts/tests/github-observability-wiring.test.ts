@@ -8,7 +8,7 @@ import type {
 } from "@irogane/kaji";
 
 import { createGithubIntegration } from "@/integrations/github";
-import { createPackageGitHubState } from "@/integrations/github-package-internal";
+import { createPackageGitHubState } from "@/integrations/github/internal";
 
 function context(signal = new AbortController().signal): ToolExecutionContext {
   return {

@@ -18,7 +18,7 @@ import { InMemoryEventStore, type AppendResult, type EventStoreSession } from "@
 import {
   coordinatedSessionPurge,
   type SessionPurgeAuthorization,
-} from "@/events/session-lifecycle";
+} from "@/events/lifecycle";
 import { EventType } from "@/events/types";
 import type { MetricMeasurement, MetricsSink } from "@/observability";
 

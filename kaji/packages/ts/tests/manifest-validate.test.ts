@@ -12,7 +12,7 @@ import {
   validateIndexDocument,
   validateManifestDocument,
   type IntegrationValidationCode,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const registryRoot = join(here, "..", "registry");
@@ -36,12 +36,12 @@ interface InvalidCase {
 }
 
 const validCases = (
-  JSON.parse(readFileSync(join(contractRoot, "conformance-valid.json"), "utf8")) as {
+  JSON.parse(readFileSync(join(contractRoot, "v1/cases/valid.json"), "utf8")) as {
     cases: ValidCase[];
   }
 ).cases;
 const invalidCases = (
-  JSON.parse(readFileSync(join(contractRoot, "conformance-invalid.json"), "utf8")) as {
+  JSON.parse(readFileSync(join(contractRoot, "v1/cases/invalid.json"), "utf8")) as {
     cases: InvalidCase[];
   }
 ).cases;

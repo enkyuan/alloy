@@ -25,7 +25,7 @@ interface ProviderNormalizationCase {
 const providerNormalizationCases = (
   JSON.parse(
     readFileSync(
-      new URL("../../../contracts/errors/provider-normalization.json", import.meta.url),
+      new URL("../../../contracts/errors/v1/normalization.json", import.meta.url),
       "utf8",
     ),
   ) as { cases: ProviderNormalizationCase[] }

@@ -9,7 +9,7 @@ import {
   type BoundedResponse,
   type FixedOriginRequester,
 } from "@irogane/kaji/integrations";
-import { recoveryForReason } from "@/contracts/integration-recovery";
+import { recoveryForReason } from "@/integrations/recovery";
 import { GitHubClient } from "../registry/github/client";
 
 interface FixtureCase {
@@ -42,14 +42,14 @@ interface Fixture {
 
 const fixture = JSON.parse(
   readFileSync(
-    new URL("../../../contracts/integrations/github-api-conformance-v1.json", import.meta.url),
+    new URL("../../../contracts/integrations/v1/api/github.json", import.meta.url),
     "utf8",
   ),
 ) as Fixture;
 
 const packageAbi = JSON.parse(
   readFileSync(
-    new URL("../../../contracts/integrations/github-tool-abi-typescript-v1.json", import.meta.url),
+    new URL("../../../contracts/integrations/v1/abi/typescript/github.json", import.meta.url),
     "utf8",
   ),
 ) as { readonly catalog_version: string };

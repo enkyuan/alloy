@@ -7,7 +7,7 @@ import { connect, createConnection } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ToolExecutionContext } from "@/runtime/context";
-import { fixedOriginForTest, type FixedOriginTestTransport } from "@/integrations/fixed-origin";
+import { fixedOriginForTest, type FixedOriginTestTransport } from "@/integrations/origin";
 
 const offline = process.env.KAJI_OFFLINE_GATE === "1";
 const blocked = "KAJI offline gate blocked network access";

@@ -18,15 +18,15 @@ import {
   GitHubIntegration as PackageGitHubIntegration,
   inspectIntegration as inspectPackageIntegration,
 } from "@/integrations/github";
-import { createPackageGitHubState } from "@/integrations/github-package-internal";
+import { createPackageGitHubState } from "@/integrations/github/internal";
 
 const kajiRoot = resolve(import.meta.dirname, "../../..");
 const abi = JSON.parse(
-  readFileSync(resolve(kajiRoot, "contracts/integrations/github-tool-abi-v1.json"), "utf8"),
+  readFileSync(resolve(kajiRoot, "contracts/integrations/v1/abi/github.json"), "utf8"),
 ) as { namespace: string; tools: Array<Record<string, unknown>> };
 const packageAbi = JSON.parse(
   readFileSync(
-    resolve(kajiRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+    resolve(kajiRoot, "contracts/integrations/v1/abi/typescript/github.json"),
     "utf8",
   ),
 ) as {

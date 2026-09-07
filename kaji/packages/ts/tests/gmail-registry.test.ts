@@ -15,7 +15,7 @@ import {
 
 const kajiRoot = resolve(import.meta.dirname, "../../..");
 const abi = JSON.parse(
-  readFileSync(resolve(kajiRoot, "contracts/integrations/gmail-tool-abi-v1.json"), "utf8"),
+  readFileSync(resolve(kajiRoot, "contracts/integrations/v1/abi/gmail.json"), "utf8"),
 ) as { namespace: string; tools: Array<{ name: string }> };
 
 function context(overrides: Partial<ToolExecutionContext> = {}): ToolExecutionContext {

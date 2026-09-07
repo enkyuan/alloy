@@ -22,7 +22,7 @@ import { tmpdir } from "node:os";
 import { rename as renameAsync } from "node:fs/promises";
 import { add } from "@/cli/add";
 import { classifyIntegrationBundle, installIntegrationBundle } from "@/cli/integration-copy";
-import { loadManifest, loadRegistryIndex } from "@/integrations/registry-loader";
+import { loadManifest, loadRegistryIndex } from "@/integrations/registry/loader";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const schemaRoot = join(__dirname, "..", "registry");

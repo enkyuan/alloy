@@ -16,7 +16,7 @@ import {
 } from "@irogane/kaji/integrations";
 import * as integrations from "@irogane/kaji/integrations";
 
-import { INTEGRATION_RECOVERY as INTERNAL_INTEGRATION_RECOVERY } from "@/contracts/integration-recovery";
+import { INTEGRATION_RECOVERY as INTERNAL_INTEGRATION_RECOVERY } from "@/integrations/recovery";
 
 describe("experimental integrations subpath", () => {
   it("exports exactly the certified runtime surface", () => {

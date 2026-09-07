@@ -28,7 +28,7 @@ export {
   type RegistryIndexDocument,
   type RegistryIndexEntry,
   type RegistryLoaderOptions,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 export {
   safeRequest,
   type BoundedResponse,

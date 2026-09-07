@@ -7,7 +7,7 @@ import {
   validateStoredEvent,
 } from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
-import { logRedactedFailure } from "@/internal/safe-logging";
+import { logRedactedFailure } from "@/internal/logging";
 import { EventType } from "@/events/types";
 import type { EventCommitter } from "@/events/protocols";
 import {
@@ -41,8 +41,8 @@ import {
   type ToolExecutionControllerOutcome,
   type ToolExecutionLimits,
 } from "@/tools/execution";
-import type { ToolExecutionError } from "@/tools/execution-errors";
-import type { IntegrationRecoveryReason } from "@/contracts/integration-recovery";
+import type { ToolExecutionError } from "@/tools/execution/errors";
+import type { IntegrationRecoveryReason } from "@/integrations/recovery";
 import type { MetricsSink, TraceSink } from "@/observability";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { ToolPolicy } from "@/tools/policy";

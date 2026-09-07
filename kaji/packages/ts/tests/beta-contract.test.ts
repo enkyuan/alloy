@@ -6,13 +6,13 @@ import { StoredKajiEvent, validateStoredEvent } from "@/events/schemas";
 import { replaySession } from "@/sessions/replay";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const contractPath = resolve(__dirname, "../../../contracts/beta-core-v1.json");
-const canonicalPath = resolve(__dirname, "../../../contracts/beta-core-v1.json");
-const packagedPath = resolve(__dirname, "../contracts/beta-core-v1.json");
-const eventFixturePath = resolve(__dirname, "../../../contracts/events/conformance.json");
+const contractPath = resolve(__dirname, "../../../contracts/core/v1/beta.json");
+const canonicalPath = resolve(__dirname, "../../../contracts/core/v1/beta.json");
+const packagedPath = resolve(__dirname, "../contracts/core/v1/beta.json");
+const eventFixturePath = resolve(__dirname, "../../../contracts/events/v1/cases/valid.json");
 const eventSchemaPaths = [
-  resolve(__dirname, "../../../contracts/events/new-kaji-event-v1.schema.json"),
-  resolve(__dirname, "../../../contracts/events/stored-kaji-event-v1.schema.json"),
+  resolve(__dirname, "../../../contracts/events/v1/schema/new.json"),
+  resolve(__dirname, "../../../contracts/events/v1/schema/stored.json"),
 ] as const;
 
 describe("production-beta contract", () => {

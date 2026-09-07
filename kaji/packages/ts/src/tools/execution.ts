@@ -2,7 +2,7 @@ import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runti
 import { DurableJsonLimitError, InvalidDurableValueError } from "@/events/errors";
 import { durableJsonSnapshot } from "@/events/json";
 import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
-import { logRedactedFailure } from "@/internal/safe-logging";
+import { logRedactedFailure } from "@/internal/logging";
 import { systemTimerScheduler, type TimerHandle, type TimerScheduler } from "@/internal/uuid";
 import {
   NOOP_METRICS,
@@ -24,7 +24,7 @@ import {
   toolExecutionUnknown,
   toolStartRecordFailed,
   toolTimedOut,
-} from "@/tools/execution-errors";
+} from "@/tools/execution/errors";
 import {
   InMemoryToolIdempotencyLedger,
   type ToolClaimResult,

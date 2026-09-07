@@ -13,9 +13,9 @@ import {
   coordinatedSessionPurge,
   finishSessionCleanup,
   SessionPurgeAuthorization,
-} from "@/events/session-lifecycle";
+} from "@/events/lifecycle";
 import { EventType } from "@/events/types";
-import { NestedEventTransactionError } from "@/internal/keyed-serial";
+import { NestedEventTransactionError } from "@/internal/serial";
 
 function userMessage(
   sessionId: string,

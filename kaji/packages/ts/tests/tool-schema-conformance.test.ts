@@ -30,8 +30,8 @@ function readCases(name: string): ConformanceCase[] {
   return fixture.cases;
 }
 
-const validCases = readCases("conformance-valid.json");
-const invalidCases = readCases("conformance-invalid.json");
+const validCases = readCases("v1/cases/valid.json");
+const invalidCases = readCases("v1/cases/invalid.json");
 
 function executionContext(principalId = "user-1"): ToolExecutionContext {
   return {

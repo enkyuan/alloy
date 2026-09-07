@@ -7,7 +7,7 @@ import { InMemoryEventStore } from "@/events/store";
 import type { TimerHandle, TimerScheduler } from "@/internal/uuid";
 import type { MetricMeasurement } from "@/observability";
 import { ToolExecutionController } from "@/tools/execution";
-import { ToolExecutionError, toolTimedOut } from "@/tools/execution-errors";
+import { ToolExecutionError, toolTimedOut } from "@/tools/execution/errors";
 import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner, bindEmitterToCommitter } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";

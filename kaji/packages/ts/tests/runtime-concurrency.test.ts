@@ -22,7 +22,7 @@ import {
   type SessionTurnCoordinator,
   type SessionTurnLease,
   type TurnLeaseOptions,
-} from "@/runtime/session-turn-coordinator";
+} from "@/runtime/session/coordinator";
 import type { ToolSpec } from "@/tools/registry";
 
 class Deferred<T = void> {

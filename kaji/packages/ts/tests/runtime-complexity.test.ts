@@ -24,7 +24,7 @@ import {
   type ToolExecutionContext,
 } from "@/runtime/context";
 import { AgentRuntime } from "@/runtime/runtime";
-import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import { InMemorySessionTurnCoordinator } from "@/runtime/session/coordinator";
 import { SessionProjector } from "@/sessions/projector";
 import type { Message } from "@/sessions/replay";
 import { ToolExecutionController } from "@/tools/execution";

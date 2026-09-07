@@ -308,7 +308,7 @@ interface ConformanceCase {
 
 const conformanceFixture = JSON.parse(
   readFileSync(
-    new URL("../../../contracts/integrations/gmail-api-conformance-v1.json", import.meta.url),
+    new URL("../../../contracts/integrations/v1/api/gmail.json", import.meta.url),
     "utf8",
   ),
 ) as { readonly token: string; readonly cases: readonly ConformanceCase[] };

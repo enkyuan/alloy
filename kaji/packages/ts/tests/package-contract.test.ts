@@ -73,13 +73,13 @@ const CANONICAL_GITHUB_ROW = {
 };
 
 const GITHUB_SHARED_ABI = JSON.parse(
-  readFileSync(join(canonicalRoot, "integrations/github-tool-abi-v1.json"), "utf8"),
+  readFileSync(join(canonicalRoot, "integrations/v1/abi/github.json"), "utf8"),
 ) as {
   version: "1.0.0";
   tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
 const GITHUB_PACKAGE_ABI = JSON.parse(
-  readFileSync(join(canonicalRoot, "integrations/github-tool-abi-typescript-v1.json"), "utf8"),
+  readFileSync(join(canonicalRoot, "integrations/v1/abi/typescript/github.json"), "utf8"),
 ) as {
   schema_version: "1.0.0";
   catalog_version: "0.2.0";
@@ -92,7 +92,7 @@ const GITHUB_COPIED_MANIFEST = JSON.parse(
   tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
 const GITHUB_API_FIXTURE = JSON.parse(
-  readFileSync(join(canonicalRoot, "integrations/github-api-conformance-v1.json"), "utf8"),
+  readFileSync(join(canonicalRoot, "integrations/v1/api/github.json"), "utf8"),
 ) as { version: "1.0.0"; cases: readonly unknown[] };
 const CURRENT_TYPESCRIPT_VERSION = (
   JSON.parse(readFileSync(join(packageRoot, "node_modules/typescript/package.json"), "utf8")) as {
@@ -1173,7 +1173,7 @@ describe("npm contract artifact", () => {
   it("smokes generated npm and Bun projects with both supported compiler lines", () => {
     const source = readFileSync(join(packageRoot, "scripts/smoke_package.mts"), "utf8");
     const tiers = JSON.parse(
-      readFileSync(join(canonicalRoot, "feature-tiers-v1.json"), "utf8"),
+      readFileSync(join(canonicalRoot, "tiers/v1/features.json"), "utf8"),
     ) as {
       cliCommands: { typescript: { stable: string[] } };
       packageSubpaths: { typescript: Record<string, unknown> };
