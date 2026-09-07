@@ -501,7 +501,7 @@ def test_nonzero_leader_with_pipe_holding_descendant_preserves_exit_status(
 def test_nested_runner_gets_time_to_clean_its_leaf(tmp_path: Path) -> None:
     runner = _load_runner()
     leaf_pid = tmp_path / "nested-leaf.pid"
-    scripts = REPO_ROOT / "kaji" / "tooling"
+    repo_root = REPO_ROOT
     leaf = (
         "import pathlib,signal,time,os; "
         "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -510,8 +510,8 @@ def test_nested_runner_gets_time_to_clean_its_leaf(tmp_path: Path) -> None:
     )
     inner = (
         "import pathlib,sys;"
-        f"sys.path.insert(0,{str(scripts)!r});"
-        "from process_runner import CommandBudget,run_checked;"
+        f"sys.path.insert(0,{str(repo_root)!r});"
+        "from kaji.tooling.shared.process import CommandBudget,run_checked;"
         f"leaf={leaf!r};"
         "run_checked([sys.executable,'-c',leaf],cwd=pathlib.Path.cwd(),"
         "budget=CommandBudget(timeout_seconds=60,terminate_grace_seconds=.05))"
@@ -839,7 +839,7 @@ def _wait_for_file(path: Path) -> None:
 def test_signal_during_residual_cleanup_is_reported_after_child_reap(
     tmp_path: Path,
 ) -> None:
-    scripts = REPO_ROOT / "kaji" / "tooling"
+    repo_root = REPO_ROOT
     descendant_pid = tmp_path / "signal-descendant.pid"
     program = tmp_path / "signal_runner.py"
     descendant = (
@@ -860,8 +860,8 @@ def test_signal_during_residual_cleanup_is_reported_after_child_reap(
     )
     program.write_text(
         "import pathlib,sys\n"
-        f"sys.path.insert(0, {str(scripts)!r})\n"
-        "from process_runner import CommandBudget,CommandInterruptedError,run_checked\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from kaji.tooling.shared.process import CommandBudget,CommandInterruptedError,run_checked\n"
         "try:\n"
         f"    run_checked([sys.executable, '-c', {leader!r}], cwd=pathlib.Path.cwd(), "
         "budget=CommandBudget(timeout_seconds=2, terminate_grace_seconds=.3))\n"
@@ -878,7 +878,7 @@ def test_signal_during_residual_cleanup_is_reported_after_child_reap(
 
 
 def test_repeated_signal_does_not_interrupt_leaf_cleanup(tmp_path: Path) -> None:
-    scripts = REPO_ROOT / "kaji" / "tooling"
+    repo_root = REPO_ROOT
     leaf_pid = tmp_path / "signal-leaf.pid"
     program = tmp_path / "active_signal_runner.py"
     leaf = (
@@ -889,8 +889,8 @@ def test_repeated_signal_does_not_interrupt_leaf_cleanup(tmp_path: Path) -> None
     )
     program.write_text(
         "import pathlib,sys\n"
-        f"sys.path.insert(0, {str(scripts)!r})\n"
-        "from process_runner import CommandBudget,CommandInterruptedError,run_checked\n"
+        f"sys.path.insert(0, {str(repo_root)!r})\n"
+        "from kaji.tooling.shared.process import CommandBudget,CommandInterruptedError,run_checked\n"
         "try:\n"
         f"    run_checked([sys.executable, '-c', {leaf!r}], cwd=pathlib.Path.cwd(), "
         "budget=CommandBudget(timeout_seconds=60, terminate_grace_seconds=.2), "

@@ -30,7 +30,7 @@ def remove_path(path: Path) -> None:
 
 def clean_caches(root: Path) -> None:
     """Remove caches under source/test trees and known project-root caches."""
-    for tree_name in ("src", "tests", "scripts", "benchmarks"):
+    for tree_name in ("src", "tests", "tooling", "benchmarks"):
         tree = root / tree_name
         if not tree.is_dir():
             continue

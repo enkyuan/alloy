@@ -49,7 +49,7 @@ PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
 
 # Child runners that must exist before this proof can run. Neither is written.
-PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_gmail_live.py"
+PYTHON_RUNNER = ROOT / "kaji" / "tooling" / "integrations" / "gmail" / "live.py"
 TYPESCRIPT_RUNNER = (
     ROOT / "kaji" / "packages" / "ts" / "scripts" / "installed-gmail-live.mts"
 )

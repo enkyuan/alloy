@@ -34,7 +34,7 @@ from kaji.tooling.shared.process import (
 ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 SDK = ROOT / "kaji"
 TYPESCRIPT = ROOT / "kaji" / "packages" / "ts"
-SCRIPTS = ROOT / "kaji" / "scripts"
+TOOLING = ROOT / "kaji" / "tooling"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 
 
@@ -55,7 +55,7 @@ class Gate:
 
 
 def offline_command(*command: str) -> tuple[str, ...]:
-    return (sys.executable, str(SCRIPTS / "offline_gate.py"), "--", *command)
+    return (sys.executable, str(TOOLING / "quality/offline.py"), "--", *command)
 
 
 TS_COMMON_GATES = (
@@ -366,7 +366,7 @@ def run_no_key_live_skip(environment: dict[str, str]) -> None:
     ):
         child_environment.pop(key, None)
     run_checked(
-        [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
+        [sys.executable, str(TOOLING / "providers/openai/loop.py")],
         cwd=ROOT,
         environment=child_environment,
         budget=PROVIDER_ORCHESTRATOR_BUDGET,
@@ -380,7 +380,7 @@ def run_required_key_failure(environment: dict[str, str]) -> None:
     child_environment.pop("KAJI_LIVE_OPENAI_MODEL", None)
     child_environment["KAJI_REQUIRE_LIVE_KEYS"] = "1"
     completed = run_checked(
-        [sys.executable, str(SCRIPTS / "verify_openai_loop.py")],
+        [sys.executable, str(TOOLING / "providers/openai/loop.py")],
         cwd=ROOT,
         environment=child_environment,
         budget=PROVIDER_ORCHESTRATOR_BUDGET,
@@ -419,7 +419,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "--project",
             "packages/py",
             "python",
-            "scripts/check_types.py",
+            "tooling/quality/types.py",
             "--output-format",
             "concise",
         ],
@@ -450,7 +450,7 @@ def run_common_checks(environment: dict[str, str]) -> None:
             "--project",
             "packages/py",
             "python",
-            "scripts/release_smoke.py",
+            "tooling/release/smoke.py",
         ],
         environment,
         RELEASE_COMMAND_BUDGET,
@@ -480,7 +480,7 @@ def run_keyed_provider_proof(environment: dict[str, str]) -> None:
     run_checked(
         [
             sys.executable,
-            str(SCRIPTS / "live_provider_proof.py"),
+            str(TOOLING / "providers/openai/live.py"),
             "--protected",
             "--artifacts-dir",
             str(artifacts.resolve()),
@@ -574,7 +574,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "--project",
                 "packages/py",
                 "python",
-                "scripts/check_types.py",
+                "tooling/quality/types.py",
                 "--output-format",
                 "concise",
             ],
@@ -604,7 +604,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "--project",
                 "packages/py",
                 "python",
-                "scripts/release_smoke.py",
+                "tooling/release/smoke.py",
             ],
             environment,
             RELEASE_COMMAND_BUDGET,
@@ -742,7 +742,7 @@ def run_release_checks(environment: dict[str, str]) -> None:
                 "--project",
                 "packages/py",
                 "python",
-                "scripts/verify_archives.py",
+                "tooling/release/verify/archives.py",
                 "packages/py/dist",
             ],
             environment,

@@ -17,7 +17,7 @@ from kaji.tooling.shared.process import (
 )
 
 
-USAGE = "usage: offline_gate.py -- <command> [argument ...]"
+USAGE = "usage: offline.py -- <command> [argument ...]"
 TOOLCHAIN_COMMANDS = ("bun", "node", "npm", "npx", "uv")
 
 

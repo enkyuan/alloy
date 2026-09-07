@@ -467,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         print(
             f"FAIL: {error.code} at {error.pointer}{detail}\n"
-            "Run check_integration_abi.py --explain after updating the canonical ABI or executable metadata.",
+            "Run tooling/integrations/abi/check.py --explain after updating the canonical ABI or executable metadata.",
             file=sys.stderr,
         )
         return 1

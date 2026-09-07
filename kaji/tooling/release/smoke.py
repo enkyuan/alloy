@@ -25,8 +25,8 @@ from kaji.tooling.shared.process import (
 
 KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
 SDK_ROOT = KAJI_ROOT / "packages" / "py"
-SCRIPTS = KAJI_ROOT / "scripts"
-import verify_release_artifacts  # noqa: E402
+TOOLING = KAJI_ROOT / "tooling"
+import kaji.tooling.release.verify.artifacts as verify_release_artifacts  # noqa: E402
 
 EXPECTED_MOCK_REPLY = "mock"
 EXPECTED_ECHO_DESCRIPTION = (
@@ -349,7 +349,7 @@ def archive_paths(dist_dir: Path) -> tuple[Path, Path]:
 def build_archives(dist_dir: Path) -> tuple[Path, Path]:
     dist_dir = dist_dir if dist_dir.is_absolute() else SDK_ROOT / dist_dir
 
-    run([sys.executable, str(SCRIPTS / "clean_caches.py")])
+    run([sys.executable, str(TOOLING / "shared/clean.py")])
     shutil.rmtree(SDK_ROOT / "build", ignore_errors=True)
     run(
         [
@@ -396,11 +396,11 @@ def smoke_archives(
         raise SystemExit("FAIL: supplied Python archives differ from verified identity")
     dist_dir = wheel.parent
 
-    run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
+    run([sys.executable, str(TOOLING / "release/verify/archives.py"), str(dist_dir)])
     run(
         [
             sys.executable,
-            str(SCRIPTS / "test_archive_verifier.py"),
+            str(TOOLING / "release/verify/test_archives.py"),
             str(dist_dir),
         ],
         budget=PACKAGE_ORCHESTRATOR_BUDGET,
@@ -472,7 +472,7 @@ def smoke_archives(
                     str(package),
                 ]
             )
-            run([str(python), str(SCRIPTS / "smoke_install.py")])
+            run([str(python), str(TOOLING / "package/python/verify.py")])
 
             artifact_workdir = workdir / f"artifact-{safe_name}"
             artifact_workdir.mkdir()
@@ -533,7 +533,7 @@ def smoke_archives(
             )
             assert_github_cli_output(github_output, github, registry)
             proof_runner = artifact_workdir / "installed_github_smoke.py"
-            shutil.copy2(SCRIPTS / "installed_github_smoke.py", proof_runner)
+            shutil.copy2(TOOLING / "integrations/github/smoke.py", proof_runner)
             proof_output = run_capture(
                 [
                     str(python),
@@ -630,7 +630,7 @@ def smoke_archives(
                 )
             )
 
-    run([sys.executable, str(SCRIPTS / "verify_archives.py"), str(dist_dir)])
+    run([sys.executable, str(TOOLING / "release/verify/archives.py"), str(dist_dir)])
     print("PASS: release smoke verified")
 
     return {

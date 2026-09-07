@@ -6,7 +6,7 @@ fails safely without a key, and the canonical no-key docs quickstart runs.
 
 Run after installing the built wheel into a clean venv:
     pip install dist/*.whl
-    python scripts/smoke_install.py
+    python kaji/tooling/package/python/verify.py
 """
 
 from __future__ import annotations

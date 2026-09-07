@@ -25,7 +25,7 @@ from kaji.tooling.shared.process import (
 
 
 ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
-PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_provider_proof.py"
+PYTHON_RUNNER = ROOT / "kaji" / "tooling" / "providers" / "openai" / "installed.py"
 TYPESCRIPT_RUNNER = (
     ROOT
     / "kaji"

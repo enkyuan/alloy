@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-_SYNC = _HERE.parent.parent / "tooling" / "sync" / "sync_beta_contracts.py"
+_SYNC = _HERE.parent.parent / "tooling" / "integrations" / "contracts" / "beta.py"
 
 
 def _sync_contracts() -> None:

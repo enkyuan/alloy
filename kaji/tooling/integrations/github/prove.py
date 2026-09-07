@@ -61,24 +61,32 @@ RELEASE_FILES = (
     "manifest.json",
     "SHA256SUMS",
 )
-PYTHON_RUNNER = ROOT / "kaji" / "scripts" / "installed_github_live.py"
-CONTROL_HELPER = ROOT / "kaji" / "scripts" / "github_proof_control.py"
+PYTHON_RUNNER = ROOT / "kaji" / "tooling" / "integrations" / "github" / "live.py"
+CONTROL_HELPER = ROOT / "kaji" / "tooling" / "integrations" / "github" / "control.py"
 TYPESCRIPT_RUNNER = (
     ROOT / "kaji" / "packages" / "ts" / "scripts" / "installed-github-live.mts"
 )
 PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "v1/github.json"
 PYTHON_CHILD_BOOTSTRAP = "\n".join(
     (
-        "import importlib.util, runpy, sys",
+        "import importlib.util, runpy, sys, types",
         "root, helper, runner, *arguments = sys.argv[1:]",
         "sys.path.insert(0, root)",
+        "package = 'kaji.tooling.integrations.github'",
+        "parts = package.split('.')",
+        "for index in range(1, len(parts) + 1):",
+        "    name = '.'.join(parts[:index])",
+        "    if name not in sys.modules:",
+        "        namespace = types.ModuleType(name)",
+        "        namespace.__path__ = []",
+        "        sys.modules[name] = namespace",
         (
             "spec = importlib.util.spec_from_file_location("
-            "'github_proof_control', helper)"
+            "package + '.control', helper)"
         ),
         "if spec is None or spec.loader is None: raise RuntimeError('helper_invalid')",
         "module = importlib.util.module_from_spec(spec)",
-        "sys.modules['github_proof_control'] = module",
+        "sys.modules[package + '.control'] = module",
         "spec.loader.exec_module(module)",
         "sys.argv = [runner, *arguments]",
         "runpy.run_path(runner, run_name='__main__')",

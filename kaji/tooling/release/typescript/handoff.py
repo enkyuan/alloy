@@ -612,7 +612,7 @@ def _recheck_source(
     trusted_commit = _git_text(trusted, "rev-parse", "--verify", "HEAD^{commit}")
     try:
         verifier_sha = hashlib.sha256(
-            (trusted / "kaji" / "scripts" / "verify_ts_handoff_source.py").read_bytes()
+            (trusted / "kaji" / "tooling" / "release" / "typescript" / "source.py").read_bytes()
         ).hexdigest()
     except OSError:
         _reject("SOURCE_COMMIT_MISMATCH")
