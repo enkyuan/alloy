@@ -31,7 +31,7 @@ from kaji.tooling.shared.process import (
 )
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 SDK = ROOT / "kaji"
 TYPESCRIPT = ROOT / "kaji" / "packages" / "ts"
 SCRIPTS = ROOT / "kaji" / "scripts"

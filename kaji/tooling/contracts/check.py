@@ -16,7 +16,7 @@ from jsonschema.exceptions import SchemaError, ValidationError
 from kaji.integrations.validation import parameter_schema_issue
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
 REGISTRY_INDEXES = (

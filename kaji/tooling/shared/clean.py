@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 
 
-SDK_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+SDK_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 ROOT_CACHE_PATHS = (
     ".pytest_cache",
     ".ruff_cache",

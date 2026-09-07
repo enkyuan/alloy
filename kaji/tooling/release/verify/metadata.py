@@ -74,7 +74,7 @@ def main() -> None:
     parser.add_argument("--commit")
     args = parser.parse_args()
 
-    repo = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    repo = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
     sdk = repo / "kaji/packages/py"
     ts = repo / "kaji/packages/ts"
     artifacts = args.artifacts_dir

@@ -177,7 +177,7 @@ def verify_release_member_bytes(
         fail("manifest build audit binding is malformed")
     if build_audit["file"] != EXPECTED_BUILD_AUDIT:
         fail("manifest build audit names an unexpected file")
-    audit_path = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())) / EXPECTED_BUILD_AUDIT
+    audit_path = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent / EXPECTED_BUILD_AUDIT
     if not audit_path.is_file() or audit_path.is_symlink():
         fail("manifest build audit file is missing or unsafe")
     if build_audit["sha256"] != sha256(audit_path):

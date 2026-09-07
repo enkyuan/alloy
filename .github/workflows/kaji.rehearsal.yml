@@ -912,7 +912,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/scripts").resolve(strict=True)
+          scripts_dir = Path("kaji/tooling").resolve(strict=True)
           sys.path.insert(0, str(scripts_dir))
           from validate_typescript_onboarding_evidence import (
               load_authenticated_archive,
@@ -1246,7 +1246,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/scripts").resolve(strict=True)
+          scripts_dir = Path("kaji/tooling").resolve(strict=True)
           sys.path.insert(0, str(scripts_dir))
           from validate_typescript_onboarding_evidence import (
               load_authenticated_archive,

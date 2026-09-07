@@ -37,7 +37,7 @@ from kaji.tooling.package.python.build import (
 from kaji.tooling.release.verify.artifacts import BETA2_REFERENCE_RELEASE_CONTRACT
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 REFERENCE_PATH = ROOT / "kaji" / "benchmarks" / "beta-reference.json"
 RUNTIMES = ("python", "typescript")
 SUBJECTS = ("reference", "candidate")

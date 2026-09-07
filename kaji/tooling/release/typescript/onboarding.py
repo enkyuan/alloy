@@ -25,7 +25,7 @@ import kaji.tooling.release.validate.receipts as validation
 import kaji.tooling.release.verify.artifacts as release_verification
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 SCHEMA_PATH = (
     ROOT
     / "kaji"

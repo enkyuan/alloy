@@ -15,7 +15,7 @@ from kaji.tooling.shared.process import (
 )
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 DEFAULT_MODEL = "gpt-5.4-mini"
 
 

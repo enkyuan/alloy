@@ -568,8 +568,7 @@ jobs:
             [ -f "$path" ]
             [ ! -L "$path" ]
           done
-          uv run --project kaji/packages/py --no-sync python \
-            kaji/tooling/release/validate/evidence.py \
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.validate.evidence \
             --mode rehearsal \
             --artifacts-dir .artifacts/kaji-release \
             --producer-archive .artifacts/kaji-authorized-rehearsal-raw/candidate.zip \
@@ -1564,7 +1563,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/scripts").resolve(strict=True)
+          scripts_dir = Path("kaji/tooling").resolve(strict=True)
           sys.path.insert(0, str(scripts_dir))
           from validate_typescript_onboarding_evidence import (
               load_authenticated_archive,
@@ -1898,7 +1897,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/scripts").resolve(strict=True)
+          scripts_dir = Path("kaji/tooling").resolve(strict=True)
           sys.path.insert(0, str(scripts_dir))
           from validate_typescript_onboarding_evidence import (
               load_authenticated_archive,
@@ -3470,8 +3469,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           timeout --signal=TERM --kill-after=10s 20m \
-            uv run --project kaji/packages/py --no-sync python \
-            kaji/tooling/release/verify/published.py \
+            uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.published \
             --target npm \
             --artifacts-dir .artifacts/kaji-release \
             --output .artifacts/kaji-publication-status/registry-verification.json \
@@ -3611,8 +3609,7 @@ jobs:
           fi
           CLASSIFY_STATUS=127
           if [ -f kaji/tooling/release/verify/published.py ]; then
-            uv run --project kaji/packages/py --no-sync python \
-              kaji/tooling/release/verify/published.py state \
+            uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.published state \
               --target npm \
               --previous-state unpublished \
               --pypi "$PYPI_STATE" \
@@ -3865,8 +3862,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXPECTED_PUBLISHER"
-          uv run --project kaji/packages/py --no-sync python \
-            kaji/tooling/release/validate/evidence.py publication-status \
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.validate.evidence publication-status \
             --publication-status .artifacts/kaji-publication-status/publication-status.json \
             --expected-commit "$EXPECTED_COMMIT" \
             --workflow-run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \

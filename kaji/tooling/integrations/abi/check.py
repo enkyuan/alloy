@@ -17,7 +17,7 @@ from typing import Any
 from kaji.tooling.shared.process import CommandError, METADATA_BUDGET, run_checked
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 KAJI = ROOT / "kaji"
 CONTRACTS = KAJI / "contracts" / "integrations"
 ABI_INDEX = CONTRACTS / "v1/abi/index.json"

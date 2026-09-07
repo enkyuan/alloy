@@ -27,7 +27,7 @@ from kaji.tooling.release.verify.artifacts import (
 )
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 SDK = ROOT / "kaji" / "packages" / "py"
 TS = ROOT / "kaji" / "packages" / "ts"
 TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"

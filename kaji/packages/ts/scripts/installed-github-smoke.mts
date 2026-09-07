@@ -910,7 +910,7 @@ async function runProof(argv: string[]) {
     ]);
     publicScenarios.push("approval-rejection");
     const policyBeforeRequest = {
-      testFile: "kaji/packages/ts/tests/github-registry.test.ts" as const,
+      testFile: "kaji/packages/ts/tests/integrations/github-registry.test.ts" as const,
       testName: "rejects approval for github_create_issue before token or HTTP" as const,
       tokenLookups: approvalTokenCalls,
       requestAttempts: networkAttempts,

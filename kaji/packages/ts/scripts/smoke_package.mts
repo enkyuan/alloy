@@ -358,7 +358,7 @@ interface GitHubPackageProof {
     readonly syntheticCompletion: LifecycleProof;
   };
   readonly policyBeforeRequest: {
-    readonly testFile: "kaji/packages/ts/tests/github-registry.test.ts";
+    readonly testFile: "kaji/packages/ts/tests/integrations/github-registry.test.ts";
     readonly testName: "rejects approval for github_create_issue before token or HTTP";
     readonly tokenLookups: 0;
     readonly requestAttempts: 0;
@@ -529,7 +529,7 @@ const NODE_HANDOFF_CHECKS = [
   "catalog-15-13",
 ] as const;
 const LICENSE_ID = "FSL-1.1-ALv2";
-const POLICY_TEST_FILE = "kaji/packages/ts/tests/github-registry.test.ts";
+const POLICY_TEST_FILE = "kaji/packages/ts/tests/integrations/github-registry.test.ts";
 const POLICY_TEST_NAME = "rejects approval for github_create_issue before token or HTTP";
 const PRIVATE_GITHUB_COMPOSITION_PATHS = [
   "registry/github/package-tools.ts",

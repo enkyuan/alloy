@@ -44,7 +44,7 @@ from kaji.tooling.release.validate.evidence import validate_compatibility
 from kaji.tooling.release.verify.artifacts import VerifiedReleaseArtifacts, verify
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 MAX_COMPATIBILITY_RECEIPT_BYTES = 1024 * 1024
 MAX_CHILD_RECEIPT_BYTES = 64 * 1024
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")

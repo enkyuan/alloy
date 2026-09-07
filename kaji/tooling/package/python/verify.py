@@ -150,7 +150,7 @@ print("  ok: github inspector")
 # ---------------------------------------------------------------------------
 print("\nRunning installed-package Python quickstart...")
 
-docs_path = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())) / "docs" / "kaji" / "production-beta.md"
+docs_path = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent / "docs" / "kaji" / "production-beta.md"
 docs = docs_path.read_text()
 match = re.search(
     r"<!-- installed-quickstart:python:start -->\s*```python\n(.*?)\n```\s*"

@@ -32,7 +32,7 @@ from kaji.tooling.shared.process import (
 )
 
 
-KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 REPOSITORY_ROOT = KAJI_ROOT.parent
 DEFAULT_BUDGETS = KAJI_ROOT / "benchmarks" / "integration-budgets.json"
 TYPESCRIPT_RUNNER = (
