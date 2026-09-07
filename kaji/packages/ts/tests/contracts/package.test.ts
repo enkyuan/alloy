@@ -1023,12 +1023,12 @@ describe("npm contract artifact", () => {
     const workdir = mkdtempSync(join(tmpdir(), "kaji-source-benchmark-"));
     const checkout = join(workdir, "sdk");
     try {
-      mkdirSync(join(checkout, "benchmarks"), { recursive: true });
+      mkdirSync(join(checkout, "benchmarks", "runtime"), { recursive: true });
       cpSync(join(packageRoot, "src"), join(checkout, "src"), { recursive: true });
       cpSync(join(packageRoot, "contracts"), join(checkout, "contracts"), { recursive: true });
       cpSync(
-        join(packageRoot, "benchmarks/runtime-benchmark.ts"),
-        join(checkout, "benchmarks/runtime-benchmark.ts"),
+        join(packageRoot, "benchmarks/runtime/benchmark.ts"),
+        join(checkout, "benchmarks/runtime/benchmark.ts"),
       );
       cpSync(join(packageRoot, "package.json"), join(checkout, "package.json"));
       cpSync(join(packageRoot, "tsconfig.json"), join(checkout, "tsconfig.json"));
@@ -1041,7 +1041,7 @@ describe("npm contract artifact", () => {
       const sample = JSON.parse(
         runText(
           "bun",
-          ["benchmarks/runtime-benchmark.ts", "--worker-case", "replay10k", "--seed", "13"],
+          ["benchmarks/runtime/benchmark.ts", "--worker-case", "replay10k", "--seed", "13"],
           { cwd: checkout },
         ),
       ) as { case: string; completed: number };
@@ -1053,7 +1053,7 @@ describe("npm contract artifact", () => {
         runText(
           "bun",
           [
-            "benchmarks/runtime-benchmark.ts",
+            "benchmarks/runtime/benchmark.ts",
             "--case",
             "crossSession100",
             "--samples",

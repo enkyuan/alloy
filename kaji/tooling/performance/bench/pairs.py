@@ -51,7 +51,7 @@ PROTOCOL_INPUTS = (
     Path(".github/actions/setup-python-uv/action.yml"),
     Path(".github/workflows/kaji.performance.yml"),
     Path("kaji/benchmarks/python/runtime_benchmark.py"),
-    Path("kaji/packages/ts/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime/benchmark.ts"),
     Path("kaji/benchmarks/beta-budgets.json"),
     Path("kaji/tooling/performance/bench/pairs.py"),
     Path("kaji/tooling/performance/aggregate.py"),

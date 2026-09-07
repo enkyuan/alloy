@@ -3156,7 +3156,7 @@ def test_typescript_benchmark_batches_short_workloads_with_deterministic_seeds()
     None
 ):
     source = (
-        REPO_ROOT / "kaji" / "packages" / "ts" / "benchmarks" / "runtime-benchmark.ts"
+        REPO_ROOT / "kaji" / "packages" / "ts" / "benchmarks" / "runtime" / "benchmark.ts"
     ).read_text()
 
     for entry in (
@@ -3561,7 +3561,7 @@ def test_soak_gate_is_the_only_soak_policy_authority() -> None:
 
     for relative in (
         Path("kaji/benchmarks/python/runtime_soak.py"),
-        Path("kaji/packages/ts/benchmarks/runtime-soak.ts"),
+        Path("kaji/packages/ts/benchmarks/runtime/soak.ts"),
     ):
         source = (REPO_ROOT / relative).read_text()
         assert "MAX_LATE_WINDOW_" not in source
@@ -3571,7 +3571,7 @@ def test_soak_gate_is_the_only_soak_policy_authority() -> None:
         assert "const checks" not in source
 
     typescript = (
-        REPO_ROOT / "kaji" / "packages" / "ts" / "benchmarks" / "runtime-soak.ts"
+        REPO_ROOT / "kaji" / "packages" / "ts" / "benchmarks" / "runtime" / "soak.ts"
     ).read_text()
     assert "Math.min(failed, scenarios.cancellations)" not in typescript
     assert "noncooperativeTimeouts:" not in typescript
@@ -3666,9 +3666,9 @@ def test_performance_source_hash_covers_runtime_benchmarks_and_gate_inputs() -> 
     )
     assert {
         Path("kaji/benchmarks/python/runtime_benchmark.py"),
-        Path("kaji/packages/ts/benchmarks/runtime-benchmark.ts"),
+        Path("kaji/packages/ts/benchmarks/runtime/benchmark.ts"),
         Path("kaji/benchmarks/python/runtime_soak.py"),
-        Path("kaji/packages/ts/benchmarks/runtime-soak.ts"),
+        Path("kaji/packages/ts/benchmarks/runtime/soak.ts"),
         Path("kaji/tooling/performance/gate/benchmark.py"),
         Path("kaji/tooling/performance/run/benchmark.py"),
         Path("kaji/tooling/performance/gate/soak.py"),

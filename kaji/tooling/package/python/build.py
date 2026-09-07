@@ -30,8 +30,8 @@ from kaji.tooling.release.verify.artifacts import (
 ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
 SDK = ROOT / "kaji" / "packages" / "py"
 TS = ROOT / "kaji" / "packages" / "ts"
-TS_BENCHMARK = TS / "benchmarks" / "runtime-benchmark.ts"
-TS_SOAK = TS / "benchmarks" / "runtime-soak.ts"
+TS_BENCHMARK = TS / "benchmarks" / "runtime" / "benchmark.ts"
+TS_SOAK = TS / "benchmarks" / "runtime" / "soak.ts"
 TS_CONSUMER = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())) / "tooling/package/typescript/runtime"
 TS_CONSUMER_MANIFEST = TS_CONSUMER / "package.core.json"
 TS_CONSUMER_LOCK = TS_CONSUMER / "package-lock.core.json"

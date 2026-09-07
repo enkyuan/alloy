@@ -455,7 +455,8 @@ def main() -> int:
                 / "packages"
                 / "ts"
                 / "benchmarks"
-                / "runtime-soak.ts"
+                / "runtime"
+                / "soak.ts"
             )
             try:
                 python_completed, typescript_completed = run_parallel_checked(

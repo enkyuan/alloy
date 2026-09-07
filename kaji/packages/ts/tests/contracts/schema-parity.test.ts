@@ -36,7 +36,7 @@ describe("shared event schema fixtures", () => {
   });
 
   it("parses an agent message completed event with usage and cost", () => {
-    const event = KajiEvent.parse(readFixture("agent-message-completed-with-usage.json"));
+    const event = KajiEvent.parse(readFixture("agent/message-completed.json"));
 
     expect(event.type).toBe(EventType.AGENT_MESSAGE_COMPLETED);
     if (event.type === EventType.AGENT_MESSAGE_COMPLETED) {
@@ -47,7 +47,7 @@ describe("shared event schema fixtures", () => {
 
   it("parses a tool call completed event with usage and cost", () => {
     const event = KajiEvent.parse({
-      ...(readFixture("tool-call-completed-with-usage.json") as Record<string, unknown>),
+      ...(readFixture("tool/call-completed.json") as Record<string, unknown>),
       turn_id: "turn-1",
     });
 

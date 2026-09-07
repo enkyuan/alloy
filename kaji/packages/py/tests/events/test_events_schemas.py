@@ -407,8 +407,8 @@ def test_typescript_event_type_values_match_python():
 @pytest.mark.parametrize(
     "fixture_name,expected_type",
     [
-        ("agent-message-completed-with-usage.json", AgentMessageCompleted),
-        ("tool-call-completed-with-usage.json", ToolCallCompleted),
+        ("agent/message-completed.json", AgentMessageCompleted),
+        ("tool/call-completed.json", ToolCallCompleted),
     ],
 )
 def test_shared_usage_event_fixtures_parse_in_python(

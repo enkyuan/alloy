@@ -6,10 +6,10 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 import { CancellationError, EventType } from "@irogane/kaji";
-import { countObservedCancellation, countObservedTimeout } from "../../benchmarks/runtime-soak";
+import { countObservedCancellation, countObservedTimeout } from "../../benchmarks/runtime/soak";
 
 const execute = promisify(execFile);
-const soak = fileURLToPath(new URL("../../benchmarks/runtime-soak.ts", import.meta.url));
+const soak = fileURLToPath(new URL("../../benchmarks/runtime/soak.ts", import.meta.url));
 
 it("counts only the runtime cancellation error", () => {
   expect(countObservedCancellation({ status: "rejected", reason: new CancellationError() })).toBe(

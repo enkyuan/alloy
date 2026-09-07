@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const benchmark = fileURLToPath(new URL("../../benchmarks/runtime-benchmark.ts", import.meta.url));
+const benchmark = fileURLToPath(new URL("../../benchmarks/runtime/benchmark.ts", import.meta.url));
 
 function reducerProbe(mode: "aggregate" | "semantic-drift"): {
   readonly seeds: readonly number[];

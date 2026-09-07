@@ -57,9 +57,9 @@ SOURCE_TREE_ROOTS = (
 )
 SOURCE_INPUTS = (
     Path("kaji/benchmarks/python/runtime_benchmark.py"),
-    Path("kaji/packages/ts/benchmarks/runtime-benchmark.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime/benchmark.ts"),
     Path("kaji/benchmarks/python/runtime_soak.py"),
-    Path("kaji/packages/ts/benchmarks/runtime-soak.ts"),
+    Path("kaji/packages/ts/benchmarks/runtime/soak.ts"),
     Path("kaji/tooling/performance/gate/benchmark.py"),
     Path("kaji/tooling/performance/run/benchmark.py"),
     Path("kaji/tooling/performance/gate/soak.py"),
@@ -235,7 +235,8 @@ def _runtime_command(
             / "packages"
             / "ts"
             / "benchmarks"
-            / "runtime-benchmark.ts"
+            / "runtime"
+            / "benchmark.ts"
         ),
         *common,
     ]
