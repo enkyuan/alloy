@@ -912,9 +912,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/tooling").resolve(strict=True)
-          sys.path.insert(0, str(scripts_dir))
-          from validate_typescript_onboarding_evidence import (
+          from kaji.tooling.release.typescript.onboarding import (
               load_authenticated_archive,
               recompute_and_compare,
               validate_document,
@@ -1246,9 +1244,7 @@ jobs:
           import json
           from pathlib import Path
           import sys
-          scripts_dir = Path("kaji/tooling").resolve(strict=True)
-          sys.path.insert(0, str(scripts_dir))
-          from validate_typescript_onboarding_evidence import (
+          from kaji.tooling.release.typescript.onboarding import (
               load_authenticated_archive,
               recompute_and_compare,
               validate_document,

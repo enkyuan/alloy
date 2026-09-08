@@ -1043,17 +1043,13 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     assert "Resolve exact current-run onboarding archives" in calibration
     assert (
         calibration.count("kaji.tooling.release.typescript.onboarding")
-        == 1
+        == 2
     )
     assert "Independently validate and recompute calibration aggregate" in calibration
     assert "name: kaji-typescript-onboarding-archive-calibration" in calibration
     assert "name: kaji-typescript-onboarding-archive-calibration-initial" in calibration
 
-    import_fragment = (
-        'scripts_dir = Path("kaji/tooling").resolve(strict=True)\n'
-        "          sys.path.insert(0, str(scripts_dir))\n"
-        "          from validate_typescript_onboarding_evidence import ("
-    )
+    import_fragment = "          from kaji.tooling.release.typescript.onboarding import ("
     assert import_fragment in calibration
     assert import_fragment in onboarding
 
@@ -1102,10 +1098,7 @@ def test_typescript_onboarding_inline_validator_imports_from_repo_root() -> None
             sys.executable,
             "-c",
             (
-                "from pathlib import Path; import sys; "
-                'scripts_dir = Path("kaji/tooling").resolve(strict=True); '
-                "sys.path.insert(0, str(scripts_dir)); "
-                "from validate_typescript_onboarding_evidence import "
+                "from kaji.tooling.release.typescript.onboarding import "
                 "load_authenticated_archive, recompute_and_compare, validate_document"
             ),
         ],
