@@ -113,6 +113,16 @@
         "default": "./dist/auth.cjs"
       }
     },
+    "./postgres": {
+      "import": {
+        "types": "./dist/postgres.d.ts",
+        "default": "./dist/postgres.js"
+      },
+      "require": {
+        "types": "./dist/postgres.d.cts",
+        "default": "./dist/postgres.cjs"
+      }
+    },
     "./cli": {
       "import": {
         "types": "./dist/cli/package-entry.d.ts",
@@ -181,7 +191,9 @@
       "optional": true
     }
   },
-  "optionalDependencies": {},
+  "optionalDependencies": {
+    "postgres": "^3.4.7"
+  },
   "engines": {
     "node": "22.x || 24.x"
   }

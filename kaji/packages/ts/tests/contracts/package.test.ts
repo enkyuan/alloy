@@ -1198,6 +1198,7 @@ describe("npm contract artifact", () => {
       "./integrations",
       "./integrations/github",
       "./openai",
+      "./postgres",
       "./testing",
     ]);
     expect(tiers.packageSubpaths.typescript["./integrations/github"]).toEqual({
@@ -1212,6 +1213,10 @@ describe("npm contract artifact", () => {
     expect(tiers.packageSubpaths.typescript["./openai"]).toEqual({
       tier: "stable",
       exports: ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"],
+    });
+    expect(tiers.packageSubpaths.typescript["./postgres"]).toEqual({
+      tier: "experimental",
+      exports: ["PostgresEventCommitter", "PostgresEventCommitterOptions", "PostgresEventStore"],
     });
     expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
       tier: "experimental",

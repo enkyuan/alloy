@@ -15,6 +15,7 @@
       "@irogane/kaji/integrations": ["./src/integrations/public.ts"],
       "@irogane/kaji/integrations/github": ["./src/integrations/github.ts"],
       "@irogane/kaji/openai": ["./src/providers/openai/index.ts"],
+      "@irogane/kaji/postgres": ["./src/backends/postgres/index.ts"],
       "@irogane/kaji/testing": ["./src/testing.ts"],
       "@irogane/kaji": ["./src/index.ts"],
       "@/*": ["./src/*"]

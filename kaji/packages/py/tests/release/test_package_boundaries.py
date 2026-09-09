@@ -217,17 +217,36 @@ def test_redis_client_is_confined_to_realtime_boundary():
     assert violations == []
 
 
-def test_realtime_dependencies_are_explicit_opt_in_extras():
+def test_postgres_client_is_confined_to_postgres_backend():
+    allowed = Path("src/backends/postgres/store.py")
+    violations: list[str] = []
+
+    for path in _python_files(PACKAGE_ROOT):
+        rel = path.relative_to(SDK_ROOT)
+        if rel == allowed:
+            continue
+        if any(_matches(import_name, "psycopg") for import_name in _imports(path)):
+            violations.append(str(rel))
+
+    assert violations == []
+
+
+def test_release_gate_allows_realtime_and_postgres_extras():
     sdk_pyproject = tomllib.loads((SDK_ROOT / "pyproject.toml").read_text())
-    # PEP 621: optional deps live under [project.optional-dependencies].
     core_dependencies = sdk_pyproject["project"]["dependencies"]
     optional_deps = sdk_pyproject["project"]["optional-dependencies"]
     realtime_extra = optional_deps["realtime"]
+    postgres_extra = optional_deps["postgres"]
 
-    assert not any("msgpack" in dep or "redis" in dep for dep in core_dependencies)
+    assert not any(
+        dependency in dep
+        for dep in core_dependencies
+        for dependency in ("msgpack", "redis", "psycopg")
+    )
     assert not any(dep.startswith("pydantic[") for dep in core_dependencies)
     assert any("msgpack" in dep for dep in realtime_extra)
     assert any("redis" in dep for dep in realtime_extra)
+    assert any("psycopg" in dep for dep in postgres_extra)
 
 
 def test_sdk_pytest_collection_is_confined_to_sdk_tests() -> None:

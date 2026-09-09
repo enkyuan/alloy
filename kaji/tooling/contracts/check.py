@@ -607,13 +607,13 @@ def check_packaged_contracts() -> None:
     expected = {
         path.relative_to(CONTRACTS)
         for path in CONTRACTS.rglob("*")
-        if path.is_file() and path.suffix in {".json", ".md"}
+        if path.is_file() and path.suffix in {".json", ".md", ".sql"}
     }
     for target in PACKAGE_CONTRACT_TARGETS:
         actual = {
             path.relative_to(target)
             for path in target.rglob("*")
-            if path.is_file() and path.suffix in {".json", ".md"}
+            if path.is_file() and path.suffix in {".json", ".md", ".sql"}
         }
         if actual != expected:
             missing = sorted(path.as_posix() for path in expected - actual)

@@ -31,6 +31,7 @@ export default defineConfig([
       openai: "src/providers/openai/index.ts",
       anthropic: "src/providers/anthropic.ts",
       auth: "src/auth/index.ts",
+      postgres: "src/backends/postgres/index.ts",
       integrations: "src/integrations/public.ts",
       "integrations/github": "src/integrations/github.ts",
     },
@@ -40,7 +41,7 @@ export default defineConfig([
     clean: false,
     treeshake: true,
     // Keep package self-imports external so subpaths share the root runtime constructors.
-    external: [...EXTERNAL_PROVIDERS, "@irogane/kaji"],
+    external: [...EXTERNAL_PROVIDERS, "@irogane/kaji", "postgres"],
   },
   {
     // `kaji` CLI. ESM only; tsup strips shebangs unless restored via banner.

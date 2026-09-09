@@ -68,6 +68,14 @@
         "tier": "stable",
         "exports": ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"]
       },
+      "./postgres": {
+        "tier": "experimental",
+        "exports": [
+          "PostgresEventCommitter",
+          "PostgresEventCommitterOptions",
+          "PostgresEventStore"
+        ]
+      },
       "./testing": {
         "tier": "experimental",
         "exports": [

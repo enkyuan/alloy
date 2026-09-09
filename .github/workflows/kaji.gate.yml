@@ -16,6 +16,22 @@ jobs:
     name: release gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      KAJI_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres
     defaults:
       run:
         working-directory: .
@@ -42,3 +58,8 @@ jobs:
 
       - name: Run the canonical local Kaji CI gate
         run: uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.check --gate
+
+      - name: Run Postgres EventStore integration tests
+        run: |
+          uv run --project kaji/packages/py --extra postgres pytest kaji/packages/py/tests/backends/test_postgres.py -q
+          cd kaji/packages/ts && bun run test tests/backends/postgres.test.ts
