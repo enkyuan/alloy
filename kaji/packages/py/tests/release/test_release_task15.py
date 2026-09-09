@@ -289,7 +289,7 @@ def test_ci_uses_real_package_smokes_and_supported_runtime_matrix() -> None:
     ts = _read(".github/workflows/ts.test.yml")
     lint = _read(".github/workflows/ts.lint.yml")
 
-    assert "scripts/verify_archives.py" in python
+    assert "python -m kaji.tooling.release.verify.archives" in python
     assert 'python-version: "3.11"' in python
     assert 'python-version: "3.14"' in python
     assert "scripts/smoke_package.mts" in ts
