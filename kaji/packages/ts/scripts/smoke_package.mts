@@ -1652,7 +1652,7 @@ function assertGithubPackageProof(
   }
   const sharedAbi = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/abi/github.json"),
       "utf8",
     ),
   ) as {
@@ -1661,13 +1661,13 @@ function assertGithubPackageProof(
   };
   const apiFixture = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/api/github.json"),
       "utf8",
     ),
   ) as { version: "1.0.0"; cases: readonly unknown[] };
   const packageAbi = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/abi/typescript/github.json"),
       "utf8",
     ),
   ) as {
