@@ -229,8 +229,8 @@ def assert_init_cli_output(output: str, scaffold: Path) -> None:
 
 
 def assert_echo_cli_output(output: str, destination: Path, registry: Path) -> None:
-    copied = destination / "echo.py"
-    packaged = registry / "echo" / "echo.py"
+    copied = destination / "handler.py"
+    packaged = registry / "echo" / "handler.py"
     if not copied.is_file() or copied.read_bytes() != packaged.read_bytes():
         raise SystemExit("FAIL: installed add did not copy the packaged Echo asset")
     if f"wrote {copied.resolve()}" not in output:

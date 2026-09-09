@@ -571,9 +571,9 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
     destination = tmp_path / "echo-copy"
     (registry / "echo").mkdir(parents=True)
     destination.mkdir()
-    body = "packaged echo.py\n"
-    (registry / "echo" / "echo.py").write_text(body)
-    copied = destination / "echo.py"
+    body = "packaged handler.py\n"
+    (registry / "echo" / "handler.py").write_text(body)
+    copied = destination / "handler.py"
     copied.write_text(body)
     output = [f"  wrote {copied.resolve()}"]
     output.append("Installed integration: echo v0.1.0")
@@ -607,7 +607,7 @@ def test_release_smoke_asserts_all_installed_stable_cli_results(
         )
     )
 
-    (destination / "echo.py").write_text("checkout source must not be accepted")
+    (destination / "handler.py").write_text("checkout source must not be accepted")
     with pytest.raises(SystemExit, match="packaged Echo asset"):
         module.assert_echo_cli_output("\n".join(output), destination, registry)
     with pytest.raises(SystemExit, match="emitted invalid JSON"):

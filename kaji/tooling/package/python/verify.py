@@ -20,6 +20,14 @@ from tempfile import TemporaryDirectory
 import textwrap
 
 
+KAJI_ROOT = next(
+    parent
+    for parent in Path(__file__).resolve().parents
+    if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+)
+REPO_ROOT = KAJI_ROOT.parent
+
+
 def marked_snippet(path: Path, name: str, language: str) -> str:
     escaped = re.escape(name)
 
@@ -150,7 +158,7 @@ print("  ok: github inspector")
 # ---------------------------------------------------------------------------
 print("\nRunning installed-package Python quickstart...")
 
-docs_path = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent / "docs" / "kaji" / "production-beta.md"
+docs_path = REPO_ROOT / "docs" / "kaji" / "production-beta.md"
 docs = docs_path.read_text()
 match = re.search(
     r"<!-- installed-quickstart:python:start -->\s*```python\n(.*?)\n```\s*"
@@ -168,13 +176,7 @@ print("  ok: canonical Python quickstart")
 # 6. The exact Getting Started no-key block runs against the wheel.
 # ---------------------------------------------------------------------------
 print("\nRunning installed-package Getting Started no-key guide...")
-getting_started_path = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
-    / "apps"
-    / "docs"
-    / "content"
-    / "getting-started.mdx"
-)
+getting_started_path = REPO_ROOT / "apps" / "docs" / "content" / "getting-started.mdx"
 getting_started = marked_snippet(
     getting_started_path, "getting-started:no-key:python", "python"
 )
@@ -190,12 +192,7 @@ print("  ok: Getting Started no-key guide")
 print("\nRunning installed-package onboarding Echo guide...")
 from kaji.cli import main as cli_main  # noqa: E402
 
-onboarding_path = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
-    / "docs"
-    / "kaji"
-    / "typescript-onboarding-evidence.md"
-)
+onboarding_path = REPO_ROOT / "docs" / "kaji" / "typescript-onboarding-evidence.md"
 onboarding = marked_snippet(onboarding_path, "tthw-echo:python", "python")
 with TemporaryDirectory(prefix="kaji-installed-onboarding-") as directory:
     root = Path(directory)

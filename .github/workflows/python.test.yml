@@ -121,8 +121,9 @@ jobs:
 
       - name: Build, verify, and install wheel and sdist
         run: |
-          uv run --project packages/py --no-sync python scripts/release_smoke.py
-          uv run --project packages/py --no-sync python scripts/verify_archives.py packages/py/dist
+          cd ..
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.smoke
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.artifacts kaji/packages/py/dist
 
   serve:
     name: kaji/packages/serve
