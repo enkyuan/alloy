@@ -26,6 +26,25 @@ human, macOS/arm64, Windows, or fully offline onboarding result.
 - [Troubleshooting](troubleshooting.md)
 - [Release operator runbook](releasing.md)
 
+## Three paths
+
+**Kaji is an embedded execution runtime for safely connecting AI agents to real
+product actions.** Agent frameworks decide what to do; Kaji provides the
+execution boundary for identity, policy, approvals, durable events,
+idempotency, failures, artifacts, and replay.
+
+- **Build an agent:** compose a provider, tools, and a runtime for ordinary
+  conversational or tool-using agents.
+- **Expose a product capability:** wrap an existing product function as a
+  risk-classified `Capability`; Kaji executes it through the same tool policy
+  and approval boundary.
+- **Run durable agent tasks:** use `TaskRuntime` and `TaskHandle` to create a
+  task, inspect its journal-derived state and artifacts, and control its
+  lifecycle. `Task.events()` is privileged raw journal data, not a safe log.
+
+See [`examples/refund-agent`](../../examples/refund-agent) for a Stripe
+test-mode product action using only package APIs.
+
 ## Support boundaries
 
 Stable and experimental features and exports are classified by

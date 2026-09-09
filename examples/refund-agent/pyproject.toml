@@ -1,0 +1,5 @@
+[project]
+name = "kaji-refund-agent-example"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = ["kaji>=0.3.0a1,<0.4"]

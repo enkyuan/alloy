@@ -20,8 +20,8 @@ from kaji.tooling.shared.process import METADATA_BUDGET, CommandError, run_check
 
 PYTHON_PROJECT = "kaji"
 PYTHON_DISTRIBUTION = "kaji"
-PYTHON_VERSION = "0.2.0b1"
-TYPESCRIPT_VERSION = "0.2.0-beta.11"
+PYTHON_VERSION = "0.3.0a1"
+TYPESCRIPT_VERSION = "0.3.0-alpha.1"
 PYTHON_BUILD_REQUIREMENTS = {"setuptools==83.0.0", "editables==0.6"}
 UV_VERSION = "0.11.25"
 BUN_VERSION = "1.3.11"

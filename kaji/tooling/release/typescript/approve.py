@@ -20,7 +20,7 @@ import kaji.tooling.release.typescript.onboarding as onboarding
 REPOSITORY = "enkyuan/alloy"
 API_VERSION = "2026-03-10"
 RUN_ATTEMPT = 1
-TAG = "kaji-v0.2.0-beta.11"
+TAG = "kaji-v0.3.0-alpha.1"
 
 ONBOARDING_ENVIRONMENT = "kaji-onboarding"
 PROVIDER_ENVIRONMENT = "kaji-release"
@@ -42,7 +42,7 @@ REHEARSAL_WORKFLOW_REF = (
 )
 PUBLISH_WORKFLOW_PATH = ".github/workflows/kaji.publish.yml"
 PUBLISH_WORKFLOW_REF = (
-    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11"
+    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1"
 )
 
 APPROVAL_COMMENT = "Approve exact-run TypeScript onboarding evidence."

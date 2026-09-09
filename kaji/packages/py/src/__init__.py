@@ -19,7 +19,7 @@ from typing import Any
 # Tooling lives at the Kaji workspace root but is invoked as ``kaji.tooling``.
 __path__.append(str(Path(__file__).resolve().parents[3]))
 
-__version__ = "0.2.0b1"
+__version__ = "0.3.0a1"
 
 # Public name -> module it lives in. Kept as a static map so that importing
 # the top-level package triggers no submodule side effects. Entries are
@@ -112,8 +112,11 @@ _LAZY: dict[str, str] = {
     "ToolRetriever": "kaji.runtime.tools",
     "ToolSchemaValidationError": "kaji.runtime.tools",
     "ToolSchemaValidator": "kaji.runtime.tools",
+    "ToolPolicy": "kaji.runtime.tools",
+    "ToolPolicyViolation": "kaji.runtime.tools",
     "ToolSpec": "kaji.runtime.tools.registry",
     "InMemoryBackend": "kaji.tasks",
+    "TaskCompleted": "kaji.events",
     "TaskHandle": "kaji.tasks",
     "TaskRuntime": "kaji.tasks",
     "TaskSnapshot": "kaji.tasks",

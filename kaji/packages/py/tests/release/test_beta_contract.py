@@ -190,7 +190,7 @@ def _onboarding_document() -> dict[str, Any]:
         "commit": "a" * 40,
         "releaseManifestSha256": "b" * 64,
         "packageArtifact": {
-            "name": "irogane-kaji-0.2.0-beta.11.tgz",
+            "name": "irogane-kaji-0.3.0-alpha.1.tgz",
             "size": 123,
             "sha256": "c" * 64,
         },
@@ -263,7 +263,7 @@ def _publisher_identity_receipt() -> dict[str, object]:
     return {
         "schemaVersion": "1.0.0",
         "commit": "a" * 40,
-        "tag": "kaji-v0.2.0-beta.11",
+        "tag": "kaji-v0.3.0-alpha.1",
         "workflowRun": "https://github.com/enkyuan/alloy/actions/runs/123456789",
         "workflowRunAttempt": 1,
         "workflowPath": ".github/workflows/kaji.publish.yml",

@@ -32,7 +32,7 @@ service-only code.
 
 The current beta publication target is npm only. The Python candidate is built,
 installed, and tested from exact wheel/sdist artifacts during the protected
-release, but `kaji==0.2.0b1` is not published to PyPI and must not be
+release, but `kaji==0.3.0a1` is not published to PyPI and must not be
 presented as a registry install yet.
 
 For Python SDK development from this repository, run `uv sync` from the

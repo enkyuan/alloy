@@ -33,7 +33,7 @@ SCHEMA_PATH = (
     / "release"
     / "v1/typescript/onboarding.json"
 )
-TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
+TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 PRODUCER_NAME = "kaji-artifacts"
 SOURCE_NAMES = {
     22: "kaji-node-compat-22",
@@ -56,7 +56,7 @@ WORKFLOW_RUN = re.compile(
 )
 WORKFLOW_REFS = {
     "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
-    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
+    "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1",
 }
 STATIC_RUNNER_POLICIES = {
     major: {

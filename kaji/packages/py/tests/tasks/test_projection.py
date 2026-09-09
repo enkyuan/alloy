@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 from kaji.artifacts import ArtifactRef
+from kaji.capabilities import capability, capability_result
 from kaji.events.schemas import (
     AgentTurnFailed,
     ArtifactEmitted,
@@ -11,6 +12,9 @@ from kaji.events.schemas import (
     ToolApprovalRequested,
     ToolCallFailed,
 )
+from kaji.runtime.agents import AgentBuilder, EventApprovalHandler, TurnContext
+from kaji.runtime.providers.mock import MockProvider
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.tasks import InMemoryBackend, TaskRuntime, TaskState
 
 
@@ -57,6 +61,58 @@ async def test_provider_failure_and_cancellation_project_terminal_states():
     assert (await handle.snapshot()).state is TaskState.FAILED
     _, cancel_handle = await _task()
     assert (await cancel_handle.cancel()).state is TaskState.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_task_decision_unblocks_a_process_bound_capability_turn():
+    backend = InMemoryBackend.create()
+    task = await TaskRuntime(backend).start(
+        task_id="task",
+        session_id="session",
+        principal_id="principal",
+        input="refund",
+    )
+    calls: list[str] = []
+
+    @capability(
+        name="payments.refund",
+        description="refund",
+        input_schema={"type": "object", "additionalProperties": False},
+        risk="destructive",
+    )
+    async def refund(_input, _context):
+        calls.append("refund")
+        return capability_result(
+            {"refunded": True},
+            [ArtifactRef(id="refund", type="stripe/refund", uri="stripe://refunds/re_test")],
+        )
+
+    runtime = (
+        AgentBuilder()
+        .provider(MockProvider(tool_call={"name": "payments.refund", "args": {}}))
+        .capability(refund)
+        .policy(ToolPolicy(require_approval_for={"destructive"}))
+        .approval_handler(EventApprovalHandler())
+        .coordinator(backend.coordinator)
+        .tool_idempotency_ledger(backend.idempotency_ledger)
+        .build(store=backend.store, journal=backend.journal)
+    )
+    turn = asyncio.create_task(
+        runtime.turn(
+            "refund",
+            session_id=task.session_id,
+            context=TurnContext(principal_id="principal"),
+        )
+    )
+    while not (pending := await task.pending_approvals()):
+        await asyncio.sleep(0)
+
+    await asyncio.wait_for(task.decide_approval(pending[0], approved=True), 0.5)
+    await asyncio.wait_for(turn, 0.5)
+    assert calls == ["refund"]
+    assert [item.uri for item in (await task.snapshot()).artifacts] == [
+        "stripe://refunds/re_test"
+    ]
 
 
 @pytest.mark.asyncio

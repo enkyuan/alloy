@@ -28,21 +28,21 @@ from kaji.tooling.shared.process import METADATA_BUDGET, CommandError, run_check
 
 
 PYPI_PROJECT = "kaji"
-PYPI_VERSION = "0.2.0b1"
+PYPI_VERSION = "0.3.0a1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
 NPM_PACKAGE = "@irogane/kaji"
-NPM_VERSION = "0.2.0-beta.11"
+NPM_VERSION = "0.3.0-alpha.1"
 NPM_SPEC = f"{NPM_PACKAGE}@{NPM_VERSION}"
 NPM_REGISTRY = "https://registry.npmjs.org/"
-NPM_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
-NPM_PURL = "pkg:npm/%40irogane/kaji@0.2.0-beta.11"
+NPM_TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
+NPM_PURL = "pkg:npm/%40irogane/kaji@0.3.0-alpha.1"
 USER_AGENT = "kaji-release-verifier/1"
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 SHA1_PATTERN = re.compile(r"[0-9a-f]{40}")
 ARTIFACT_DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}")
 NPM_IDENTITY_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
-TAG_PATTERN = re.compile(r"kaji-v0[.]2[.]0-beta[.]11")
+TAG_PATTERN = re.compile(r"kaji-v0[.]3[.]0-alpha[.]1")
 WORKFLOW_PATH = ".github/workflows/kaji.publish.yml"
 SLSA_PROVENANCE_V1 = "https://slsa.dev/provenance/v1"
 IN_TOTO_STATEMENT_V1 = "https://in-toto.io/Statement/v1"
@@ -1964,7 +1964,7 @@ def state_main(argv: Sequence[str]) -> None:
     if COMMIT_PATTERN.fullmatch(args.commit) is None:
         parser.error("--commit must be exactly 40 lowercase hexadecimal characters")
     if TAG_PATTERN.fullmatch(args.tag) is None:
-        parser.error("--tag must name the exact beta.11 release")
+        parser.error("--tag must name the exact alpha.1 release")
     if _github_run_id(args.workflow_run) is None:
         parser.error("--workflow-run must identify the exact enkyuan/alloy run")
     if args.workflow_run_attempt != 1:

@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, cast
 from kaji.core.logging import log_no_throw
 from kaji.events.json import canonical_json
 from kaji.events.schemas import (
+    ArtifactEmitted,
     MAX_DURABLE_TOOL_ARGUMENT_BYTES,
     NewKajiEvent,
     StoredKajiEvent,
@@ -1032,6 +1033,15 @@ class ToolPlanner:
                     item.recording_error = error
                     plumbing_errors.append(error)
                 else:
+                    for artifact in outcome.artifacts:
+                        await emit_event(
+                            ArtifactEmitted(
+                                session_id=session_id,
+                                turn_id=item.context.turn_id,
+                                tool_call_id=item.context.tool_call_id,
+                                artifact=artifact,
+                            )
+                        )
                     item.terminal = _TerminalDraft.from_execution(outcome)
 
         tasks = {

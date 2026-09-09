@@ -69,19 +69,19 @@ MAX_SIGNED_TARBALL_BYTES = 128 * 1024 * 1024
 MAX_ONBOARDING_STATUS_BYTES = 64 * 1024
 MAX_PUBLICATION_STATUS_BYTES = 256 * 1024
 IO_CHUNK_BYTES = 1024 * 1024
-PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
-PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
-TYPESCRIPT_TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
+PYTHON_WHEEL = "kaji-0.3.0a1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.3.0a1.tar.gz"
+TYPESCRIPT_TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 PRODUCER_ARTIFACT = "kaji-artifacts"
 EVIDENCE_ARTIFACT = "kaji-release-candidate-evidence"
 REHEARSAL_WORKFLOW_PATH = ".github/workflows/kaji.rehearsal.yml"
 PUBLISH_WORKFLOW_PATH = ".github/workflows/kaji.publish.yml"
-PUBLISH_TAG = "kaji-v0.2.0-beta.11"
+PUBLISH_TAG = "kaji-v0.3.0-alpha.1"
 NPM_IDENTITY = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 WORKFLOW_REFS = {
     "rehearsal": ("enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"),
     "publish": (
-        "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11"
+        "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1"
     ),
 }
 ONBOARDING_STATUS_KEYS = {

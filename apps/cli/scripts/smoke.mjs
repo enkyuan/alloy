@@ -40,7 +40,7 @@ const pyRequirements = readFileSync(join(pyOut, "requirements.txt"), "utf-8");
 if (!pyAgent.includes('turn("Say hello.")') || !pyAgent.includes("final_sequence=")) {
   throw new Error("generated Python scaffold does not use the turn() API");
 }
-if (!pyAgent.includes('get_provider("mock")') || !pyRequirements.includes(">=0.2.0b1,<0.3")) {
+if (!pyAgent.includes('get_provider("mock")') || !pyRequirements.includes(">=0.3.0a1,<0.3")) {
   throw new Error("generated Python scaffold is not bound to the beta no-key contract");
 }
 

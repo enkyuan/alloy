@@ -566,7 +566,7 @@ const nodeBinary = process.env.NODE_BINARY ?? "node";
 const LOCAL_TIMEOUT_MS = 60_000;
 const PACKAGE_TIMEOUT_MS = 300_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
-const PACKAGE_VERSION = "0.2.0-beta.11";
+const PACKAGE_VERSION = "0.3.0-alpha.1";
 const PACKAGE_TARBALL = `irogane-kaji-${PACKAGE_VERSION}.tgz`;
 const EXPECTED_MOCK_REPLY = "The mock provider has completed the tool loop.";
 
@@ -1306,7 +1306,7 @@ const PROTECTED_GITHUB_SERVER_URL = "https://github.com";
 const PROTECTED_GITHUB_REPOSITORY = "enkyuan/alloy";
 const PROTECTED_WORKFLOW_REFS = new Set([
   "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
-  "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
+  "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1",
 ]);
 
 export function protectedReceiptEnvironment(

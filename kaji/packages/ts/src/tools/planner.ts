@@ -1080,6 +1080,19 @@ export class ToolPlanner {
       throw error;
     }
     if (!started) revokeValidationReceipt(call.receipt);
+    if (outcome.status === "completed" && outcome.artifacts !== undefined) {
+      for (const artifact of outcome.artifacts) {
+        await emit(
+          this.event({
+            type: EventType.ARTIFACT_EMITTED,
+            session_id: sessionId,
+            turn_id: turnId,
+            tool_call_id: call.id,
+            artifact,
+          }),
+        );
+      }
+    }
     if (outcome.status === "completed") return outcome;
     const failure = failureFromExecution(outcome.error);
     return {

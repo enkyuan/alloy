@@ -357,8 +357,8 @@ def _render_typescript_consumer(
         or not isinstance(root_package, dict)
         or not isinstance(sdk_package, dict)
         or root_package.get("dependencies") != manifest_dependencies
-        or template_dependency != "file:irogane-kaji-0.2.0-beta.11.tgz"
-        or sdk_package.get("version") != "0.2.0-beta.11"
+        or template_dependency != "file:irogane-kaji-0.3.0-alpha.1.tgz"
+        or sdk_package.get("version") != "0.3.0-alpha.1"
         or sdk_package.get("resolved") != template_dependency
         or not isinstance(sdk_package.get("integrity"), str)
     ):

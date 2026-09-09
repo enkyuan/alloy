@@ -1,3 +1,5 @@
+import { type ArtifactRef } from "@/artifacts/types";
+import { isCapabilityResult } from "@/capabilities/result";
 import { snapshotToolExecutionContext, type ToolExecutionContext } from "@/runtime/context";
 import { DurableJsonLimitError, InvalidDurableValueError } from "@/events/errors";
 import { durableJsonSnapshot } from "@/events/json";
@@ -46,7 +48,11 @@ export const DEFAULT_TOOL_EXECUTION_LIMITS: Readonly<ToolExecutionLimits> = Obje
 });
 
 export type ToolExecutionControllerOutcome =
-  | { readonly status: "completed"; readonly result: unknown }
+  | {
+      readonly status: "completed";
+      readonly result: unknown;
+      readonly artifacts?: readonly ArtifactRef[];
+    }
   | {
       readonly status: "failed";
       readonly error: ToolExecutionError;
@@ -530,13 +536,11 @@ export class ToolExecutionController {
     });
     const outcome = await Promise.race([settled, abort]);
     if (outcome.status === "completed") {
+      const result = isCapabilityResult(outcome.result) ? outcome.result.value : outcome.result;
+      const artifacts = isCapabilityResult(outcome.result) ? outcome.result.artifacts : undefined;
       let snapshot;
       try {
-        snapshot = durableJsonSnapshot(
-          outcome.result,
-          "tool_result",
-          MAX_DURABLE_TOOL_RESULT_BYTES,
-        );
+        snapshot = durableJsonSnapshot(result, "tool_result", MAX_DURABLE_TOOL_RESULT_BYTES);
       } catch (cause) {
         if (cause instanceof InvalidDurableValueError || cause instanceof DurableJsonLimitError) {
           const error = invalidToolResult();
@@ -547,7 +551,11 @@ export class ToolExecutionController {
       }
       try {
         await this.ledger.complete(claim, snapshot);
-        return { status: "completed", result: snapshot };
+        return {
+          status: "completed",
+          result: snapshot,
+          ...(artifacts === undefined ? {} : { artifacts }),
+        };
       } catch (cause) {
         const error = toolExecutionUnknown(cause);
         await this.ledger.unknownOutcome(claim, error);

@@ -87,7 +87,7 @@ def test_release_smoke_preserves_build_verify_install_order(
         if command == ["kaji", "--help"]:
             return "kaji (conflicting fixture) 9.9.9\n"
         if command[1:4] == ["-m", "kaji.cli", "--help"]:
-            return "kaji (Python distribution kaji) 0.2.0b1\n"
+            return "kaji (Python distribution kaji) 0.3.0a1\n"
         return "text=mock\nturn_id=turn-1\nfinal_sequence=1\n"
 
     monkeypatch.setattr(module, "run_capture", fake_run_capture)
@@ -336,9 +336,9 @@ def test_release_smoke_consumes_verified_archives_without_building(
     module = _load_script("release/smoke.py")
     artifacts = tmp_path / "release"
     artifacts.mkdir()
-    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = artifacts / "kaji-0.2.0b1.tar.gz"
-    npm = artifacts / "irogane-kaji-0.2.0-beta.11.tgz"
+    wheel = artifacts / "kaji-0.3.0a1-py3-none-any.whl"
+    sdist = artifacts / "kaji-0.3.0a1.tar.gz"
+    npm = artifacts / "irogane-kaji-0.3.0-alpha.1.tgz"
     for path in (wheel, sdist, npm):
         path.write_bytes(path.name.encode())
     commit = "a" * 40
@@ -421,9 +421,9 @@ def test_python_compatibility_identity_excludes_unconsumed_npm_hash(
     tmp_path: Path,
 ) -> None:
     module = _load_script("release/smoke.py")
-    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
-    npm = tmp_path / "irogane-kaji-0.2.0-beta.11.tgz"
+    wheel = tmp_path / "kaji-0.3.0a1-py3-none-any.whl"
+    sdist = tmp_path / "kaji-0.3.0a1.tar.gz"
+    npm = tmp_path / "irogane-kaji-0.3.0-alpha.1.tgz"
     hashes = MappingProxyType(
         {
             wheel.name: "a" * 64,
@@ -488,9 +488,9 @@ def test_release_smoke_failure_overwrites_partial_timings(
     module = _load_script("release/smoke.py")
     artifacts = tmp_path / "release"
     artifacts.mkdir()
-    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
-    sdist = artifacts / "kaji-0.2.0b1.tar.gz"
-    npm = artifacts / "irogane-kaji-0.2.0-beta.11.tgz"
+    wheel = artifacts / "kaji-0.3.0a1-py3-none-any.whl"
+    sdist = artifacts / "kaji-0.3.0a1.tar.gz"
+    npm = artifacts / "irogane-kaji-0.3.0-alpha.1.tgz"
     for path in (wheel, sdist, npm):
         path.touch()
     identity = SimpleNamespace(
@@ -663,7 +663,7 @@ def test_release_smoke_runs_the_installed_no_key_scaffold_cold_and_warm() -> Non
         "install_conflicting_kaji_binary(workdir)",
         '["kaji", "--help"]',
         '[str(python), "-m", "kaji.cli", "--help"]',
-        '"kaji (Python distribution kaji) 0.2.0b1"',
+        '"kaji (Python distribution kaji) 0.3.0a1"',
         "copied.read_bytes() != packaged.read_bytes()",
     ):
         assert required in script
@@ -822,7 +822,7 @@ def test_python_release_metadata_and_versions_are_self_contained() -> None:
     version = re.search(r'^__version__ = "([^"]+)"$', source, re.MULTILINE)
 
     assert version is not None
-    assert pyproject["project"]["version"] == version.group(1) == "0.2.0b1"
+    assert pyproject["project"]["version"] == version.group(1) == "0.3.0a1"
     assert pyproject["project"]["license"] == "FSL-1.1-ALv2"
     assert pyproject["project"]["license-files"] == ["LICENSE"]
     assert (SDK_ROOT / "LICENSE").read_bytes() == (REPO_ROOT / "LICENSE").read_bytes()

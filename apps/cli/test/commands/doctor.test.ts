@@ -10,7 +10,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({
-        dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6", openai: "6.42.0" },
+        dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6", openai: "6.42.0" },
       }),
     );
     const out = runChecks({
@@ -28,7 +28,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({
-        dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6", openai: "6.42.0" },
+        dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6", openai: "6.42.0" },
       }),
     );
     const out = runChecks({
@@ -44,7 +44,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=mock\n");
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6" } }),
+      JSON.stringify({ dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6" } }),
     );
 
     const out = runChecks({ cwd: dir, env: {}, nodeVersion: "v24.0.0" });
@@ -58,7 +58,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=mock\n");
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { kaji: "0.2.0-beta.11" } }),
+      JSON.stringify({ dependencies: { kaji: "0.3.0-alpha.1" } }),
     );
 
     const out = runChecks({ cwd: dir, env: {}, nodeVersion: "v24.0.0" });
@@ -72,7 +72,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=anthropic\n");
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6" } }),
+      JSON.stringify({ dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6" } }),
     );
     const out = runChecks({
       cwd: dir,
@@ -90,7 +90,7 @@ describe("doctor.runChecks", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, "agent.py"), "print('hello')\n");
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.2.0b1,<0.3\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },
@@ -107,11 +107,11 @@ describe("doctor.runChecks", () => {
   it("auto-detects package.json as a TypeScript signal in mixed scaffolds", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.2.0b1,<0.3\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({
-        dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6", openai: "6.42.0" },
+        dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6", openai: "6.42.0" },
       }),
     );
     const out = runChecks({
@@ -128,7 +128,7 @@ describe("doctor.runChecks", () => {
   it("flags old Python versions", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.2.0b1,<0.3\n");
+    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },
@@ -145,7 +145,7 @@ describe("doctor.runChecks", () => {
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=gemini\n");
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ dependencies: { kaji: "0.2.0-beta.11", zod: "4.3.6" } }),
+      JSON.stringify({ dependencies: { kaji: "0.3.0-alpha.1", zod: "4.3.6" } }),
     );
 
     const out = runChecks({ cwd: dir, env: {}, nodeVersion: "v22.0.0" });

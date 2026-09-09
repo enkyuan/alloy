@@ -1,5 +1,6 @@
 import * as z from "zod";
 
+import { isCapabilityResult } from "@/capabilities/result";
 import type { ToolExecutionContext } from "@/runtime/context";
 import {
   TOOL_ARGUMENT_VALIDATOR,
@@ -65,6 +66,7 @@ export function capability<P extends ToolParameters>(
   );
   const handler: ToolHandler = async (args, context) => {
     const result = await definition.execute(args as ArgsOf<P>, context);
+    if (isCapabilityResult(result)) return result as unknown as Record<string, unknown>;
     return result !== null && typeof result === "object" && !Array.isArray(result)
       ? (result as Record<string, unknown>)
       : { result };

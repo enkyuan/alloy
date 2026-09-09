@@ -3,7 +3,9 @@ import * as z from "zod";
 
 import {
   AgentBuilder,
+  artifact,
   capability,
+  capabilityResult,
   EventType,
   InMemoryEventStore,
   ToolPlanner,
@@ -89,7 +91,9 @@ describe("capability", () => {
       risk: "destructive",
       execute: async (_input, received) => {
         observed.push(received);
-        return { charged: true };
+        return capabilityResult({ charged: true }, [
+          artifact("refund-1", "stripe/refund", "stripe://refunds/refund-1"),
+        ]);
       },
     });
     const store = new InMemoryEventStore();
@@ -124,7 +128,11 @@ describe("capability", () => {
     expect(observed[0]!.signal).toBeInstanceOf(AbortSignal);
     const eventTypes = (await store.getEvents("capability-session")).map((event) => event.type);
     expect(eventTypes).toContain(EventType.TOOL_APPROVAL_APPROVED);
+    expect(eventTypes).toContain(EventType.ARTIFACT_EMITTED);
     expect(eventTypes).toContain(EventType.TOOL_CALL_COMPLETED);
+    expect(eventTypes.indexOf(EventType.ARTIFACT_EMITTED)).toBeLessThan(
+      eventTypes.indexOf(EventType.TOOL_CALL_COMPLETED),
+    );
   });
 
   it("preserves timeout, idempotency, and parallel-safe ToolSpec behavior", async () => {

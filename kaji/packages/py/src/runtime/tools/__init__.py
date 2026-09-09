@@ -16,6 +16,7 @@ from kaji.runtime.tools.idempotency import (
     InMemoryToolIdempotencyLedger,
     ToolIdempotencyLedger,
 )
+from kaji.runtime.tools.policy import ToolPolicy, ToolPolicyViolation
 from kaji.runtime.tools.payload import (
     build_tools_payload,
     spec_to_neutral,
@@ -42,6 +43,8 @@ __all__ = [
     "ToolExecutionError",
     "ToolExecutionLimits",
     "ToolIdempotencyLedger",
+    "ToolPolicy",
+    "ToolPolicyViolation",
     "ToolRetriever",
     "ToolSchemaValidationError",
     "ToolSchemaValidator",

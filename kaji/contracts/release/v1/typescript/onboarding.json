@@ -96,7 +96,7 @@
       ],
       "properties": {
         "name": {
-          "const": "irogane-kaji-0.2.0-beta.11.tgz"
+          "const": "irogane-kaji-0.3.0-alpha.1.tgz"
         },
         "size": {
           "$ref": "#/$defs/positiveSafeInteger"
@@ -339,7 +339,7 @@
         "workflowRef": {
           "enum": [
             "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main",
-            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11"
+            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1"
           ]
         },
         "workflowSha": {

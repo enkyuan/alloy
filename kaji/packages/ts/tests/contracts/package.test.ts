@@ -281,7 +281,7 @@ function localReceiptContext(commit: string | null): OrdinaryReceiptContext {
   return {
     executionMode: "local",
     packageArtifact: {
-      name: "irogane-kaji-0.2.0-beta.11.tgz",
+      name: "irogane-kaji-0.3.0-alpha.1.tgz",
       size: 4096,
       sha256: "c".repeat(64),
     },
@@ -410,9 +410,9 @@ describe("npm contract artifact", () => {
         {
           commit: "a".repeat(40),
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+          artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": "c".repeat(64) },
         },
-        "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+        "/artifacts/irogane-kaji-0.3.0-alpha.1.tgz",
         "/tmp/node_modules/@irogane/kaji",
         "v24.4.0",
         "11.4.2",
@@ -451,9 +451,9 @@ describe("npm contract artifact", () => {
           {
             commit: "a".repeat(40),
             manifestSha256: "b".repeat(64),
-            artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+            artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": "c".repeat(64) },
           },
-          "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+          "/artifacts/irogane-kaji-0.3.0-alpha.1.tgz",
           "/tmp/node_modules/@irogane/kaji",
           "v24.4.0",
           "11.4.2",
@@ -477,7 +477,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "irogane-kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.3.0-alpha.1.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -512,9 +512,9 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": "c".repeat(64) },
       },
-      "/artifacts/irogane-kaji-0.2.0-beta.11.tgz",
+      "/artifacts/irogane-kaji-0.3.0-alpha.1.tgz",
       "/tmp/node_modules/@irogane/kaji",
       "v24.4.0",
       "11.4.2",
@@ -528,7 +528,7 @@ describe("npm contract artifact", () => {
       schemaVersion: 2,
       executionMode: "protected",
       packageArtifact: {
-        name: "irogane-kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.3.0-alpha.1.tgz",
         size: 4096,
         sha256: "c".repeat(64),
       },
@@ -659,7 +659,7 @@ describe("npm contract artifact", () => {
       {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": "c".repeat(64) },
       },
       "v24.4.0",
     );
@@ -688,7 +688,7 @@ describe("npm contract artifact", () => {
       ["githubPackageProofs", { npm: typedGitHubPackageProof }],
       ["timings", { npm: { coldSetupToOutputMs: 1, warmRunMs: 1 } }],
       ["toolchain", { node: "v24.4.0" }],
-      ["packageArtifact", { name: "irogane-kaji-0.2.0-beta.11.tgz" }],
+      ["packageArtifact", { name: "irogane-kaji-0.3.0-alpha.1.tgz" }],
     ] as const) {
       const candidate = structuredClone(failed) as Record<string, unknown>;
       candidate[key] = claim;
@@ -738,7 +738,7 @@ describe("npm contract artifact", () => {
 
   it("uses the production workflow finalizer path with exact trusted inputs and bytes", () => {
     const root = mkdtempSync(join(tmpdir(), "kaji-protected-receipt-review-"));
-    const tarball = join(root, "irogane-kaji-0.2.0-beta.11.tgz");
+    const tarball = join(root, "irogane-kaji-0.3.0-alpha.1.tgz");
     const bytes = Buffer.from("reviewed candidate package bytes");
     writeFileSync(tarball, bytes);
     const packageSha256 = createHash("sha256").update(bytes).digest("hex");
@@ -768,7 +768,7 @@ describe("npm contract artifact", () => {
     const context: OrdinaryReceiptContext = {
       executionMode: "protected",
       packageArtifact: {
-        name: "irogane-kaji-0.2.0-beta.11.tgz",
+        name: "irogane-kaji-0.3.0-alpha.1.tgz",
         size: bytes.length,
         sha256: packageSha256,
       },
@@ -804,7 +804,7 @@ describe("npm contract artifact", () => {
         {
           commit,
           manifestSha256: "b".repeat(64),
-          artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": packageSha256 },
+          artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": packageSha256 },
         },
         tarball,
         "/tmp/node_modules/@irogane/kaji",
@@ -969,10 +969,10 @@ describe("npm contract artifact", () => {
 
     expect(lock.lockfileVersion).toBe(3);
     expect(lock.packages[""].dependencies).toEqual(manifest.dependencies);
-    expect(manifest.dependencies["@irogane/kaji"]).toBe("file:irogane-kaji-0.2.0-beta.11.tgz");
-    expect(lock.packages["node_modules/@irogane/kaji"].version).toBe("0.2.0-beta.11");
+    expect(manifest.dependencies["@irogane/kaji"]).toBe("file:irogane-kaji-0.3.0-alpha.1.tgz");
+    expect(lock.packages["node_modules/@irogane/kaji"].version).toBe("0.3.0-alpha.1");
     expect(lock.packages["node_modules/@irogane/kaji"].resolved).toBe(
-      "file:irogane-kaji-0.2.0-beta.11.tgz",
+      "file:irogane-kaji-0.3.0-alpha.1.tgz",
     );
     expect(manifest.dependencies["@irogane/kaji"]).not.toBe("file:kaji-0.2.0-beta.2.tgz");
     for (const [name, value] of Object.entries(lock.packages) as Array<
@@ -1549,7 +1549,7 @@ describe("npm contract artifact", () => {
       identity: {
         commit: "a".repeat(40),
         manifestSha256: "b".repeat(64),
-        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": "c".repeat(64) },
+        artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": "c".repeat(64) },
       },
       receiptTarball: "/private/secret/sk-tarball-canary.tgz",
       installedPackagePath: "/private/secret/sk-package-canary/node_modules/@irogane/kaji",
@@ -1610,7 +1610,7 @@ describe("npm contract artifact", () => {
         manifestSha256: unsafeCanary,
         artifactSha256: {
           [`${unsafeCanary}.tgz`]: "c".repeat(64),
-          "irogane-kaji-0.2.0-beta.11.tgz": unsafeCanary,
+          "irogane-kaji-0.3.0-alpha.1.tgz": unsafeCanary,
         },
       },
       `v24.0.0\n${unsafeCanary}`,
@@ -1718,7 +1718,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": artifactHash },
+        artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -1778,7 +1778,7 @@ describe("npm contract artifact", () => {
       const outputReceipt = JSON.parse(readFileSync(output, "utf8")) as Record<string, unknown>;
       expect(stdoutReceipt).toEqual(outputReceipt);
       expect(outputReceipt).toMatchObject({
-        artifactSha256: { "irogane-kaji-0.2.0-beta.11.tgz": artifactHash },
+        artifactSha256: { "irogane-kaji-0.3.0-alpha.1.tgz": artifactHash },
         artifacts: {},
         conclusion: "failed",
         failureCode: "node_smoke_failed",
@@ -2993,7 +2993,7 @@ console.log(JSON.stringify({
 
       expect(sourceVersion).not.toBeNull();
       expect(manifest.version).toBe(sourceVersion![1]);
-      expect(manifest.version).toBe("0.2.0-beta.11");
+      expect(manifest.version).toBe("0.3.0-alpha.1");
       expect(packed[0]!.filename).toBe(`irogane-kaji-${manifest.version}.tgz`);
       expect(packed[0]!.filename).not.toBe("irogane-kaji-0.2.0-beta.2.tgz");
       expect(manifest.license).toBe("FSL-1.1-ALv2");

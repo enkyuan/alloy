@@ -20,7 +20,7 @@ TARBALL_SHA256 = "c" * 64
 PRODUCER_DIGEST = "sha256:" + "d" * 64
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
+TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 
 
@@ -317,8 +317,8 @@ def python_github_package_proof() -> dict[str, Any]:
 
 def python_v1_receipt() -> dict[str, Any]:
     hashes = {
-        "kaji-0.2.0b1-py3-none-any.whl": "e" * 64,
-        "kaji-0.2.0b1.tar.gz": "f" * 64,
+        "kaji-0.3.0a1-py3-none-any.whl": "e" * 64,
+        "kaji-0.3.0a1.tar.gz": "f" * 64,
     }
     return {
         "schemaVersion": 1,
@@ -331,8 +331,8 @@ def python_v1_receipt() -> dict[str, Any]:
             "executable": "/opt/python/3.14/bin/python",
         },
         "artifacts": {
-            "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
-            "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
+            "wheel": "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
+            "sdist": "/artifacts/kaji-0.3.0a1.tar.gz",
         },
         "githubPackageProofs": {
             "wheel": python_github_package_proof(),
@@ -744,7 +744,7 @@ def test_strong_binding_rejects_well_formed_external_identity_substitution() -> 
             "invocation",
             "workflowRef",
             "enkyuan/alloy/.github/workflows/kaji.publish.yml"
-            "@refs/tags/kaji-v0.2.0-beta.11",
+            "@refs/tags/kaji-v0.3.0-alpha.1",
         ),
         ("invocation", "workflowSha", "f" * 40),
         ("invocation", "runId", 124),

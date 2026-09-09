@@ -20,8 +20,8 @@ BUDGETS = json.loads((ROOT / "kaji" / "benchmarks" / "beta-budgets.json").read_t
     "soak"
 ]
 EXPECTED_ARTIFACTS = {
-    "python": "kaji-0.2.0b1-py3-none-any.whl",
-    "typescript": "irogane-kaji-0.2.0-beta.11.tgz",
+    "python": "kaji-0.3.0a1-py3-none-any.whl",
+    "typescript": "irogane-kaji-0.3.0-alpha.1.tgz",
 }
 
 

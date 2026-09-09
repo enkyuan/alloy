@@ -9,6 +9,8 @@ import math
 import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
+from kaji.artifacts import ArtifactRef
+from kaji.capabilities.result import CapabilityResult
 from kaji.core.logging import log_no_throw, log_redacted_failure
 from kaji.events.errors import DurableJsonLimitError, InvalidDurableValueError
 from kaji.events.json import durable_json_snapshot
@@ -130,6 +132,7 @@ class _ToolExecutionOutcome:
     """Closed execution result consumed by the planner's terminal emitter."""
 
     result: Any | None = None
+    artifacts: tuple[ArtifactRef, ...] = ()
     failure: _ToolExecutionFailure | None = None
 
     @property
@@ -1000,9 +1003,13 @@ class ToolExecutionController:
             if settlement in done:
                 completed = settlement.result()
                 if completed.cause is None:
+                    result = completed.result
+                    artifacts: tuple[ArtifactRef, ...] = ()
+                    if isinstance(result, CapabilityResult):
+                        result, artifacts = result.value, result.artifacts
                     try:
                         snapshot = durable_json_snapshot(
-                            completed.result,
+                            result,
                             subject="tool_result",
                             max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
                         )
@@ -1029,7 +1036,7 @@ class ToolExecutionController:
                         claim_resolved = True
                         return _ToolExecutionOutcome(failure=failure)
                     claim_resolved = True
-                    return _ToolExecutionOutcome(result=snapshot)
+                    return _ToolExecutionOutcome(result=snapshot, artifacts=artifacts)
                 if isinstance(completed.cause, ToolExecutionError):
                     recovery = _integration_recovery_fields(completed.cause)
                     failure = _ToolExecutionFailure(

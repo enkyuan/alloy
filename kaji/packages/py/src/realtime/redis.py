@@ -24,7 +24,7 @@ def _get_redis_module() -> Any:
     except ImportError as exc:
         raise ImportError(
             "Redis is required for realtime features. "
-            "Install with: pip install 'kaji[realtime]==0.2.0b1'"
+            "Install with: pip install 'kaji[realtime]==0.3.0a1'"
         ) from exc
 
 

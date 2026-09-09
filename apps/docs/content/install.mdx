@@ -3,8 +3,8 @@ title: Install
 description: Install the published TypeScript beta from npm, or prepare either SDK from source, with the pre-1.0 compatibility boundary explicit.
 ---
 
-TypeScript `0.2.0-beta.11` is public on npm as
-[`kaji`](https://www.npmjs.com/package/@irogane/kaji/v/0.2.0-beta.11). Python is
+TypeScript `0.3.0-alpha.1` is public on npm as
+[`kaji`](https://www.npmjs.com/package/@irogane/kaji/v/0.3.0-alpha.1). Python is
 not published to PyPI for this release; repository release gates still build
 and exercise wheel and source-distribution artifacts. Both SDKs share the
 stable-core wire format. All `0.x` releases are pre-1.0, so pin exact versions
@@ -16,9 +16,9 @@ Install the exact beta with the required Zod peer and the beta-supported
 OpenAI adapter:
 
 ```bash
-npm install @irogane/kaji@0.2.0-beta.11 zod openai
+npm install @irogane/kaji@0.3.0-alpha.1 zod openai
 # or
-bun add @irogane/kaji@0.2.0-beta.11 zod openai
+bun add @irogane/kaji@0.3.0-alpha.1 zod openai
 ```
 
 The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
@@ -74,7 +74,7 @@ Python and standalone CLI surfaces.
 
 ## Python SDK
 
-The Python project version in this checkout is `0.2.0b1`. It is unavailable
+The Python project version in this checkout is `0.3.0a1`. It is unavailable
 from PyPI for this release, so there is no public registry-install command.
 
 For source-checkout development, install the Python project with uv:

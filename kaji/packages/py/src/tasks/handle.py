@@ -154,7 +154,10 @@ class TaskHandle:
             event = ToolApprovalApproved(**values)
         else:
             event = ToolApprovalRejected(**values, error_code="APPROVAL_REJECTED", reason=reason)
-        return await self._append(event)
+        # The active EventApprovalHandler holds the session turn lease while it
+        # waits, so this canonical decision must not queue behind that lease.
+        await self._backend.journal.commit(event)
+        return project_task(self.task_id, await self.events())
 
     async def _append(self, event: NewKajiEvent) -> TaskSnapshot:
         async with self._backend.coordinator.acquire(self.session_id):

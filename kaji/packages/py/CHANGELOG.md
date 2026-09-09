@@ -5,6 +5,13 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ---
 
+## [0.3.0a1] - 2026-08-01
+
+- Added capability-result artifact emission: validated `ArtifactRef` values are
+  recorded before the completed tool result.
+- Added top-level task-completion and tool-policy exports and process-bound
+  task approval coverage.
+
 ## [0.2.0b1] - 2026-07-23
 
 - Adopted `FSL-1.1-ALv2`, with Apache-2.0 becoming available for each version

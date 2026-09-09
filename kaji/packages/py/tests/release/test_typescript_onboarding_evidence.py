@@ -27,7 +27,7 @@ SCHEMA = REPO_ROOT / "kaji" / "contracts" / "release/v1/typescript/onboarding.js
 COMMIT = "a" * 40
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"
-TARBALL = "irogane-kaji-0.2.0-beta.11.tgz"
+TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -87,8 +87,8 @@ def _zip_bytes(
 
 def _release_members(module: ModuleType) -> dict[str, bytes]:
     payloads = {
-        "kaji-0.2.0b1-py3-none-any.whl": b"retained-wheel",
-        "kaji-0.2.0b1.tar.gz": b"retained-sdist",
+        "kaji-0.3.0a1-py3-none-any.whl": b"retained-wheel",
+        "kaji-0.3.0a1.tar.gz": b"retained-sdist",
         TARBALL: b"retained-typescript-tarball",
     }
     entries = []
@@ -461,7 +461,7 @@ def test_trusted_artifact_substitution_fails_closed(
         ("expected_workflow_run", "https://github.com/enkyuan/alloy/actions/runs/124"),
         (
             "expected_workflow_ref",
-            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.2.0-beta.11",
+            "enkyuan/alloy/.github/workflows/kaji.publish.yml@refs/tags/kaji-v0.3.0-alpha.1",
         ),
         ("expected_workflow_sha", "b" * 40),
     ],
