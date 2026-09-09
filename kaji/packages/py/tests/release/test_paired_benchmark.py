@@ -329,7 +329,9 @@ def _reseal(pair: Any, report: dict[str, Any]) -> None:
     )
 
 
-@pytest.mark.parametrize("script", ["performance/bench/pairs.py", "performance/aggregate.py"])
+@pytest.mark.parametrize(
+    "script", ["performance/bench/pairs.py", "performance/aggregate.py"]
+)
 def test_paired_benchmark_clis_support_python_safe_path(script: str) -> None:
     completed = subprocess.run(
         [sys.executable, str(SCRIPTS / script), "--help"],

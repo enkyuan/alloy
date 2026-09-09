@@ -26,9 +26,7 @@ from kaji.runtime.tools.validation import ToolSchemaValidator
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACTS_ROOT = REPO_ROOT / "kaji" / "contracts" / "tools"
-VALID_CASES = json.loads((CONTRACTS_ROOT / "v1/cases/valid.json").read_text())[
-    "cases"
-]
+VALID_CASES = json.loads((CONTRACTS_ROOT / "v1/cases/valid.json").read_text())["cases"]
 INVALID_CASES = json.loads((CONTRACTS_ROOT / "v1/cases/invalid.json").read_text())[
     "cases"
 ]

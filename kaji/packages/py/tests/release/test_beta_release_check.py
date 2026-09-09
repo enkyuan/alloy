@@ -3170,7 +3170,13 @@ def test_typescript_benchmark_batches_short_workloads_with_deterministic_seeds()
     None
 ):
     source = (
-        REPO_ROOT / "kaji" / "packages" / "ts" / "benchmarks" / "runtime" / "benchmark.ts"
+        REPO_ROOT
+        / "kaji"
+        / "packages"
+        / "ts"
+        / "benchmarks"
+        / "runtime"
+        / "benchmark.ts"
     ).read_text()
 
     for entry in (

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+from functools import lru_cache
 from typing import Any
 
-from kaji_serve.config import settings
+from kaji.core.logging import log_redacted_failure
+from kaji_serve.config import get_settings, settings
+from kaji_serve.server.errors import ServiceAuthError, ServiceError
+from kaji_serve.server.http import HTTPService
 
 
 def decode_bearer_token(token: str) -> dict[str, Any]:
@@ -66,17 +71,10 @@ def decode_bearer_token(token: str) -> dict[str, Any]:
         )
 
     return payload
+
+
 """Supabase authentication service."""
 
-
-import logging
-from functools import lru_cache
-from typing import Any
-
-from kaji.core.logging import log_redacted_failure
-from kaji_serve.config import get_settings
-from kaji_serve.server.errors import ServiceAuthError, ServiceError
-from kaji_serve.server.http import HTTPService
 
 logger = logging.getLogger(__name__)
 

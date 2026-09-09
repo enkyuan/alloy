@@ -38,13 +38,13 @@ from kaji.core.determinism import SYSTEM_CLOCK
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 FIXTURES_ROOT = REPO_ROOT / "kaji" / "fixtures" / "events"
-CONFORMANCE_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
+CONFORMANCE_FIXTURE = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
+)
 INVALID_CONFORMANCE_FIXTURE = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "invalid.json"
 )
-NEW_EVENT_SCHEMA = (
-    REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/new.json"
-)
+NEW_EVENT_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/new.json"
 STORED_EVENT_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/stored.json"
 )

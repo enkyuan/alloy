@@ -13,15 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACT = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
 ERROR_CODES = REPO_ROOT / "kaji" / "contracts" / "errors/v1/codes.json"
-EVENT_FIXTURE = REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
+EVENT_FIXTURE = (
+    REPO_ROOT / "kaji" / "contracts" / "events" / "v1" / "cases" / "valid.json"
+)
 MIGRATION_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts/migration.py"
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts/check.py"
 PACKAGE_CONTRACTS = REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts"
 GITHUB_TYPESCRIPT_ABI = (
-    REPO_ROOT
-    / "kaji"
-    / "contracts"
-    / "integrations/v1/abi/typescript/github.json"
+    REPO_ROOT / "kaji" / "contracts" / "integrations/v1/abi/typescript/github.json"
 )
 EVENT_SCHEMAS = (
     REPO_ROOT / "kaji" / "contracts" / "events/v1/schema/new.json",
@@ -29,13 +28,9 @@ EVENT_SCHEMAS = (
 )
 TS_HANDOFF_SCHEMA_RELATIVE = Path("release/v1/typescript/handoff.json")
 TS_HANDOFF_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_HANDOFF_SCHEMA_RELATIVE
-TS_ONBOARDING_SCHEMA_RELATIVE = Path(
-    "release/v1/typescript/onboarding.json"
-)
+TS_ONBOARDING_SCHEMA_RELATIVE = Path("release/v1/typescript/onboarding.json")
 TS_ONBOARDING_SCHEMA = REPO_ROOT / "kaji" / "contracts" / TS_ONBOARDING_SCHEMA_RELATIVE
-PUBLISHER_IDENTITY_SCHEMA_RELATIVE = Path(
-    "release/v1/publisher.json"
-)
+PUBLISHER_IDENTITY_SCHEMA_RELATIVE = Path("release/v1/publisher.json")
 PUBLISHER_IDENTITY_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / PUBLISHER_IDENTITY_SCHEMA_RELATIVE
 )
@@ -478,10 +473,8 @@ def test_typescript_github_package_abi_is_closed_and_rejects_drift() -> None:
     assert sum(tool["risk"] == "read" for tool in package_abi["tools"]) == 13
 
     reordered = deepcopy(documents)
-    reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8] = (
-        reversed(
-            reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8]
-        )
+    reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8] = reversed(
+        reordered["integrations/v1/abi/typescript/github.json"]["tools"][6:8]
     )
     with pytest.raises(contract_error, match="tool order differs"):
         check(reordered)
@@ -669,9 +662,9 @@ def test_event_contract_checker_rejects_structural_mutations() -> None:
         check_events(rogue_union, codes)
 
     stored_drift = deepcopy(documents)
-    stored_drift["events/v1/schema/stored.json"]["$defs"]["sessionCreated"][
-        "allOf"
-    ][1]["properties"]["stored_only"] = {"type": "string"}
+    stored_drift["events/v1/schema/stored.json"]["$defs"]["sessionCreated"]["allOf"][1][
+        "properties"
+    ]["stored_only"] = {"type": "string"}
     with pytest.raises(contract_error, match="structural parity"):
         check_events(stored_drift, codes)
 

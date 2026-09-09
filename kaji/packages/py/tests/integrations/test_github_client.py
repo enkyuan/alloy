@@ -29,11 +29,7 @@ FIXTURE = cast(
     dict[str, Any],
     json.loads(
         (
-            ROOT
-            / "kaji"
-            / "contracts"
-            / "integrations"
-            / "v1/api/github.json"
+            ROOT / "kaji" / "contracts" / "integrations" / "v1/api/github.json"
         ).read_text()
     ),
 )

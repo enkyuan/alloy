@@ -125,7 +125,7 @@
     }
   },
   "scripts": {
-    "prebuild": "bun run validate:registry",
+    "prebuild": "if [ -d ../../contracts ]; then rm -rf contracts && cp -R ../../contracts contracts; fi; bun run validate:registry",
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",

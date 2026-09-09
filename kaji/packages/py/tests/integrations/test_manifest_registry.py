@@ -31,9 +31,7 @@ from kaji.integrations.validation import (
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CONTRACTS = REPO_ROOT / "kaji" / "contracts" / "integrations"
 VALID_CASES = json.loads((CONTRACTS / "v1/cases/valid.json").read_text())["cases"]
-INVALID_CASES = json.loads((CONTRACTS / "v1/cases/invalid.json").read_text())[
-    "cases"
-]
+INVALID_CASES = json.loads((CONTRACTS / "v1/cases/invalid.json").read_text())["cases"]
 
 
 def _entry(
@@ -201,13 +199,16 @@ def test_packaged_schemas_match_canonical_contracts() -> None:
         REPO_ROOT / "kaji/packages/ts/registry/schema.json",
     ):
         assert (
-            packaged.read_bytes() == (CONTRACTS / "v1/schema/manifest.json").read_bytes()
+            packaged.read_bytes()
+            == (CONTRACTS / "v1/schema/manifest.json").read_bytes()
         )
     for packaged in (
         REPO_ROOT / "kaji/packages/py/src/integrations/registry/index.schema.json",
         REPO_ROOT / "kaji/packages/ts/registry/index.schema.json",
     ):
-        assert packaged.read_bytes() == (CONTRACTS / "v1/schema/index.json").read_bytes()
+        assert (
+            packaged.read_bytes() == (CONTRACTS / "v1/schema/index.json").read_bytes()
+        )
 
 
 def test_copy_provenance_is_closed_and_supports_demotion_detection() -> None:

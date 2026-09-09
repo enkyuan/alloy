@@ -20,9 +20,7 @@ from tests.helpers.approval import StaticApprovalHandler
 
 
 ROOT = Path(__file__).resolve().parents[5]
-ABI = json.loads(
-    (ROOT / "kaji/contracts/integrations/v1/abi/github.json").read_text()
-)
+ABI = json.loads((ROOT / "kaji/contracts/integrations/v1/abi/github.json").read_text())
 
 
 def _document(integration: Integration) -> dict[str, object]:

@@ -1185,7 +1185,9 @@ def _assert_trusted_handoff_workflow_source(source: str) -> None:
     assert "trusted/kaji/tooling/release/typescript/validate.py" in source
     assert "candidate/kaji/scripts/" not in source
 
-    stage_command = source.index("trusted/kaji/tooling/release/typescript/handoff.py stage")
+    stage_command = source.index(
+        "trusted/kaji/tooling/release/typescript/handoff.py stage"
+    )
     composite = source.index("--for-handoff artifact-contract")
     assert stage_command < composite
     between = source[stage_command:composite]

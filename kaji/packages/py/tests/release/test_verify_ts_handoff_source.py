@@ -164,7 +164,9 @@ def _case(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Case:
     _repository(trusted)
     _repository(candidate)
 
-    trusted_script = trusted / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
+    trusted_script = (
+        trusted / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
+    )
     trusted_script.parent.mkdir(parents=True)
     shutil.copyfile(VERIFIER, trusted_script)
     _git(trusted, "add", trusted_script.relative_to(trusted).as_posix())
@@ -355,7 +357,14 @@ def test_empty_range_verifies_singleton_head_and_writes_exact_closed_raw_files(
     assert (
         signature_document["verifierScriptSha256"]
         == hashlib.sha256(
-            (case.trusted / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name).read_bytes()
+            (
+                case.trusted
+                / "kaji"
+                / "tooling"
+                / "release"
+                / "typescript"
+                / VERIFIER.name
+            ).read_bytes()
         ).hexdigest()
     )
     assert signature_document["mechanism"] == "github-rest-commit-verification"
@@ -459,7 +468,9 @@ def test_candidate_local_verifier_copy_cannot_substitute_for_trusted_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     case = _case(tmp_path, monkeypatch)
-    candidate_script = case.candidate / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
+    candidate_script = (
+        case.candidate / "kaji" / "tooling" / "release" / "typescript" / VERIFIER.name
+    )
     candidate_script.parent.mkdir(parents=True)
     shutil.copyfile(VERIFIER, candidate_script)
     case.verifier = _load_verifier(candidate_script)

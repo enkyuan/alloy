@@ -1027,10 +1027,5 @@ def test_github_exact_artifact_proof_is_source_only_and_contract_is_packaged() -
         SDK_ROOT / "src" / "contracts" / "release/v1/github.json"
     ).read_bytes() == canonical
     assert (
-        REPO_ROOT
-        / "kaji"
-        / "packages"
-        / "ts"
-        / "contracts"
-        / "release/v1/github.json"
+        REPO_ROOT / "kaji" / "packages" / "ts" / "contracts" / "release/v1/github.json"
     ).read_bytes() == canonical

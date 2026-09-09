@@ -20,9 +20,17 @@ DOCS = REPO_ROOT / "docs" / "kaji"
 PRODUCTION_BETA = DOCS / "production-beta.md"
 MIGRATION = DOCS / "migrating-to-beta.md"
 CONTRACT = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
-INDEX_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "index.json"
+INDEX_SCHEMA = (
+    REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "index.json"
+)
 MANIFEST_SCHEMA = (
-    REPO_ROOT / "kaji" / "contracts" / "integrations" / "v1" / "schema" / "manifest.json"
+    REPO_ROOT
+    / "kaji"
+    / "contracts"
+    / "integrations"
+    / "v1"
+    / "schema"
+    / "manifest.json"
 )
 
 
@@ -912,7 +920,9 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
 
 
 def test_release_smokes_execute_the_marked_quickstart_blocks() -> None:
-    python_smoke = (REPO_ROOT / "kaji" / "tooling" / "package/python/verify.py").read_text()
+    python_smoke = (
+        REPO_ROOT / "kaji" / "tooling" / "package/python/verify.py"
+    ).read_text()
     ts_smoke = (
         REPO_ROOT / "kaji" / "packages" / "ts" / "scripts" / "smoke_package.mts"
     ).read_text()

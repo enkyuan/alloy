@@ -325,10 +325,7 @@ def test_non_integration_tests_do_not_use_redis_event_bus() -> None:
             continue
 
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "kaji.events.bus"
-            ):
+            if isinstance(node, ast.ImportFrom) and node.module == "kaji.events.bus":
                 for alias in node.names:
                     if alias.name == "EventBus":
                         violations.append(str(path.relative_to(SDK_ROOT)))

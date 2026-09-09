@@ -72,16 +72,12 @@ def _canonical_bytes(value: object) -> bytes:
 
 
 def _contracts_root() -> Path:
-    return (
-        Path(__file__).resolve().parent.parent / "contracts" / "integrations" / "v1"
-    )
+    return Path(__file__).resolve().parent.parent / "contracts" / "integrations" / "v1"
 
 
 @lru_cache(maxsize=1)
 def _provenance_validator() -> Validator:
-    schema = json.loads(
-        (_contracts_root() / "schema" / "provenance.json").read_text()
-    )
+    schema = json.loads((_contracts_root() / "schema" / "provenance.json").read_text())
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 

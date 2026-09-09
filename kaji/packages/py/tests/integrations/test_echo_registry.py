@@ -238,7 +238,9 @@ def test_typescript_cli_mismatch_reaches_python_explain_redacted(
     shutil.copytree(source_ts / "contracts", temporary_ts / "contracts")
     (temporary_ts / "scripts").mkdir(parents=True)
     (temporary_ts / "registry/echo").mkdir(parents=True)
-    shutil.copy2(source_ts / "registry/echo/manifest.json", temporary_ts / "registry/echo")
+    shutil.copy2(
+        source_ts / "registry/echo/manifest.json", temporary_ts / "registry/echo"
+    )
     shutil.copy2(source_ts / "scripts/integration-abi.ts", temporary_ts / "scripts")
     shutil.copy2(source_ts / "package.json", temporary_ts)
     shutil.copy2(source_ts / "tsconfig.json", temporary_ts)

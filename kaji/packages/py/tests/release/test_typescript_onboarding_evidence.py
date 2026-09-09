@@ -23,12 +23,7 @@ from jsonschema import Draft202012Validator
 REPO_ROOT = Path(__file__).resolve().parents[5]
 SCRIPTS = REPO_ROOT / "kaji" / "tooling"
 VALIDATOR = SCRIPTS / "release/typescript/onboarding.py"
-SCHEMA = (
-    REPO_ROOT
-    / "kaji"
-    / "contracts"
-    / "release/v1/typescript/onboarding.json"
-)
+SCHEMA = REPO_ROOT / "kaji" / "contracts" / "release/v1/typescript/onboarding.json"
 COMMIT = "a" * 40
 WORKFLOW_RUN = "https://github.com/enkyuan/alloy/actions/runs/123"
 WORKFLOW_REF = "enkyuan/alloy/.github/workflows/kaji.rehearsal.yml@refs/heads/main"

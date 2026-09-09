@@ -13,9 +13,7 @@ from kaji.runtime.providers.costs import (
 
 FIXTURE = json.loads(
     (
-        Path(__file__).resolve().parents[4]
-        / "contracts"
-        / "providers/v1/costs.json"
+        Path(__file__).resolve().parents[4] / "contracts" / "providers/v1/costs.json"
     ).read_text()
 )
 

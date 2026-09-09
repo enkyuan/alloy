@@ -15,10 +15,7 @@ import pytest
 
 
 SCRIPT = Path(__file__).parents[4] / "tooling" / "release/typescript/validate.py"
-SCHEMA = (
-    Path(__file__).parents[4]
-    / "contracts/release/v1/typescript/handoff.json"
-)
+SCHEMA = Path(__file__).parents[4] / "contracts/release/v1/typescript/handoff.json"
 LICENSE = Path(__file__).parents[4] / "packages/ts/LICENSE"
 
 HEAD = "1" * 40
@@ -688,9 +685,7 @@ def test_rejects_root_and_external_signature_mechanism_disagreement(
             "RECEIPT_INVALID",
         ),
         (
-            lambda fx: (
-                fx["bundle"] / "v1/typescript/handoff.json"
-            ).write_text("{}\n"),
+            lambda fx: (fx["bundle"] / "v1/typescript/handoff.json").write_text("{}\n"),
             "SCHEMA_INVALID",
         ),
         (

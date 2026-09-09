@@ -40,6 +40,8 @@ def _source_kaji() -> Any:
     sys.modules["kaji"] = package
     spec.loader.exec_module(package)
     return package
+
+
 BETA_CORE = REPO_ROOT / "kaji" / "contracts" / "core/v1/beta.json"
 FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
 PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "v1" / "scenarios.json"

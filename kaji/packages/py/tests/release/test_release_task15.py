@@ -241,9 +241,7 @@ def _raw_beta8_identity_files(repo_root: Path) -> dict[Path, bytes]:
 
 
 def _normative_semver_pattern() -> str:
-    schema = json.loads(
-        _read("kaji/contracts/release/v1/typescript/handoff.json")
-    )
+    schema = json.loads(_read("kaji/contracts/release/v1/typescript/handoff.json"))
     pattern = schema["$defs"]["semver"]["pattern"]
     assert isinstance(pattern, str)
     return pattern
@@ -1041,15 +1039,14 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     assert "environment:" not in calibration.split("    steps:", 1)[0]
     assert f"EXPECTED_COMMIT: {expected_commit}" in calibration
     assert "Resolve exact current-run onboarding archives" in calibration
-    assert (
-        calibration.count("kaji.tooling.release.typescript.onboarding")
-        == 2
-    )
+    assert calibration.count("kaji.tooling.release.typescript.onboarding") == 2
     assert "Independently validate and recompute calibration aggregate" in calibration
     assert "name: kaji-typescript-onboarding-archive-calibration" in calibration
     assert "name: kaji-typescript-onboarding-archive-calibration-initial" in calibration
 
-    import_fragment = "          from kaji.tooling.release.typescript.onboarding import ("
+    import_fragment = (
+        "          from kaji.tooling.release.typescript.onboarding import ("
+    )
     assert import_fragment in calibration
     assert import_fragment in onboarding
 
