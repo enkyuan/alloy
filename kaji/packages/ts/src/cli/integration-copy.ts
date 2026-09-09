@@ -15,6 +15,7 @@ import {
   rename,
   rm,
   writeFile,
+  type FileHandle,
 } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
@@ -565,17 +566,9 @@ async function populateReservation(
   staging: string,
   relativePaths: readonly string[],
   identity: ReservationIdentity,
+  directory: FileHandle,
   afterCheck: (() => Promise<void>) | undefined,
 ): Promise<void> {
-  let directory;
-  try {
-    directory = await open(
-      destination,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-    );
-  } catch {
-    throw new Error("Destination changed during integration copy");
-  }
   try {
     const metadata = await directory.stat();
     if (!metadata.isDirectory() || metadata.dev !== identity.dev || metadata.ino !== identity.ino) {
@@ -606,6 +599,7 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
   const renameEntry = options.renameEntry ?? rename;
   let wroteBackup = false;
   let reservation: ReservationIdentity | undefined;
+  let reservationDirectory: FileHandle | undefined;
   try {
     for (const [index, relativePath] of options.manifest.files.entries()) {
       const source = await safeSource(options.manifest, index);
@@ -651,10 +645,21 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
         throw error;
       }
       reservation = await reservationIdentity(context.destination);
+      try {
+        reservationDirectory = await open(
+          context.destination,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+      } catch {
+        throw new Error("Destination changed during integration copy");
+      }
     }
     if (reservation !== undefined) {
       await options.beforeReservationPublish?.(context.destination);
       if (!(await matchesEmptyReservation(context.destination, reservation))) {
+        throw new Error("Destination changed during integration copy");
+      }
+      if (reservationDirectory === undefined) {
         throw new Error("Destination changed during integration copy");
       }
       await populateReservation(
@@ -662,10 +667,12 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
         staging,
         [...options.manifest.files, SIDECAR],
         reservation,
+        reservationDirectory,
         options.afterReservationCheck === undefined
           ? undefined
           : () => options.afterReservationCheck!(context.destination),
       );
+      reservationDirectory = undefined;
       const installed = await classifyIntegrationBundle(context);
       if (
         installed.state !== "current" ||
@@ -703,6 +710,7 @@ export async function installIntegrationBundle(options: InstallOptions): Promise
       options.manifest.files.map((relativePath) => join(context.destination, relativePath)),
     );
   } finally {
+    await reservationDirectory?.close().catch(() => undefined);
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
     if (wroteBackup && !(await exists(context.destination)) && (await exists(backup))) {
       await renameEntry(backup, context.destination);
