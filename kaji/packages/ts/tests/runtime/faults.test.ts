@@ -490,7 +490,11 @@ describe("durable tool results", () => {
       });
       expect(execute).toHaveBeenCalledOnce();
 
-      const tombstone = await ledger.claim("invalid-result", "call", '["tool",{}]');
+      const tombstone = await ledger.claim(
+        "invalid-result",
+        "call",
+        "e62a91eb0b3b48cf42df03a295dca33347dfbe3135831445567c5a9c524bfc80",
+      );
       expect(tombstone).toMatchObject({
         status: "unknown",
         error: { error_code: internalCode, subject: "tool_result" },
@@ -544,7 +548,11 @@ describe("durable tool results", () => {
       status: "failed",
       error: { error_code: "TOOL_EXECUTION_FAILED", retryable: false, outcome: "unknown" },
     });
-    const tombstone = await backing.claim("ledger-failure", "call", '["tool",{}]');
+    const tombstone = await backing.claim(
+      "ledger-failure",
+      "call",
+      "e62a91eb0b3b48cf42df03a295dca33347dfbe3135831445567c5a9c524bfc80",
+    );
     expect(tombstone).toMatchObject({
       status: "unknown",
       error: { error_code: "TOOL_EXECUTION_FAILED" },

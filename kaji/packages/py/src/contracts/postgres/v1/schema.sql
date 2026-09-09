@@ -24,6 +24,8 @@ CREATE TABLE kaji_tool_idempotency (
     tool_call_id TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'unknown')),
+    claim_token TEXT NOT NULL,
+    started_at TIMESTAMPTZ,
     result_json JSONB,
     error_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -35,3 +37,4 @@ CREATE TABLE kaji_tool_idempotency (
 -- JSON uses sorted keys, compact separators, UTF-8 characters, and rejects NaN.
 -- State transitions: running -> completed | unknown. A retryable failure deletes
 -- its running claim; no timeout may reclaim a running row as a safe terminal state.
+-- claim_token fences owner transitions and started_at records the durable start boundary.

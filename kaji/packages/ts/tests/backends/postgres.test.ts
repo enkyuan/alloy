@@ -1,12 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 
 import postgres from "postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { PostgresEventCommitter, PostgresEventStore } from "@/backends/postgres";
+import {
+  PostgresEventCommitter,
+  PostgresEventStore,
+  PostgresToolIdempotencyLedger,
+} from "@/backends/postgres";
 import { EventIdConflictError } from "@/events/errors";
+import { IdempotencyConflictError, ToolExecutionError } from "@/tools/execution/errors";
+import { toolInvocationFingerprint } from "@/tools/idempotency";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
 
@@ -67,6 +74,109 @@ describePostgres("PostgresEventStore", () => {
     await store.close();
   });
 
+  it("keeps tool claims durable, fail-closed, and explicitly reconcilable", async () => {
+    const first = new PostgresToolIdempotencyLedger(url!, 1);
+    const second = new PostgresToolIdempotencyLedger(url!, 1);
+    const fingerprint = toolInvocationFingerprint("echo", { b: 2, a: ["é", true] });
+    expect(fingerprint).toBe("ea1cd9c7a8dd71948df4f2a3aeab8e3356ca6feec7bd5601e3e0ba23fd143d0d");
+
+    const owner = await first.claim("ledger", "call", fingerprint);
+    expect(owner.status).toBe("owner");
+    expect((await second.claim("ledger", "call", fingerprint)).status).toBe("running");
+    await expect(second.claim("ledger", "call", "different")).rejects.toBeInstanceOf(
+      IdempotencyConflictError,
+    );
+    if (owner.status !== "owner") throw new Error("expected owner");
+    await first.complete(owner.claim, { ok: true });
+    await expect(second.claim("ledger", "call", fingerprint)).resolves.toEqual({
+      status: "completed",
+      result: { ok: true },
+    });
+    await expect(second.releaseCompleted("ledger")).resolves.toBe(1);
+
+    const retry = await first.claim("ledger", "retry", fingerprint);
+    if (retry.status !== "owner") throw new Error("expected owner");
+    await first.retryableFailure(
+      retry.claim,
+      new ToolExecutionError("retry", "RETRY", true, "failed"),
+    );
+    expect((await second.claim("ledger", "retry", fingerprint)).status).toBe("owner");
+
+    const unknown = await first.claim("ledger", "unknown", fingerprint);
+    if (unknown.status !== "owner") throw new Error("expected owner");
+    await first.unknownOutcome(
+      unknown.claim,
+      new ToolExecutionError("unknown", "UNKNOWN", false, "unknown"),
+    );
+    expect((await second.claim("ledger", "unknown", fingerprint)).status).toBe("unknown");
+    await expect(second.releaseSettled("ledger")).resolves.toBe(1);
+
+    const crashed = await first.claim("ledger", "crashed", fingerprint);
+    if (crashed.status !== "owner") throw new Error("expected owner");
+    const observed = await second.claim("ledger", "crashed", fingerprint);
+    expect(observed.status).toBe("running");
+    expect(
+      await Promise.race([
+        observed.status === "running"
+          ? observed.outcome.then(() => "settled")
+          : Promise.resolve("wrong"),
+        new Promise((resolve) => setTimeout(() => resolve("pending"), 20)),
+      ]),
+    ).toBe("pending");
+    await expect(
+      second.reconcileCompleted("ledger", "crashed", { reconciled: true }),
+    ).resolves.toBe(true);
+    if (observed.status === "running") {
+      await expect(observed.outcome).resolves.toEqual({
+        status: "completed",
+        result: { reconciled: true },
+      });
+    }
+    expect((await second.claim("ledger", "crashed", fingerprint)).status).toBe("completed");
+    await expect(second.releaseCompleted("ledger")).resolves.toBe(1);
+
+    const release = await first.claim("ledger", "release", fingerprint);
+    if (release.status !== "owner") throw new Error("expected owner");
+    await expect(second.reconcileRelease("ledger", "release")).resolves.toBe(true);
+    expect((await second.claim("ledger", "release", fingerprint)).status).toBe("owner");
+    await Promise.all([first.close(), second.close()]);
+  });
+
+  it("interoperates with the Python ledger over the same table", async () => {
+    const ledger = new PostgresToolIdempotencyLedger(url!);
+    const fingerprint = toolInvocationFingerprint("echo", { b: 2, a: ["é", true] });
+    const completed = await ledger.claim("interop", "ts-completed", fingerprint);
+    if (completed.status !== "owner") throw new Error("expected owner");
+    await ledger.complete(completed.claim, { source: "ts" });
+
+    const script = `
+import asyncio, json, os
+from kaji.backends.postgres import PostgresToolIdempotencyLedger
+async def main():
+    ledger = PostgresToolIdempotencyLedger(os.environ["KAJI_POSTGRES_URL"])
+    completed = await ledger.claim(session_id="interop", tool_call_id="ts-completed", tool_name="echo", tool_args={"b": 2, "a": ["é", True]})
+    running = await ledger.claim(session_id="interop", tool_call_id="python-running", tool_name="echo", tool_args={"b": 2, "a": ["é", True]})
+    print(json.dumps([completed.kind, completed.resolution.result, running.kind]))
+asyncio.run(main())
+`;
+    expect(
+      JSON.parse(
+        execFileSync(
+          "uv",
+          ["run", "--project", "../py", "--extra", "postgres", "python", "-c", script],
+          { cwd: process.cwd(), env: process.env, encoding: "utf8" },
+        ),
+      ),
+    ).toEqual(["completed", { source: "ts" }, "owner"]);
+    const observed = await ledger.claim("interop", "python-running", fingerprint);
+    expect(observed.status).toBe("running");
+    await expect(ledger.reconcileRelease("interop", "python-running")).resolves.toBe(true);
+    if (observed.status === "running") {
+      await expect(observed.outcome).resolves.toMatchObject({ status: "failed" });
+    }
+    await ledger.close();
+  });
+
   it("allocates contiguous per-session sequences and polls durable subscriptions", async () => {
     const store = new PostgresEventStore(url!);
     const same = await Promise.all(
@@ -94,6 +204,7 @@ describePostgres("PostgresEventStore", () => {
     const committer = new PostgresEventCommitter(store, { pollIntervalMs: 1 });
     const subscription = committer.subscribe("same");
     expect((await subscription.next()).value.sequence).toBe(1);
+    await subscription.return?.();
     await store.close();
   });
 });

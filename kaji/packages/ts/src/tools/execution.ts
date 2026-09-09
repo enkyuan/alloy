@@ -27,6 +27,7 @@ import {
 } from "@/tools/execution/errors";
 import {
   InMemoryToolIdempotencyLedger,
+  toolInvocationFingerprint,
   type ToolClaimResult,
   type ToolIdempotencyLedger,
   type ToolLedgerOutcome,
@@ -164,21 +165,6 @@ function validateLimits(limits: ToolExecutionLimits): void {
   if (!Number.isInteger(limits.approvalTimeoutMs) || limits.approvalTimeoutMs < 1) {
     throw new RangeError("approvalTimeoutMs must be a positive integer");
   }
-}
-
-function invocationFingerprint(name: string, args: Readonly<Record<string, unknown>>): string {
-  const stable = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(stable);
-    if (value !== null && typeof value === "object") {
-      return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-          .map(([key, item]) => [key, stable(item)]),
-      );
-    }
-    return value;
-  };
-  return JSON.stringify([name, stable(args)]);
 }
 
 function fromLedger(outcome: ToolLedgerOutcome): ToolExecutionControllerOutcome {
@@ -319,7 +305,7 @@ export class ToolExecutionController {
     const linked = this.linkedSignal(canonicalContext, request.timeoutMs);
     let fingerprint: string;
     try {
-      fingerprint = invocationFingerprint(request.name, request.args);
+      fingerprint = toolInvocationFingerprint(request.name, request.args);
     } catch (error) {
       linked.cleanup();
       throw error;

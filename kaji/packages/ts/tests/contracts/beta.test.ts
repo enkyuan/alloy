@@ -56,7 +56,7 @@ describe("production-beta contract", () => {
   it("parses and replays every canonical approval lifecycle fixture row", () => {
     const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as { events: unknown[] };
     const events = fixture.events.map(validateStoredEvent);
-    expect(events).toHaveLength(40);
+    expect(events).toHaveLength(47);
     const state = replaySession(events);
     expect(state.isActive).toBe(false);
     expect(state.pendingApprovals.size).toBe(0);

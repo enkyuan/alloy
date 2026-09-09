@@ -73,7 +73,8 @@
         "exports": [
           "PostgresEventCommitter",
           "PostgresEventCommitterOptions",
-          "PostgresEventStore"
+          "PostgresEventStore",
+          "PostgresToolIdempotencyLedger"
         ]
       },
       "./testing": {
@@ -300,6 +301,7 @@
         "IntegrationValidationCode",
         "IntegrationValidationError",
         "InvalidDurableValueError",
+        "InvalidTaskTransitionError",
         "JSONSchema",
         "JournalStage",
         "KajiEvent",
@@ -327,6 +329,8 @@
         "ObservableCancellationToken",
         "OpenAIProvider",
         "OpenAIProviderOptions",
+        "PendingApproval",
+        "PendingApprovalSummary",
         "ProviderAPIError",
         "ProviderCancellationContractViolation",
         "ProviderConfigError",
@@ -434,6 +438,7 @@
         "approvalKey",
         "artifact",
         "calculateCostUsd",
+        "capability",
         "capabilityResult",
         "cliApprovalHandler",
         "deadlineAfter",

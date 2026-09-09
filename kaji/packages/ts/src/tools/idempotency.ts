@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   IdempotencyCapacityError,
   IdempotencyConflictError,
@@ -65,6 +67,42 @@ type LedgerEntry = RunningEntry | CompletedEntry | UnknownEntry;
 
 function keyFor(sessionId: string, toolCallId: string): string {
   return JSON.stringify([sessionId, toolCallId]);
+}
+
+function canonicalKeyOrder(left: string, right: string): number {
+  const leftPoints = Array.from(left);
+  const rightPoints = Array.from(right);
+  for (let index = 0; index < Math.min(leftPoints.length, rightPoints.length); index++) {
+    const difference = leftPoints[index]!.codePointAt(0)! - rightPoints[index]!.codePointAt(0)!;
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
+function canonicalJsonValue(value: unknown): unknown {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError("tool arguments must be JSON serializable");
+    return value;
+  }
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => canonicalKeyOrder(left, right))
+        .map(([key, item]) => [key, canonicalJsonValue(item)]),
+    );
+  }
+  throw new TypeError("tool arguments must be JSON serializable");
+}
+
+/** SHA-256 of canonical JSON ``[tool_name, tool_args]`` shared with Python. */
+export function toolInvocationFingerprint(
+  toolName: string,
+  toolArgs: Readonly<Record<string, unknown>>,
+): string {
+  const encoded = JSON.stringify([toolName, canonicalJsonValue(toolArgs)]);
+  return createHash("sha256").update(encoded, "utf8").digest("hex");
 }
 
 function detachResult(result: unknown): unknown {

@@ -1216,7 +1216,12 @@ describe("npm contract artifact", () => {
     });
     expect(tiers.packageSubpaths.typescript["./postgres"]).toEqual({
       tier: "experimental",
-      exports: ["PostgresEventCommitter", "PostgresEventCommitterOptions", "PostgresEventStore"],
+      exports: [
+        "PostgresEventCommitter",
+        "PostgresEventCommitterOptions",
+        "PostgresEventStore",
+        "PostgresToolIdempotencyLedger",
+      ],
     });
     expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
       tier: "experimental",
