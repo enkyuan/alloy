@@ -18,6 +18,12 @@ export { EventType } from "@/events/types";
 export {
   AgentTurnFailed,
   ArtifactEmitted,
+  TaskCancelled,
+  TaskCompleted,
+  TaskCreated,
+  TaskFailed,
+  TaskResumed,
+  TaskSuspended,
   KajiEvent,
   NewKajiEvent,
   SessionCreated,
@@ -55,6 +61,21 @@ export {
 export { artifact, validateArtifactRef, type ArtifactRef } from "@/artifacts/types";
 export { capability, Capability, type CapabilityDefinition } from "@/capabilities/definition";
 export { capabilityResult, type CapabilityResult } from "@/capabilities/result";
+
+// Tasks
+export {
+  InMemoryBackend,
+  InvalidTaskTransitionError,
+  TaskHandle,
+  TaskNotFoundError,
+  TaskProjectionError,
+  TaskRuntime,
+  TaskState,
+  projectTask,
+  type PendingApproval,
+  type PendingApprovalSummary,
+  type TaskSnapshot,
+} from "@/tasks";
 
 // Sessions
 export {

@@ -35,7 +35,8 @@
           { "$ref": "#/$defs/concurrency" },
           { "$ref": "#/$defs/providerAdapter" },
           { "$ref": "#/$defs/idempotency" },
-          { "$ref": "#/$defs/capability" }
+          { "$ref": "#/$defs/capability" },
+          { "$ref": "#/$defs/taskProjection" }
         ]
       }
     }
@@ -206,6 +207,21 @@
             "id": true,
             "kind": { "const": "idempotency" },
             "fixture": { "enum": ["permanent-failed", "transient-failed", "unknown", "completed"] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "taskProjection": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "task-projection" },
+            "fixture": { "const": "reconciliation" }
           },
           "additionalProperties": false
         }

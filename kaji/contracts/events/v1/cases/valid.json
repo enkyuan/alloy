@@ -514,12 +514,75 @@
       "metadata": {}
     },
     {
+      "id": "task-event-1",
+      "type": "task.created",
+      "version": "1.0",
+      "timestamp": 1767225639.0,
+      "session_id": "session-1",
+      "sequence": 41,
+      "task_id": "task-1",
+      "principal_id": "principal-1",
+      "input": "hello",
+      "metadata": {}
+    },
+    {
+      "id": "task-event-2",
+      "type": "task.suspended",
+      "version": "1.0",
+      "timestamp": 1767225640.0,
+      "session_id": "session-1",
+      "sequence": 42,
+      "task_id": "task-1",
+      "metadata": {}
+    },
+    {
+      "id": "task-event-3",
+      "type": "task.resumed",
+      "version": "1.0",
+      "timestamp": 1767225641.0,
+      "session_id": "session-1",
+      "sequence": 43,
+      "task_id": "task-1",
+      "metadata": {}
+    },
+    {
+      "id": "task-event-4",
+      "type": "task.completed",
+      "version": "1.0",
+      "timestamp": 1767225642.0,
+      "session_id": "session-1",
+      "sequence": 44,
+      "task_id": "task-1",
+      "metadata": {}
+    },
+    {
+      "id": "task-event-5",
+      "type": "task.failed",
+      "version": "1.0",
+      "timestamp": 1767225643.0,
+      "session_id": "session-1",
+      "sequence": 45,
+      "task_id": "task-2",
+      "error_code": "PROVIDER_API_ERROR",
+      "metadata": {}
+    },
+    {
+      "id": "task-event-6",
+      "type": "task.cancelled",
+      "version": "1.0",
+      "timestamp": 1767225644.0,
+      "session_id": "session-1",
+      "sequence": 46,
+      "task_id": "task-3",
+      "metadata": {}
+    },
+    {
       "id": "event-40",
       "type": "session.closed",
       "version": "1.0",
       "timestamp": 1767225639.0,
       "session_id": "session-1",
-      "sequence": 41,
+      "sequence": 47,
       "reason": "fixture complete",
       "metadata": {}
     }

@@ -16,6 +16,7 @@ IdScope = Literal[
     "request",
     "trace",
     "tool_call",
+    "task",
 ]
 
 

@@ -651,6 +651,30 @@
       ],
       "unevaluatedProperties": false
     },
+    "taskCreated": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.created" }, "task_id": { "$ref": "#/$defs/nonEmptyId" }, "principal_id": { "$ref": "#/$defs/nonEmptyId" }, "input": { "type": "string", "minLength": 1 } }, "required": ["type", "task_id", "principal_id", "input"] }],
+      "unevaluatedProperties": false
+    },
+    "taskSuspended": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.suspended" }, "task_id": { "$ref": "#/$defs/nonEmptyId" } }, "required": ["type", "task_id"] }],
+      "unevaluatedProperties": false
+    },
+    "taskResumed": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.resumed" }, "task_id": { "$ref": "#/$defs/nonEmptyId" } }, "required": ["type", "task_id"] }],
+      "unevaluatedProperties": false
+    },
+    "taskCompleted": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.completed" }, "task_id": { "$ref": "#/$defs/nonEmptyId" } }, "required": ["type", "task_id"] }],
+      "unevaluatedProperties": false
+    },
+    "taskFailed": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.failed" }, "task_id": { "$ref": "#/$defs/nonEmptyId" }, "error_code": { "type": "string", "minLength": 1 } }, "required": ["type", "task_id", "error_code"] }],
+      "unevaluatedProperties": false
+    },
+    "taskCancelled": {
+      "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "properties": { "type": { "const": "task.cancelled" }, "task_id": { "$ref": "#/$defs/nonEmptyId" } }, "required": ["type", "task_id"] }],
+      "unevaluatedProperties": false
+    },
     "toolCallFailed": {
       "allOf": [
         {
@@ -1021,6 +1045,24 @@
     },
     {
       "$ref": "#/$defs/artifactEmitted"
+    },
+    {
+      "$ref": "#/$defs/taskCreated"
+    },
+    {
+      "$ref": "#/$defs/taskSuspended"
+    },
+    {
+      "$ref": "#/$defs/taskResumed"
+    },
+    {
+      "$ref": "#/$defs/taskCompleted"
+    },
+    {
+      "$ref": "#/$defs/taskFailed"
+    },
+    {
+      "$ref": "#/$defs/taskCancelled"
     },
     {
       "$ref": "#/$defs/toolCallFailed"

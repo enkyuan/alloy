@@ -97,6 +97,7 @@
     { "id": "idempotency-unknown", "kind": "idempotency", "fixture": "unknown" },
     { "id": "idempotency-completed", "kind": "idempotency", "fixture": "completed" },
     { "id": "capability-normalization", "kind": "capability", "fixture": "normalization", "controls": "default" },
-    { "id": "capability-invalid-risk", "kind": "capability", "fixture": "invalid-risk", "controls": "default" }
+    { "id": "capability-invalid-risk", "kind": "capability", "fixture": "invalid-risk", "controls": "default" },
+    { "id": "task-projection-reconciliation", "kind": "task-projection", "fixture": "reconciliation" }
   ]
 }

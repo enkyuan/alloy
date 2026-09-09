@@ -4915,6 +4915,22 @@
           "error_path": "/risk"
         }
       }
+    },
+    {
+      "id": "task-projection-reconciliation",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "artifacts": ["artifact"],
+          "cursor": 6,
+          "pending_approvals": 0,
+          "state": "reconciliation_required"
+        }
+      }
     }
   ],
   "thirdPartyIntegrationSurface": {

@@ -4,7 +4,15 @@ import { readFileSync } from "node:fs";
 
 import { InMemoryEventCommitter } from "@/events/committer";
 import { EventSchemaIncompatibleError } from "@/events/errors";
-import { KajiEvent, StoredKajiEvent, type StoredKajiEvent as StoredEvent } from "@/events/schemas";
+import {
+  ArtifactEmitted,
+  KajiEvent,
+  StoredKajiEvent,
+  ToolApprovalApproved,
+  ToolApprovalRequested,
+  ToolCallFailed,
+  type StoredKajiEvent as StoredEvent,
+} from "@/events/schemas";
 import { EventType } from "@/events/types";
 import type { Clock, IdFactory, IdScope, TimerHandle, TimerScheduler } from "@/internal/uuid";
 import type {
@@ -42,6 +50,8 @@ import { ToolPolicy } from "@/tools/policy";
 import { UnclassifiedToolRiskError, ToolRegistry, type ToolSpec } from "@/tools/registry";
 import { Integration, tool } from "@/integrations/base";
 import { capability } from "@/capabilities/definition";
+import { artifact } from "@/artifacts/types";
+import { InMemoryBackend, TaskRuntime } from "@/tasks";
 import {
   ToolArgumentValidationError,
   ToolSchemaValidationError,
@@ -1554,6 +1564,69 @@ function runCapability(document: JsonObject, scenario: JsonObject): JsonObject {
   throw new Error(`unknown capability fixture: ${scenario.fixture}`);
 }
 
+async function runTaskProjection(_scenario: JsonObject): Promise<JsonObject> {
+  const snapshot = emptySnapshot();
+  const backend = new InMemoryBackend();
+  const handle = await new TaskRuntime(backend).start({
+    session_id: "task-session",
+    principal_id: "principal",
+    input: "task",
+    task_id: "task",
+  });
+  await backend.journal.commit(
+    ToolApprovalRequested.parse({
+      type: "tool.approval.requested",
+      id: "task-approval",
+      session_id: "task-session",
+      turn_id: "turn",
+      tool_name: "write",
+      tool_call_id: "call",
+      tool_args: {},
+      risk: "write",
+    }),
+  );
+  await backend.journal.commit(
+    ToolApprovalApproved.parse({
+      type: "tool.approval.approved",
+      id: "task-approved",
+      session_id: "task-session",
+      turn_id: "turn",
+      tool_name: "write",
+      tool_call_id: "call",
+    }),
+  );
+  await backend.journal.commit(
+    ArtifactEmitted.parse({
+      type: "artifact.emitted",
+      id: "task-artifact",
+      session_id: "task-session",
+      turn_id: "turn",
+      tool_call_id: "call",
+      artifact: artifact("artifact", "text/plain", "memory:artifact"),
+    }),
+  );
+  await backend.journal.commit(
+    ToolCallFailed.parse({
+      type: "tool.call.failed",
+      id: "task-unknown",
+      session_id: "task-session",
+      turn_id: "turn",
+      tool_name: "write",
+      tool_call_id: "call",
+      error: "unknown",
+      outcome: "unknown",
+    }),
+  );
+  const projected = await handle.snapshot();
+  snapshot.result = {
+    state: projected.state,
+    cursor: projected.sequence_cursor,
+    artifacts: projected.artifacts.map((item) => item.id),
+    pending_approvals: projected.pending_approvals.length,
+  };
+  return snapshot;
+}
+
 function surfacedSpecKeys(spec: ToolSpec): string[] {
   const keys = ["name", "description", "parameters", "risk"];
   if (spec.parallel_safe !== undefined && spec.parallel_safe !== false) {
@@ -1580,6 +1653,7 @@ async function exportParity(): Promise<JsonObject> {
     else if (scenario.kind === "provider-adapter") snapshot = await runProviderAdapter(scenario);
     else if (scenario.kind === "idempotency") snapshot = await runIdempotency(scenario);
     else if (scenario.kind === "capability") snapshot = runCapability(document, scenario);
+    else if (scenario.kind === "task-projection") snapshot = await runTaskProjection(scenario);
     else throw new Error(`unknown scenario kind: ${scenario.kind}`);
     if (JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)) {
       throw new Error(`incomplete snapshot envelope: ${scenario.id}`);

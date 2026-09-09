@@ -307,6 +307,39 @@ class ArtifactEmitted(BaseEvent):
     artifact: ArtifactRef
 
 
+class TaskCreated(BaseEvent):
+    type: Literal[EventType.TASK_CREATED] = EventType.TASK_CREATED
+    task_id: str = Field(min_length=1)
+    principal_id: str = Field(min_length=1)
+    input: str = Field(min_length=1)
+
+
+class TaskSuspended(BaseEvent):
+    type: Literal[EventType.TASK_SUSPENDED] = EventType.TASK_SUSPENDED
+    task_id: str = Field(min_length=1)
+
+
+class TaskResumed(BaseEvent):
+    type: Literal[EventType.TASK_RESUMED] = EventType.TASK_RESUMED
+    task_id: str = Field(min_length=1)
+
+
+class TaskCompleted(BaseEvent):
+    type: Literal[EventType.TASK_COMPLETED] = EventType.TASK_COMPLETED
+    task_id: str = Field(min_length=1)
+
+
+class TaskFailed(BaseEvent):
+    type: Literal[EventType.TASK_FAILED] = EventType.TASK_FAILED
+    task_id: str = Field(min_length=1)
+    error_code: str = Field(min_length=1)
+
+
+class TaskCancelled(BaseEvent):
+    type: Literal[EventType.TASK_CANCELLED] = EventType.TASK_CANCELLED
+    task_id: str = Field(min_length=1)
+
+
 class ToolCallFailed(BaseEvent):
     type: Literal[EventType.TOOL_CALL_FAILED] = EventType.TOOL_CALL_FAILED
     turn_id: str = Field(min_length=1)
@@ -453,6 +486,12 @@ KajiEvent = Annotated[
         ToolCallStarted,
         ToolCallCompleted,
         ArtifactEmitted,
+        TaskCreated,
+        TaskSuspended,
+        TaskResumed,
+        TaskCompleted,
+        TaskFailed,
+        TaskCancelled,
         ToolCallFailed,
         ToolApprovalRequested,
         ToolApprovalApproved,

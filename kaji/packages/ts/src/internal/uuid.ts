@@ -1,6 +1,6 @@
 export type UuidFactory = () => string;
 
-export type IdScope = "event" | "session" | "turn" | "request" | "trace" | "tool_call";
+export type IdScope = "event" | "session" | "turn" | "request" | "trace" | "tool_call" | "task";
 
 export interface IdFactory {
   next(scope: IdScope): string;

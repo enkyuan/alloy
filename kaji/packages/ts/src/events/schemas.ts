@@ -225,6 +225,34 @@ export const ArtifactEmitted = event({
   artifact: ArtifactRefSchema,
 });
 
+export const TaskCreated = event({
+  type: z.literal(EventType.TASK_CREATED),
+  task_id: z.string().min(1),
+  principal_id: z.string().min(1),
+  input: z.string().min(1),
+});
+export const TaskSuspended = event({
+  type: z.literal(EventType.TASK_SUSPENDED),
+  task_id: z.string().min(1),
+});
+export const TaskResumed = event({
+  type: z.literal(EventType.TASK_RESUMED),
+  task_id: z.string().min(1),
+});
+export const TaskCompleted = event({
+  type: z.literal(EventType.TASK_COMPLETED),
+  task_id: z.string().min(1),
+});
+export const TaskFailed = event({
+  type: z.literal(EventType.TASK_FAILED),
+  task_id: z.string().min(1),
+  error_code: z.string().min(1),
+});
+export const TaskCancelled = event({
+  type: z.literal(EventType.TASK_CANCELLED),
+  task_id: z.string().min(1),
+});
+
 export const ToolCallFailed = event({
   type: z.literal(EventType.TOOL_CALL_FAILED),
   turn_id: z.string().min(1),
@@ -330,6 +358,12 @@ export const KajiEvent = z.discriminatedUnion("type", [
   ToolCallStarted,
   ToolCallCompleted,
   ArtifactEmitted,
+  TaskCreated,
+  TaskSuspended,
+  TaskResumed,
+  TaskCompleted,
+  TaskFailed,
+  TaskCancelled,
   ToolCallFailed,
   ToolApprovalRequested,
   ToolApprovalApproved,
