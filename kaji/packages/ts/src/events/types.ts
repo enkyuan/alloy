@@ -1,6 +1,6 @@
 /**
  * Event type discriminants. String values are the wire format and must match
- * the Python SDK (`kaji.infra.events.types.EventType`) byte for byte.
+ * the Python SDK (`kaji.events.types.EventType`) byte for byte.
  */
 export const EventType = {
   SESSION_CREATED: "session.created",

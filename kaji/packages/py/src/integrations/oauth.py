@@ -23,7 +23,7 @@ from kaji.integrations.errors import (
     IntegrationExecutionError,
     IntegrationPolicyError,
 )
-from kaji.infra.observability.protocols import (
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,
@@ -31,7 +31,7 @@ from kaji.infra.observability.protocols import (
     record_metric,
     start_span,
 )
-from kaji.runtime.agents.cancellation import CancelledError, CancellationToken
+from kaji.runtime.agents.cancel import CancelledError, CancellationToken
 from kaji.runtime.context import ToolExecutionContext
 from kaji.core.determinism import Clock, SYSTEM_CLOCK
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from kaji.runtime.sessions.store import SessionRecord
 from kaji_serve.server.database import get_db
 from kaji_serve.server.deps import get_current_supabase_user
-from kaji_serve.server.session_store import PostgresSessionStore
+from kaji_serve.server.sessions import PostgresSessionStore
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 

@@ -121,7 +121,7 @@ export {
   ToolExecutionError,
   type ToolFailureFields,
   type ToolFailureOutcome,
-} from "@/tools/execution-errors";
+} from "@/tools/execution/errors";
 export {
   InMemoryToolIdempotencyLedger,
   type InMemoryToolIdempotencyLedgerOptions,
@@ -262,7 +262,7 @@ export {
   type SessionTurnCoordinator,
   type SessionTurnLease,
   type TurnLeaseOptions,
-} from "@/runtime/session-turn-coordinator";
+} from "@/runtime/session/coordinator";
 export {
   generateText,
   streamText,

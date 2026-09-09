@@ -72,14 +72,12 @@ def _canonical_bytes(value: object) -> bytes:
 
 
 def _contracts_root() -> Path:
-    return Path(__file__).resolve().parent.parent / "contracts" / "integrations"
+    return Path(__file__).resolve().parent.parent / "contracts" / "integrations" / "v1"
 
 
 @lru_cache(maxsize=1)
 def _provenance_validator() -> Validator:
-    schema = json.loads(
-        (_contracts_root() / "copy-provenance-v1.schema.json").read_text()
-    )
+    schema = json.loads((_contracts_root() / "schema" / "provenance.json").read_text())
     return Draft202012Validator(schema, format_checker=FormatChecker())
 
 
@@ -116,7 +114,7 @@ def _package_license() -> Path:
 
 
 def _abi_digest(name: str) -> str:
-    index = json.loads((_contracts_root() / "abi-index-v1.json").read_text())
+    index = json.loads((_contracts_root() / "abi" / "index.json").read_text())
     relative = index["integrations"].get(name)
     if relative is None:
         raise ManifestError(f"Integration {name!r} has no canonical ABI contract")

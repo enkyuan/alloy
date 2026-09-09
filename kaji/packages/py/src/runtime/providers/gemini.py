@@ -28,10 +28,10 @@ from kaji.runtime.providers.types import (
     ProviderResponseLimits,
     TokenMetrics,
 )
-from kaji.runtime.providers._cancellation import (
+from kaji.runtime.providers.cancellation import (
     raise_if_cancelled as _raise_if_cancelled,
 )
-from kaji.runtime.providers._translate import (
+from kaji.runtime.providers.openai.translate import (
     format_messages_gemini,
     split_system_for_gemini,
 )
@@ -402,7 +402,7 @@ class GeminiProvider(ModelProvider):
         text = response.text or ""
 
         # Extract tool calls using the helper
-        from kaji.runtime.tools.function_calls import (
+        from kaji.runtime.tools.calls import (
             extract_response_function_calls,
         )
 
@@ -449,7 +449,7 @@ class GeminiProvider(ModelProvider):
         cancellation_token: Optional[Any] = None,
         response_limits: Optional[ProviderResponseLimits] = None,
     ) -> AsyncGenerator[ModelResponseChunk, None]:
-        from kaji.runtime.tools.function_calls import (
+        from kaji.runtime.tools.calls import (
             extract_response_function_calls,
         )
         from kaji.runtime.tools.payload import to_gemini

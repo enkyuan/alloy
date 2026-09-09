@@ -1,4 +1,4 @@
-include LICENSE README.md pyproject.toml build-requirements.txt
+include LICENSE README.md pyproject.toml build-requirements.txt backend.py
 recursive-include src *.py *.json *.md py.typed
 recursive-include src/integrations/registry LICENSE
 prune tests

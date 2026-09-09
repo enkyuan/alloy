@@ -22,7 +22,7 @@ import { EventApprovalHandler } from "@/runtime/approval/handler";
 import { CancellationError, CancellationToken } from "@/runtime/cancellation";
 import { TurnTimeoutError } from "@/runtime/limits";
 import { AgentRuntime, type TurnResult } from "@/runtime/runtime";
-import { InMemorySessionTurnCoordinator } from "@/runtime/session-turn-coordinator";
+import { InMemorySessionTurnCoordinator } from "@/runtime/session/coordinator";
 import {
   replaySession,
   type ApprovalKey,
@@ -35,7 +35,7 @@ import {
   type ToolExecutionControllerOutcome,
   type ToolExecutionRequest,
 } from "@/tools/execution";
-import { ToolExecutionError } from "@/tools/execution-errors";
+import { ToolExecutionError } from "@/tools/execution/errors";
 import { InMemoryToolIdempotencyLedger } from "@/tools/idempotency";
 import { ToolPlanner } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
@@ -48,7 +48,7 @@ import {
 } from "@/tools/validation";
 
 const REPO_ROOT = new URL("../../../../", import.meta.url);
-const SCENARIOS_URL = new URL("kaji/contracts/parity/scenarios.json", REPO_ROOT);
+const SCENARIOS_URL = new URL("kaji/contracts/parity/v1/scenarios.json", REPO_ROOT);
 const TOOLS_URL = new URL("kaji/contracts/tools/", REPO_ROOT);
 const SNAPSHOT_KEYS = [
   "result",

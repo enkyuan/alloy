@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, runtime_checkable
 
-from kaji.infra.events.protocols import EventJournal
-from kaji.infra.events.store import EventStore
-from kaji.infra.events.store.inmem import InMemoryEventStore
-from kaji.infra.observability.protocols import (
+from kaji.events.protocols import EventJournal
+from kaji.events.store import EventStore
+from kaji.events.store.memory import InMemoryEventStore
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,
@@ -21,7 +21,7 @@ from kaji.runtime.agents.planner import ToolPlanner
 from kaji.runtime.agents.runtime import AgentRuntime
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.providers.base import ModelProvider
-from kaji.runtime.tools.policies import ToolPolicy
+from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
 from kaji.runtime.tools.execution import ToolExecutionController, ToolExecutionLimits
 from kaji.runtime.tools.idempotency import ToolIdempotencyLedger

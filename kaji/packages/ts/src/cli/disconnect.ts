@@ -9,7 +9,7 @@ import {
   renderClosedRecovery,
   withAuthSignal,
 } from "@/cli/connect";
-import { formatIntegrationError } from "@/integrations/registry-loader";
+import { formatIntegrationError } from "@/integrations/registry/loader";
 
 export const DISCONNECT_USAGE =
   "usage: kaji disconnect <name> --principal <stable-host-principal-id> [--force-local]";

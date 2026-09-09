@@ -1,1 +1,0 @@
-"""Packaged integration registry contracts."""

@@ -27,7 +27,7 @@ def oauth_manifest() -> Manifest:
             client_secret_env="GOOGLE_CLIENT_SECRET",
             scopes=("scope.a", "scope.b"),
         ),
-        files=("gmail.py",),
+        files=("handler.py",),
         tools=(),
         extras=(),
         peer_deps=MappingProxyType({}),
@@ -240,7 +240,7 @@ def test_oauth_commands_accept_generic_google_manifest_with_matching_guidance(
     capsys: pytest.CaptureFixture[str],
     command: str,
 ) -> None:
-    from kaji.cli import connect, disconnect, list_integrations
+    from kaji.cli import connect, disconnect, list as list_cli
     from kaji.cli._main import _build_parser
 
     module = connect if command == "connect" else disconnect
@@ -275,7 +275,7 @@ def test_oauth_commands_accept_generic_google_manifest_with_matching_guidance(
         monkeypatch.setattr(module, "_environment", UnreadableEnvironment())
         args.force_local = False
     else:
-        advertised = list_integrations._next_commands(calendar)["python"]
+        advertised = list_cli._next_commands(calendar)["python"]
         argv = advertised.replace("<stable-host-principal-id>", "host:user").split()[3:]
         args = _build_parser().parse_args(argv)
         monkeypatch.setattr(

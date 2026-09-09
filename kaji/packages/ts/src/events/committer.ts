@@ -20,7 +20,7 @@ import {
   registerPurgeBlocker,
   supportsAuthorizedListenerTeardown,
   type SessionPurgeAuthorization,
-} from "@/events/session-lifecycle";
+} from "@/events/lifecycle";
 import {
   type EventStore,
   type EventStoreSession,

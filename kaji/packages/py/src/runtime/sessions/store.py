@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Protocol
 
-from kaji.infra.events.store import EventStore, InMemoryEventStore
+from kaji.events.store import EventStore, InMemoryEventStore
 
 __all__ = [
     "EventStore",

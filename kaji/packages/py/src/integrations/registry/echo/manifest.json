@@ -7,7 +7,7 @@
     "kind": "none"
   },
   "files": [
-    "echo.py"
+    "handler.py"
   ],
   "tools": [
     {

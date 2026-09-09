@@ -11,7 +11,7 @@ import websockets
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketState
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.modalities.voice.stt import (
     TranscriptionSessionState,
     authenticate_ws,
@@ -19,8 +19,8 @@ from kaji_serve.modalities.voice.stt import (
     safe_send_json,
     send_error_message,
 )
-from kaji_serve.modalities.voice.stt.soniox_service import soniox_service
-from kaji_serve.modalities.voice.stt.soniox_gateway import (
+from kaji_serve.modalities.voice.stt.service import soniox_service
+from kaji_serve.modalities.voice.stt.gateway import (
     connect_soniox,
     listen_to_soniox,
 )

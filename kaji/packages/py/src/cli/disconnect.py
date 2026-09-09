@@ -60,7 +60,7 @@ async def _disconnect(
     *,
     force_local: bool,
 ) -> DisconnectResult:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
     return await client.disconnect(
         principal, CancellationToken(), force_local=force_local

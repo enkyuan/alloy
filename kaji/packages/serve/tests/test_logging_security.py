@@ -50,7 +50,7 @@ def test_stt_logging_has_no_transcript_or_user_identifiers() -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
     paths = (
         source_root / "modalities" / "voice" / "stt" / "handler.py",
-        source_root / "modalities" / "voice" / "stt" / "soniox_gateway.py",
+        source_root / "modalities" / "voice" / "stt" / "gateway.py",
     )
     sensitive_names = {"complete_text", "final_text", "full_text", "user_id"}
 

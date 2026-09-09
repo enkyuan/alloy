@@ -8,7 +8,7 @@ import {
   loadManifest,
   loadRegistryIndex,
   type LoadedIntegrationManifest,
-} from "../src/integrations/registry-loader";
+} from "../src/integrations/registry/loader";
 import { compareExecutableIntegrationAbi, loadExecutableIntegrationAbi } from "./integration-abi";
 
 const scriptsDirectory = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +20,7 @@ const abiIndexPath = join(
   "..",
   "contracts",
   "integrations",
-  "abi-index-v1.json",
+  "v1/abi/index.json",
 );
 const requiredHeaderPrefix = "// This is YOUR";
 

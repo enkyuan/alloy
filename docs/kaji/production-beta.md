@@ -9,7 +9,7 @@ either package as production beta-ready before those artifacts are attached to
 the release.
 
 The shared machine contract is
-[`kaji/contracts/beta-core-v1.json`](../../kaji/contracts/beta-core-v1.json).
+[`kaji/contracts/beta-core-v1.json`](../../kaji/contracts/core/v1/beta.json).
 The feature promise is generated and checked through
 [`kaji/RELEASE_MATRIX.md`](../../kaji/RELEASE_MATRIX.md).
 

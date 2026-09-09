@@ -3,7 +3,7 @@ import {
   IdempotencyConflictError,
   snapshotToolExecutionError,
   type ToolExecutionError,
-} from "@/tools/execution-errors";
+} from "@/tools/execution/errors";
 import { durableJsonSnapshot } from "@/events/json";
 import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 

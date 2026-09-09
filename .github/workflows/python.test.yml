@@ -7,7 +7,7 @@ on:
       - "kaji/**"
       - "kaji/packages/serve/**"
       - "kaji/contracts/**"
-      - "kaji/scripts/**"
+      - "kaji/tooling/**"
       - "kaji/benchmarks/**"
       - "kaji/RELEASE_MATRIX.md"
       - "docs/kaji/**"
@@ -35,7 +35,7 @@ on:
       - "kaji/**"
       - "kaji/packages/serve/**"
       - "kaji/contracts/**"
-      - "kaji/scripts/**"
+      - "kaji/tooling/**"
       - "kaji/benchmarks/**"
       - "kaji/RELEASE_MATRIX.md"
       - "docs/kaji/**"
@@ -86,7 +86,7 @@ jobs:
           working-directory: .
 
       - name: Run quickstart smoke
-        run: uv run --project packages/py pytest packages/py/tests/test_quickstart.py -q
+        run: uv run --project packages/py pytest packages/py/tests/docs/test_quickstart.py -q
 
       - name: Run non-network tests
         run: uv run --project packages/py pytest packages/py/tests -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80
@@ -121,8 +121,9 @@ jobs:
 
       - name: Build, verify, and install wheel and sdist
         run: |
-          uv run --project packages/py --no-sync python scripts/release_smoke.py
-          uv run --project packages/py --no-sync python scripts/verify_archives.py packages/py/dist
+          cd ..
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.smoke
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.archives kaji/packages/py/dist
 
   serve:
     name: kaji/packages/serve

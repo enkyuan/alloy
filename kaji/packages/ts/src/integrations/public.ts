@@ -6,13 +6,13 @@ export {
   closedRecoveryFields,
   type IntegrationRecoveryFields,
   type IntegrationRecoveryReason,
-} from "@/contracts/integration-recovery";
+} from "@/integrations/recovery";
 export type { BoundedResponse } from "@/integrations/safe-fetch";
 export {
   createGitHubRequester,
   createGmailRequester,
   type FixedOriginRequester,
-} from "@/integrations/fixed-origin";
+} from "@/integrations/origin";
 export {
   IntegrationAuthRequiredError,
   IntegrationExecutionError,

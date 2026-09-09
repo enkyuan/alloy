@@ -27,7 +27,7 @@ import {
   type SessionPurgeAuthorization,
   type StoreRuntimeOwner,
   type StoreSessionPurgeLease,
-} from "@/events/session-lifecycle";
+} from "@/events/lifecycle";
 import {
   resolveProviderResponseLimits,
   withProviderResponseDiagnostics,
@@ -37,7 +37,7 @@ import {
 } from "@/providers/base";
 import { ProviderOutputLimitError } from "@/providers/errors";
 import { SessionProjector } from "@/sessions/projector";
-import type { ContextIndexStats } from "@/sessions/context-index";
+import type { ContextIndexStats } from "@/sessions/context";
 import { executeTool, listToolSpecs, type ToolSpec } from "@/tools/registry";
 import type { ToolPolicy } from "@/tools/policy";
 import { ToolPlanner, bindEmitterToCommitter, type ToolExecutor } from "@/tools/planner";
@@ -82,7 +82,7 @@ import {
   InMemorySessionTurnCoordinator,
   type SessionTurnLease,
   type SessionTurnCoordinator,
-} from "@/runtime/session-turn-coordinator";
+} from "@/runtime/session/coordinator";
 import {
   NOOP_METRICS,
   NOOP_TRACE,
@@ -94,7 +94,7 @@ import {
   type TraceSink,
   type TurnOutcome,
 } from "@/observability";
-import { RuntimeStreamAccumulator, type StreamDiagnostics } from "@/runtime/delta-accumulator";
+import { RuntimeStreamAccumulator, type StreamDiagnostics } from "@/runtime/delta/accumulator";
 import { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/errors";
 
 const PUBLIC_TURN_FAILURE = "Agent turn failed";
@@ -599,7 +599,7 @@ export class AgentRuntime {
   ): Promise<boolean> {
     const purged = lease.recovering
       ? lease.result()
-      : await (this.store as import("@/events/session-lifecycle").CoordinatedPurgeableEventStore)[
+      : await (this.store as import("@/events/lifecycle").CoordinatedPurgeableEventStore)[
           coordinatedSessionPurge
         ](sessionId, lease.authorization);
 

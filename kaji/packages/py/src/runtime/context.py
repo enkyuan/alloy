@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from kaji.core.determinism import IdFactory, SYSTEM_ID_FACTORY
 
 if TYPE_CHECKING:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
 
 _GENERATED_ID = object()

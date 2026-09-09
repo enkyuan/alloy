@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from kaji_serve import __version__
 from kaji_serve.config import settings
 from kaji_serve.server.router import api_router
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji.runtime.providers.errors import ProviderError
 from kaji_serve.server.database import close_async_engine
 from kaji_serve.server.errors import (

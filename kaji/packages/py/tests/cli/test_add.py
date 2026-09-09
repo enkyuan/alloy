@@ -19,7 +19,7 @@ from kaji.integrations.copy import BundleStatus
 def test_add_echo_copies_files(tmp_path: Path) -> None:
     rc = main(["add", "echo", "--out", str(tmp_path)])
     assert rc == 0
-    assert (tmp_path / "echo.py").exists()
+    assert (tmp_path / "handler.py").exists()
 
 
 def test_add_unknown_integration_returns_nonzero(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_add_refuses_overwrite_without_force(tmp_path: Path) -> None:
 
 def test_add_force_never_overwrites_local_modifications(tmp_path: Path) -> None:
     main(["add", "echo", "--out", str(tmp_path)])
-    target = tmp_path / "echo.py"
+    target = tmp_path / "handler.py"
     target.write_text("# modified\n")
     rc = main(["add", "echo", "--out", str(tmp_path), "--force"])
     assert rc == 5
@@ -154,11 +154,11 @@ def test_list_integrations_sorts_rows_by_code_point_like_typescript(
     output = StringIO()
     with (
         patch(
-            "kaji.cli.list_integrations._list",
+            "kaji.cli.list._list",
             return_value=["aa", "a_", "a0", "a-b"],
         ),
         patch(
-            "kaji.cli.list_integrations.load_manifest",
+            "kaji.cli.list.load_manifest",
             side_effect=lambda name: manifest(name),
         ),
         patch("sys.stdout", output),
@@ -177,7 +177,7 @@ def test_list_integrations_returns_nonzero_for_corrupt_registry() -> None:
     out = StringIO()
     with (
         patch(
-            "kaji.cli.list_integrations._list",
+            "kaji.cli.list._list",
             side_effect=ManifestError("invalid registry"),
         ),
         patch("sys.stdout", out),
@@ -192,8 +192,8 @@ def test_default_destination_is_provider_scoped(tmp_path: Path, monkeypatch) -> 
     monkeypatch.chdir(tmp_path)
 
     assert main(["add", "echo"]) == 0
-    assert (tmp_path / "integrations/echo/echo.py").is_file()
-    assert not (tmp_path / "integrations/echo.py").exists()
+    assert (tmp_path / "integrations/echo/handler.py").is_file()
+    assert not (tmp_path / "integrations/handler.py").exists()
 
 
 def test_github_copies_the_python_owner_bundle(
@@ -218,7 +218,7 @@ def test_github_copies_the_python_owner_bundle(
         for path in destination.rglob("*")
         if path.is_file()
     } == {
-        "github.py",
+        "handler.py",
         "client.py",
         "tests/test_github.py",
         "owner-fixtures.json",
@@ -253,7 +253,7 @@ def test_oauth_guidance_is_exact_and_only_after_successful_copy(
             scopes=("scope.a", "scope.b"),
             docs="https://example.test/oauth",
         ),
-        files=("gmail.py",),
+        files=("handler.py",),
         tools=(),
         extras=("oauth-keyring",),
         peer_deps=MappingProxyType({}),
@@ -263,7 +263,7 @@ def test_oauth_guidance_is_exact_and_only_after_successful_copy(
     )
     monkeypatch.setattr(add, "load_manifest", lambda _name: manifest)
     written = BundleStatus(
-        "current", "installed", tmp_path, (tmp_path / "gmail.py",), "observed"
+        "current", "installed", tmp_path, (tmp_path / "handler.py",), "observed"
     )
     monkeypatch.setattr(
         add, "install_integration_bundle", lambda *_args, **_kwargs: written
@@ -331,14 +331,14 @@ def test_check_json_has_the_closed_shape_and_all_copy_states(tmp_path: Path) -> 
         )
     assert json.loads(current.getvalue())["reason_code"] == "up_to_date"
 
-    (destination / "echo.py").write_text("# owner edit\n")
+    (destination / "handler.py").write_text("# owner edit\n")
     modified = StringIO()
     with patch("sys.stdout", modified):
         assert (
             main(["add", "echo", "--force", "--json", "--out", str(destination)]) == 5
         )
     assert json.loads(modified.getvalue())["reason_code"] == "local_changes"
-    assert (destination / "echo.py").read_text() == "# owner edit\n"
+    assert (destination / "handler.py").read_text() == "# owner edit\n"
 
 
 def test_check_classifies_outdated_runtime_and_cross_provider(tmp_path: Path) -> None:
@@ -472,7 +472,7 @@ def test_outdated_swap_restores_edit_made_between_recheck_and_rename(
 
     def edit_then_rename(self: Path, target: Path) -> Path:
         if self == destination:
-            (destination / "echo.py").write_bytes(concurrent)
+            (destination / "handler.py").write_bytes(concurrent)
         return original(self, target)
 
     monkeypatch.setattr(Path, "rename", edit_then_rename)
@@ -481,7 +481,7 @@ def test_outdated_swap_restores_edit_made_between_recheck_and_rename(
             load_manifest("echo"), destination, runtime="python", force=True
         )
 
-    assert (destination / "echo.py").read_bytes() == concurrent
+    assert (destination / "handler.py").read_bytes() == concurrent
     assert not list(tmp_path.glob(".echo.kaji-*"))
 
 

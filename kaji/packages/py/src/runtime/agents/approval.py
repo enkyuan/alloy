@@ -9,12 +9,12 @@ import math
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
-from kaji.infra.events.protocols import EventJournal, EventSubscription
-from kaji.infra.events.schemas import (
+from kaji.events.protocols import EventJournal, EventSubscription
+from kaji.events.schemas import (
     StoredKajiEvent,
     require_stored_event,
 )
-from kaji.infra.events.types import EventType
+from kaji.events.types import EventType
 from kaji.runtime.context import ToolExecutionContext, ToolInvocation
 from kaji.runtime.tools.registry import ToolRisk
 

@@ -5,7 +5,7 @@ import { BoundTool } from "../src/integrations/functional";
 import type {
   IntegrationManifestDocument,
   IntegrationManifestTool,
-} from "../src/integrations/registry-loader";
+} from "../src/integrations/registry/loader";
 import type { JSONSchema, ToolRisk, ToolSpec } from "../src/tools/registry";
 import * as echoModule from "../registry/echo/index";
 

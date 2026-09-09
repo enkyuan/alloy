@@ -13,7 +13,7 @@ import {
   formatIntegrationError,
   loadManifest,
   loadRegistryIndex,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 
 interface DiscoveryRow {
   name: string;

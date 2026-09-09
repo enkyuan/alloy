@@ -125,10 +125,10 @@
     }
   },
   "scripts": {
-    "prebuild": "bun run validate:registry",
+    "prebuild": "if [ -d ../../contracts ]; then rm -rf contracts && cp -R ../../contracts contracts; fi; bun run validate:registry",
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "if [ -d ../../contracts ]; then rm -rf contracts && cp -R ../../contracts contracts; fi; tsc --noEmit",
     "typecheck:registry": "tsc -p tsconfig.registry.json --noEmit",
     "lint": "oxlint src tests scripts registry",
     "format": "oxfmt --write \"**/*.ts\"",
@@ -138,8 +138,8 @@
     "test": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run \"$@\"' --",
     "test:coverage": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run --coverage --coverage.include=\"src/**/*.ts\" --coverage.include=\"registry/**/*.ts\" --coverage.exclude=\"src/**/*.d.ts\" --coverage.exclude=\"registry/**/tests/**/*.test.ts\" --coverage.reporter=text --coverage.reporter=json-summary --coverage.thresholds.lines=80 --coverage.thresholds.functions=80 --coverage.thresholds.branches=80 --coverage.thresholds.statements=80 \"$@\"' --",
     "test:complexity": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run tests/runtime-complexity.test.ts tests/runtime-faults.test.ts \"$@\"' --",
-    "benchmark:beta": "bun benchmarks/runtime-benchmark.ts",
-    "soak:beta": "bun benchmarks/runtime-soak.ts",
+    "benchmark:beta": "bun benchmarks/runtime/benchmark.ts",
+    "soak:beta": "bun benchmarks/runtime/soak.ts",
     "test:quickstart": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run examples/minimal-agent/smoke.test.ts \"$@\"' --",
     "test:integration": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs run --config vitest.integration.config.ts \"$@\"' --",
     "test:watch": "PATH=\"${PATH#*:}:/usr/local/bin:/opt/homebrew/bin\" /bin/sh -c 'exec \"$(command -v node)\" ./node_modules/vitest/vitest.mjs \"$@\"' --",

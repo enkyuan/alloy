@@ -18,7 +18,7 @@ from kaji.cli.templates import agent_template, env_template
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-CLI_CASES = REPO_ROOT / "kaji" / "contracts" / "cli" / "init-cases-v1.json"
+CLI_CASES = REPO_ROOT / "kaji" / "contracts" / "cli/v1/init.json"
 CLI_CORPUS = json.loads(CLI_CASES.read_text())
 
 

@@ -290,7 +290,7 @@ proof.
 For the cross-SDK release gate, run from the repository root:
 
 ```bash
-uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py
+uv run --project kaji/packages/py python -m kaji.tooling.release.check
 ```
 
 This wraps Python unit/static checks, Python wheel smoke, TS unit/static/build
@@ -549,7 +549,7 @@ export REDIS_URL=redis://localhost:6379/0
 ```
 
 ```python
-from kaji.infra.events.bus import EventBus
+from kaji.events.bus import EventBus
 bus = EventBus()  # Redis-backed; same interface as InMemoryEventBus
 ```
 

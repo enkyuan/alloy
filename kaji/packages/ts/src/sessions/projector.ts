@@ -7,7 +7,7 @@ import {
   type SessionState,
 } from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
-import { ContextIndex, type ContextIndexStats } from "@/sessions/context-index";
+import { ContextIndex, type ContextIndexStats } from "@/sessions/context";
 import type { ContextBuildResult, ContextWindow } from "@/runtime/context";
 
 /** Incremental projection that owns one session-local sequence cursor. */

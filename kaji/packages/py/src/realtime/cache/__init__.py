@@ -1,0 +1,1 @@
+"""Durable embedding cache adapters."""

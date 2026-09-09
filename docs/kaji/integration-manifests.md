@@ -1,8 +1,8 @@
 # Integration Manifests
 
 The canonical schemas are
-[`manifest.schema.json`](../../kaji/contracts/integrations/manifest.schema.json)
-and [`index.schema.json`](../../kaji/contracts/integrations/index.schema.json).
+[`manifest.schema.json`](../../kaji/contracts/integrations/v1/schema/manifest.json)
+and [`index.schema.json`](../../kaji/contracts/integrations/v1/schema/index.json).
 Both SDK loaders consume byte-identical package copies and normalize manifest
 validation failures to JSON Pointers.
 
@@ -96,5 +96,8 @@ its live side effects are claimed. Gmail is now a catalog-beta integration on
 the same footing: its receipt schema is `gmail-proof-v1.schema.json`, and its
 protected operator run (one `gmail.get_message` read plus one exactly-approved
 `gmail.send_message`, read back and deleted) is pending on the release commit.
-Until that receipt exists, treat Gmail's live send path as unproven, not the
-catalog stability, which is beta.
+Its release contract ships at
+[`release/v1/gmail.json`](../../kaji/contracts/release/v1/gmail.json), next to
+[`release/v1/github.json`](../../kaji/contracts/release/v1/github.json). Until
+that receipt exists, treat Gmail's live send path as unproven, not the catalog
+stability, which is beta.

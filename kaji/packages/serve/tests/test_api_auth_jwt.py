@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from jose import jwt
 
 from kaji_serve.config import settings
-from kaji_serve.server.auth_utils import decode_bearer_token
+from kaji_serve.server.auth import decode_bearer_token
 
 ISSUER = "https://test.supabase.co/auth/v1"
 AUDIENCE = "authenticated"

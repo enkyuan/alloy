@@ -1,6 +1,6 @@
 /**
  * Zod schemas for all Kaji events, mirroring
- * `kaji.infra.events.schemas`. Field names stay snake_case because they are
+ * `kaji.events.schemas`. Field names stay snake_case because they are
  * the shared wire format with the Python SDK.
  *
  * `BaseEvent` is `.strict()` to match Pydantic's `extra="forbid"`. The
@@ -26,8 +26,8 @@ import {
   type DeepReadonly,
   type JsonValue,
 } from "@/events/json";
-import newEventSchema from "../../contracts/events/new-kaji-event-v1.schema.json";
-import storedEventSchema from "../../contracts/events/stored-kaji-event-v1.schema.json";
+import newEventSchema from "../../contracts/events/v1/schema/new.json";
+import storedEventSchema from "../../contracts/events/v1/schema/stored.json";
 
 export const MAX_DURABLE_TOOL_ARGUMENT_BYTES = 64 * 1024;
 export const MAX_DURABLE_TOOL_RESULT_BYTES = 64 * 1024;

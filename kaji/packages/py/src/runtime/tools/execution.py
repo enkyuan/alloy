@@ -9,11 +9,11 @@ import math
 import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
-from kaji.core.safe_logging import log_no_throw, log_redacted_failure
-from kaji.infra.events.errors import DurableJsonLimitError, InvalidDurableValueError
-from kaji.infra.events.json import durable_json_snapshot
-from kaji.infra.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
-from kaji.infra.observability.protocols import (
+from kaji.core.logging import log_no_throw, log_redacted_failure
+from kaji.events.errors import DurableJsonLimitError, InvalidDurableValueError
+from kaji.events.json import durable_json_snapshot
+from kaji.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     NOOP_TRACE,
@@ -41,7 +41,7 @@ from kaji.runtime.tools.idempotency import (
 from kaji.runtime.tools.registry import ToolSpec
 
 if TYPE_CHECKING:
-    from kaji.runtime.agents.cancellation import CancellationToken
+    from kaji.runtime.agents.cancel import CancellationToken
 
 
 ToolExecutor = Callable[[ToolInvocation], Awaitable[Any]]
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 
 def _integration_recovery_fields(value: object) -> dict[str, str]:
-    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+    from kaji.integrations.recovery import (  # noqa: PLC0415
         closed_recovery_fields,
     )
 
@@ -68,7 +68,7 @@ def _integration_recovery_fields(value: object) -> dict[str, str]:
 
 
 def _integration_transport_failure_fields(value: object) -> dict[str, str]:
-    from kaji.contracts.integration_recovery import (  # noqa: PLC0415
+    from kaji.integrations.recovery import (  # noqa: PLC0415
         closed_transport_failure_fields,
     )
 
@@ -808,7 +808,7 @@ class ToolExecutionController:
                 claim_resolved = True
                 return _ToolExecutionOutcome(failure=failure)
 
-            from kaji.runtime.agents.cancellation import (  # noqa: PLC0415
+            from kaji.runtime.agents.cancel import (  # noqa: PLC0415
                 CancellationToken,
             )
 

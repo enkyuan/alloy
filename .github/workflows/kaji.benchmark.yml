@@ -56,7 +56,7 @@ jobs:
       - name: Build and verify one release artifact set
         env:
           KAJI_RELEASE_COMMIT: ${{ steps.identity.outputs.commit }}
-        run: uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release
+        run: uv run --project kaji/packages/py python -m kaji.tooling.release.check --release
       - name: Upload exact release artifacts
         id: release-artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

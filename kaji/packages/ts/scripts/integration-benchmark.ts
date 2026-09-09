@@ -6,7 +6,7 @@ import {
   fixedOriginForTest,
   type FixedOriginTestResponse,
   type FixedOriginTestTransport,
-} from "../src/integrations/fixed-origin";
+} from "../src/integrations/origin";
 import { IntegrationPolicyError, IntegrationTransportError } from "../src/integrations/errors";
 import {
   _createMacOSKeychainTokenStorageForTest,

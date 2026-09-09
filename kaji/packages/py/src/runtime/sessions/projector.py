@@ -3,9 +3,9 @@
 from copy import deepcopy
 from typing import Any, Dict, Optional
 
-from kaji.infra.events.schemas import StoredKajiEvent, revalidate_stored_event
-from kaji.infra.events.store import EventStore
-from kaji.infra.observability.protocols import (
+from kaji.events.schemas import StoredKajiEvent, revalidate_stored_event
+from kaji.events.store import EventStore
+from kaji.observability.protocols import (
     MetricsSink,
     NOOP_METRICS,
     record_metric,
@@ -15,7 +15,7 @@ from kaji.runtime.agents.context import (
     ContextWindow,
 )
 from kaji.runtime.agents.prompts import SystemPrompt
-from kaji.runtime.sessions.context_index import ContextIndex, ContextIndexStats
+from kaji.runtime.sessions.context import ContextIndex, ContextIndexStats
 from kaji.runtime.sessions.replay import SessionState, apply_event
 
 

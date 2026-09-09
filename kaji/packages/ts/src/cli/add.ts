@@ -15,7 +15,7 @@ import {
   loadRegistryIndex,
   type LoadedIntegrationManifest,
   type RegistryIndexDocument,
-} from "@/integrations/registry-loader";
+} from "@/integrations/registry/loader";
 
 export interface AddOptions {
   readonly registryRoot: string;

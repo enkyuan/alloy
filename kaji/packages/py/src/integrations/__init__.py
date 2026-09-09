@@ -265,7 +265,7 @@ from kaji.integrations.errors import (  # noqa: E402
     IntegrationTransientReadError as _IntegrationTransientReadError,
     IntegrationTransportError as _IntegrationTransportError,
 )
-from kaji.integrations.fixed_origin import (  # noqa: E402
+from kaji.integrations.origin import (  # noqa: E402
     FixedOriginClient as _FixedOriginClient,
     IntegrationResponse as _IntegrationResponse,
 )

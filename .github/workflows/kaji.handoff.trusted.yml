@@ -146,7 +146,7 @@ jobs:
             arguments+=(--mode commit)
           fi
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/verify_ts_handoff_source.py "${arguments[@]}"
+            trusted/kaji/tooling/release/typescript/source.py "${arguments[@]}"
 
       - name: Set up candidate Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -181,7 +181,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/ts_handoff.py preflight \
+            trusted/kaji/tooling/release/typescript/handoff.py preflight \
             --mode internal-evaluation \
             --candidate-root candidate \
             --source-input-dir .artifacts/kaji-handoff-inputs/source \
@@ -202,7 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/ts_handoff.py preflight \
+            trusted/kaji/tooling/release/typescript/handoff.py preflight \
             --mode release \
             --candidate-root candidate \
             --source-input-dir .artifacts/kaji-handoff-inputs/source \
@@ -218,7 +218,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/ts_handoff.py stage \
+            trusted/kaji/tooling/release/typescript/handoff.py stage \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
             --preflight .artifacts/kaji-handoff-inputs/preflight.json \
@@ -731,7 +731,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/ts_handoff.py finalize \
+            trusted/kaji/tooling/release/typescript/handoff.py finalize \
             --mode "$HANDOFF_MODE" \
             --candidate-root candidate \
             --preflight .artifacts/kaji-handoff-inputs/preflight.json \
@@ -755,7 +755,7 @@ jobs:
           set -euo pipefail
           validation=.artifacts/kaji-handoff-evidence/validation.json
           uv run --project trusted/kaji/packages/py --no-sync python \
-            trusted/kaji/scripts/validate_ts_consumer_handoff.py \
+            trusted/kaji/tooling/release/typescript/validate.py \
             --bundle-dir .artifacts/kaji-handoff \
             --receipts-dir .artifacts/kaji-handoff-inputs/receipt-set \
             --expected-mode "$HANDOFF_MODE" \

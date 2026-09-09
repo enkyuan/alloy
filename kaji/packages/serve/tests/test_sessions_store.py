@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from kaji.runtime.sessions.store import SessionRecord
-from kaji_serve.server.session_store import PostgresSessionStore
+from kaji_serve.server.sessions import PostgresSessionStore
 from kaji_serve.server.v1.sessions import list_sessions
 
 

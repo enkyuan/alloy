@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from kaji.infra.events.store import EventStore
+from kaji.events.store import EventStore
 from kaji.runtime.sessions.replay import SessionState, replay_session
 from kaji.runtime.sessions.store import SessionRecord, SessionStore
 

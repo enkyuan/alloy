@@ -30,7 +30,8 @@ kaji = "kaji.cli:main"
 
 [build-system]
 requires = ["setuptools==83.0.0", "editables==0.6"]
-build-backend = "setuptools.build_meta"
+build-backend = "backend"
+backend-path = ["."]
 
 [tool.setuptools]
 include-package-data = true
@@ -39,18 +40,13 @@ packages = [
     "kaji",
     "kaji.cli",
     "kaji.contracts",
-    "kaji.contracts.errors",
-    "kaji.contracts.events",
-    "kaji.contracts.integrations",
-    "kaji.contracts.parity",
-    "kaji.contracts.providers",
-    "kaji.contracts.tools",
     "kaji.core",
-    "kaji.infra",
-    "kaji.infra.events",
-    "kaji.infra.events.store",
-    "kaji.infra.observability",
-    "kaji.infra.realtime",
+    "kaji.events",
+    "kaji.events.store",
+    "kaji.observability",
+    "kaji.realtime",
+    "kaji.realtime.cache",
+    "kaji.realtime.history",
     "kaji.integrations",
     "kaji.integrations.registry",
     "kaji.integrations.registry.echo",
@@ -61,11 +57,11 @@ packages = [
     "kaji.modalities.text",
     "kaji.modalities.voice",
     "kaji.modalities.voice.tts",
-    "kaji.modalities.voice.utils",
     "kaji.runtime",
     "kaji.runtime.agents",
     "kaji.runtime.integrations",
     "kaji.runtime.providers",
+    "kaji.runtime.providers.openai",
     "kaji.runtime.sessions",
     "kaji.runtime.tools",
 ]
@@ -77,13 +73,7 @@ kaji = [
     "integrations/registry/**/*.py",
     "integrations/registry/**/LICENSE",
 ]
-"kaji.contracts" = ["*.json", "*.md", "cli/*.json", "release/*.json"]
-"kaji.contracts.errors" = ["*.json"]
-"kaji.contracts.events" = ["*.json"]
-"kaji.contracts.integrations" = ["*.json"]
-"kaji.contracts.parity" = ["*.json"]
-"kaji.contracts.providers" = ["*.json"]
-"kaji.contracts.tools" = ["*.json"]
+"kaji.contracts" = ["**/*.json", "**/*.md"]
 
 [dependency-groups]
 dev = [

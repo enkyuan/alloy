@@ -1,0 +1,838 @@
+#!/usr/bin/env python3
+"""Run Kaji's local beta gates or the full offline release rehearsal."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+
+from kaji.tooling.shared.process import (
+    CommandBudget,
+    CommandError,
+    CompletedCommand,
+    CommandExitError,
+    CommandOutputLimitError,
+    CommandInterruptedError,
+    CommandStartError,
+    CommandTimeoutError,
+    LOCAL_COMMAND_BUDGET,
+    LOCAL_ORCHESTRATOR_BUDGET,
+    PACKAGE_COMMAND_BUDGET,
+    PACKAGE_ORCHESTRATOR_BUDGET,
+    PROVIDER_ORCHESTRATOR_BUDGET,
+    RELEASE_COMMAND_BUDGET,
+    run_checked as run_process,
+)
+
+
+ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
+SDK = ROOT / "kaji"
+TYPESCRIPT = ROOT / "kaji" / "packages" / "ts"
+TOOLING = ROOT / "kaji" / "tooling"
+COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+
+
+class GateFailure(RuntimeError):
+    """A gate failed with a process-compatible exit status."""
+
+    def __init__(self, status: int) -> None:
+        self.status = status
+        super().__init__(f"gate exited with status {status}")
+
+
+@dataclass(frozen=True, slots=True)
+class Gate:
+    label: str
+    directory: Path
+    command: tuple[str, ...]
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET
+
+
+def offline_command(*command: str) -> tuple[str, ...]:
+    return (sys.executable, str(TOOLING / "quality/offline.py"), "--", *command)
+
+
+TS_COMMON_GATES = (
+    Gate("TypeScript typecheck", TYPESCRIPT, ("bun", "run", "typecheck")),
+    Gate("TypeScript build", TYPESCRIPT, ("bun", "run", "build")),
+    Gate(
+        "TypeScript unit tests (offline)",
+        TYPESCRIPT,
+        offline_command("bun", "run", "test:coverage"),
+    ),
+    Gate(
+        "TypeScript package smoke",
+        TYPESCRIPT,
+        ("bun", "run", "package:smoke"),
+        PACKAGE_ORCHESTRATOR_BUDGET,
+    ),
+)
+
+
+TS_RELEASE_GATES = (
+    Gate("TypeScript format", TYPESCRIPT, ("bun", "run", "format:check")),
+    Gate("TypeScript lint", TYPESCRIPT, ("bun", "run", "lint")),
+    Gate(
+        "TypeScript typecheck (release)",
+        TYPESCRIPT,
+        ("bun", "run", "typecheck"),
+    ),
+    Gate(
+        "TypeScript registry typecheck",
+        TYPESCRIPT,
+        ("bun", "run", "typecheck:registry"),
+    ),
+    Gate(
+        "TypeScript registry validation",
+        TYPESCRIPT,
+        ("bun", "run", "validate:registry"),
+    ),
+    Gate(
+        "TypeScript integration validation",
+        TYPESCRIPT,
+        ("bun", "run", "check:integrations"),
+    ),
+    Gate("TypeScript build (release)", TYPESCRIPT, ("bun", "run", "build")),
+    Gate(
+        "TypeScript tests (release, offline)",
+        TYPESCRIPT,
+        offline_command("bun", "run", "test:coverage"),
+    ),
+    Gate(
+        "TypeScript quickstart (release)",
+        TYPESCRIPT,
+        offline_command("bun", "run", "test:quickstart"),
+    ),
+    Gate(
+        "TypeScript package smoke (release)",
+        TYPESCRIPT,
+        ("bun", "run", "package:smoke"),
+        PACKAGE_ORCHESTRATOR_BUDGET,
+    ),
+    Gate("TypeScript publint", TYPESCRIPT, ("bun", "x", "publint")),
+)
+
+SHARED_GATES = (
+    Gate(
+        "Shared beta contract",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "python",
+            "kaji/tooling/contracts/check.py",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate(
+        "Packaged beta contract synchronization",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "python",
+            "kaji/tooling/integrations/contracts/beta.py",
+            "--check",
+        ),
+    ),
+    Gate(
+        "Integration contract synchronization",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "python",
+            "kaji/tooling/integrations/contracts/sync.py",
+            "--check",
+        ),
+    ),
+    Gate(
+        "Integration manifest and tool ABI",
+        ROOT,
+        (
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "python",
+            "kaji/tooling/integrations/abi/check.py",
+            "--explain",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate(
+        "Cross-SDK behavioral parity",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "--no-sync",
+            "python",
+            "kaji/tooling/contracts/parity.py",
+        ),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+    Gate("ast-grep structural audit", ROOT, ("bun", "run", "audit:ast-grep")),
+    Gate(
+        "Deterministic complexity and quick benchmark smoke",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "--no-sync",
+            "python",
+            "kaji/tooling/performance/run/benchmark.py",
+            "--quick",
+        ),
+        RELEASE_COMMAND_BUDGET,
+    ),
+    Gate(
+        "Deterministic integration quick benchmark",
+        ROOT,
+        offline_command(
+            "uv",
+            "run",
+            "--project",
+            "kaji/packages/py",
+            "--no-sync",
+            "python",
+            "kaji/tooling/performance/bench/integrations.py",
+            "--mode",
+            "quick",
+        ),
+        RELEASE_COMMAND_BUDGET,
+    ),
+)
+
+PYTHON_CI_GATE = Gate(
+    "Python tests (offline)",
+    ROOT,
+    offline_command(
+        "uv",
+        "run",
+        "--project",
+        "kaji/packages/py",
+        "--no-sync",
+        "pytest",
+        "kaji/packages/py/tests",
+        "-m",
+        "not integration",
+        "--cov-fail-under=80",
+    ),
+    LOCAL_ORCHESTRATOR_BUDGET,
+)
+
+CI_GATES = (
+    *SHARED_GATES,
+    PYTHON_CI_GATE,
+    Gate(
+        "TypeScript build (offline)",
+        ROOT,
+        offline_command("bun", "run", "--cwd", "kaji/packages/ts", "build"),
+    ),
+    Gate(
+        "TypeScript tests (offline)",
+        ROOT,
+        offline_command("bun", "run", "--cwd", "kaji/packages/ts", "test:coverage"),
+        LOCAL_ORCHESTRATOR_BUDGET,
+    ),
+)
+
+
+def common_gates() -> tuple[Gate, ...]:
+    return TS_COMMON_GATES
+
+
+def release_gates() -> tuple[Gate, ...]:
+    return TS_RELEASE_GATES
+
+
+def ci_gates() -> tuple[Gate, ...]:
+    return CI_GATES
+
+
+def section(label: str) -> None:
+    print(f"\n==> {label}", flush=True)
+
+
+def fail(message: str, *, status: int = 1) -> None:
+    print(f"FAIL: {message}", file=sys.stderr)
+    raise GateFailure(status)
+
+
+def process_status(status: int) -> int:
+    return status if status >= 0 else 128 - status
+
+
+def run_checked(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET,
+    capture: bool = False,
+    check: bool = True,
+) -> CompletedCommand:
+    try:
+        return run_process(
+            command,
+            cwd=cwd,
+            env=environment,
+            budget=budget,
+            capture=capture,
+            check=check,
+        )
+    except CommandExitError as error:
+        raise GateFailure(process_status(error.returncode)) from None
+    except CommandStartError:
+        fail("release command could not be started", status=127)
+    except CommandTimeoutError:
+        fail("release command exceeded its time budget")
+    except CommandOutputLimitError as error:
+        fail(f"release command exceeded its {error.stream} capture budget")
+    except CommandInterruptedError as error:
+        raise GateFailure(128 + error.signum) from None
+    except CommandError as error:
+        fail(f"release command failed: {error}")
+
+
+def run_in_dir(
+    label: str,
+    directory: Path,
+    command: list[str],
+    environment: dict[str, str],
+    budget: CommandBudget = LOCAL_COMMAND_BUDGET,
+) -> None:
+    section(label)
+    run_checked(command, cwd=directory, environment=environment, budget=budget)
+
+
+def run_gates(gates: tuple[Gate, ...], environment: dict[str, str]) -> None:
+    for gate in gates:
+        run_in_dir(
+            gate.label,
+            gate.directory,
+            list(gate.command),
+            environment,
+            gate.budget,
+        )
+
+
+def require_command(command: str, reason: str, environment: dict[str, str]) -> None:
+    if shutil.which(command, path=environment.get("PATH")) is None:
+        fail(f"{command} is required for {reason}")
+
+
+def release_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    home = environment.get("HOME", "")
+    existing_path = environment.get("PATH", "")
+    environment["PATH"] = os.pathsep.join(
+        ([existing_path] if existing_path else [])
+        + [
+            f"{home}/.local/bin",
+            f"{home}/.bun/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+        ]
+    )
+    environment["UV_SYSTEM_CERTS"] = environment.get("UV_SYSTEM_CERTS") or "true"
+    return environment
+
+
+def run_no_key_live_skip(environment: dict[str, str]) -> None:
+    section("No-key live gate skip hygiene")
+    child_environment = environment.copy()
+    for key in (
+        "OPENAI_API_KEY",
+        "KAJI_LIVE_OPENAI_MODEL",
+        "KAJI_REQUIRE_LIVE_KEYS",
+    ):
+        child_environment.pop(key, None)
+    run_checked(
+        [sys.executable, str(TOOLING / "providers/openai/loop.py")],
+        cwd=ROOT,
+        environment=child_environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
+    )
+
+
+def run_required_key_failure(environment: dict[str, str]) -> None:
+    section("Required-key live gate failure hygiene")
+    child_environment = environment.copy()
+    child_environment.pop("OPENAI_API_KEY", None)
+    child_environment.pop("KAJI_LIVE_OPENAI_MODEL", None)
+    child_environment["KAJI_REQUIRE_LIVE_KEYS"] = "1"
+    completed = run_checked(
+        [sys.executable, str(TOOLING / "providers/openai/loop.py")],
+        cwd=ROOT,
+        environment=child_environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
+        capture=True,
+        check=False,
+    )
+    if completed.returncode != 2:
+        fail(
+            "required OpenAI key check returned "
+            f"{process_status(completed.returncode)} instead of 2"
+        )
+    output = (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
+    print(output, end="" if output.endswith("\n") else "\n")
+
+
+def run_shared_checks(environment: dict[str, str]) -> None:
+    run_no_key_live_skip(environment)
+    run_required_key_failure(environment)
+    run_gates(SHARED_GATES, environment)
+
+
+def run_ci_checks(environment: dict[str, str]) -> None:
+    run_gates(CI_GATES, environment)
+
+
+def run_common_checks(environment: dict[str, str]) -> None:
+    run_shared_checks(environment)
+    run_gates(common_gates(), environment)
+    run_gates((PYTHON_CI_GATE,), environment)
+    run_in_dir(
+        "Python typecheck",
+        SDK,
+        [
+            "uv",
+            "run",
+            "--project",
+            "packages/py",
+            "python",
+            "tooling/quality/types.py",
+            "--output-format",
+            "concise",
+        ],
+        environment,
+        LOCAL_ORCHESTRATOR_BUDGET,
+    )
+    run_in_dir(
+        "Python lint",
+        SDK,
+        [
+            "uv",
+            "run",
+            "--project",
+            "packages/py",
+            "ruff",
+            "check",
+            "packages/py/src",
+            "packages/py/tests",
+        ],
+        environment,
+    )
+    run_in_dir(
+        "Python artifact smoke",
+        SDK,
+        [
+            "uv",
+            "run",
+            "--project",
+            "packages/py",
+            "python",
+            "tooling/release/smoke.py",
+        ],
+        environment,
+        RELEASE_COMMAND_BUDGET,
+    )
+
+
+def run_keyed_provider_proof(environment: dict[str, str]) -> None:
+    artifacts_value = environment.get("KAJI_RELEASE_ARTIFACTS_DIR", "").strip()
+    if not artifacts_value:
+        fail(
+            "KAJI_RELEASE_ARTIFACTS_DIR is required for keyed provider proof", status=2
+        )
+    artifacts = Path(artifacts_value)
+    if not artifacts.is_absolute():
+        artifacts = ROOT / artifacts
+    if not artifacts.is_dir():
+        fail(
+            "KAJI_RELEASE_ARTIFACTS_DIR must name an existing release artifact directory",
+            status=2,
+        )
+    commit = environment.get("KAJI_RELEASE_COMMIT", "").strip()
+    if COMMIT_PATTERN.fullmatch(commit) is None:
+        fail(
+            "KAJI_RELEASE_COMMIT must be exactly 40 lowercase hex characters for keyed provider proof",
+            status=2,
+        )
+    run_checked(
+        [
+            sys.executable,
+            str(TOOLING / "providers/openai/live.py"),
+            "--protected",
+            "--artifacts-dir",
+            str(artifacts.resolve()),
+            "--expected-commit",
+            commit,
+        ],
+        cwd=ROOT,
+        environment=environment,
+        budget=PROVIDER_ORCHESTRATOR_BUDGET,
+    )
+
+
+def configured_release_commit(environment: dict[str, str]) -> str | None:
+    return environment.get("KAJI_RELEASE_COMMIT") or environment.get("GITHUB_SHA")
+
+
+def package_metadata_command(
+    environment: dict[str, str], artifacts: Path
+) -> tuple[str, list[str]]:
+    command = [
+        "uv",
+        "run",
+        "--project",
+        "kaji/packages/py",
+        "python",
+        "kaji/tooling/release/verify/metadata.py",
+    ]
+    commit = configured_release_commit(environment)
+    if commit is None:
+        command.extend(["--artifacts-dir", str(artifacts)])
+        return "Local non-promotable package metadata and checksum manifest", command
+    command.extend(
+        [
+            "--release",
+            "--commit",
+            commit,
+            "--artifacts-dir",
+            str(artifacts),
+        ]
+    )
+    return "Commit-bound package metadata and checksum manifest", command
+
+
+def run_release_checks(environment: dict[str, str]) -> None:
+    artifacts = ROOT / ".artifacts" / "kaji-release"
+    temporary_parent = environment.get("TMPDIR") or None
+    with tempfile.TemporaryDirectory(
+        prefix="kaji-release.", dir=temporary_parent
+    ) as temporary:
+        release_temporary = Path(temporary)
+        shutil.rmtree(artifacts, ignore_errors=True)
+        artifacts.mkdir(parents=True)
+
+        run_in_dir(
+            "Python format",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "ruff",
+                "format",
+                "--check",
+                "packages/py/src",
+                "packages/py/tests",
+            ],
+            environment,
+        )
+        run_in_dir(
+            "Python lint (release)",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "ruff",
+                "check",
+                "packages/py/src",
+                "packages/py/tests",
+            ],
+            environment,
+        )
+        run_in_dir(
+            "Python typecheck (release)",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "python",
+                "tooling/quality/types.py",
+                "--output-format",
+                "concise",
+            ],
+            environment,
+            LOCAL_ORCHESTRATOR_BUDGET,
+        )
+        run_in_dir(
+            "Python tests (release)",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "pytest",
+                "packages/py/tests",
+                "--cov-fail-under=80",
+            ],
+            environment,
+        )
+        run_in_dir(
+            "Python release artifacts",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "python",
+                "tooling/release/smoke.py",
+            ],
+            environment,
+            RELEASE_COMMAND_BUDGET,
+        )
+        distributions = sorted(
+            path
+            for path in (SDK / "packages" / "py" / "dist").iterdir()
+            if not path.name.startswith(".")
+        )
+        if not distributions:
+            fail("Python release produced no distributions")
+        run_in_dir(
+            "Python metadata",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "twine",
+                "check",
+                *(str(path) for path in distributions),
+            ],
+            environment,
+        )
+
+        run_gates(release_gates(), environment)
+
+        attw_environment = environment.copy()
+        attw_environment["npm_config_cache"] = str(release_temporary / "attw-npm-cache")
+        run_in_dir(
+            "TypeScript type artifact audit",
+            TYPESCRIPT,
+            ["bun", "x", "attw", "--pack", "."],
+            attw_environment,
+            PACKAGE_COMMAND_BUDGET,
+        )
+
+        section("Locked production dependency audits")
+        requirements = release_temporary / "requirements.txt"
+        run_checked(
+            [
+                "uv",
+                "export",
+                "--project",
+                "packages/py",
+                "--locked",
+                "--no-dev",
+                "--no-emit-project",
+                "--extra",
+                "openai",
+                "--extra",
+                "anthropic",
+                "--output-file",
+                str(requirements),
+            ],
+            cwd=SDK,
+            environment=environment,
+        )
+        run_checked(
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "pip-audit",
+                "--require-hashes",
+                "--requirement",
+                str(requirements),
+            ],
+            cwd=SDK,
+            environment=environment,
+        )
+        run_checked(
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "pip-audit",
+                "--require-hashes",
+                "--requirement",
+                "packages/py/build-requirements.txt",
+            ],
+            cwd=SDK,
+            environment=environment,
+        )
+        section("Construct release npm tarball")
+        npm_environment = environment.copy()
+        npm_environment["npm_config_cache"] = str(release_temporary / "npm-cache")
+        run_checked(
+            [
+                "npm",
+                "pack",
+                "--ignore-scripts",
+                "--pack-destination",
+                str(artifacts),
+                str(TYPESCRIPT),
+            ],
+            cwd=ROOT,
+            environment=npm_environment,
+        )
+        tarballs = sorted(artifacts.glob("*.tgz"))
+        if len(tarballs) != 1:
+            fail(f"expected exactly one npm tarball, found {len(tarballs)}")
+        tarball = tarballs[0]
+
+        run_in_dir(
+            "Exact TypeScript artifact contents",
+            ROOT,
+            [
+                "uv",
+                "run",
+                "--project",
+                "kaji/packages/py",
+                "python",
+                "kaji/tooling/release/verify/npm.py",
+                str(tarball),
+            ],
+            environment,
+        )
+        run_in_dir(
+            "Exact TypeScript artifact install smoke",
+            TYPESCRIPT,
+            ["bun", "scripts/smoke_package.mts", str(tarball)],
+            environment,
+            PACKAGE_ORCHESTRATOR_BUDGET,
+        )
+        run_in_dir(
+            "Reverify final Python artifacts",
+            SDK,
+            [
+                "uv",
+                "run",
+                "--project",
+                "packages/py",
+                "python",
+                "tooling/release/verify/archives.py",
+                "packages/py/dist",
+            ],
+            environment,
+        )
+
+        label, metadata_command = package_metadata_command(environment, artifacts)
+        run_in_dir(
+            label,
+            ROOT,
+            metadata_command,
+            environment,
+            LOCAL_ORCHESTRATOR_BUDGET,
+        )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--gate",
+        action="store_true",
+        help=(
+            "run the canonical repository-owned Kaji pull-request commands; "
+            "runner setup and protected external evidence are not claimed"
+        ),
+    )
+    mode.add_argument(
+        "--release",
+        action="store_true",
+        help=(
+            "run the offline artifact rehearsal; without KAJI_RELEASE_COMMIT or "
+            "GITHUB_SHA this is a non-promotable local rehearsal and commit and "
+            "pinned-toolchain enforcement are not active"
+        ),
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    environment = release_environment()
+    commit = configured_release_commit(environment)
+    if args.release and commit is None:
+        print(
+            "LOCAL REHEARSAL ONLY: commit and pinned-toolchain enforcement are not "
+            "active; generated artifacts are non-promotable."
+        )
+    try:
+        require_command("bun", "TypeScript SDK release gates", environment)
+        require_command("node", "TypeScript test runtime", environment)
+        require_command("uv", "Python SDK release gates", environment)
+        if args.gate:
+            run_ci_checks(environment)
+        else:
+            require_command("npm", "npm artifact construction", environment)
+            if args.release:
+                run_shared_checks(environment)
+                run_release_checks(environment)
+            else:
+                run_common_checks(environment)
+                section("Protected keyed provider proof")
+                if environment.get("KAJI_RUN_KEYED_LIVE") == "1":
+                    run_keyed_provider_proof(environment)
+                else:
+                    print("SKIP: not requested; no keyed provider evidence is claimed.")
+    except GateFailure as error:
+        return error.status
+
+    print()
+    if args.gate:
+        print(
+            "PASS: local Kaji CI gate completed; protected matrix, provider, and "
+            "publication evidence NOT claimed"
+        )
+    elif args.release:
+        if commit is None:
+            print(
+                "PASS: local offline release rehearsal only; commit and "
+                "pinned-toolchain enforcement NOT claimed; keyed/provider/publish "
+                "readiness NOT claimed"
+            )
+        else:
+            print(
+                "PASS: commit-bound offline release rehearsal; "
+                "keyed/provider/publish readiness NOT claimed"
+            )
+    else:
+        print("PASS: Kaji beta checks completed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

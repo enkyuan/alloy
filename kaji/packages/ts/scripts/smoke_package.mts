@@ -358,7 +358,7 @@ interface GitHubPackageProof {
     readonly syntheticCompletion: LifecycleProof;
   };
   readonly policyBeforeRequest: {
-    readonly testFile: "kaji/packages/ts/tests/github-registry.test.ts";
+    readonly testFile: "kaji/packages/ts/tests/integrations/github-registry.test.ts";
     readonly testName: "rejects approval for github_create_issue before token or HTTP";
     readonly tokenLookups: 0;
     readonly requestAttempts: 0;
@@ -529,14 +529,14 @@ const NODE_HANDOFF_CHECKS = [
   "catalog-15-13",
 ] as const;
 const LICENSE_ID = "FSL-1.1-ALv2";
-const POLICY_TEST_FILE = "kaji/packages/ts/tests/github-registry.test.ts";
+const POLICY_TEST_FILE = "kaji/packages/ts/tests/integrations/github-registry.test.ts";
 const POLICY_TEST_NAME = "rejects approval for github_create_issue before token or HTTP";
 const PRIVATE_GITHUB_COMPOSITION_PATHS = [
   "registry/github/package-tools.ts",
   "registry/github/package.ts",
   "registry/github/package-internal.ts",
   "src/integrations/github.ts",
-  "src/integrations/github-package-internal.ts",
+  "src/integrations/github/internal.ts",
 ] as const;
 const EXPECTED_GITHUB_SOURCE_MAPS = [
   "dist/integrations/github.js.map",
@@ -1652,7 +1652,7 @@ function assertGithubPackageProof(
   }
   const sharedAbi = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-tool-abi-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/abi/github.json"),
       "utf8",
     ),
   ) as {
@@ -1661,13 +1661,13 @@ function assertGithubPackageProof(
   };
   const apiFixture = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-api-conformance-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/api/github.json"),
       "utf8",
     ),
   ) as { version: "1.0.0"; cases: readonly unknown[] };
   const packageAbi = JSON.parse(
     readFileSync(
-      join(installedPackageRoot, "contracts/integrations/github-tool-abi-typescript-v1.json"),
+      join(installedPackageRoot, "contracts/integrations/v1/abi/typescript/github.json"),
       "utf8",
     ),
   ) as {

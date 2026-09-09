@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "description": "Vector/embedding configuration contract for Kaji's tool retriever and document RAG.",
+  "embedding": {
+    "defaultModel": "gemini-embedding-2",
+    "modelSetting": "GEMINI_EMBEDDING_MODEL",
+    "provider": "gemini",
+    "dimension": "provider-determined; not fixed by the SDK. Cached payloads record their dimension and are rejected on mismatch or non-positive values."
+  },
+  "similarity": {
+    "metric": "cosine",
+    "implementation": "kaji.runtime.tools._vector_math.cosine_similarity",
+    "mismatchedDimensionsScore": 0.0,
+    "zeroNormScore": 0.0
+  },
+  "toolRetriever": {
+    "defaultTopK": 5,
+    "defaultThreshold": 0.6,
+    "selectionRule": "tools with similarity >= threshold, ordered by score descending, capped at topK"
+  },
+  "embeddingCache": {
+    "default": "in-memory",
+    "durable": {
+      "backend": "redis",
+      "implementation": "kaji.realtime.cache.embeddings.RedisEmbeddingCache",
+      "cacheGeneration": "v3",
+      "defaultTtlSeconds": 2592000,
+      "keyFormat": "agent:tool_embeddings:{generation}:{provider}:{model}",
+      "constraints": [
+        "all cached embeddings in one payload must share one non-zero dimension",
+        "cache identity is provider:model:generation; stale mixed-model payloads are rejected"
+      ]
+    }
+  },
+  "documentRag": {
+    "dimensionPolicy": "chunks whose embedding dimension differs from the index are skipped at search time"
+  }
+}

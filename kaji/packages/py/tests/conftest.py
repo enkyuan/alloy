@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import os
+from pathlib import Path
+import sys
 import socket
 from collections.abc import Iterator
 from typing import NoReturn
@@ -10,6 +13,18 @@ import pytest
 
 
 _OFFLINE_ERROR = "KAJI offline gate blocked network access"
+_SOURCE_INIT = Path(__file__).resolve().parents[1] / "src" / "__init__.py"
+
+
+def _load_source_package() -> None:
+    spec = importlib.util.spec_from_file_location("kaji", _SOURCE_INIT)
+    assert spec is not None and spec.loader is not None
+    package = importlib.util.module_from_spec(spec)
+    sys.modules["kaji"] = package
+    spec.loader.exec_module(package)
+
+
+_load_source_package()
 
 
 def _blocked(*_args: object, **_kwargs: object) -> NoReturn:

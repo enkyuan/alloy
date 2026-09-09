@@ -81,8 +81,8 @@ After the installed Python CLI stages Echo into `echo/`, save the following as
 import asyncio
 
 import kaji
-from echo.echo import EchoIntegration
-from kaji.infra.events import EventType
+from echo.handler import EchoIntegration
+from kaji.events.types import EventType
 
 
 async def main() -> None:

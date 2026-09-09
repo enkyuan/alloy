@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from kaji.core.safe_logging import log_redacted_failure
+from kaji.core.logging import log_redacted_failure
 from kaji_serve.server.deps import get_current_supabase_user
-from kaji_serve.server.supabase_auth import supabase_auth_service
+from kaji_serve.server.auth import supabase_auth_service
 from kaji_serve.server.database import get_db
 from kaji_serve.server.models.user import User
 from kaji_serve.server.models.auth import (

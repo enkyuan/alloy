@@ -28,7 +28,7 @@ export default defineConfig([
     // Per-provider entry points for tree-shaking. Import only the provider you use:
     //   import { OpenAIProvider } from "@irogane/kaji/openai"
     entry: {
-      openai: "src/providers/openai.ts",
+      openai: "src/providers/openai/index.ts",
       anthropic: "src/providers/anthropic.ts",
       auth: "src/auth/index.ts",
       integrations: "src/integrations/public.ts",

@@ -1,6 +1,6 @@
 import type { ToolHandler, ToolSpec } from "@irogane/kaji";
 
-import packageAbi from "../../contracts/integrations/github-tool-abi-typescript-v1.json";
+import packageAbi from "../../contracts/integrations/v1/abi/typescript/github.json";
 import type { GitHubClient } from "./client";
 import type { SharedGitHubClient } from "./index";
 
