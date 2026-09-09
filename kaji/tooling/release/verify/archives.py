@@ -655,6 +655,7 @@ def verify_archives() -> None:
             "LICENSE",
             "MANIFEST.in",
             "README.md",
+            "backend.py",
             "build-requirements.txt",
             "pyproject.toml",
         }
