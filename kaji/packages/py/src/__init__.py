@@ -35,6 +35,7 @@ _LAZY: dict[str, str] = {
     "AppendResult": "kaji.events",
     "ArtifactEmitted": "kaji.events",
     "CancellationToken": "kaji.runtime.agents",
+    "Capability": "kaji.capabilities",
     "CapabilityResult": "kaji.capabilities",
     "Clock": "kaji.core.determinism",
     "CredentialStore": "kaji.integrations.oauth",
@@ -127,6 +128,7 @@ _LAZY: dict[str, str] = {
     # --- Decorators & registration helpers (PEP 8 snake_case) ----------------
     "artifact": "kaji.artifacts",
     "build_tools_payload": "kaji.runtime.tools",
+    "capability": "kaji.capabilities",
     "capability_result": "kaji.capabilities",
     "function_tool": "kaji.runtime.integrations",
     "get_provider": "kaji.runtime.providers",

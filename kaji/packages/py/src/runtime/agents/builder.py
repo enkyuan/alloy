@@ -91,6 +91,10 @@ class AgentBuilder:
         """Add a function-level tool created by ``@function_tool``."""
         return self.integration(bound)
 
+    def capability(self, item: Integrable) -> "AgentBuilder":
+        """Add a product Capability through the existing scoped registry."""
+        return self.integration(item)
+
     def policy(self, p: ToolPolicy) -> "AgentBuilder":
         self._policy = p
         return self

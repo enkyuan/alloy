@@ -34,7 +34,8 @@
           { "$ref": "#/$defs/replay" },
           { "$ref": "#/$defs/concurrency" },
           { "$ref": "#/$defs/providerAdapter" },
-          { "$ref": "#/$defs/idempotency" }
+          { "$ref": "#/$defs/idempotency" },
+          { "$ref": "#/$defs/capability" }
         ]
       }
     }
@@ -205,6 +206,22 @@
             "id": true,
             "kind": { "const": "idempotency" },
             "fixture": { "enum": ["permanent-failed", "transient-failed", "unknown", "completed"] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "capability": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture", "controls"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "capability" },
+            "fixture": { "enum": ["normalization", "invalid-risk"] },
+            "controls": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": false
         }

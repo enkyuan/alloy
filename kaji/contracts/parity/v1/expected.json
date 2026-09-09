@@ -4877,6 +4877,44 @@
           "result": { "ok": true }
         }
       }
+    },
+    {
+      "id": "capability-normalization",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "description": "Capability fixture.",
+          "metadata": { "owner": "fixtures" },
+          "name": "fixtures.capability",
+          "parallel_safe": true,
+          "parameters": {
+            "additionalProperties": false,
+            "properties": { "value": { "type": "string" } },
+            "required": ["value"],
+            "type": "object"
+          },
+          "risk": "destructive",
+          "timeout_ms": 1000
+        }
+      }
+    },
+    {
+      "id": "capability-invalid-risk",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "error_code": "INVALID_TOOL_SCHEMA",
+          "error_path": "/risk"
+        }
+      }
     }
   ],
   "thirdPartyIntegrationSurface": {

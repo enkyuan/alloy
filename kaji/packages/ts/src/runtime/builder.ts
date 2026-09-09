@@ -74,6 +74,11 @@ export class AgentBuilder {
     return this;
   }
 
+  /** Add a product Capability through the existing scoped registry. */
+  capability(item: Integrable): this {
+    return this.integration(item);
+  }
+
   policy(p: ToolPolicy): this {
     this._policy = p;
     return this;

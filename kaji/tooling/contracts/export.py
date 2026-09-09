@@ -32,6 +32,7 @@ from kaji.runtime.agents.limits import TurnExecutionLimits, TurnTimeoutError
 from kaji.runtime.agents.runtime import AgentRuntime, TurnResult
 from kaji.runtime.agents.strategy import AgentStrategy
 from kaji.runtime.context import ToolInvocation, TurnContext
+from kaji.capabilities import capability
 from kaji.core.determinism import Clock, IdFactory, IdScope, ScheduledCallback
 from kaji.runtime.providers.anthropic import AnthropicProvider
 from kaji.runtime.providers.errors import ProviderError, normalize_provider_error
@@ -49,7 +50,7 @@ from kaji.runtime.tools.idempotency import (
     ToolIdempotencyFailure,
 )
 from kaji.runtime.tools.policy import ToolPolicy
-from kaji.runtime.tools.registry import ToolSpec
+from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 
 
@@ -1683,6 +1684,62 @@ def run_integration_surface() -> dict[str, Any]:
     }
 
 
+def run_capability(document: dict[str, Any], scenario: dict[str, Any]) -> dict[str, Any]:
+    """Snapshot Capability's ToolSpec projection through its real registry adapter."""
+    _ = document["controlSets"][scenario["controls"]]
+    snapshot = empty_snapshot()
+    schema = {
+        "type": "object",
+        "properties": {"value": {"type": "string"}},
+        "required": ["value"],
+        "additionalProperties": False,
+    }
+    if scenario["fixture"] == "normalization":
+        async def execute(arguments: dict[str, Any], _context: Any) -> dict[str, Any]:
+            return arguments
+
+        defined = capability(
+            name="fixtures.capability",
+            description="Capability fixture.",
+            input_schema=schema,
+            risk="destructive",
+            parallel_safe=True,
+            timeout_ms=1000,
+            metadata={"owner": "fixtures"},
+        )(execute)
+        registry = ToolRegistry()
+        defined.register(registry)
+        spec = registry.list_specs(enabled_only=False)[0]
+        snapshot["result"] = {
+            "name": spec.name,
+            "description": spec.description,
+            "parameters": spec.parameters,
+            "risk": spec.risk,
+            "parallel_safe": spec.parallel_safe,
+            "timeout_ms": spec.timeout_ms,
+            "metadata": defined.metadata,
+        }
+        return snapshot
+
+    if scenario["fixture"] == "invalid-risk":
+        async def execute(_arguments: dict[str, Any], _context: Any) -> dict[str, Any]:
+            return {}
+
+        try:
+            capability(
+                name="fixtures.invalid-risk",
+                description="Invalid risk fixture.",
+                input_schema=schema,
+                risk="unknown",  # type: ignore[arg-type]
+            )(execute)
+        except ToolValidationError as error:
+            snapshot["result"] = {"error_code": error.code, "error_path": error.path}
+            return snapshot
+        raise AssertionError("unknown capability risk was accepted")
+
+    raise ValueError(f"unknown capability fixture: {scenario['fixture']}")
+
+
 def _surfaced_spec_keys(spec: Any) -> list[str]:
     """The optional ToolSpec fields this SDK surfaces with a non-default value.
 
@@ -1721,6 +1778,8 @@ async def export_parity() -> dict[str, Any]:
             snapshot = await run_provider_adapter(scenario)
         elif kind == "idempotency":
             snapshot = await run_idempotency(scenario)
+        elif kind == "capability":
+            snapshot = run_capability(document, scenario)
         else:
             raise ValueError(f"unknown scenario kind: {kind}")
         if tuple(snapshot) != SNAPSHOT_KEYS:

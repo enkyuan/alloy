@@ -95,6 +95,8 @@
     { "id": "idempotency-permanent-failed", "kind": "idempotency", "fixture": "permanent-failed" },
     { "id": "idempotency-transient-failed", "kind": "idempotency", "fixture": "transient-failed" },
     { "id": "idempotency-unknown", "kind": "idempotency", "fixture": "unknown" },
-    { "id": "idempotency-completed", "kind": "idempotency", "fixture": "completed" }
+    { "id": "idempotency-completed", "kind": "idempotency", "fixture": "completed" },
+    { "id": "capability-normalization", "kind": "capability", "fixture": "normalization", "controls": "default" },
+    { "id": "capability-invalid-risk", "kind": "capability", "fixture": "invalid-risk", "controls": "default" }
   ]
 }

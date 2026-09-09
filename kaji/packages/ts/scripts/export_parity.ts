@@ -41,6 +41,7 @@ import { ToolPlanner } from "@/tools/planner";
 import { ToolPolicy } from "@/tools/policy";
 import { UnclassifiedToolRiskError, ToolRegistry, type ToolSpec } from "@/tools/registry";
 import { Integration, tool } from "@/integrations/base";
+import { capability } from "@/capabilities/definition";
 import {
   ToolArgumentValidationError,
   ToolSchemaValidationError,
@@ -1495,6 +1496,64 @@ function runIntegrationSurface(): JsonObject {
 }
 
 /** Optional ToolSpec fields the SDK surfaces with a non-default value. */
+function runCapability(document: JsonObject, scenario: JsonObject): JsonObject {
+  void document.controlSets[scenario.controls];
+  const snapshot = emptySnapshot();
+  const input = {
+    type: "object",
+    properties: { value: { type: "string" } },
+    required: ["value"],
+    additionalProperties: false,
+  };
+  if (scenario.fixture === "normalization") {
+    const defined = capability({
+      name: "fixtures.capability",
+      description: "Capability fixture.",
+      input,
+      risk: "destructive",
+      parallel_safe: true,
+      timeout_ms: 1000,
+      metadata: { owner: "fixtures" },
+      execute: async (input) => input,
+    });
+    const registry = new ToolRegistry();
+    defined.register(registry);
+    const spec = registry.listSpecs({ enabledOnly: false })[0]!;
+    snapshot.result = {
+      name: spec.name,
+      description: spec.description,
+      parameters: spec.parameters,
+      risk: spec.risk,
+      parallel_safe: spec.parallel_safe ?? false,
+      timeout_ms: spec.timeout_ms ?? null,
+      metadata: defined.metadata,
+    };
+    return snapshot;
+  }
+
+  if (scenario.fixture === "invalid-risk") {
+    const defined = capability({
+      name: "fixtures.invalid-risk",
+      description: "Invalid risk fixture.",
+      input,
+      risk: "unknown" as never,
+      execute: async () => ({}),
+    });
+    try {
+      defined.register(new ToolRegistry());
+    } catch (error) {
+      if (error instanceof ToolSchemaValidationError) {
+        snapshot.result = { error_code: error.code, error_path: error.path };
+        return snapshot;
+      }
+      throw error;
+    }
+    throw new Error("unknown capability risk was accepted");
+  }
+
+  throw new Error(`unknown capability fixture: ${scenario.fixture}`);
+}
+
 function surfacedSpecKeys(spec: ToolSpec): string[] {
   const keys = ["name", "description", "parameters", "risk"];
   if (spec.parallel_safe !== undefined && spec.parallel_safe !== false) {
@@ -1520,6 +1579,7 @@ async function exportParity(): Promise<JsonObject> {
     else if (scenario.kind === "concurrency") snapshot = await runConcurrency(document, scenario);
     else if (scenario.kind === "provider-adapter") snapshot = await runProviderAdapter(scenario);
     else if (scenario.kind === "idempotency") snapshot = await runIdempotency(scenario);
+    else if (scenario.kind === "capability") snapshot = runCapability(document, scenario);
     else throw new Error(`unknown scenario kind: ${scenario.kind}`);
     if (JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)) {
       throw new Error(`incomplete snapshot envelope: ${scenario.id}`);

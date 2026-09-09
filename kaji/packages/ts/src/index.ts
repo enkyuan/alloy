@@ -53,6 +53,7 @@ export {
 
 // Artifacts and capability results
 export { artifact, validateArtifactRef, type ArtifactRef } from "@/artifacts/types";
+export { capability, Capability, type CapabilityDefinition } from "@/capabilities/definition";
 export { capabilityResult, type CapabilityResult } from "@/capabilities/result";
 
 // Sessions
