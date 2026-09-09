@@ -8,11 +8,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   PostgresEventCommitter,
+  KajiPostgresBackend,
   PostgresEventStore,
   PostgresToolIdempotencyLedger,
+  PostgresTurnCoordinator,
+  postgresLockKey,
 } from "@/backends/postgres";
 import { EventIdConflictError } from "@/events/errors";
 import { IdempotencyConflictError, ToolExecutionError } from "@/tools/execution/errors";
+import { CancellationToken } from "@/runtime/cancellation";
 import { toolInvocationFingerprint } from "@/tools/idempotency";
 import { KajiEvent } from "@/events/schemas";
 import { EventType } from "@/events/types";
@@ -42,6 +46,34 @@ describePostgres("PostgresEventStore", () => {
 
   afterEach(async () => {
     await sql.end({ timeout: 5 });
+  });
+
+  it("composes a production backend without manual low-level wiring", async () => {
+    const backend = new KajiPostgresBackend(url!);
+    expect(backend.journal.store).toBe(backend.store);
+    expect(backend.idempotencyLedger).toBeInstanceOf(PostgresToolIdempotencyLedger);
+    expect(backend.coordinator).toBeInstanceOf(PostgresTurnCoordinator);
+    await backend.close();
+  });
+
+  it("serializes same sessions, releases cancelled waiters, and preserves lock-key parity", async () => {
+    expect(postgresLockKey("same")).toBe(677529369334489940n);
+    const first = new PostgresTurnCoordinator(url!, 4, 1);
+    const second = new PostgresTurnCoordinator(url!, 4, 1);
+    const held = await first.acquire("same");
+    const token = new CancellationToken();
+    const waiter = second.acquire("same", token);
+    setTimeout(() => token.cancel(), 10);
+    await expect(waiter).rejects.toThrow();
+
+    const [left, right] = await Promise.all([second.acquire("left"), second.acquire("right")]);
+    await left.release();
+    await right.release();
+    await held.release();
+    const later = await second.acquire("same");
+    await later.release();
+    await first.close();
+    await second.close();
   });
 
   it("appends, rejects conflicting duplicate IDs, pages, rolls back, and purges", async () => {

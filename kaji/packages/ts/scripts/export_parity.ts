@@ -51,6 +51,7 @@ import { UnclassifiedToolRiskError, ToolRegistry, type ToolSpec } from "@/tools/
 import { Integration, tool } from "@/integrations/base";
 import { capability } from "@/capabilities/definition";
 import { artifact } from "@/artifacts/types";
+import { postgresLockKey } from "@/backends/postgres";
 import { InMemoryBackend, TaskRuntime } from "@/tasks";
 import {
   ToolArgumentValidationError,
@@ -1564,6 +1565,16 @@ function runCapability(document: JsonObject, scenario: JsonObject): JsonObject {
   throw new Error(`unknown capability fixture: ${scenario.fixture}`);
 }
 
+function runLockKey(scenario: JsonObject): JsonObject {
+  const snapshot = emptySnapshot();
+  snapshot.result = {
+    keys: (scenario.sessionIds as string[]).map((sessionId) =>
+      postgresLockKey(sessionId).toString(),
+    ),
+  };
+  return snapshot;
+}
+
 async function runTaskProjection(_scenario: JsonObject): Promise<JsonObject> {
   const snapshot = emptySnapshot();
   const backend = new InMemoryBackend();
@@ -1654,6 +1665,7 @@ async function exportParity(): Promise<JsonObject> {
     else if (scenario.kind === "idempotency") snapshot = await runIdempotency(scenario);
     else if (scenario.kind === "capability") snapshot = runCapability(document, scenario);
     else if (scenario.kind === "task-projection") snapshot = await runTaskProjection(scenario);
+    else if (scenario.kind === "lock-key") snapshot = runLockKey(scenario);
     else throw new Error(`unknown scenario kind: ${scenario.kind}`);
     if (JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)) {
       throw new Error(`incomplete snapshot envelope: ${scenario.id}`);

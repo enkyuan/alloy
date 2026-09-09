@@ -7,12 +7,13 @@ from collections.abc import AsyncIterator
 
 from kaji.backends.postgres.store import PostgresEventStore
 from kaji.events.schemas import NewKajiEvent, StoredKajiEvent
+from kaji.events.store import EventStore
 
 
 class _PostgresSubscription:
     def __init__(
         self,
-        store: PostgresEventStore,
+        store: EventStore,
         session_id: str,
         after_sequence: int,
         page_size: int,
@@ -62,7 +63,7 @@ class PostgresEventCommitter:
             raise ValueError(
                 "poll_interval must be positive and page_size must be at least one"
             )
-        self.store = store
+        self.store: EventStore = store
         self._poll_interval = poll_interval
         self._page_size = page_size
 

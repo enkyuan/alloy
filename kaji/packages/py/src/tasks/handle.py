@@ -19,6 +19,10 @@ from kaji.events.schemas import (
 )
 from kaji.events.store import EventStore
 from kaji.runtime.agents.coordinator import TurnCoordinator, default_coordinator_for_store
+from kaji.runtime.tools.idempotency import (
+    InMemoryToolIdempotencyLedger,
+    ToolIdempotencyLedger,
+)
 
 from .errors import TaskNotFoundError
 from .projector import approval_id, project_task
@@ -32,6 +36,9 @@ class InMemoryBackend:
     store: EventStore
     journal: EventJournal
     coordinator: TurnCoordinator
+    idempotency_ledger: ToolIdempotencyLedger = field(
+        default_factory=InMemoryToolIdempotencyLedger
+    )
     task_sessions: dict[str, str] = field(default_factory=dict)
 
     @classmethod

@@ -23,7 +23,7 @@ dev-ui = ["rich>=13.0.0,<14"]
 gemini = ["google-genai>=1.0.0,<2"]
 openai = ["openai>=2.0.0,<3"]
 providers = ["anthropic>=0.40.0,<1", "google-genai>=1.0.0,<2", "openai>=2.0.0,<3"]
-postgres = ["psycopg[binary]>=3.2,<4"]
+postgres = ["psycopg[binary]>=3.2,<4", "psycopg-pool>=3.2,<4"]
 realtime = ["msgpack>=1.1.2,<2", "redis>=6.4.0,<7"]
 
 [project.scripts]

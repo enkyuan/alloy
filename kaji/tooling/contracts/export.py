@@ -56,6 +56,7 @@ from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
 from kaji.artifacts import ArtifactRef
+from kaji.backends.postgres.coordinator import postgres_lock_key
 from kaji.tasks import InMemoryBackend, TaskRuntime
 
 
@@ -1745,6 +1746,14 @@ def run_capability(document: dict[str, Any], scenario: dict[str, Any]) -> dict[s
     raise ValueError(f"unknown capability fixture: {scenario['fixture']}")
 
 
+def run_lock_key(scenario: dict[str, Any]) -> dict[str, Any]:
+    snapshot = empty_snapshot()
+    snapshot["result"] = {
+        "keys": [str(postgres_lock_key(session_id)) for session_id in scenario["sessionIds"]]
+    }
+    return snapshot
+
+
 async def run_task_projection(scenario: dict[str, Any]) -> dict[str, Any]:
     snapshot = empty_snapshot()
     backend = InMemoryBackend.create()
@@ -1810,6 +1819,8 @@ async def export_parity() -> dict[str, Any]:
             snapshot = run_capability(document, scenario)
         elif kind == "task-projection":
             snapshot = await run_task_projection(scenario)
+        elif kind == "lock-key":
+            snapshot = run_lock_key(scenario)
         else:
             raise ValueError(f"unknown scenario kind: {kind}")
         if tuple(snapshot) != SNAPSHOT_KEYS:

@@ -15,6 +15,7 @@ import {
   InMemorySessionTurnCoordinator,
   type SessionTurnCoordinator,
 } from "@/runtime/session/coordinator";
+import { InMemoryToolIdempotencyLedger, type ToolIdempotencyLedger } from "@/tools/idempotency";
 
 import { approvalId, projectTask } from "./projector";
 import type { PendingApproval, TaskSnapshot } from "./types";
@@ -28,6 +29,7 @@ export class InMemoryBackend {
     readonly store: EventStore = new InMemoryEventStore(),
     readonly journal: EventCommitter = new InMemoryEventCommitter(store),
     readonly coordinator: SessionTurnCoordinator = new InMemorySessionTurnCoordinator(),
+    readonly idempotencyLedger: ToolIdempotencyLedger = new InMemoryToolIdempotencyLedger(),
   ) {}
 }
 

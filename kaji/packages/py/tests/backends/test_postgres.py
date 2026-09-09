@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator
 import os
 from pathlib import Path
+import sys
 from uuid import uuid4
 
 import psycopg
@@ -13,9 +14,12 @@ from psycopg import sql
 import pytest
 
 from kaji.backends.postgres import (
+    KajiPostgresBackend,
     PostgresEventCommitter,
     PostgresEventStore,
     PostgresToolIdempotencyLedger,
+    PostgresTurnCoordinator,
+    postgres_lock_key,
 )
 from kaji.events.errors import EventIdConflictError
 from kaji.events.schemas import UserMessage
@@ -50,6 +54,15 @@ def event(session_id: str, content: str, event_id: str | None = None) -> UserMes
     return UserMessage(
         id=event_id or str(uuid4()), session_id=session_id, content=content
     )
+
+
+@pytest.mark.asyncio
+async def test_postgres_backend_composes_matching_durable_seams() -> None:
+    backend = KajiPostgresBackend(os.environ["KAJI_POSTGRES_URL"])
+    assert backend.journal.store is backend.store
+    assert isinstance(backend.idempotency_ledger, PostgresToolIdempotencyLedger)
+    assert isinstance(backend.coordinator, PostgresTurnCoordinator)
+    await backend.close()
 
 
 @pytest.mark.asyncio
@@ -151,6 +164,72 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     assert (await second.claim(
         session_id="ledger", tool_call_id="release", tool_name="echo", tool_args={}
     )).kind == "owner"
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_postgres_coordinator_serializes_cross_process_and_recovers() -> None:
+    dsn = os.environ["KAJI_POSTGRES_URL"]
+    first = PostgresTurnCoordinator(dsn, poll_interval_seconds=0.001)
+    second = PostgresTurnCoordinator(dsn, poll_interval_seconds=0.001)
+    assert postgres_lock_key("same") == 677529369334489940
+
+    async with first.acquire("same"):
+        waiting = second.acquire("same")
+        waiter = asyncio.create_task(waiting.__aenter__())
+        await asyncio.sleep(0.02)
+        assert not waiter.done()
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+
+        left = await second.acquire("left").__aenter__()
+        right = await second.acquire("right").__aenter__()
+        await left.release()
+        await right.release()
+
+    later = await second.acquire("same").__aenter__()
+    await later.release()
+
+    script = """
+import asyncio, os
+from kaji.backends.postgres import PostgresTurnCoordinator
+async def main():
+    coordinator = PostgresTurnCoordinator(os.environ['KAJI_POSTGRES_URL'])
+    async with coordinator.acquire('dead-holder'):
+        print('held', flush=True)
+        await asyncio.Event().wait()
+asyncio.run(main())
+"""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        script,
+        stdout=asyncio.subprocess.PIPE,
+        env=os.environ.copy(),
+    )
+    assert process.stdout is not None
+    assert await process.stdout.readline() == b"held\n"
+    waiting = second.acquire("dead-holder")
+    waiter = asyncio.create_task(waiting.__aenter__())
+    await asyncio.sleep(0.02)
+    assert not waiter.done()
+    process.terminate()
+    await process.wait()
+    lease = await asyncio.wait_for(waiter, timeout=3)
+    await lease.release()
+    await first.close()
+    await second.close()
+
+
+@pytest.mark.asyncio
+async def test_postgres_coordinator_connection_failure_fails_closed() -> None:
+    coordinator = PostgresTurnCoordinator(
+        "postgresql://localhost:1/kaji?connect_timeout=1"
+    )
+    with pytest.raises(Exception):
+        await asyncio.wait_for(coordinator.acquire("unavailable").__aenter__(), timeout=1)
+    await coordinator.close()
 
 
 @pytest.mark.asyncio

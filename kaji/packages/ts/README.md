@@ -332,8 +332,11 @@ Call `runtime.effectiveLimits()` to inspect the immutable
 Runtimes that share the same `EventStore` also share a default per-store turn
 coordinator within the current process, so same-session turns serialize even
 when separate builders create the runtimes. Different stores do not block one
-another. This is not a distributed lock: multi-process deployments must inject
-a `SessionTurnCoordinator` backed by shared infrastructure.
+another. This is not a distributed lock. For Postgres, `KajiPostgresBackend`
+composes the store, committer, ledger, and advisory-lock coordinator without
+manual wiring. It reserves one pool connection per active turn, so
+`maxConnections` caps simultaneous locks; use a dedicated coordinator service
+if that cap becomes a production limit.
 
 ## Prove it with a model
 

@@ -253,9 +253,11 @@ converges; physical deletion is not repeated.
 default process-local `InMemoryTurnCoordinator` is shared by runtimes using the
 same `EventStore` object, serializing same-session turns while allowing
 different sessions and different stores to overlap. This is not a distributed
-lock. Multi-process deployments must inject a shared `TurnCoordinator` with
-`AgentBuilder.coordinator()`. Custom stores that cannot be weak-referenced must
-also inject a coordinator explicitly.
+lock. For Postgres, `KajiPostgresBackend` composes the store, journal, ledger,
+and advisory-lock coordinator without manual wiring. It reserves one pool
+connection per active turn, so `max_connections` caps simultaneous locks;
+use a dedicated coordinator service if that cap becomes a production limit.
+Custom stores that cannot be weak-referenced must inject a coordinator explicitly.
 
 `replay_session()` accepts stored, sequenced events only. Migrate historical
 unsequenced logs offline by assigning contiguous sequence values before they

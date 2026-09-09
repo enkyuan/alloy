@@ -4931,6 +4931,23 @@
           "state": "reconciliation_required"
         }
       }
+    },
+    {
+      "id": "postgres-lock-key",
+      "snapshot": {
+        "events": [],
+        "operation_trace": [],
+        "provider_requests": [],
+        "provider_responses": [],
+        "replay": {},
+        "result": {
+          "keys": [
+            "677529369334489940",
+            "2107250361640305863",
+            "5864869109797145327"
+          ]
+        }
+      }
     }
   ],
   "thirdPartyIntegrationSurface": {
