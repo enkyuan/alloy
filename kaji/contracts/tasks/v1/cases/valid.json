@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "task_state": "completed",
+  "task_snapshot": {
+    "task_id": "task_1842",
+    "state": "completed",
+    "sequence_cursor": 7,
+    "created_at": "2026-09-09T00:00:00Z",
+    "updated_at": "2026-09-09T00:00:07Z",
+    "artifacts": [
+      {
+        "id": "refund_1842",
+        "type": "ryo/refund",
+        "uri": "ryo://refunds/refund_1842"
+      }
+    ],
+    "terminal_error_code": null,
+    "pending_approvals": []
+  }
+}

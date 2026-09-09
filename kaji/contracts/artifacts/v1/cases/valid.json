@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "artifact_ref": {
+    "id": "refund_1842",
+    "type": "ryo/refund",
+    "uri": "ryo://refunds/refund_1842",
+    "version": "1",
+    "metadata": { "order_id": "1842", "refunded": true }
+  }
+}

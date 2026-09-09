@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "capability_result": {
+    "value": { "refunded": true },
+    "artifacts": [
+      {
+        "id": "refund_1842",
+        "type": "ryo/refund",
+        "uri": "ryo://refunds/refund_1842"
+      }
+    ]
+  }
+}

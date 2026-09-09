@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kaji.dev/contracts/capabilities/v1/schema.json",
+  "title": "CapabilityResult",
+  "type": "object",
+  "properties": {
+    "value": {},
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "https://kaji.dev/contracts/artifacts/v1/schema.json" }
+    }
+  },
+  "additionalProperties": false
+}
