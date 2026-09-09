@@ -86,7 +86,7 @@ jobs:
           working-directory: .
 
       - name: Run quickstart smoke
-        run: uv run --project packages/py pytest packages/py/tests/test_quickstart.py -q
+        run: uv run --project packages/py pytest packages/py/tests/docs/test_quickstart.py -q
 
       - name: Run non-network tests
         run: uv run --project packages/py pytest packages/py/tests -m "not integration" --cov=kaji --cov-report=xml --cov-fail-under=80

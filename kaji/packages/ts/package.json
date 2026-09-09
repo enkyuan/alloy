@@ -128,7 +128,7 @@
     "prebuild": "if [ -d ../../contracts ]; then rm -rf contracts && cp -R ../../contracts contracts; fi; bun run validate:registry",
     "build": "tsup",
     "dev": "tsup --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "if [ -d ../../contracts ]; then rm -rf contracts && cp -R ../../contracts contracts; fi; tsc --noEmit",
     "typecheck:registry": "tsc -p tsconfig.registry.json --noEmit",
     "lint": "oxlint src tests scripts registry",
     "format": "oxfmt --write \"**/*.ts\"",
