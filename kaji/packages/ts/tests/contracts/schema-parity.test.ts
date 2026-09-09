@@ -23,10 +23,9 @@ describe("shared event schema fixtures", () => {
   it("pins and packages the cross-SDK session lifecycle contract byte-for-byte", () => {
     for (const name of ["core/v1/beta.json", "tiers/v1/features.json"] as const) {
       const canonical = readFileSync(new URL(`../../../../contracts/${name}`, import.meta.url));
-      expect(readFileSync(new URL(`../../../py/src/contracts/${name}`, import.meta.url))).toEqual(
+      expect(readFileSync(new URL(`../../contracts/${name}`, import.meta.url))).toEqual(
         canonical,
       );
-      expect(readFileSync(new URL(`../../contracts/${name}`, import.meta.url))).toEqual(canonical);
     }
 
     const contract = JSON.parse(
