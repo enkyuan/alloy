@@ -123,7 +123,7 @@ jobs:
         run: |
           cd ..
           uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.smoke
-          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.artifacts kaji/packages/py/dist
+          uv run --project kaji/packages/py --no-sync python -m kaji.tooling.release.verify.archives kaji/packages/py/dist
 
   serve:
     name: kaji/packages/serve
