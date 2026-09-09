@@ -626,6 +626,35 @@
       ],
       "unevaluatedProperties": false
     },
+    "artifactRef": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "pattern": "^[^/\\s]+/[^/\\s]+$" },
+        "uri": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:" },
+        "version": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "minLength": 1 },
+        "metadata": { "$ref": "#/$defs/jsonObject" }
+      },
+      "required": ["id", "type", "uri"],
+      "additionalProperties": false
+    },
+    "artifactEmitted": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "artifact.emitted" },
+            "turn_id": { "$ref": "#/$defs/nonEmptyId" },
+            "tool_call_id": { "$ref": "#/$defs/nonEmptyId" },
+            "artifact": { "$ref": "#/$defs/artifactRef" }
+          },
+          "required": ["type", "turn_id", "tool_call_id", "artifact"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
     "toolCallFailed": {
       "allOf": [
         {
@@ -993,6 +1022,9 @@
     },
     {
       "$ref": "#/$defs/toolCallCompleted"
+    },
+    {
+      "$ref": "#/$defs/artifactEmitted"
     },
     {
       "$ref": "#/$defs/toolCallFailed"

@@ -25,6 +25,8 @@ class EventType(str, Enum):
     TOOL_CALL_COMPLETED = "tool.call.completed"
     TOOL_CALL_FAILED = "tool.call.failed"
 
+    ARTIFACT_EMITTED = "artifact.emitted"
+
     TOOL_APPROVAL_REQUESTED = "tool.approval.requested"
     TOOL_APPROVAL_APPROVED = "tool.approval.approved"
     TOOL_APPROVAL_REJECTED = "tool.approval.rejected"

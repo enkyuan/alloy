@@ -32,6 +32,7 @@ from pydantic import (
     model_validator,
 )
 
+from kaji.artifacts import ArtifactRef
 from kaji.events.errors import (
     DurableJsonLimitError,
     EventSchemaIncompatibleError,
@@ -299,6 +300,13 @@ class ToolCallCompleted(BaseEvent):
         )
 
 
+class ArtifactEmitted(BaseEvent):
+    type: Literal[EventType.ARTIFACT_EMITTED] = EventType.ARTIFACT_EMITTED
+    turn_id: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+    artifact: ArtifactRef
+
+
 class ToolCallFailed(BaseEvent):
     type: Literal[EventType.TOOL_CALL_FAILED] = EventType.TOOL_CALL_FAILED
     turn_id: str = Field(min_length=1)
@@ -444,6 +452,7 @@ KajiEvent = Annotated[
         ToolCallRequested,
         ToolCallStarted,
         ToolCallCompleted,
+        ArtifactEmitted,
         ToolCallFailed,
         ToolApprovalRequested,
         ToolApprovalApproved,

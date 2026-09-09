@@ -15,6 +15,7 @@ from .journal import InMemoryEventJournal, SplitEventJournal
 from .protocols import EventBusProtocol, EventJournal
 from .schemas import (
     AgentTurnFailed,
+    ArtifactEmitted,
     BaseEvent,
     KajiEvent,
     NewKajiEvent,
@@ -39,6 +40,7 @@ from .types import EventType
 __all__ = [
     "EventType",
     "AgentTurnFailed",
+    "ArtifactEmitted",
     "KajiEvent",
     "NewKajiEvent",
     "StoredKajiEvent",

@@ -1,9 +1,12 @@
+export const MAX_DURABLE_TOOL_RESULT_BYTES = 64 * 1024;
+
 export type DurableJsonSubject =
   | "tool_result"
   | "workflow_result"
   | "event_metadata"
   | "memory_document"
   | "pending_tool_call"
+  | "artifact_ref"
   | "event";
 
 export const DURABLE_JSON_SUBJECTS: ReadonlySet<string> = new Set<DurableJsonSubject>([
@@ -12,6 +15,7 @@ export const DURABLE_JSON_SUBJECTS: ReadonlySet<string> = new Set<DurableJsonSub
   "event_metadata",
   "memory_document",
   "pending_tool_call",
+  "artifact_ref",
   "event",
 ]);
 

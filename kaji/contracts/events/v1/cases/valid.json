@@ -498,12 +498,28 @@
       "metadata": {}
     },
     {
+      "id": "artifact-event-1",
+      "type": "artifact.emitted",
+      "version": "1.0",
+      "timestamp": 1767225638.5,
+      "session_id": "session-1",
+      "turn_id": "turn-approved",
+      "sequence": 40,
+      "tool_call_id": "call-approved",
+      "artifact": {
+        "id": "refund_1842",
+        "type": "ryo/refund",
+        "uri": "ryo://refunds/refund_1842"
+      },
+      "metadata": {}
+    },
+    {
       "id": "event-40",
       "type": "session.closed",
       "version": "1.0",
       "timestamp": 1767225639.0,
       "session_id": "session-1",
-      "sequence": 40,
+      "sequence": 41,
       "reason": "fixture complete",
       "metadata": {}
     }

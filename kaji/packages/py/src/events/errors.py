@@ -5,12 +5,15 @@ from __future__ import annotations
 from typing import Literal, TypeAlias
 
 
+MAX_DURABLE_TOOL_RESULT_BYTES = 64 * 1024
+
 DurableJsonSubject: TypeAlias = Literal[
     "tool_result",
     "workflow_result",
     "event_metadata",
     "memory_document",
     "pending_tool_call",
+    "artifact_ref",
     "event",
 ]
 DURABLE_JSON_SUBJECTS = frozenset(
@@ -20,6 +23,7 @@ DURABLE_JSON_SUBJECTS = frozenset(
         "event_metadata",
         "memory_document",
         "pending_tool_call",
+        "artifact_ref",
         "event",
     }
 )

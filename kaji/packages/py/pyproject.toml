@@ -40,6 +40,8 @@ packages = [
     "kaji",
     "kaji.cli",
     "kaji.contracts",
+    "kaji.artifacts",
+    "kaji.capabilities",
     "kaji.core",
     "kaji.events",
     "kaji.events.store",

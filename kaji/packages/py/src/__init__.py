@@ -27,12 +27,15 @@ __version__ = "0.2.0b1"
 _LAZY: dict[str, str] = {
     # --- Types: classes, dataclasses, protocols, errors ----------------------
     "AgentBuilder": "kaji.runtime.agents",
+    "ArtifactRef": "kaji.artifacts",
     "AgentRuntime": "kaji.runtime.agents",
     "ApprovalDecision": "kaji.runtime.agents",
     "ApprovalHandler": "kaji.runtime.agents",
     "ApprovalRequestContext": "kaji.runtime.agents",
     "AppendResult": "kaji.events",
+    "ArtifactEmitted": "kaji.events",
     "CancellationToken": "kaji.runtime.agents",
+    "CapabilityResult": "kaji.capabilities",
     "Clock": "kaji.core.determinism",
     "CredentialStore": "kaji.integrations.oauth",
     "Chunk": "kaji.knowledge",
@@ -122,7 +125,9 @@ _LAZY: dict[str, str] = {
     "UserMessage": "kaji.events",
     "VectorStore": "kaji.knowledge",
     # --- Decorators & registration helpers (PEP 8 snake_case) ----------------
+    "artifact": "kaji.artifacts",
     "build_tools_payload": "kaji.runtime.tools",
+    "capability_result": "kaji.capabilities",
     "function_tool": "kaji.runtime.integrations",
     "get_provider": "kaji.runtime.providers",
     "list_tool_specs": "kaji.runtime.tools.registry",

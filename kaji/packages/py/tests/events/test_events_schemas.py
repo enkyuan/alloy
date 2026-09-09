@@ -491,8 +491,8 @@ def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
     stored = parsed
     state = replay_session(stored)
 
-    assert len(stored) == 40
-    assert [event.sequence for event in stored] == list(range(1, 41))
+    assert len(stored) == 41
+    assert [event.sequence for event in stored] == list(range(1, 42))
     assert {event.type for event in stored} == set(EventType)
     assert all(event.version == "1.0" for event in stored)
     assert all(isinstance(event.timestamp, float) for event in stored)

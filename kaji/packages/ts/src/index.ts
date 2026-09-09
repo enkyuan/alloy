@@ -17,6 +17,7 @@ export const VERSION = "0.2.0-beta.11";
 export { EventType } from "@/events/types";
 export {
   AgentTurnFailed,
+  ArtifactEmitted,
   KajiEvent,
   NewKajiEvent,
   SessionCreated,
@@ -49,6 +50,10 @@ export {
   type EventStore,
   type PurgeableEventStore,
 } from "@/events/store";
+
+// Artifacts and capability results
+export { artifact, validateArtifactRef, type ArtifactRef } from "@/artifacts/types";
+export { capabilityResult, type CapabilityResult } from "@/capabilities/result";
 
 // Sessions
 export {

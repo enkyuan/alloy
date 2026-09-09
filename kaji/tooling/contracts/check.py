@@ -65,6 +65,12 @@ REQUIRED_JSON = {
     "tools/v1/cases/invalid.json",
     "tools/v1/cases/valid.json",
     "tools/v1/schema.json",
+    "artifacts/v1/schema.json",
+    "artifacts/v1/cases/valid.json",
+    "capabilities/v1/schema.json",
+    "capabilities/v1/cases/valid.json",
+    "tasks/v1/schema.json",
+    "tasks/v1/cases/valid.json",
 }
 DATA_DOCUMENTS = {
     "integrations/v1/abi/index.json",

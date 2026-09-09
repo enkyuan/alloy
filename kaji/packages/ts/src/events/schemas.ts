@@ -10,6 +10,7 @@
 import * as z from "zod";
 import Ajv2020, { type ErrorObject, type ValidateFunction } from "ajv/dist/2020.js";
 
+import { ArtifactRefSchema } from "@/artifacts/types";
 import { defaultUuid } from "@/internal/uuid";
 import {
   DurableJsonLimitError,
@@ -217,6 +218,13 @@ export const ToolCallCompleted = event({
   cost_usd: z.number().nonnegative().nullish(),
 });
 
+export const ArtifactEmitted = event({
+  type: z.literal(EventType.ARTIFACT_EMITTED),
+  turn_id: z.string().min(1),
+  tool_call_id: z.string().min(1),
+  artifact: ArtifactRefSchema,
+});
+
 export const ToolCallFailed = event({
   type: z.literal(EventType.TOOL_CALL_FAILED),
   turn_id: z.string().min(1),
@@ -321,6 +329,7 @@ export const KajiEvent = z.discriminatedUnion("type", [
   ToolCallRequested,
   ToolCallStarted,
   ToolCallCompleted,
+  ArtifactEmitted,
   ToolCallFailed,
   ToolApprovalRequested,
   ToolApprovalApproved,
@@ -461,6 +470,7 @@ function durableErrorPointer(error: InvalidDurableValueError | DurableJsonLimitE
     event_metadata: "/metadata",
     memory_document: "/documents",
     pending_tool_call: "/pending_tool_calls",
+    artifact_ref: "/artifact",
     event: "/",
   };
   return pointers[error.subject];
