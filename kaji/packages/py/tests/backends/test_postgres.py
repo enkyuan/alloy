@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 import os
 from pathlib import Path
 import sys
+from typing import LiteralString, cast
 from uuid import uuid4
 
 import psycopg
@@ -45,7 +46,7 @@ async def postgres_schema() -> AsyncIterator[None]:
         await connection.execute(
             "DROP TABLE IF EXISTS kaji_event_sequences, kaji_events, kaji_tool_idempotency"
         )
-        await connection.execute(sql.SQL(_SCHEMA.read_text()))
+        await connection.execute(sql.SQL(cast(LiteralString, _SCHEMA.read_text())))
         await connection.commit()
     yield
 
@@ -115,7 +116,12 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     assert owner.kind == "owner"
     assert (await second.claim(**kwargs)).kind == "waiter"
     with pytest.raises(IdempotencyConflictError):
-        await second.claim(**{**kwargs, "tool_args": {"a": 3}})
+        await second.claim(
+            session_id="ledger",
+            tool_call_id="call",
+            tool_name="echo",
+            tool_args={"a": 3},
+        )
     assert await first.is_started(owner) is False
     await first.mark_started(owner)
     assert await second.is_started(owner) is True

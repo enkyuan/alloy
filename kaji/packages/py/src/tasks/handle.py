@@ -143,17 +143,26 @@ class TaskHandle:
 
     async def decide_approval(self, approval: PendingApproval, *, approved: bool, reason: str = "host decision") -> TaskSnapshot:
         event: NewKajiEvent
-        values = dict(
-            id=self._ids.next("event"),
-            session_id=self.session_id,
-            turn_id=approval.id.split(":", 1)[0],
-            tool_call_id=approval.id.split(":", 1)[1],
-            tool_name=approval.capability,
-        )
+        event_id = self._ids.next("event")
+        turn_id, tool_call_id = approval.id.split(":", 1)
         if approved:
-            event = ToolApprovalApproved(**values)
+            event = ToolApprovalApproved(
+                id=event_id,
+                session_id=self.session_id,
+                turn_id=turn_id,
+                tool_call_id=tool_call_id,
+                tool_name=approval.capability,
+            )
         else:
-            event = ToolApprovalRejected(**values, error_code="APPROVAL_REJECTED", reason=reason)
+            event = ToolApprovalRejected(
+                id=event_id,
+                session_id=self.session_id,
+                turn_id=turn_id,
+                tool_call_id=tool_call_id,
+                tool_name=approval.capability,
+                error_code="APPROVAL_REJECTED",
+                reason=reason,
+            )
         # The active EventApprovalHandler holds the session turn lease while it
         # waits, so this canonical decision must not queue behind that lease.
         await self._backend.journal.commit(event)

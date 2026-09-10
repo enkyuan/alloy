@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -32,7 +34,12 @@ def test_artifact_rejects_invalid_required_fields(value: dict[str, str]) -> None
 
 def test_artifact_rejects_invalid_or_oversized_metadata() -> None:
     with pytest.raises(ValidationError):
-        artifact("refund-1", "ryo/refund", "ryo://refunds/1", metadata={"bad": object()})
+        artifact(
+            "refund-1",
+            "ryo/refund",
+            "ryo://refunds/1",
+            metadata=cast(Any, {"bad": object()}),
+        )
     with pytest.raises(ValidationError):
         artifact(
             "refund-1",

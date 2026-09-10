@@ -36,4 +36,7 @@ def capability_result(
     value: JsonValue | None = None,
     artifacts: Sequence[ArtifactRef | dict[str, Any]] = (),
 ) -> CapabilityResult:
-    return CapabilityResult(value=value, artifacts=tuple(artifacts))
+    return CapabilityResult(
+        value=value,
+        artifacts=tuple(validate_artifact_ref(item) for item in artifacts),
+    )
