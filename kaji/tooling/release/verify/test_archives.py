@@ -267,7 +267,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("dist_dir", nargs="?", type=Path, default=Path("dist"))
     args = parser.parse_args()
-    sdk_root = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    sdk_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
     dist_dir = (
         args.dist_dir if args.dist_dir.is_absolute() else sdk_root / args.dist_dir
     )

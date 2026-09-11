@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Mapping
 
-from kaji.capabilities.result import CapabilityResult
 from kaji.runtime.agents.context import ToolExecutionContext
 from kaji.runtime.tools.registry import ToolHandler, ToolRegistry, ToolRisk, ToolSpec
+
+from .result import CapabilityResult
 
 
 class Capability:
@@ -60,9 +61,9 @@ def capability(
             context: ToolExecutionContext, arguments: dict[str, Any]
         ) -> dict[str, Any]:
             result = await fn(arguments, context)
-            if isinstance(result, CapabilityResult):
+            if type(result) is CapabilityResult:
                 return result
-            return result if isinstance(result, dict) else {"result": result}
+            return result if type(result) is dict else {"result": result}
 
         return Capability(spec, handler, metadata)
 

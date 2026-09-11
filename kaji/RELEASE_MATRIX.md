@@ -101,15 +101,17 @@ documents and executable workflow contracts, then runs the same Kaji gate used
 by `gate / kaji`. A passing local run proves repository-owned logic on the
 current macOS host only; it does not replace protected evidence below.
 
-Use the root wrapper as the default local gate before a beta checkpoint:
+Use the canonical non-publishing alpha release checker as the default local
+gate before an alpha checkpoint:
 
 ```bash
-uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py
+uv run --project kaji/packages/py python -m kaji.tooling.release.check --release
 ```
 
-The wrapper runs the non-keyed local checks below and fails clearly when
-required local tooling such as `bun` or `uv` is missing. This is an offline
-rehearsal, not provider-readiness evidence. The protected rehearsal and
+The checker verifies the exact local alpha artifacts and fails clearly when
+required local tooling such as `bun` or `uv` is missing. This is a
+non-publishing, non-promotable local rehearsal, not provider-readiness
+evidence. The protected rehearsal and
 publish workflows are authoritative. `kaji-onboarding` protects the
 deterministic TypeScript onboarding aggregate, `kaji-release` protects the keyed
 OpenAI tool loop in both SDKs, and `kaji-publish` protects publisher
@@ -122,11 +124,11 @@ TypeScript optional provider imports, and cancellation error shape.
 
 | Gate                      | Command or workflow                                                             | Required for beta                                                   | Current evidence                       |
 | ------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------- |
-| Offline release rehearsal | `uv run --project kaji/packages/py python kaji/scripts/beta_release_check.py --release` | Yes; exact artifacts, tests, metadata, and locked dependency audits | Locally proven; not protected evidence |
+| Offline alpha release check | `uv run --project kaji/packages/py python -m kaji.tooling.release.check --release` | Yes; exact local alpha artifacts, tests, metadata, and locked dependency audits; never publishes | Locally proven; non-promotable local evidence |
 
-<!-- beta-parity-scenarios: 67 -->
+<!-- beta-parity-scenarios: 71 -->
 
-| Cross-SDK behavioral parity | `uv run --project kaji/packages/py python kaji/scripts/check_sdk_parity.py` | Yes; 67 deterministic scenarios | Locally proven |
+| Cross-SDK behavioral parity | `uv run --project kaji/packages/py python kaji/scripts/check_sdk_parity.py` | Yes; 70 shared scenarios plus 1 legacy Python-only task-projection scenario (71 total) | Locally proven |
 | Shared schemas and registry | `gate / kaji` / `beta release gate` | Yes | locally proven; protected PR run pending |
 | Pinned structural audit | `bun run audit:ast-grep` | Yes | Locally proven |
 | Python floor/latest artifacts | `kaji.rehearsal.yml` and `kaji.publish.yml` on Python 3.11/3.14 | Yes | Pending protected run |

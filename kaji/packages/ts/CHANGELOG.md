@@ -7,11 +7,6 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) conventions.
 
 ## [0.3.0-alpha.1] - 2026-08-01
 
-- Added capability-result artifact emission: validated `ArtifactRef` values are
-  recorded before the completed tool result.
-
-## [0.2.0-beta.11] - 2026-08-01
-
 - First candidate carrying the experimental `gmail` registry integration
   (read/list/send, mailbox-scoped) alongside the existing `echo` and `github`
   catalog entries. Cross-SDK ABI and API conformance for `gmail` are asserted

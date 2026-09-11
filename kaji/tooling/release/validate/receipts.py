@@ -14,8 +14,8 @@ from typing import Any, Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
-    "kaji-0.3.0a1-py3-none-any.whl": ("python", "0.3.0a1"),
-    "kaji-0.3.0a1.tar.gz": ("python", "0.3.0a1"),
+    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "irogane-kaji-0.3.0-alpha.1.tgz": ("typescript", "0.3.0-alpha.1"),
 }
 PYTHON_COMPATIBILITY_RECEIPT_FIELDS = {
@@ -610,8 +610,8 @@ def validate_python_compatibility_receipt_v1(
         receipt.get("artifacts"), {"wheel", "sdist"}, f"{location}/artifacts"
     )
     expected_names = (
-        "kaji-0.3.0a1-py3-none-any.whl",
-        "kaji-0.3.0a1.tar.gz",
+        "kaji-0.2.0b1-py3-none-any.whl",
+        "kaji-0.2.0b1.tar.gz",
     )
     if (
         Path(str(artifact_paths["wheel"])).name != expected_names[0]

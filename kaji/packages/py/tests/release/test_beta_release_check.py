@@ -809,7 +809,7 @@ def test_protected_soak_context_exit_tamper_overwrites_passed_receipt(
         "releaseManifestSha256": "b" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.3.0a1-py3-none-any.whl",
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
                 "sha256": "c" * 64,
             },
             "typescript": {
@@ -1293,7 +1293,7 @@ def test_installed_python_openai_dependency_is_opt_in(
     package = root / "python" / "site-packages" / "kaji" / "__init__.py"
     package.parent.mkdir(parents=True)
     package.write_text("")
-    wheel = tmp_path / "kaji-0.3.0a1-py3-none-any.whl"
+    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
     release = SimpleNamespace(python_wheel=wheel)
     commands: list[list[str]] = []
@@ -1392,8 +1392,8 @@ def test_installed_runtime_reverifies_hashes_after_evidence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     module = _load_root_script("package/python/build.py")
-    wheel = tmp_path / "kaji-0.3.0a1-py3-none-any.whl"
-    sdist = tmp_path / "kaji-0.3.0a1.tar.gz"
+    wheel = tmp_path / "kaji-0.2.0b1-py3-none-any.whl"
+    sdist = tmp_path / "kaji-0.2.0b1.tar.gz"
     tarball = tmp_path / "irogane-kaji-0.3.0-alpha.1.tgz"
     for path in (wheel, sdist, tarball):
         path.write_bytes(b"artifact")
@@ -3614,7 +3614,7 @@ def test_soak_identity_rejects_missing_fields_and_child_path_drift(
         "releaseManifestSha256": "b" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.3.0a1-py3-none-any.whl",
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
                 "sha256": "c" * 64,
             },
             "typescript": {
@@ -3886,7 +3886,7 @@ def test_soak_report_reuses_complete_performance_provenance(
         "releaseManifestSha256": "c" * 64,
         "artifacts": {
             "python": {
-                "file": "kaji-0.3.0a1-py3-none-any.whl",
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
                 "sha256": "d" * 64,
             },
             "typescript": {
@@ -4315,9 +4315,11 @@ def test_release_docs_reference_beta_release_check() -> None:
     assert "TypeScript optional provider imports" in combined
     for readme in readmes:
         assert "OPENAI_API_KEY=..." in readme
-        assert "KAJI_RELEASE_ARTIFACTS_DIR=" in readme
-        assert "KAJI_RELEASE_COMMIT=<40-character-commit>" in readme
         assert "ANTHROPIC_API_KEY=... KAJI_RUN_KEYED_LIVE=1" not in readme
+    # Release-only variables remain in the Python maintainer guide; the TypeScript
+    # package README is intentionally limited to consumer onboarding.
+    assert "KAJI_RELEASE_ARTIFACTS_DIR=" in readmes[0]
+    assert "KAJI_RELEASE_COMMIT=<40-character-commit>" in readmes[0]
 
 
 def test_release_matrix_names_pending_protected_release_gate_truthfully() -> None:

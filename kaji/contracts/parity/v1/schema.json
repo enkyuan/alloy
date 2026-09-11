@@ -36,8 +36,8 @@
           { "$ref": "#/$defs/providerAdapter" },
           { "$ref": "#/$defs/idempotency" },
           { "$ref": "#/$defs/capability" },
-          { "$ref": "#/$defs/taskProjection" },
-          { "$ref": "#/$defs/lockKey" }
+          { "$ref": "#/$defs/lockKey" },
+          { "$ref": "#/$defs/taskProjection" }
         ]
       }
     }
@@ -76,7 +76,8 @@
       "required": ["id", "kind"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-        "kind": { "type": "string" }
+        "kind": { "type": "string" },
+        "runtime": { "enum": ["python", "typescript"] }
       }
     },
     "runtime": {
@@ -213,21 +214,6 @@
         }
       ]
     },
-    "taskProjection": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "required": ["kind", "fixture"],
-          "properties": {
-            "id": true,
-            "kind": { "const": "task-projection" },
-            "fixture": { "const": "reconciliation" }
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
     "lockKey": {
       "allOf": [
         { "$ref": "#/$defs/base" },
@@ -242,6 +228,22 @@
               "minItems": 1,
               "items": { "type": "string", "minLength": 1 }
             }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "taskProjection": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "type": "object",
+          "required": ["kind", "fixture"],
+          "properties": {
+            "id": true,
+            "kind": { "const": "task-projection" },
+            "fixture": { "const": "reconciliation" },
+            "runtime": true
           },
           "additionalProperties": false
         }

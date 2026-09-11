@@ -25,14 +25,14 @@ import kaji.tooling.release.validate.receipts as validation
 import kaji.tooling.release.verify.artifacts as release_verification
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
-SCHEMA_PATH = (
-    ROOT
-    / "kaji"
-    / "contracts"
-    / "release"
-    / "v1/typescript/onboarding.json"
-)
+ROOT = (
+    next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+).parent
+SCHEMA_PATH = ROOT / "kaji" / "contracts" / "release" / "v1/typescript/onboarding.json"
 TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 PRODUCER_NAME = "kaji-artifacts"
 SOURCE_NAMES = {

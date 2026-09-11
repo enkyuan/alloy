@@ -378,6 +378,17 @@
         }
       ]
     },
+    "postgresExport": {
+      "allOf": [
+        { "$ref": "#/$defs/conditionalExport" },
+        {
+          "const": {
+            "import": { "types": "./dist/postgres.d.ts", "default": "./dist/postgres.js" },
+            "require": { "types": "./dist/postgres.d.cts", "default": "./dist/postgres.cjs" }
+          }
+        }
+      ]
+    },
     "cliExport": {
       "allOf": [
         { "$ref": "#/$defs/conditionalExport" },
@@ -406,6 +417,7 @@
         "./integrations",
         "./integrations/github",
         "./auth",
+        "./postgres",
         "./cli"
       ],
       "properties": {
@@ -416,6 +428,7 @@
         "./integrations": { "$ref": "#/$defs/integrationsExport" },
         "./integrations/github": { "$ref": "#/$defs/githubExport" },
         "./auth": { "$ref": "#/$defs/authExport" },
+        "./postgres": { "$ref": "#/$defs/postgresExport" },
         "./cli": { "$ref": "#/$defs/cliExport" }
       }
     },

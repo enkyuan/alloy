@@ -181,7 +181,11 @@ def _reject(
 
 
 def _trusted_root() -> Path:
-    return (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    return next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
 
 
 def _schema_path() -> Path:
@@ -612,7 +616,9 @@ def _recheck_source(
     trusted_commit = _git_text(trusted, "rev-parse", "--verify", "HEAD^{commit}")
     try:
         verifier_sha = hashlib.sha256(
-            (trusted / "kaji" / "tooling" / "release" / "typescript" / "source.py").read_bytes()
+            (
+                trusted / "kaji" / "tooling" / "release" / "typescript" / "source.py"
+            ).read_bytes()
         ).hexdigest()
     except OSError:
         _reject("SOURCE_COMMIT_MISMATCH")

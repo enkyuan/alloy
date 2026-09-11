@@ -10,10 +10,10 @@ import time
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Literal
 
 from kaji.artifacts import ArtifactRef
-from kaji.capabilities.result import CapabilityResult
 from kaji.core.logging import log_no_throw, log_redacted_failure
+from kaji.capabilities.result import CapabilityResult
 from kaji.events.errors import DurableJsonLimitError, InvalidDurableValueError
-from kaji.events.json import durable_json_snapshot
+from kaji.events.json import JsonValue, durable_json_snapshot
 from kaji.events.schemas import MAX_DURABLE_TOOL_RESULT_BYTES
 from kaji.observability.protocols import (
     MetricsSink,
@@ -233,6 +233,18 @@ def _durable_result_tombstone(
         retryable=False,
         outcome="unknown",
         subject=error.subject,
+    )
+
+
+def _snapshot_tool_result(value: object) -> JsonValue:
+    """Detach one result without reflecting on hostile container subclasses."""
+
+    if type(value) is CapabilityResult:
+        value = value.to_tool_result()
+    return durable_json_snapshot(
+        value,
+        subject="tool_result",
+        max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
     )
 
 
@@ -1005,14 +1017,10 @@ class ToolExecutionController:
                 if completed.cause is None:
                     result = completed.result
                     artifacts: tuple[ArtifactRef, ...] = ()
-                    if isinstance(result, CapabilityResult):
-                        result, artifacts = result.value, result.artifacts
+                    if type(result) is CapabilityResult:
+                        artifacts = result.artifacts
                     try:
-                        snapshot = durable_json_snapshot(
-                            result,
-                            subject="tool_result",
-                            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
-                        )
+                        snapshot = _snapshot_tool_result(result)
                     except (InvalidDurableValueError, DurableJsonLimitError) as error:
                         failure = _invalid_tool_result(error)
                         await self.ledger.unknown_outcome(

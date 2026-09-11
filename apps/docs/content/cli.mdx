@@ -3,8 +3,8 @@ title: CLI
 description: Use the CLI embedded in the TypeScript SDK to scaffold projects, copy integrations, and replay event logs.
 ---
 
-The public TypeScript package declares a `kaji` binary. Install
-`@irogane/kaji@0.3.0-alpha.1` in your project, then invoke that local binary through
+The local TypeScript alpha candidate declares a `kaji` binary. Install the
+`irogane-kaji-0.3.0-alpha.1.tgz` artifact in your project, then invoke that local binary through
 your package manager. The Python SDK and WIP standalone package use the same
 binary name, but their command sets differ.
 
@@ -29,11 +29,11 @@ Use the selected package's `--help` output as the exact flag reference.
 
 ## TypeScript SDK CLI
 
-Install the public package, then use its embedded CLI to scaffold TypeScript
+Install the local alpha artifact, then use its embedded CLI to scaffold TypeScript
 projects, manage the packaged registry, and render stored event logs:
 
 ```bash
-npm install @irogane/kaji@0.3.0-alpha.1 zod
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod
 npm exec -- kaji init ./my-agent --provider mock --yes
 npm exec -- kaji list-integrations
 npm exec -- kaji add echo --out ./integrations/echo
@@ -47,13 +47,13 @@ npm exec -- kaji replay ./session.jsonl --format summary
 `--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
 destination.
 
-Generated projects pin dotenvx and `@irogane/kaji@0.3.0-alpha.1`; that dependency
-now resolves from npm. Experimental-registry integrations require
-`--allow-experimental`; the `0.2` catalog (`echo`, `github`) is entirely beta,
-so neither needs the flag.
+Generated projects pin dotenvx and `@irogane/kaji@0.3.0-alpha.1`; provide the local
+tarball when installing the generated project. Experimental-registry integrations require
+`--allow-experimental`; the current `echo`, `gmail`, and `github` catalog entries
+are all beta, so none needs the flag.
 
 `connect` and `disconnect` are available for integrations whose manifest
-declares OAuth. No such integration ships in the 0.2 catalog. `replay`
+declares OAuth; Gmail is the current catalog entry with an OAuth grant. `replay`
 supports `tree`, `summary`, and `json`, plus optional `--filter`, `--grep`, and
 `--tail` arguments.
 

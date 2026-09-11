@@ -80,13 +80,13 @@ configured tool concurrency (four handlers by default).
 
 ## Modality boundary
 
-The TypeScript beta implements the text path. Python provides WIP TTS adapters,
-and `kaji-serve` separately exposes a WIP Soniox STT WebSocket. This checkout
-does not compose those pieces into an end-to-end voice agent.
+The TypeScript alpha candidate implements the text path. Python provides WIP TTS
+adapters, and `kaji-serve` separately exposes a WIP Soniox STT WebSocket. This
+checkout does not compose those pieces into an end-to-end voice agent.
 
 <Diagram
   id="architecture-modality"
-  label="The TypeScript beta accepts text input, runs the agent loop, and returns text output."
+  label="The TypeScript alpha candidate accepts text input, runs the agent loop, and returns text output."
   rows={[
     { text: "┌───────────────────┐", frameStage: 0 },
     { text: "│  text input       │", frameStage: 0, copyStage: 1 },

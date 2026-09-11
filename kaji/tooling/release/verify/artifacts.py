@@ -15,23 +15,23 @@ from typing import Mapping, NoReturn
 
 
 EXPECTED_ARTIFACTS = {
-    "kaji-0.3.0a1-py3-none-any.whl": ("python", "0.3.0a1"),
-    "kaji-0.3.0a1.tar.gz": ("python", "0.3.0a1"),
+    "kaji-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "irogane-kaji-0.3.0-alpha.1.tgz": ("typescript", "0.3.0-alpha.1"),
 }
 EXPECTED_PACKAGES = {
     "contract": "1.0.0",
-    "python": "0.3.0a1",
+    "python": "0.2.0b1",
     "typescript": "0.3.0-alpha.1",
 }
 REFERENCE_EXPECTED_ARTIFACTS = {
-    "kaji_sdk-0.3.0a1-py3-none-any.whl": ("python", "0.3.0a1"),
-    "kaji_sdk-0.3.0a1.tar.gz": ("python", "0.3.0a1"),
+    "kaji_sdk-0.2.0b1-py3-none-any.whl": ("python", "0.2.0b1"),
+    "kaji_sdk-0.2.0b1.tar.gz": ("python", "0.2.0b1"),
     "kaji-sdk-0.2.0-beta.2.tgz": ("typescript", "0.2.0-beta.2"),
 }
 REFERENCE_EXPECTED_PACKAGES = {
     "contract": "1.0.0",
-    "python": "0.3.0a1",
+    "python": "0.2.0b1",
     "typescript": "0.2.0-beta.2",
 }
 EXPECTED_BUILD_TOOL_KEYS = {"bun", "editables", "node", "npm", "setuptools", "uv"}

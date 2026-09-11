@@ -24,6 +24,7 @@ import { assertCliListOutput } from "../../scripts/cli_assertions";
 import {
   assertClosedOrdinaryReceipt,
   assertProtectedOrdinaryReceiptForWorkflow,
+  diagnosticForSmokePhase,
   elapsedMilliseconds,
   finalizeSmokeRun,
   ordinaryFailureReceipt,
@@ -43,6 +44,24 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, "../..");
 const canonicalRoot = resolve(packageRoot, "../../contracts");
 const repositoryRoot = resolve(packageRoot, "../../..");
+const PYTHON_LEGACY_CONTRACTS = new Set(["tasks/v1/schema.json", "tasks/v1/cases/valid.json"]);
+const PYTHON_LEGACY_EVENT_TYPES = new Set([
+  "task.created",
+  "task.suspended",
+  "task.resumed",
+  "task.completed",
+  "task.failed",
+  "task.cancelled",
+]);
+const PYTHON_LEGACY_EVENT_DEFINITIONS = new Set([
+  "taskCreated",
+  "taskSuspended",
+  "taskResumed",
+  "taskCompleted",
+  "taskFailed",
+  "taskCancelled",
+]);
+const PYTHON_LEGACY_EXPORTS = new Set(["TaskHandle", "TaskRuntime", "TaskSnapshot", "TaskState"]);
 const SYNC_CHILD_TIMEOUT_MS = 20_000;
 const SYNC_CHILD_MAX_BUFFER = 16 * 1024 * 1024;
 
@@ -367,6 +386,57 @@ function contractFiles(root: string, directory = root): string[] {
     }
   }
   return files.sort();
+}
+
+function supportedTypeScriptContractBytes(path: string): Buffer {
+  const source = readFileSync(join(canonicalRoot, path));
+  if (
+    ![
+      "events/v1/cases/valid.json",
+      "events/v1/schema/new.json",
+      "events/v1/schema/stored.json",
+      "tiers/v1/features.json",
+    ].includes(path)
+  ) {
+    return source;
+  }
+
+  if (path === "events/v1/cases/valid.json") {
+    const document = JSON.parse(source.toString()) as {
+      events: Array<{ type: string; session_id: string; sequence: number }>;
+    };
+    const sequences = new Map<string, number>();
+    document.events = document.events.filter((event) => {
+      if (PYTHON_LEGACY_EVENT_TYPES.has(event.type)) return false;
+      const sequence = (sequences.get(event.session_id) ?? 0) + 1;
+      sequences.set(event.session_id, sequence);
+      event.sequence = sequence;
+      return true;
+    });
+    return Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
+  }
+
+  if (path.startsWith("events/v1/schema/")) {
+    const document = JSON.parse(source.toString()) as {
+      $defs: Record<string, unknown>;
+      oneOf: Array<{ $ref: string }>;
+    };
+    for (const definition of PYTHON_LEGACY_EVENT_DEFINITIONS) {
+      delete document.$defs[definition];
+    }
+    document.oneOf = document.oneOf.filter(
+      ({ $ref }) => !PYTHON_LEGACY_EVENT_DEFINITIONS.has($ref.split("/").at(-1)!),
+    );
+    return Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
+  }
+
+  const document = JSON.parse(source.toString()) as {
+    publicExports: { python: { stable: string[] } };
+  };
+  document.publicExports.python.stable = document.publicExports.python.stable.filter(
+    (name) => !PYTHON_LEGACY_EXPORTS.has(name),
+  );
+  return Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
 }
 
 function exportTargets(value: unknown): string[] {
@@ -1132,6 +1202,17 @@ describe("npm contract artifact", () => {
     expect(manifest.bugs).toEqual({ url: "https://github.com/enkyuan/alloy/issues" });
   });
 
+  it("centralizes TypeScript build cleanup in the package script", () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
+    const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
+
+    expect(manifest.scripts.build).toBe("bun run clean && tsup");
+    expect(buildConfig).not.toContain("rmSync");
+    expect(buildConfig).not.toContain('from "node:fs"');
+    expect([...buildConfig.matchAll(/\bclean:\s*false\b/g)]).toHaveLength(5);
+    expect(buildConfig).not.toMatch(/\bclean:\s*true\b/);
+  });
+
   it("exports the cwd-independent package-qualified CLI entry", () => {
     const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
     const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
@@ -1217,10 +1298,15 @@ describe("npm contract artifact", () => {
     expect(tiers.packageSubpaths.typescript["./postgres"]).toEqual({
       tier: "experimental",
       exports: [
+        "KajiPostgresBackend",
+        "KajiPostgresBackendOptions",
+        "PostgresBackend",
         "PostgresEventCommitter",
         "PostgresEventCommitterOptions",
         "PostgresEventStore",
         "PostgresToolIdempotencyLedger",
+        "PostgresTurnCoordinator",
+        "postgresLockKey",
       ],
     });
     expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
@@ -1322,6 +1408,9 @@ describe("npm contract artifact", () => {
       'fields.get("text") !== EXPECTED_MOCK_REPLY',
       "`${manager}:lifecycle-run`",
       "`${manager}:failure-history-run`",
+      "`${manager}:docs-readme-no-key-run`",
+      '"docs-test:readme-no-key:typescript"',
+      '"docs-test:readme-openai:typescript"',
       "const LIFECYCLE_SMOKE_SOURCE = `import {",
       "const FAILURE_HISTORY_SMOKE_SOURCE = `import {",
       "type TurnAccounting,",
@@ -1356,9 +1445,6 @@ describe("npm contract artifact", () => {
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
-    expect(source.match(/completed\.stderr/g)).toHaveLength(3);
-    expect(source).toContain("safeGitHubProofFailureCode(completed.stderr)");
-    expect(source).toContain("const diagnostic = safeHandoffDiagnostic(completed.stderr)");
     expect(source).not.toContain("JSON.stringify(args)");
     expect(source).not.toContain("node_modules/.bin/kaji");
     expect(source).not.toContain(
@@ -1376,6 +1462,28 @@ describe("npm contract artifact", () => {
     expect(source).toMatch(
       /await install\(\s*manager,\s*"bootstrap",[\s\S]*?if \(manager === "bun"\) \{[\s\S]*?"bun:audit"[\s\S]*?\["audit", "--production"\][\s\S]*?bootstrap/,
     );
+  });
+
+  it("retains bounded, redacted diagnostics for handoff and docs smoke phases only", () => {
+    const secret = "ghp_docs_smoke_secret";
+    const stderr = `${"x".repeat(4_200)}\u0000secret: ${secret}`;
+
+    for (const phase of [
+      "handoff:npm-github-proof",
+      "npm:docs-getting-started-run",
+      "bun:docs-getting-started-run",
+      "npm:docs-readme-no-key-run",
+      "bun:docs-readme-no-key-run",
+    ] as const) {
+      const diagnostic = diagnosticForSmokePhase(phase, stderr);
+      expect(diagnostic).not.toBeNull();
+      expect(diagnostic).toHaveLength(4_096);
+      expect(diagnostic).not.toContain(secret);
+      expect(diagnostic).toContain("secret: [redacted-token]");
+      expect(diagnostic).not.toContain("\u0000");
+    }
+
+    expect(diagnosticForSmokePhase("npm:cold-run", stderr)).toBeNull();
   });
 
   it("runs installed GitHub package proofs under supported Node runtimes", () => {
@@ -2966,7 +3074,7 @@ console.log(JSON.stringify({
     }
   }, 30_000);
 
-  it("contains exactly the canonical contract files and bytes", () => {
+  it("contains exactly the supported TypeScript contract projection", () => {
     const workdir = mkdtempSync(join(tmpdir(), "kaji-contract-pack-"));
     try {
       const packed = JSON.parse(
@@ -3116,12 +3224,26 @@ console.log(JSON.stringify({
         .filter((path) => path.startsWith(prefix) && /\.(json|md)$/.test(path))
         .map((path) => path.slice(prefix.length))
         .sort();
-      const expected = contractFiles(canonicalRoot);
+      const expected = contractFiles(canonicalRoot).filter(
+        (path) => !PYTHON_LEGACY_CONTRACTS.has(path),
+      );
 
       expect(actual).toEqual(expected);
       for (const path of expected) {
         const packaged = runBytes("tar", ["-xOf", tarball, `${prefix}${path}`]);
-        expect(packaged).toEqual(readFileSync(join(canonicalRoot, path)));
+        const projected = supportedTypeScriptContractBytes(path);
+        if (
+          [
+            "events/v1/cases/valid.json",
+            "events/v1/schema/new.json",
+            "events/v1/schema/stored.json",
+            "tiers/v1/features.json",
+          ].includes(path)
+        ) {
+          expect(JSON.parse(packaged.toString())).toEqual(JSON.parse(projected.toString()));
+        } else {
+          expect(packaged).toEqual(projected);
+        }
       }
     } finally {
       rmSync(workdir, { recursive: true, force: true });

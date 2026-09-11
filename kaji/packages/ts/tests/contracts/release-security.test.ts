@@ -1938,7 +1938,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$url" in
-  https://pypi.org/pypi/kaji/0.3.0a1/json)
+  https://pypi.org/pypi/kaji/0.2.0b1/json)
     printf '%s' "$KAJI_PYPI_HTTP"
     ;;
   https://registry.npmjs.org/tiny-tarball/1.0.0)
@@ -2039,7 +2039,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$url" in
-  https://pypi.org/pypi/kaji/0.3.0a1/json)
+  https://pypi.org/pypi/kaji/0.2.0b1/json)
     printf '404'
     exit 0
     ;;
@@ -2443,7 +2443,7 @@ describe("Kaji workflow contracts", () => {
       expect(calibration?.permissions).toEqual({ actions: "read", contents: "read" });
       expect(onboarding?.permissions).toEqual({ actions: "read", contents: "read" });
       expect(calibration?.environment).toBeUndefined();
-      expect(onboarding?.environment).toBe("kaji-onboarding");
+      expect(onboarding?.environment).toBe("Onboarding");
       expect(calibration?.outputs).toBeUndefined();
       expect(Object.keys(onboarding?.outputs ?? {}).sort()).toEqual(
         [
@@ -2521,8 +2521,8 @@ describe("Kaji workflow contracts", () => {
       expect(String(onboardingUploads[1]?.with?.path)).toContain(
         "typescript-onboarding-evidence.json",
       );
-      expect(source.match(/environment:\s+kaji-onboarding/g)).toHaveLength(1);
-      expect(source.match(/environment:\s+kaji-release(?:\s|$)/g)).toHaveLength(1);
+      expect(source.match(/environment:\s+Onboarding/g)).toHaveLength(1);
+      expect(source.match(/environment:\s+Release(?:\s|$)/g)).toHaveLength(1);
     }
 
     const dispatch = rehearsal.workflow.on?.workflow_dispatch as
@@ -2624,7 +2624,7 @@ describe("Kaji workflow contracts", () => {
     expect(action.source).toContain("actions/artifacts/$EXPECTED_EVIDENCE_ARTIFACT_ID");
 
     expect(workflow.jobs).not.toHaveProperty("publisher-preflight");
-    expect(source.match(/environment:\s+kaji-publish/g)).toHaveLength(1);
+    expect(source.match(/environment:\s+Publish/g)).toHaveLength(1);
     expect(source).not.toContain("inputs.artifacts");
     const offlineSteps = workflow.jobs?.["offline-gates"]?.steps ?? [];
     const signedSourceIndex = offlineSteps.findIndex(
@@ -2702,7 +2702,7 @@ describe("Kaji workflow contracts", () => {
     "rejects signed-tag verification for non-fresh attempt %s",
     async (runAttempt) => {
       await expect(runSignedTagParser(undefined, runAttempt)).rejects.toThrow(
-        "publish workflow identity differs from the exact alpha.1 boundary",
+        "publish workflow identity differs from the exact beta.11 boundary",
       );
     },
   );
@@ -3062,8 +3062,8 @@ describe("Kaji workflow contracts", () => {
       "zipfile.ZipFile",
       '"SHA256SUMS"',
       '"irogane-kaji-0.3.0-alpha.1.tgz"',
-      '"kaji-0.3.0a1-py3-none-any.whl"',
-      '"kaji-0.3.0a1.tar.gz"',
+      '"kaji-0.2.0b1-py3-none-any.whl"',
+      '"kaji-0.2.0b1.tar.gz"',
       '"manifest.json"',
       "len(members) != len(expected)",
       "len(names) != len(set(names))",
@@ -3103,8 +3103,8 @@ describe("Kaji workflow contracts", () => {
       expect(source, workflowName).not.toContain("KAJI_TTHW_EVIDENCE_JSON");
       expect(source, workflowName).not.toContain("validate_tthw_evidence.py");
       expect(jobs["typescript-onboarding-archive-calibration"]?.environment).toBeUndefined();
-      expect(jobs["typescript-onboarding-evidence"]?.environment).toBe("kaji-onboarding");
-      expect(jobs["keyed-proof"]?.environment).toBe("kaji-release");
+      expect(jobs["typescript-onboarding-evidence"]?.environment).toBe("Onboarding");
+      expect(jobs["keyed-proof"]?.environment).toBe("Release");
       for (const jobId of terminalJobs) {
         expect(
           dependencyClosure(workflow, jobId),
@@ -3136,7 +3136,7 @@ describe("Kaji workflow contracts", () => {
       "Only after that command succeeds, rerun the identical command with `--approve` appended",
       "Do not approve onboarding manually in the Actions UI",
       "Require the protected onboarding aggregate",
-      "Approve the later, distinct `kaji-release` deployment separately",
+      "Approve the later, distinct `Release` deployment separately",
       "Stop here until the operator explicitly confirms a fresh `NPM_TOKEN`",
     ];
     const positions = orderedSteps.map((step) => runbook.indexOf(step));
@@ -3144,9 +3144,9 @@ describe("Kaji workflow contracts", () => {
     expect(positions).toEqual([...positions].sort((left, right) => left - right));
 
     for (const authority of [
-      "`kaji-onboarding` protects only the deterministic TypeScript onboarding aggregate",
-      "`kaji-release` protects mandatory keyed OpenAI proof",
-      "`kaji-publish` protects the sole final npm write",
+      "`Onboarding` protects only the deterministic TypeScript onboarding aggregate",
+      "`Release` protects mandatory keyed OpenAI proof",
+      "`Publish` protects the sole final npm write",
       "It must not contain a provider key",
       "Do not inspect, copy, or test the secret locally",
       "Do not inspect or test the secret",
@@ -3181,7 +3181,7 @@ describe("Kaji workflow contracts", () => {
     );
   });
 
-  it("binds the current TypeScript candidate to alpha.1 and preserves prior incident history", () => {
+  it("binds the current TypeScript candidate to beta.11 and preserves prior incident history", () => {
     const packageManifest = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       name: string;
       version: string;
@@ -3840,8 +3840,8 @@ describe("Kaji workflow contracts", () => {
         failureCode: null,
         releaseManifestSha256: "b".repeat(64),
         artifactSha256: {
-          "kaji-0.3.0a1-py3-none-any.whl": "c".repeat(64),
-          "kaji-0.3.0a1.tar.gz": "d".repeat(64),
+          "kaji-0.2.0b1-py3-none-any.whl": "c".repeat(64),
+          "kaji-0.2.0b1.tar.gz": "d".repeat(64),
         },
         runtime: {
           implementation: "CPython",
@@ -3849,8 +3849,8 @@ describe("Kaji workflow contracts", () => {
           executable: "/opt/python/bin/python",
         },
         artifacts: {
-          wheel: "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
-          sdist: "/artifacts/kaji-0.3.0a1.tar.gz",
+          wheel: "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+          sdist: "/artifacts/kaji-0.2.0b1.tar.gz",
         },
         githubPackageProofs: {
           wheel: githubProof,
@@ -4567,10 +4567,10 @@ describe("Kaji workflow contracts", () => {
     expect(source).not.toContain("pypi-attestations");
 
     const registryPreflight = jobs["registry-preflight"]?.steps?.find((step) =>
-      step.run?.includes("https://pypi.org/pypi/kaji/0.3.0a1/json"),
+      step.run?.includes("https://pypi.org/pypi/kaji/0.2.0b1/json"),
     );
     expect(registryPreflight?.run).toContain("404)");
-    expect(registryPreflight?.run).toContain("PyPI beta 0.3.0a1 must remain absent");
+    expect(registryPreflight?.run).toContain("PyPI beta 0.2.0b1 must remain absent");
 
     const publisherJob = jobs["publish-npm"]!;
     const identity = workflowStep(publisherJob, "Verify exact npm publisher identity");
@@ -4591,7 +4591,7 @@ describe("Kaji workflow contracts", () => {
     });
     expect(npmPublish.run).toContain("--provenance");
     expect(npmPublish.run).toContain("--access public");
-    expect(npmPublish.run).toContain("--tag alpha");
+    expect(npmPublish.run).toContain("--tag beta");
     const publisherSteps = publisherJob.steps ?? [];
     const reverifyIndex = publisherSteps.findIndex(
       (step) => step.uses === "./.github/actions/verify-kaji-tag",
@@ -4647,16 +4647,16 @@ describe("Kaji workflow contracts", () => {
     expect(jobs["release-evidence"]?.if).toContain("npm_byte_verified");
 
     const pythonEvidence = JSON.stringify(jobs["supply-chain"]);
-    expect(pythonEvidence).toContain("kaji-0.3.0a1-py3-none-any.whl");
-    expect(pythonEvidence).toContain("kaji-0.3.0a1.tar.gz");
+    expect(pythonEvidence).toContain("kaji-0.2.0b1-py3-none-any.whl");
+    expect(pythonEvidence).toContain("kaji-0.2.0b1.tar.gz");
 
     const releaseAttach = jobs["release-evidence"]?.steps?.find((step) =>
       step.run?.includes("kaji.tooling.release.assets"),
     )?.run;
     expect(releaseAttach).toContain("irogane-kaji-0.3.0-alpha.1.tgz");
     for (const forbidden of [
-      "kaji-0.3.0a1-py3-none-any.whl",
-      "kaji-0.3.0a1.tar.gz",
+      "kaji-0.2.0b1-py3-none-any.whl",
+      "kaji-0.2.0b1.tar.gz",
       "registry-kaji-sdk",
       "pypi-attestations",
     ]) {

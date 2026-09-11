@@ -31,6 +31,21 @@ class CapabilityResult:
             raise ValueError("artifact ids must be unique within a capability result")
         object.__setattr__(self, "artifacts", artifacts)
 
+    def to_tool_result(self) -> JsonValue:
+        """Serialize this validated result for the existing tool execution path."""
+
+        return durable_json_snapshot(
+            {
+                "value": self.value,
+                "artifacts": [
+                    artifact.model_dump(mode="json", exclude_none=True)
+                    for artifact in self.artifacts
+                ],
+            },
+            subject="tool_result",
+            max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES,
+        )
+
 
 def capability_result(
     value: JsonValue | None = None,

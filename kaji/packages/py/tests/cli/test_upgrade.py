@@ -21,11 +21,11 @@ def test_list_installed_kaji_excludes_the_unrelated_kaji_project(
 ) -> None:
     installed = [
         SimpleNamespace(metadata={"Name": "kaji"}, version="0.14.0"),
-        SimpleNamespace(metadata={"Name": "kaji"}, version="0.3.0a1"),
+        SimpleNamespace(metadata={"Name": "kaji"}, version="0.2.0b1"),
     ]
     monkeypatch.setattr(upgrade, "distributions", lambda: installed)
 
-    assert upgrade.list_installed_kaji() == {"kaji": "0.3.0a1"}
+    assert upgrade.list_installed_kaji() == {"kaji": "0.2.0b1"}
 
 
 def test_find_outdated_skips_unknown_latest() -> None:

@@ -51,8 +51,8 @@ COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 WORKFLOW_RUN_PATTERN = re.compile(
     r"https://github\.com/[^/]+/[^/]+/actions/runs/[1-9][0-9]*"
 )
-PYTHON_WHEEL = "kaji-0.3.0a1-py3-none-any.whl"
-PYTHON_SDIST = "kaji-0.3.0a1.tar.gz"
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 RELEASE_FILES = (
     PYTHON_WHEEL,

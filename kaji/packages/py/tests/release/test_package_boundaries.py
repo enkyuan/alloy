@@ -218,12 +218,15 @@ def test_redis_client_is_confined_to_realtime_boundary():
 
 
 def test_postgres_client_is_confined_to_postgres_backend():
-    allowed = Path("src/backends/postgres/store.py")
+    allowed = {
+        Path("src/backends/postgres/store.py"),
+        Path("src/backends/postgres/idempotency.py"),
+    }
     violations: list[str] = []
 
     for path in _python_files(PACKAGE_ROOT):
         rel = path.relative_to(SDK_ROOT)
-        if rel == allowed:
+        if rel in allowed:
             continue
         if any(_matches(import_name, "psycopg") for import_name in _imports(path)):
             violations.append(str(rel))

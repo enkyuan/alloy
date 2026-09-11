@@ -15,6 +15,16 @@ const eventSchemaPaths = [
   resolve(__dirname, "../../../../contracts/events/v1/schema/stored.json"),
 ] as const;
 
+function isPythonLegacyTaskEvent(event: unknown): event is Record<string, unknown> {
+  return (
+    typeof event === "object" &&
+    event !== null &&
+    "type" in event &&
+    typeof event.type === "string" &&
+    event.type.startsWith("task.")
+  );
+}
+
 describe("production-beta contract", () => {
   it("pins the production-beta compatibility defaults", () => {
     const contract = JSON.parse(readFileSync(contractPath, "utf8"));
@@ -53,10 +63,15 @@ describe("production-beta contract", () => {
     }
   });
 
-  it("parses and replays every canonical approval lifecycle fixture row", () => {
+  it("parses and replays every TypeScript-projected approval lifecycle fixture row", () => {
     const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as { events: unknown[] };
-    const events = fixture.events.map(validateStoredEvent);
-    expect(events).toHaveLength(47);
+    const legacyPythonTaskEvents = fixture.events.filter(isPythonLegacyTaskEvent);
+    const events = fixture.events
+      .filter((event) => !isPythonLegacyTaskEvent(event))
+      .map(validateStoredEvent);
+
+    expect(legacyPythonTaskEvents).toHaveLength(6);
+    expect(events).toHaveLength(41);
     const state = replaySession(events);
     expect(state.isActive).toBe(false);
     expect(state.pendingApprovals.size).toBe(0);

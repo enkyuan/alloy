@@ -43,9 +43,9 @@ ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / 
 PUBLIC_SCHEMA = ROOT / "kaji" / "contracts" / "release" / "v1/gmail.json"
 
 # Release artifact names. Keep in lockstep with live_github_proof.py; the beta
-# tag drives these. (TS tarball tracks alpha.1; Python wheel/sdist track 0.3.0a1.)
-PYTHON_WHEEL = "kaji-0.3.0a1-py3-none-any.whl"
-PYTHON_SDIST = "kaji-0.3.0a1.tar.gz"
+# tag drives these. (TS tarball tracks beta.11; Python wheel/sdist track 0.2.0b1.)
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 
 # Child runners that must exist before this proof can run. Neither is written.

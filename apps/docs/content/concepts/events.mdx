@@ -14,8 +14,8 @@ runtime; hosts must not infer implemented behavior from schema presence.
 
 ## Event types
 
-The same strings are used over the wire by both SDKs. A TypeScript log can be
-replayed by the Python SDK and vice versa.
+The table lists TypeScript wire types. Shared non-Task event strings are used
+by both SDKs; Python additionally retains legacy Task-only event types.
 
 | Type                         | Emitted by                                     |
 | ---------------------------- | ---------------------------------------------- |
@@ -36,6 +36,7 @@ replayed by the Python SDK and vice versa.
 | `tool.call.started`          | Tool handler execution began                   |
 | `tool.call.completed`        | Tool handler returned a result                 |
 | `tool.call.failed`           | Tool handler raised an error                   |
+| `artifact.emitted`           | Runtime recorded an emitted artifact reference |
 | `tool.approval.requested`    | Awaiting approval to execute tool              |
 | `tool.approval.approved`     | User approved tool execution                   |
 | `tool.approval.rejected`     | User rejected tool execution                   |

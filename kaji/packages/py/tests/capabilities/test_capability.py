@@ -10,9 +10,16 @@ from kaji.events.store import InMemoryEventStore
 from kaji.events.types import EventType
 from kaji.runtime.agents.approval import ApprovalDecision
 from kaji.runtime.agents.cancel import CancellationToken
-from kaji.runtime.agents.context import ToolExecutionContext, ToolInvocation, TurnContext
+from kaji.runtime.agents.context import (
+    ToolExecutionContext,
+    ToolInvocation,
+    TurnContext,
+)
 from kaji.runtime.agents.planner import ToolPlanner
-from kaji.runtime.tools.errors import ToolArgumentValidationError, ToolSchemaValidationError
+from kaji.runtime.tools.errors import (
+    ToolArgumentValidationError,
+    ToolSchemaValidationError,
+)
 from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry
 from tests.helpers.approval import StaticApprovalHandler
@@ -38,7 +45,9 @@ def context() -> ToolExecutionContext:
 
 
 @pytest.mark.asyncio
-async def test_capability_compiles_to_one_toolspec_and_uses_registry_validation() -> None:
+async def test_capability_compiles_to_one_toolspec_and_uses_registry_validation() -> (
+    None
+):
     received: list[ToolExecutionContext] = []
 
     @kaji.capability(
@@ -55,7 +64,9 @@ async def test_capability_compiles_to_one_toolspec_and_uses_registry_validation(
         parallel_safe=True,
         metadata={"owner": "payments"},
     )
-    async def refund(input: dict[str, Any], received_context: ToolExecutionContext) -> dict:
+    async def refund(
+        input: dict[str, Any], received_context: ToolExecutionContext
+    ) -> dict:
         received.append(received_context)
         return {"paymentId": input["paymentId"]}
 
@@ -76,6 +87,37 @@ async def test_capability_compiles_to_one_toolspec_and_uses_registry_validation(
         ToolInvocation("payments.refund", {"paymentId": "pay-1"}, context())
     ) == {"paymentId": "pay-1"}
     assert len(received) == 1
+
+
+@pytest.mark.asyncio
+async def test_capability_result_is_serialized_for_existing_tool_execution() -> None:
+    @kaji.capability(
+        name="receipts.create",
+        description="Creates a receipt.",
+        input_schema={"type": "object"},
+        risk="read",
+    )
+    async def create_receipt(
+        _input: dict[str, Any], _context: ToolExecutionContext
+    ) -> Any:
+        return kaji.capability_result(
+            {"ok": True},
+            [kaji.artifact("receipt", "test/receipt", "memory:receipt")],
+        )
+
+    registry = ToolRegistry()
+    create_receipt.register(registry)
+
+    assert await registry.execute(ToolInvocation("receipts.create", {}, context())) == {
+        "value": {"ok": True},
+        "artifacts": [
+            {
+                "id": "receipt",
+                "type": "test/receipt",
+                "uri": "memory:receipt",
+            }
+        ],
+    }
 
 
 @pytest.mark.asyncio
@@ -185,9 +227,7 @@ async def test_builder_capability_preserves_context_approval_and_policy_name() -
     runtime = (
         kaji.AgentBuilder()
         .provider(
-            MockProvider(
-                tool_call={"name": "payments.charge", "args": {"amount": 1}}
-            )
+            MockProvider(tool_call={"name": "payments.charge", "args": {"amount": 1}})
         )
         .capability(charge)
         .policy(ToolPolicy(require_approval_for={"destructive"}))

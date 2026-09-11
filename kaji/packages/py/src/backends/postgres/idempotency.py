@@ -232,7 +232,9 @@ class PostgresToolIdempotencyLedger:
         return row is None or bool(row[0])
 
     async def mark_started(self, claim: ToolIdempotencyClaim) -> None:
-        await self._transition(claim, "UPDATE kaji_tool_idempotency SET started_at = CURRENT_TIMESTAMP")
+        await self._transition(
+            claim, "UPDATE kaji_tool_idempotency SET started_at = CURRENT_TIMESTAMP"
+        )
         local = self._running.get(str(claim.claim_token))
         if local is not None:
             local.started = True
@@ -270,7 +272,9 @@ class PostgresToolIdempotencyLedger:
     async def release_settled(self, session_id: str) -> int:
         return await self._release(session_id, "status <> 'running'")
 
-    async def reconcile_completed(self, session_id: str, tool_call_id: str, result: Any) -> bool:
+    async def reconcile_completed(
+        self, session_id: str, tool_call_id: str, result: Any
+    ) -> bool:
         detached = durable_json_snapshot(
             result, subject="tool_result", max_bytes=MAX_DURABLE_TOOL_RESULT_BYTES
         )

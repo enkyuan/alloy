@@ -19,7 +19,7 @@ from typing import Any
 # Tooling lives at the Kaji workspace root but is invoked as ``kaji.tooling``.
 __path__.append(str(Path(__file__).resolve().parents[3]))
 
-__version__ = "0.3.0a1"
+__version__ = "0.2.0b1"
 
 # Public name -> module it lives in. Kept as a static map so that importing
 # the top-level package triggers no submodule side effects. Entries are

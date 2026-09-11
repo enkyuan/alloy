@@ -94,7 +94,7 @@ each item tagged by the kind of work it is.
 1. **[ops]** Make `enkyuan/alloy` public (audit history and Actions logs for
    secrets first). npm provenance requires a public source repo.
 2. **[code]** Reconcile or consciously document the Python version pin. TS is
-   `0.3.0-alpha.1`; Python is `0.3.0a1`. The skew is currently intentional and
+   `0.3.0-alpha.1`; Python is `0.2.0b1`. The skew is currently intentional and
    test-pinned (`test_release_task15.py` asserts both literals), so document it
    rather than "fixing" it blindly.
 3. **[code/CI]** Land the reviewed release commit on `main`; confirm license
@@ -104,7 +104,7 @@ each item tagged by the kind of work it is.
    reviewer.
 5. **[credential]** Store `OPENAI_API_KEY` in `kaji-release` only, a fresh
    `NPM_TOKEN` in `kaji-publish` only, and set `KAJI_RELEASE_SIGNER_EMAIL`.
-6. **[CI/evidence]** Confirm registry-absence (npm and PyPI 404 for alpha.1).
+6. **[CI/evidence]** Confirm registry-absence (npm and PyPI 404 for beta.11).
 7. **[CI/evidence]** Dispatch `kaji.rehearsal.yml`: offline gates, Python
    3.11/3.14 and Node 22/24 compatibility, the 3x paired benchmark, and the
    30-minute soak.
@@ -164,7 +164,7 @@ here so the operator who has them can execute in order.
 - **OpenAI tool-loop proof, tag, and publish.** Steps 9 through 12 above are all
   credential- or ops-gated and run only in the protected workflows.
 
-### Alpha.1 tag: readiness + the staged signed-tag command
+### Beta.11 tag: readiness + the staged signed-tag command
 
 Reviewed release commit: `fd5d214aa111b8236ea4a4b901666b268fbe5365`
 (origin/main tip; the #107 merge).
@@ -176,8 +176,8 @@ Tag-readiness checks that pass today (runnable in a normal session):
 | npm `@irogane/kaji@0.3.0-alpha.1` absent | 404 (absent) |
 | No tag `kaji-v0.3.0-alpha.1` (local + remote) | none |
 | TS version pin | `0.3.0-alpha.1` (package.json + `index.ts` VERSION) |
-| Python version pin | `0.3.0a1` (pyproject + `__version__`), intentional test-pinned skew |
-| CHANGELOG alpha.1 entry | `## [0.3.0-alpha.1]` present |
+| Python version pin | `0.2.0b1` (pyproject + `__version__`), intentional test-pinned skew |
+| CHANGELOG beta.11 entry | `## [0.3.0-alpha.1]` present |
 | `KAJI_RELEASE_SIGNER_EMAIL` repo variable | set |
 
 The tag annotation is a canonical compact-JSON authorization whose SHA-256 the
@@ -185,13 +185,13 @@ publish workflow re-verifies (`.github/actions/verify-kaji-tag`). Every
 `<...>` value below is recorded by the protected `kaji.rehearsal.yml` run and
 does not exist until that CI run completes, so it cannot be pre-filled here. Do
 not invent these values; copy them from the rehearsal outputs
-(see releasing.md steps around "Bind the signed alpha.1 tag to the rehearsal").
+(see releasing.md steps around "Bind the signed beta.11 tag to the rehearsal").
 
 1. Write the authorization body (one compact line plus one terminal LF, keys
    recursively sorted, ASCII) to `AUTHORIZATION_FILE`:
 
 ```json
-{"candidateArtifact":{"digest":"sha256:<from rehearsal>","id":<candidate artifact id>,"name":"kaji-artifacts"},"commit":"<40-hex reviewed commit>","evidenceArtifact":{"digest":"sha256:<from rehearsal>","id":<evidence artifact id>,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"kaji-0.3.0-alpha.1.tgz","sha256":"<tarball sha256>"},"rehearsal":{"runAttempt":1,"runId":<rehearsal run id>,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<40-hex, equals reviewed commit>"},"releaseManifestSha256":"<manifest sha256>","schemaVersion":"1.0.0"}
+{"candidateArtifact":{"digest":"sha256:<from rehearsal>","id":<candidate artifact id>,"name":"kaji-artifacts"},"commit":"<40-hex reviewed commit>","evidenceArtifact":{"digest":"sha256:<from rehearsal>","id":<evidence artifact id>,"name":"kaji-release-candidate-evidence"},"npmTarball":{"name":"irogane-kaji-0.3.0-alpha.1.tgz","sha256":"<tarball sha256>"},"rehearsal":{"runAttempt":1,"runId":<rehearsal run id>,"workflowPath":".github/workflows/kaji.rehearsal.yml","workflowSha":"<40-hex, equals reviewed commit>"},"releaseManifestSha256":"<manifest sha256>","schemaVersion":"1.0.0"}
 ```
 
 2. Validate the file with the canonical-JSON checker in releasing.md (it rejects
@@ -328,4 +328,3 @@ lands. That is the accepted tradeoff.
 | 3 | eng | A0-lite: cross-SDK parity assertion gates the tag (LANDED); full out-of-tree fixture deferred post-beta | User Challenge (user chose A0-lite over models' full-A0) | P1 + P2 | Both voices: beta marks Integration stable. User accepted the parity assertion as pre-tag insurance; assertion built + green, full fixture deferred |
 | 4 | strategy | Add Python source-install gate + post-beta PyPI line item | Mechanical | P1 completeness | Beta publishes npm only; dual-language thesis half-true without it |
 | 5 | eng | Defer agentOS graduation behind its README's demand+stability gate | Mechanical | P5 explicit / YAGNI | Preview-pinned publish contradicts the no-bridge YAGNI call |
-

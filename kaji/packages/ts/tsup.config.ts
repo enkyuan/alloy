@@ -1,5 +1,3 @@
-import { rmSync } from "node:fs";
-
 import { defineConfig, type Options } from "tsup";
 
 const EXTERNAL_PROVIDERS = ["openai", "@anthropic-ai/sdk"];
@@ -9,9 +7,6 @@ const SOURCE_MAP_POLICY = {
     options.sourcesContent = false;
   },
 } satisfies Pick<Options, "sourcemap" | "esbuildOptions">;
-
-// Clean once before parallel configs build; per-config cleaning can delete faster outputs.
-rmSync(new URL("./dist", import.meta.url), { recursive: true, force: true });
 
 export default defineConfig([
   {

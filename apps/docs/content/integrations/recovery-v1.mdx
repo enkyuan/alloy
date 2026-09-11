@@ -7,8 +7,10 @@ Integration failures expose a closed tuple of `error_code`, `reason_code`,
 `recovery_code`, and `doc_url`. Route on those fields; do not parse exception
 messages or log credentials, request bodies, tool arguments, or vendor errors.
 
-Gmail rows below are reserved by the shared contract. No Gmail integration or
-Gmail tools are bundled.
+The Gmail beta registry bundle is available in both SDKs. It declares Google
+OAuth `gmail.readonly` and `gmail.send` scopes and exposes `list_messages`,
+`get_message`, and `send_message`. The first two are reads; `send_message` is a
+serialized external effect.
 
 ## GitHub token
 
@@ -18,8 +20,8 @@ instead requires the application to provide `tokenFor`.
 
 ## Gmail grant
 
-`CONNECT_GMAIL`: WIP contract row only. No Gmail manifest exists, so this
-action is not executable.
+`CONNECT_GMAIL`: run `kaji connect gmail --principal <stable-host-principal-id>`
+to create or refresh the Gmail OAuth grant, then retry with the same principal.
 
 ## Keychain missing
 
@@ -31,7 +33,8 @@ action is not executable.
 
 ## Keychain corrupt
 
-`RESET_GMAIL_GRANT`: WIP contract row only. No Gmail grant flow is executable.
+`RESET_GMAIL_GRANT`: remove the unusable grant, then run the Gmail connect flow
+again. Never replace OAuth credential storage with plaintext files.
 
 ## Keychain unsupported
 
@@ -40,7 +43,9 @@ plaintext OAuth credential storage.
 
 ## Gmail scope drift
 
-`RECONNECT_GMAIL`: WIP contract row only. No Gmail manifest declares scopes.
+`RECONNECT_GMAIL`: reconnect the principal and grant both manifest-declared
+scopes: `https://www.googleapis.com/auth/gmail.readonly` and
+`https://www.googleapis.com/auth/gmail.send`.
 
 ## Policy rejected
 
@@ -80,5 +85,6 @@ its internal idempotency key to GitHub.
 
 ## Gmail mutation unknown
 
-`RECONCILE_GMAIL_MUTATION`: WIP contract row only. No Gmail mutation tool is
-available to reconcile.
+`RECONCILE_GMAIL_MUTATION`: reconcile the sent message before retrying. A
+connection loss after `send_message` dispatch can leave the remote outcome
+unknown.

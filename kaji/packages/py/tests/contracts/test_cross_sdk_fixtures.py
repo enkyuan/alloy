@@ -59,7 +59,7 @@ def test_python_exporter_is_byte_stable_and_covers_every_scenario() -> None:
     assert [row["id"] for row in exported["scenarios"]] == [
         row["id"] for row in contract["scenarios"]
     ]
-    assert len(exported["scenarios"]) == 67
+    assert len(exported["scenarios"]) == 71
     assert all(set(row["snapshot"]) == SNAPSHOT_KEYS for row in exported["scenarios"])
     snapshots = {row["id"]: row["snapshot"] for row in exported["scenarios"]}
     for scenario_id, service, action, cost in (
@@ -109,6 +109,9 @@ def test_python_exporter_is_byte_stable_and_covers_every_scenario() -> None:
     assert snapshots["replay-json-unrepresentable-integer"]["result"] == {
         "event_count": 3,
         "rejection": "integer_outside_i_json_safe_range",
+    }
+    assert snapshots["postgres-lock-key"]["result"] == {
+        "keys": ["677529369334489940", "2107250361640305863", "5864869109797145327"]
     }
 
     referenced = {

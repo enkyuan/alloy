@@ -4,11 +4,30 @@
   "contractVersion": "1.0.0",
   "cliCommands": {
     "python": {
-      "stable": ["add", "connect", "disconnect", "init", "list-integrations"],
-      "experimental": ["doctor", "gen", "info", "secret", "upgrade"]
+      "stable": [
+        "add",
+        "connect",
+        "disconnect",
+        "init",
+        "list-integrations"
+      ],
+      "experimental": [
+        "doctor",
+        "gen",
+        "info",
+        "secret",
+        "upgrade"
+      ]
     },
     "typescript": {
-      "stable": ["add", "connect", "disconnect", "init", "list-integrations", "replay"],
+      "stable": [
+        "add",
+        "connect",
+        "disconnect",
+        "init",
+        "list-integrations",
+        "replay"
+      ],
       "experimental": []
     }
   },
@@ -16,7 +35,10 @@
     "typescript": {
       "./anthropic": {
         "tier": "experimental",
-        "exports": ["AnthropicProvider", "AnthropicProviderOptions"]
+        "exports": [
+          "AnthropicProvider",
+          "AnthropicProviderOptions"
+        ]
       },
       "./auth": {
         "tier": "experimental",
@@ -66,15 +88,24 @@
       },
       "./openai": {
         "tier": "stable",
-        "exports": ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"]
+        "exports": [
+          "OpenAIProvider",
+          "OpenAIProviderOptions",
+          "RetryOptions"
+        ]
       },
       "./postgres": {
         "tier": "experimental",
         "exports": [
+          "KajiPostgresBackend",
+          "KajiPostgresBackendOptions",
+          "PostgresBackend",
           "PostgresEventCommitter",
           "PostgresEventCommitterOptions",
           "PostgresEventStore",
-          "PostgresToolIdempotencyLedger"
+          "PostgresToolIdempotencyLedger",
+          "PostgresTurnCoordinator",
+          "postgresLockKey"
         ]
       },
       "./testing": {
@@ -301,7 +332,6 @@
         "IntegrationValidationCode",
         "IntegrationValidationError",
         "InvalidDurableValueError",
-        "InvalidTaskTransitionError",
         "JSONSchema",
         "JournalStage",
         "KajiEvent",
@@ -329,8 +359,6 @@
         "ObservableCancellationToken",
         "OpenAIProvider",
         "OpenAIProviderOptions",
-        "PendingApproval",
-        "PendingApprovalSummary",
         "ProviderAPIError",
         "ProviderCancellationContractViolation",
         "ProviderConfigError",
@@ -365,18 +393,6 @@
         "StoredKajiEvent",
         "StreamTextResult",
         "SubscriberStage",
-        "TaskCancelled",
-        "TaskCompleted",
-        "TaskCreated",
-        "TaskFailed",
-        "TaskHandle",
-        "TaskNotFoundError",
-        "TaskProjectionError",
-        "TaskResumed",
-        "TaskRuntime",
-        "TaskSnapshot",
-        "TaskState",
-        "TaskSuspended",
         "TimerHandle",
         "TimerScheduler",
         "TokenUsage",
@@ -453,7 +469,6 @@
         "lookupCost",
         "normalizeProviderError",
         "openai",
-        "projectTask",
         "providerFamily",
         "recordMetric",
         "registerProvider",
@@ -492,32 +507,68 @@
     }
   },
   "stable": [
-    { "id": "agent-builder", "surface": "Agent builder" },
-    { "id": "runtime-turn-loop", "surface": "Runtime turn loop" },
-    { "id": "cancellation", "surface": "Cancellation" },
-    { "id": "sessions", "surface": "Sessions" },
+    {
+      "id": "agent-builder",
+      "surface": "Agent builder"
+    },
+    {
+      "id": "runtime-turn-loop",
+      "surface": "Runtime turn loop"
+    },
+    {
+      "id": "cancellation",
+      "surface": "Cancellation"
+    },
+    {
+      "id": "sessions",
+      "surface": "Sessions"
+    },
     {
       "id": "in-memory-event-store-journal",
       "surface": "In-memory event store/journal"
     },
-    { "id": "event-replay", "surface": "Event replay" },
+    {
+      "id": "event-replay",
+      "surface": "Event replay"
+    },
     {
       "id": "tool-registry-planner-policy",
       "surface": "Tool registry/planner/policy"
     },
-    { "id": "openai-adapter", "surface": "OpenAI adapter" },
-    { "id": "echo-integration", "surface": "Echo integration" }
+    {
+      "id": "openai-adapter",
+      "surface": "OpenAI adapter"
+    },
+    {
+      "id": "echo-integration",
+      "surface": "Echo integration"
+    }
   ],
   "experimental": [
     {
       "id": "python-redis-event-history",
       "surface": "Python-only Redis event/history backends"
     },
-    { "id": "voice-tts", "surface": "Voice/TTS" },
-    { "id": "rag-retrieval", "surface": "RAG/retrieval" },
-    { "id": "native-gemini-kimi", "surface": "Native Gemini/Kimi" },
-    { "id": "anthropic-adapter", "surface": "Anthropic adapter" },
-    { "id": "retriever-selection", "surface": "Retriever selection" },
+    {
+      "id": "voice-tts",
+      "surface": "Voice/TTS"
+    },
+    {
+      "id": "rag-retrieval",
+      "surface": "RAG/retrieval"
+    },
+    {
+      "id": "native-gemini-kimi",
+      "surface": "Native Gemini/Kimi"
+    },
+    {
+      "id": "anthropic-adapter",
+      "surface": "Anthropic adapter"
+    },
+    {
+      "id": "retriever-selection",
+      "surface": "Retriever selection"
+    },
     {
       "id": "distributed-session-serialization",
       "surface": "Distributed same-session serialization"
@@ -530,6 +581,9 @@
       "id": "unbounded-cross-process-replay",
       "surface": "Unbounded or cross-process replay"
     },
-    { "id": "durable-snapshotting", "surface": "Durable snapshotting" }
+    {
+      "id": "durable-snapshotting",
+      "surface": "Durable snapshotting"
+    }
   ]
 }

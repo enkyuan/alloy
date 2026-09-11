@@ -114,9 +114,12 @@ WINDOWS_DRIVE = re.compile(r"[A-Za-z]:[/\\]")
 DANGEROUS_PREFIXES = ("/Users/", "/private/", "/tmp/", "/home/", "file:")
 
 SCHEMA_PATH = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
-    / "contracts/release/v1/typescript/handoff.json"
-)
+    next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+) / "contracts/release/v1/typescript/handoff.json"
 TRUSTED_LICENSE_PATH = (
     next(
         parent
@@ -713,7 +716,11 @@ def validate_bundle(
     except OSError:
         _reject("UNSAFE_PATH")
     schema_root = SCHEMA_NAME.split("/", 1)[0]
-    if MANIFEST_NAME not in top_names or schema_root not in top_names or len(top_names) != 3:
+    if (
+        MANIFEST_NAME not in top_names
+        or schema_root not in top_names
+        or len(top_names) != 3
+    ):
         _reject("UNSAFE_PATH")
     tarball_names = top_names - {MANIFEST_NAME, schema_root}
     if len(tarball_names) != 1:

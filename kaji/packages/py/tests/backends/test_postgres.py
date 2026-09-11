@@ -109,9 +109,17 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     dsn = os.environ["KAJI_POSTGRES_URL"]
     first = PostgresToolIdempotencyLedger(dsn, poll_interval_seconds=0.001)
     second = PostgresToolIdempotencyLedger(dsn, poll_interval_seconds=0.001)
-    kwargs = {"session_id": "ledger", "tool_call_id": "call", "tool_name": "echo", "tool_args": {"b": 2, "a": ["é", True]}}
+    kwargs = {
+        "session_id": "ledger",
+        "tool_call_id": "call",
+        "tool_name": "echo",
+        "tool_args": {"b": 2, "a": ["é", True]},
+    }
 
-    assert _fingerprint("echo", {"b": 2, "a": ["é", True]}) == "ea1cd9c7a8dd71948df4f2a3aeab8e3356ca6feec7bd5601e3e0ba23fd143d0d"
+    assert (
+        _fingerprint("echo", {"b": 2, "a": ["é", True]})
+        == "ea1cd9c7a8dd71948df4f2a3aeab8e3356ca6feec7bd5601e3e0ba23fd143d0d"
+    )
     owner = await first.claim(**kwargs)
     assert owner.kind == "owner"
     assert (await second.claim(**kwargs)).kind == "waiter"
@@ -128,7 +136,9 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     await first.complete(owner, {"ok": True})
     completed = await second.claim(**kwargs)
     assert completed.kind == "completed"
-    assert completed.resolution is not None and completed.resolution.result == {"ok": True}
+    assert completed.resolution is not None and completed.resolution.result == {
+        "ok": True
+    }
     assert await second.release_completed("ledger") == 1
 
     retry = await first.claim(**kwargs)
@@ -142,9 +152,11 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     await first.unknown_outcome(
         unknown, ToolIdempotencyFailure("unknown", "UNKNOWN", False, "unknown")
     )
-    assert (await second.claim(
-        session_id="ledger", tool_call_id="unknown", tool_name="echo", tool_args={}
-    )).kind == "unknown"
+    assert (
+        await second.claim(
+            session_id="ledger", tool_call_id="unknown", tool_name="echo", tool_args={}
+        )
+    ).kind == "unknown"
     assert await second.release_settled("ledger") == 1
 
     crashed = await first.claim(
@@ -157,9 +169,11 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(second.wait(observed), timeout=0.02)
     assert await second.reconcile_completed("ledger", "crashed", {"reconciled": True})
-    assert (await second.claim(
-        session_id="ledger", tool_call_id="crashed", tool_name="echo", tool_args={}
-    )).kind == "completed"
+    assert (
+        await second.claim(
+            session_id="ledger", tool_call_id="crashed", tool_name="echo", tool_args={}
+        )
+    ).kind == "completed"
     assert await second.release_completed("ledger") == 1
 
     release = await first.claim(
@@ -167,9 +181,11 @@ async def test_postgres_tool_idempotency_is_durable_and_fail_closed() -> None:
     )
     assert release.kind == "owner"
     assert await second.reconcile_release("ledger", "release")
-    assert (await second.claim(
-        session_id="ledger", tool_call_id="release", tool_name="echo", tool_args={}
-    )).kind == "owner"
+    assert (
+        await second.claim(
+            session_id="ledger", tool_call_id="release", tool_name="echo", tool_args={}
+        )
+    ).kind == "owner"
 
 
 @pytest.mark.asyncio
@@ -234,7 +250,9 @@ async def test_postgres_coordinator_connection_failure_fails_closed() -> None:
         "postgresql://localhost:1/kaji?connect_timeout=1"
     )
     with pytest.raises(Exception):
-        await asyncio.wait_for(coordinator.acquire("unavailable").__aenter__(), timeout=1)
+        await asyncio.wait_for(
+            coordinator.acquire("unavailable").__aenter__(), timeout=1
+        )
     await coordinator.close()
 
 

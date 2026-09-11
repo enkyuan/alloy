@@ -16,10 +16,9 @@ The core needs no database, server, or control plane.
 | `@irogane/kaji/cli` | `apps/cli`            | WIP cross-language scaffold and diagnostics       |
 | `kaji-serve`        | `kaji/packages/serve` | WIP REST and Soniox STT reference service         |
 
-The primary TypeScript package is public as
-[`@irogane/kaji@0.3.0-alpha.1`](https://www.npmjs.com/package/@irogane/kaji/v/0.3.0-alpha.1).
-Python remains a source-checkout compatibility path while PyPI publication is
-deferred.
+The primary TypeScript package is currently available only as the local
+`./irogane-kaji-0.3.0-alpha.1.tgz` release candidate. Python remains a
+source-checkout compatibility path while PyPI publication is deferred.
 
 ## Start in process
 
@@ -41,22 +40,22 @@ by that turn. The default store and committer are bounded, in-memory, and
 process-local.
 
 Start with `MockProvider` from `@irogane/kaji/testing` to verify the local runtime.
-OpenAI is the stable live-provider adapter in the 0.2 beta contract. The
-packaged catalog contains the beta `echo` integration and the WIP GitHub
-integration, whose registry tier is `experimental`. Catalog tools are never
-activated implicitly.
+OpenAI is the recommended live-provider path for this TypeScript candidate.
+The `echo`, `gmail`, and `github` catalog entries are beta; the packaged GitHub
+TypeScript subpath remains experimental. Catalog tools are never activated
+implicitly.
 
 ## Python compatibility
 
 The TypeScript and Python SDKs validate the same v1 event schema. The Python
 package also contains WIP RAG, voice, and Redis surfaces. Those extras are not
-part of the TypeScript SDK or the stable beta core.
+part of the TypeScript SDK or the documented TypeScript candidate path.
 
 See [integrations](/docs/integrations) for the exact catalog and stability
 boundaries.
 
 ## Next
 
-- [Getting started](/docs/getting-started) -- run your first agent from the published package
+- [Getting started](/docs/getting-started) -- run your first agent from the local alpha artifact
 - [Concepts](/docs/concepts/events) -- events, session state, tools, providers
 - [Architecture](/docs/architecture) -- the runtime loop

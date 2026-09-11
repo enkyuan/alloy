@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: OpenAI is Kaji's stable live-provider adapter; Anthropic, native Gemini and Kimi, and the TypeScript compatible-provider factories are WIP.
+description: OpenAI is Kaji's recommended live-provider path; other implemented adapters are opt-in WIP.
 ---
 
 Pick a provider when you build the runtime. The runtime never imports
@@ -11,16 +11,16 @@ against a neutral message and tool-spec format.
 
 | Provider    | TypeScript SDK            | Python SDK     | Status       | Env var              |
 | ----------- | ------------------------- | -------------- | ------------ | -------------------- |
-| `openai`    | Native adapter            | Native adapter | Stable       | `OPENAI_API_KEY`     |
+| `openai`    | Native adapter            | Native adapter | Recommended  | `OPENAI_API_KEY`     |
 | `anthropic` | Native adapter            | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
 | `kimi`      | OpenAI-compatible factory | Native adapter | WIP          | `OPENROUTER_API_KEY` |
 | `gemini`    | OpenAI-compatible factory | Native adapter | WIP          | `GEMINI_API_KEY`     |
 | `mock`      | `@irogane/kaji/testing`   | Main package   | Testing only | -                    |
 
 TypeScript callers choose a provider factory in code. For local tests, import
-`MockProvider` from `@irogane/kaji/testing`; for the stable live-provider path, use
-`openai()`. In the 0.2 beta contract, OpenAI is the only stable live-provider
-adapter. Other implemented adapters remain WIP.
+`MockProvider` from `@irogane/kaji/testing`; for the recommended live-provider
+path, use `openai()`. OpenAI is the only primary provider path documented for
+the local `0.3.0-alpha.1` candidate. Other implemented adapters remain WIP.
 
 `OpenRouter`, Kimi, and Gemini factories in TypeScript reuse the
 OpenAI-compatible transport and do not expose native vendor features.
@@ -48,8 +48,9 @@ custom provider as production-safe.
 
 TTS providers (`gemini`, `openai`, `none`) implement `TTSProvider` as a WIP
 Python SDK modality. The separate WIP `kaji-serve` STT WebSocket forwards audio
-to Soniox when `SONIOX_API_KEY` is configured. Neither surface is in the 0.2
-beta-core stable set. The reasoning loop itself remains modality-agnostic.
+to Soniox when `SONIOX_API_KEY` is configured. Neither surface is part of the
+TypeScript candidate's documented provider path. The reasoning loop itself
+remains modality-agnostic.
 
 The Python SDK selects a provider explicitly with `get_provider(name)` or a
 constructed provider passed to `AgentBuilder.provider(...)`. It uses the

@@ -342,7 +342,7 @@ jobs:
                 if $kind == "python" then
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.3.0a1-py3-none-any.whl", "kaji-0.3.0a1.tar.gz"] and
+                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1037,7 +1037,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && !cancelled() && needs.offline-release.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' && needs.typescript-onboarding-archive-calibration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    environment: kaji-onboarding
+    environment: Onboarding
     permissions:
       actions: read
       contents: read
@@ -1419,7 +1419,7 @@ jobs:
     # Two proofs are capped at three minutes each. Thirty minutes leaves setup
     # and final evidence upload outside the child-process budget.
     timeout-minutes: 30
-    environment: kaji-release
+    environment: Release
     env:
       KAJI_RELEASE_COMMIT: ${{ inputs.expected-commit }}
       KAJI_RELEASE_ARTIFACT_ID: ${{ needs.offline-release.outputs.artifact-id }}

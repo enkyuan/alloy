@@ -20,7 +20,7 @@ from kaji.tooling.shared.process import METADATA_BUDGET, CommandError, run_check
 
 PYTHON_PROJECT = "kaji"
 PYTHON_DISTRIBUTION = "kaji"
-PYTHON_VERSION = "0.3.0a1"
+PYTHON_VERSION = "0.2.0b1"
 TYPESCRIPT_VERSION = "0.3.0-alpha.1"
 PYTHON_BUILD_REQUIREMENTS = {"setuptools==83.0.0", "editables==0.6"}
 UV_VERSION = "0.11.25"
@@ -74,7 +74,20 @@ def main() -> None:
     parser.add_argument("--commit")
     args = parser.parse_args()
 
-    repo = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
+    commit = args.commit or os.environ.get("GITHUB_SHA")
+    if args.release and commit is None:
+        fail("release verification requires --commit or GITHUB_SHA")
+    if commit is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+        fail("release commit must be exactly 40 hexadecimal characters")
+    commit = commit.lower() if commit is not None else "uncommitted-local-verification"
+
+    repo = (
+        next(
+            parent
+            for parent in Path(__file__).resolve().parents
+            if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+        )
+    ).parent
     sdk = repo / "kaji/packages/py"
     ts = repo / "kaji/packages/ts"
     artifacts = args.artifacts_dir
@@ -175,13 +188,6 @@ def main() -> None:
     for tool, version in (("publint", "0.3.21"), ("@arethetypeswrong/cli", "0.18.4")):
         if f'"{tool}": "{version}"' not in bun_lock:
             fail(f"Bun lockfile does not pin {tool} {version}")
-
-    commit = args.commit or os.environ.get("GITHUB_SHA")
-    if args.release and commit is None:
-        fail("release verification requires --commit or GITHUB_SHA")
-    if commit is not None and not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
-        fail("release commit must be exactly 40 hexadecimal characters")
-    commit = commit.lower() if commit is not None else "uncommitted-local-verification"
 
     actual_tools = {
         "bun": tool_version("bun", "--version"),

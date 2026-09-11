@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any
 
 from kaji.artifacts import ArtifactRef
 from kaji.events.schemas import StoredKajiEvent
@@ -36,7 +35,9 @@ def _timestamp(value: float) -> str:
 
 def _transition(current: TaskState, target: TaskState) -> TaskState:
     if current in _TERMINAL:
-        raise InvalidTaskTransitionError(f"cannot transition terminal task from {current} to {target}")
+        raise InvalidTaskTransitionError(
+            f"cannot transition terminal task from {current} to {target}"
+        )
     if target is TaskState.SUSPENDED and current not in {
         TaskState.RUNNING,
         TaskState.WAITING_FOR_APPROVAL,
@@ -100,9 +101,15 @@ def project_task(task_id: str, events: Iterable[StoredKajiEvent]) -> TaskSnapsho
                 risk=event.risk,
                 arguments=dict(event.tool_args),
             )
-            if state not in _TERMINAL and state is not TaskState.RECONCILIATION_REQUIRED:
+            if (
+                state not in _TERMINAL
+                and state is not TaskState.RECONCILIATION_REQUIRED
+            ):
                 state = TaskState.WAITING_FOR_APPROVAL
-        elif event.type in {EventType.TOOL_APPROVAL_APPROVED, EventType.TOOL_APPROVAL_REJECTED}:
+        elif event.type in {
+            EventType.TOOL_APPROVAL_APPROVED,
+            EventType.TOOL_APPROVAL_REJECTED,
+        }:
             pending.pop(approval_id(event), None)
             if state is TaskState.WAITING_FOR_APPROVAL:
                 state = TaskState.RUNNING
@@ -110,11 +117,17 @@ def project_task(task_id: str, events: Iterable[StoredKajiEvent]) -> TaskSnapsho
             if state not in _TERMINAL:
                 state = TaskState.RECONCILIATION_REQUIRED
         elif event.type is EventType.AGENT_TURN_FAILED:
-            if state not in _TERMINAL and state is not TaskState.RECONCILIATION_REQUIRED:
+            if (
+                state not in _TERMINAL
+                and state is not TaskState.RECONCILIATION_REQUIRED
+            ):
                 state = TaskState.FAILED
                 terminal_error_code = event.error_code
         elif event.type is EventType.CANCELLATION_COMPLETED:
-            if state not in _TERMINAL and state is not TaskState.RECONCILIATION_REQUIRED:
+            if (
+                state not in _TERMINAL
+                and state is not TaskState.RECONCILIATION_REQUIRED
+            ):
                 state = TaskState.CANCELLED
         elif event.type in _ACTIVITY and state is TaskState.CREATED:
             state = TaskState.RUNNING

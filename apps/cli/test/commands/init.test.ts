@@ -38,7 +38,7 @@ describe("init command", () => {
     expect(pkg.scripts.start).toBe("dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts");
     expect(pkg.scripts.typecheck).toBe("tsc --noEmit");
     expect(pkg.devDependencies["@dotenvx/dotenvx"]).toBe("2.9.0");
-    expect(pkg.dependencies.kaji).toBe("^0.3.0-alpha.1");
+    expect(pkg.dependencies["@irogane/kaji"]).toBe("0.3.0-alpha.1");
     expect(pkg.dependencies.zod).toBe(">=4.3 <5");
     expect(pkg.dependencies.openai).toBe(">=4 <8");
     expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
@@ -97,7 +97,7 @@ describe("init command", () => {
     expect(agent).toContain('print(f"final_sequence={final_sequence}")');
     expect(agent).not.toMatch(/InMemoryEventBus|InMemoryEventStore|store\.append|run_turn/);
     const requirements = readFileSync(join(dir, "requirements.txt"), "utf-8");
-    expect(requirements).toContain("kaji[openai]>=0.3.0a1,<0.3");
+    expect(requirements).toContain("kaji[openai]>=0.2.0b1,<0.3");
     expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
   });
 

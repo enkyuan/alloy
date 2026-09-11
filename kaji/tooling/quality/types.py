@@ -11,9 +11,18 @@ from kaji.tooling.shared.process import LOCAL_COMMAND_BUDGET, CommandExitError, 
 
 
 def main() -> int:
-    sdk_root = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())) / "packages" / "py"
+    kaji_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+    sdk_root = kaji_root / "packages" / "py"
     ty_binary = sdk_root / ".venv" / "bin" / "ty"
-    command = [str(ty_binary)] if ty_binary.exists() else ["ty"]
+    command = (
+        [str(ty_binary)]
+        if ty_binary.exists()
+        else ["uv", "run", "--package", "kaji", "ty"]
+    )
 
     try:
         with tempfile.TemporaryDirectory(prefix="kaji-ty-") as typecheck_root:

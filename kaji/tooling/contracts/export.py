@@ -1746,14 +1746,6 @@ def run_capability(document: dict[str, Any], scenario: dict[str, Any]) -> dict[s
     raise ValueError(f"unknown capability fixture: {scenario['fixture']}")
 
 
-def run_lock_key(scenario: dict[str, Any]) -> dict[str, Any]:
-    snapshot = empty_snapshot()
-    snapshot["result"] = {
-        "keys": [str(postgres_lock_key(session_id)) for session_id in scenario["sessionIds"]]
-    }
-    return snapshot
-
-
 async def run_task_projection(scenario: dict[str, Any]) -> dict[str, Any]:
     snapshot = empty_snapshot()
     backend = InMemoryBackend.create()
@@ -1774,6 +1766,14 @@ async def run_task_projection(scenario: dict[str, Any]) -> dict[str, Any]:
     )
     projected = await handle.snapshot()
     snapshot["result"] = {"state": projected.state.value, "cursor": projected.sequence_cursor, "artifacts": [artifact.id for artifact in projected.artifacts], "pending_approvals": len(projected.pending_approvals)}
+    return snapshot
+
+
+def run_lock_key(scenario: dict[str, Any]) -> dict[str, Any]:
+    snapshot = empty_snapshot()
+    snapshot["result"] = {
+        "keys": [str(postgres_lock_key(session_id)) for session_id in scenario["sessionIds"]]
+    }
     return snapshot
 
 
@@ -1798,6 +1798,8 @@ async def export_parity() -> dict[str, Any]:
     snapshots: list[dict[str, Any]] = []
     seen: set[str] = set()
     for scenario in document["scenarios"]:
+        if scenario.get("runtime") == "typescript":
+            continue
         scenario_id = scenario["id"]
         if scenario_id in seen:
             raise ValueError(f"duplicate scenario id: {scenario_id}")
@@ -1817,10 +1819,10 @@ async def export_parity() -> dict[str, Any]:
             snapshot = await run_idempotency(scenario)
         elif kind == "capability":
             snapshot = run_capability(document, scenario)
-        elif kind == "task-projection":
-            snapshot = await run_task_projection(scenario)
         elif kind == "lock-key":
             snapshot = run_lock_key(scenario)
+        elif kind == "task-projection":
+            snapshot = await run_task_projection(scenario)
         else:
             raise ValueError(f"unknown scenario kind: {kind}")
         if tuple(snapshot) != SNAPSHOT_KEYS:

@@ -64,8 +64,8 @@ PROTOCOL_INPUTS = (
     Path("kaji/tooling/package/typescript/runtime/package-lock.core.json"),
 )
 IDENTITY_FILES = {
-    "pythonWheel": "kaji-0.3.0a1-py3-none-any.whl",
-    "pythonSdist": "kaji-0.3.0a1.tar.gz",
+    "pythonWheel": "kaji-0.2.0b1-py3-none-any.whl",
+    "pythonSdist": "kaji-0.2.0b1.tar.gz",
     "typescript": "irogane-kaji-0.3.0-alpha.1.tgz",
 }
 REFERENCE_IDENTITY_FILES = {

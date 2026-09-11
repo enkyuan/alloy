@@ -11,9 +11,9 @@ never activates catalog tools implicitly.
 
 ## Catalog status
 
-This is the catalog in TypeScript `0.3.0-alpha.1` and Python `0.3.0a1`.
-WIP entries whose registry tier is `experimental` require
-`--allow-experimental` and are outside the stable beta set.
+This is the catalog in the TypeScript `0.3.0-alpha.1` candidate and Python
+`0.2.0b1`. All current catalog entries are beta. Future entries marked
+`experimental` require `--allow-experimental`.
 
 | Integration | Support status | Runtime            | Auth                    | Tools                     |
 | ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
@@ -27,15 +27,15 @@ cross-SDK ABI parity. Source modules outside this index are not discoverable or
 installable catalog entries.
 
 The **Runtime** column lists the runtimes each integration has a working
-implementation for, not where it is published. The TypeScript package is on
-npm; the Python package's publication to PyPI is deferred, so `Python` here
+implementation for, not where it is published. The TypeScript package is a
+local alpha candidate; the Python package's publication to PyPI is deferred, so `Python` here
 means the in-repo implementation exists and passes cross-SDK parity, not that a
 `pip install` is available yet.
 
 ## Discover and copy
 
-After [installing the TypeScript beta](/docs/install#typescript), use its local
-`kaji` binary:
+After [installing the TypeScript candidate](/docs/install#typescript), use its
+local `kaji` binary:
 
 ```bash
 npm exec -- kaji list-integrations
@@ -56,9 +56,9 @@ The copied GitHub bundle exposes four parallel-safe reads:
 external effects: `create_issue` and `add_comment`. The integration namespace
 is applied before provider dispatch.
 
-The TypeScript package also exports `@irogane/kaji/integrations/github`. Its catalog
-adds nine bounded evidence reads for commits, pull requests, check runs, Actions
-workflow runs and jobs, file history, releases, and deployments. Use
+The TypeScript package also exports `@irogane/kaji/integrations/github`. The
+catalog adds nine bounded evidence reads for commits, pull requests, check runs,
+Actions workflow runs and jobs, file history, releases, and deployments. Use
 `toolExposure: "read-only"` to register only the 13 read tools; the compatibility
 default is the complete 15-tool catalog.
 
@@ -83,17 +83,18 @@ The copied Gmail bundle exposes two parallel-safe reads, `list_messages` and
 integration namespace is applied before provider dispatch.
 
 Gmail authenticates with a Google OAuth grant rather than a static token. Run
-`kaji connect gmail --principal <id>` to store a refresh grant, then wire the
-integration's `token_for` callback to the OAuth client's access-token accessor.
+`kaji connect gmail --principal <id>` to store a refresh grant, then in
+TypeScript wire the integration's `tokenFor` callback to the OAuth client's
+access-token accessor. Python's corresponding callback is named `token_for`.
 The scopes are `gmail.readonly` and `gmail.send`. Its client is fixed to
 `https://gmail.googleapis.com`, rejects redirects, bounds response headers and
 bodies, decodes base64url message payloads, and treats a connection loss after
 send dispatch as an unknown outcome.
 
-Gmail's machine registry tier is `beta`, so `kaji add gmail` does not require
-`--allow-experimental`. Its live send path stays unproven until a protected
-operator run retains a valid `gmail-proof-v1` receipt on the release commit;
-local package and ABI checks do not establish that keyed-API or release evidence.
+Gmail's registry tier is `beta`, so `kaji add gmail` does not require
+`--allow-experimental`. Its live send path is an external-effect boundary;
+reconcile a message before retrying an ambiguous send. Local package and ABI
+checks do not establish provider or release evidence.
 
 See [integration recovery](/docs/integrations/recovery-v1) for the closed error
 vocabulary, including the Gmail rows.

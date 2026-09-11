@@ -1,19 +1,40 @@
 #!/usr/bin/env python3
-"""Copy canonical beta contracts into the Python and TypeScript packages."""
+"""Synchronize canonical beta contracts into package-specific projections."""
 
 from __future__ import annotations
 
 import argparse
-import shutil
+import importlib.util
 from pathlib import Path
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
+_PROJECTION_PATH = Path(__file__).resolve().parents[2] / "contracts" / "projection.py"
+_PROJECTION_SPEC = importlib.util.spec_from_file_location(
+    "kaji_contract_projection", _PROJECTION_PATH
+)
+if _PROJECTION_SPEC is None or _PROJECTION_SPEC.loader is None:
+    raise RuntimeError(f"unable to load contract projection helper: {_PROJECTION_PATH}")
+_PROJECTION = importlib.util.module_from_spec(_PROJECTION_SPEC)
+_PROJECTION_SPEC.loader.exec_module(_PROJECTION)
+
+PYTHON_LEGACY_CONTRACTS = _PROJECTION.PYTHON_LEGACY_CONTRACTS
+TYPESCRIPT_PROJECTED_CONTRACTS = _PROJECTION.TYPESCRIPT_PROJECTED_CONTRACTS
+typescript_contract_projection = _PROJECTION.typescript_contract_projection
+
+
+ROOT = (
+    next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+).parent
 SOURCE = ROOT / "kaji" / "contracts"
 TARGETS = (
     ROOT / "kaji" / "packages" / "py" / "src" / "contracts",
     ROOT / "kaji" / "packages" / "ts" / "contracts",
 )
+TYPESCRIPT_PACKAGE_CONTRACTS = TARGETS[1]
 
 
 def contract_files() -> list[Path]:
@@ -34,30 +55,46 @@ def packaged_contract_files(target: Path) -> set[Path]:
     }
 
 
-def write() -> None:
+def expected_contract_files(target: Path) -> set[Path]:
     expected = set(contract_files())
+    if target == TYPESCRIPT_PACKAGE_CONTRACTS:
+        expected -= {Path(relative) for relative in PYTHON_LEGACY_CONTRACTS}
+    return expected
+
+
+def expected_contract_bytes(target: Path, relative: Path) -> bytes:
+    source = SOURCE / relative
+    if (
+        target == TYPESCRIPT_PACKAGE_CONTRACTS
+        and relative.as_posix() in TYPESCRIPT_PROJECTED_CONTRACTS
+    ):
+        return typescript_contract_projection(relative, source)
+    return source.read_bytes()
+
+
+def write() -> None:
     for target in TARGETS:
+        expected = expected_contract_files(target)
         for relative in packaged_contract_files(target) - expected:
             (target / relative).unlink()
         for relative in expected:
             destination = target / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(SOURCE / relative, destination)
+            destination.write_bytes(expected_contract_bytes(target, relative))
 
 
 def check() -> list[str]:
     errors: list[str] = []
-    expected = set(contract_files())
     for target in TARGETS:
+        expected = expected_contract_files(target)
         actual = packaged_contract_files(target)
         for relative in sorted(expected - actual):
             errors.append(f"missing: {target / relative}")
         for relative in sorted(actual - expected):
             errors.append(f"unexpected: {target / relative}")
         for relative in sorted(expected & actual):
-            source = SOURCE / relative
             destination = target / relative
-            if destination.read_bytes() != source.read_bytes():
+            if destination.read_bytes() != expected_contract_bytes(target, relative):
                 errors.append(f"out of sync: {destination}")
     return errors
 

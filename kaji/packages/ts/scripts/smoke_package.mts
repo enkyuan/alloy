@@ -90,6 +90,7 @@ const MANAGER_SMOKE_PHASE_SUFFIXES = [
   "lifecycle-run",
   "failure-history-run",
   "docs-getting-started-run",
+  "docs-readme-no-key-run",
   "installed-artifact-echo-run",
   "cold-run",
   "warm-run",
@@ -1823,9 +1824,9 @@ async function runCommand(
       ) {
         const code = safeGitHubProofFailureCode(completed.stderr);
         process.stderr.write(`package smoke child failure at ${phase}: code=${code}\n`);
-      } else if (phase.startsWith("handoff:")) {
-        const diagnostic = safeHandoffDiagnostic(completed.stderr);
-        if (diagnostic !== "") {
+      } else {
+        const diagnostic = diagnosticForSmokePhase(phase, completed.stderr);
+        if (diagnostic !== null) {
           process.stderr.write(`package smoke child stderr at ${phase}: ${diagnostic}\n`);
         }
       }
@@ -1869,6 +1870,17 @@ function safeHandoffDiagnostic(output: string): string {
     .replaceAll(/\b(authorization|password|secret|token)(\s*[:=]\s*)\S+/giu, "$1$2[redacted]")
     .trim()
     .slice(-4_096);
+}
+
+export function diagnosticForSmokePhase(phase: SmokePhase, output: string): string | null {
+  if (
+    phase.startsWith("handoff:") ||
+    phase.endsWith(":docs-getting-started-run") ||
+    phase.endsWith(":docs-readme-no-key-run")
+  ) {
+    return safeHandoffDiagnostic(output);
+  }
+  return null;
 }
 
 async function runHandoffCommand(
@@ -3844,6 +3856,18 @@ async function runScaffold(
   writeFileSync(join(generated, "lifecycle.ts"), LIFECYCLE_SMOKE_SOURCE);
   writeFileSync(join(generated, "failure-history.ts"), FAILURE_HISTORY_SMOKE_SOURCE);
   writeFileSync(join(generated, "legacy-ledger-types.ts"), LEGACY_LEDGER_TYPES_SOURCE);
+  const readmeNoKey = markedSnippet(
+    join(repositoryRoot, "kaji/packages/ts/README.md"),
+    "docs-test:readme-no-key:typescript",
+    "ts",
+  );
+  const readmeOpenAI = markedSnippet(
+    join(repositoryRoot, "kaji/packages/ts/README.md"),
+    "docs-test:readme-openai:typescript",
+    "ts",
+  );
+  writeFileSync(join(generated, "readme-no-key.ts"), readmeNoKey);
+  writeFileSync(join(generated, "readme-openai.ts"), readmeOpenAI);
 
   const config = JSON.parse(readFileSync(join(generated, "tsconfig.json"), "utf8")) as {
     compilerOptions?: { skipLibCheck?: boolean; types?: unknown };
@@ -3922,6 +3946,16 @@ async function runScaffold(
   );
   if (gettingStartedOutput.trim() !== EXPECTED_MOCK_REPLY) {
     throw new Error("Getting Started no-key output changed");
+  }
+  const readmeNoKeyOutput = await runCommand(
+    `${manager}:docs-readme-no-key-run`,
+    docsCommand,
+    docsArgs("readme-no-key.ts"),
+    generated,
+    docsEnvironment,
+  );
+  if (readmeNoKeyOutput.trim() !== "hello") {
+    throw new Error("README no-key output changed");
   }
   const installedArtifactEchoOutput = await runCommand(
     `${manager}:installed-artifact-echo-run`,

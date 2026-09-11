@@ -24,6 +24,13 @@ const invalid = JSON.parse(readFileSync(new URL("v1/cases/invalid.json", contrac
   }>;
 };
 
+function isPythonLegacyTaskEvent(event: Record<string, unknown>): boolean {
+  return typeof event.type === "string" && event.type.startsWith("task.");
+}
+
+const typeScriptEvents = valid.events.filter((event) => !isPythonLegacyTaskEvent(event));
+const pythonLegacyTaskEvents = valid.events.filter(isPythonLegacyTaskEvent);
+
 function errorPointers(errors: ErrorObject[] | null | undefined): Set<string> {
   const pointers = new Set<string>();
   for (const error of errors ?? []) {
@@ -71,13 +78,36 @@ describe("frozen event wire contract", () => {
     const canonical = new Ajv2020({ allErrors: true, strict: false }).compile(storedSchema);
     const canonicalNew = new Ajv2020({ allErrors: true, strict: false }).compile(newSchema);
 
-    for (const event of valid.events) {
+    for (const event of typeScriptEvents) {
       expect(canonical(event), JSON.stringify(canonical.errors)).toBe(true);
       expect(validateStoredEvent(event).type).toBe(event.type);
       const draft = { ...event };
       delete draft.sequence;
       expect(canonicalNew(draft), JSON.stringify(canonicalNew.errors)).toBe(true);
       expect(validateNewEvent(draft).type).toBe(event.type);
+    }
+  });
+
+  it("keeps Python legacy Task fixtures out of TypeScript events", () => {
+    const canonical = canonicalValidators();
+
+    expect(pythonLegacyTaskEvents).toHaveLength(6);
+    expect(Object.values(EventType)).not.toEqual(
+      expect.arrayContaining(pythonLegacyTaskEvents.map((event) => event.type)),
+    );
+
+    for (const event of pythonLegacyTaskEvents) {
+      expect(event.type).toMatch(/^task\./);
+      expect(canonical.stored(event), JSON.stringify(canonical.stored.errors)).toBe(true);
+      const draft = { ...event };
+      delete draft.sequence;
+      expect(canonical.new(draft), JSON.stringify(canonical.new.errors)).toBe(true);
+      expect(() => validateStoredEvent(event)).toThrow(
+        expect.objectContaining({ code: "EVENT_SCHEMA_INCOMPATIBLE", path: "/type" }),
+      );
+      expect(() => validateNewEvent(draft)).toThrow(
+        expect.objectContaining({ code: "EVENT_SCHEMA_INCOMPATIBLE", path: "/type" }),
+      );
     }
   });
 

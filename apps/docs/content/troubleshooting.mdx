@@ -7,17 +7,16 @@ Start with the first error you can reproduce, then apply the matching fix.
 
 ## Cannot find package `kaji`
 
-TypeScript `0.3.0-alpha.1` is public on npm. Verify the exact version and then
-install it with its required peer:
+TypeScript `0.3.0-alpha.1` is a local release candidate, not a public npm
+package. Build or obtain its tarball, then install it with its required peer:
 
 ```bash
-npm view @irogane/kaji@0.3.0-alpha.1 version
-npm install @irogane/kaji@0.3.0-alpha.1 zod
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod
 ```
 
-If the first command returns `404`, check `npm config get registry`, your
-proxy, and any corporate registry mirror before changing the package name or
-version. Python remains unavailable from PyPI for this release.
+If the tarball is unavailable, rebuild it from this checkout with
+`bun run --cwd kaji/packages/ts package:smoke`. Python remains unavailable from
+PyPI for this release.
 
 ## Cannot find package `openai`
 

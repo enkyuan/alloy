@@ -543,6 +543,7 @@ def test_package_subpath_contract_covers_every_typed_esm_and_cjs_export() -> Non
         "./integrations",
         "./integrations/github",
         "./openai",
+        "./postgres",
         "./testing",
     }
     assert document["packageSubpaths"]["typescript"]["./integrations/github"] == {

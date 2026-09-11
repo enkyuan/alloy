@@ -3,21 +3,21 @@ title: GitHub integration
 description: Wire the packaged TypeScript GitHub catalog with a repository allowlist, lazy credentials, read-only tool exposure, and explicit lifecycle ownership.
 ---
 
-`@irogane/kaji/integrations/github` is a WIP TypeScript package subpath whose machine
-registry tier is `experimental`. Its implemented subset provides bounded GitHub
-evidence and issue mutations. It uses a fixed
+The GitHub catalog entry is beta. Its packaged TypeScript subpath,
+`@irogane/kaji/integrations/github`, remains experimental while it provides its
+bounded GitHub evidence and issue-mutation subset. It uses a fixed
 `https://api.github.com` origin, rejects redirects, validates repository names
 against an application-owned allowlist before reading credentials, and adds its
 own stable request identity headers.
 
 ## Read-only investigation agent
 
-Install the public TypeScript beta and OpenAI peer, then export
+Install the local TypeScript alpha candidate and OpenAI peer, then export
 `OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` with your environment
 tooling. Replace `owner/repo` with every exact repository the agent may read.
 
 ```bash
-npm install @irogane/kaji@0.3.0-alpha.1 zod openai
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai
 ```
 
 {/* docs-test:github-read-only:start */}
@@ -123,4 +123,5 @@ The package is deliberately bounded:
 - the SDK does not read `GITHUB_TOKEN` automatically and does not exchange
   GitHub App, OAuth, or installation credentials; the application owns
   `tokenFor`;
-- the package remains WIP, and its machine registry tier is `experimental`.
+- the packaged TypeScript subpath remains experimental; the copied catalog
+  entry is beta.

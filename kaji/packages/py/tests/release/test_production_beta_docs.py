@@ -211,7 +211,7 @@ def test_public_site_states_the_openai_only_beta_provider_boundary() -> None:
         assert "WIP" in source
         assert "`experimental`" in source
     assert "stable live-provider" in " ".join(overview.split())
-    assert 'pip install "kaji==0.3.0a1"' not in overview
+    assert 'pip install "kaji==0.2.0b1"' not in overview
     assert "OpenAI and Anthropic are the beta-core model adapters" not in combined
     assert "both stable-core providers" not in combined
     assert "OpenAI and Anthropic share one stable streaming boundary" not in combined
@@ -453,10 +453,10 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     install_snippet = overview.split('class="install-snippet"', maxsplit=1)[1].split(
         "</button>", maxsplit=1
     )[0]
-    assert "<code>npm i @irogane/kaji@0.3.0-alpha.1 zod</code>" in install_snippet
+    assert "<code>npm i ./irogane-kaji-0.3.0-alpha.1.tgz zod</code>" in install_snippet
     assert 'type="button"' in install_snippet
-    assert 'aria-label="Copy npm install command"' in install_snippet
-    assert 'data-copy="npm i @irogane/kaji@0.3.0-alpha.1 zod"' in install_snippet
+    assert 'aria-label="Copy local alpha install command"' in install_snippet
+    assert 'data-copy="npm i ./irogane-kaji-0.3.0-alpha.1.tgz zod"' in install_snippet
     assert "href=" not in install_snippet
     assert (
         '<p class="sr-only" role="status" aria-live="polite" data-copy-announcer></p>'
@@ -592,7 +592,7 @@ def test_astro_docs_keep_status_motion_and_icon_contracts_explicit() -> None:
     assert ".reicon path" in styles
 
 
-def test_public_onboarding_uses_published_npm_beta_and_defers_pypi() -> None:
+def test_alpha_onboarding_uses_local_tarball_and_defers_registry_publication() -> None:
     docs_root = REPO_ROOT / "apps" / "docs"
     paths = (
         docs_root / "content" / "getting-started.mdx",
@@ -603,22 +603,18 @@ def test_public_onboarding_uses_published_npm_beta_and_defers_pypi() -> None:
     combined = "\n".join(path.read_text() for path in paths)
     combined_compact = " ".join(combined.split())
 
-    assert set(re.findall(r"@irogane/kaji@0\.2\.0-beta\.\d+", combined)) == {
-        "@irogane/kaji@0.3.0-alpha.1"
-    }
-    assert "https://www.npmjs.com/package/@irogane/kaji/v/0.3.0-alpha.1" in combined
-    assert "npm install @irogane/kaji@0.3.0-alpha.1 zod openai" in combined
-    assert "bun add @irogane/kaji@0.3.0-alpha.1 zod openai" in combined
+    assert "irogane-kaji-0.3.0-alpha.1.tgz" in combined
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in combined
+    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
     assert "bun install --frozen-lockfile" in combined
     assert "Source checkout required" not in combined
-    assert "not publicly available yet" not in combined
-    assert "public registry command remains unavailable" not in combined_compact
+    assert "not public on npm" in combined_compact
     assert "registry-byte verification" not in combined_compact
     assert "PyPI" in combined
     assert "deferred" in combined
-    assert 'pip install "kaji==0.3.0a1"' not in combined
-    assert 'pip install "kaji[openai]==0.3.0a1"' not in combined
+    assert 'pip install "kaji==0.2.0b1"' not in combined
+    assert 'pip install "kaji[openai]==0.2.0b1"' not in combined
 
 
 def test_npm_install_copy_stays_after_the_final_hero_period() -> None:
@@ -629,7 +625,7 @@ def test_npm_install_copy_stays_after_the_final_hero_period() -> None:
     title_end = overview.index("</h1>")
     copy_button = overview.index('class="install-snippet"')
     assert title_end < copy_button
-    assert "npm i @irogane/kaji@0.3.0-alpha.1 zod" in overview
+    assert "npm i ./irogane-kaji-0.3.0-alpha.1.tgz zod" in overview
     heading_rule = styles.split(".heading-container {", maxsplit=1)[1].split(
         "}", maxsplit=1
     )[0]
@@ -841,7 +837,7 @@ def test_trust_and_feedback_surfaces_are_complete() -> None:
         assert phrase.lower() in issue.lower()
 
 
-def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
+def test_maintained_alpha_docs_reject_pre_beta_contract_guidance() -> None:
     paths = (
         REPO_ROOT / "apps" / "docs" / "content" / "getting-started.mdx",
         REPO_ROOT / "apps" / "docs" / "content" / "install.mdx",
@@ -870,7 +866,7 @@ def test_maintained_public_docs_reject_pre_beta_contract_guidance() -> None:
 
     getting_started = paths[0].read_text()
     assert "0.3.0-alpha.1" in getting_started
-    assert "npm install @irogane/kaji@0.3.0-alpha.1 zod" in getting_started
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod" in getting_started
     assert "npm install --save-dev tsx@4.22.4" in getting_started
     assert "npm exec -- tsx kaji.mts" in getting_started
     assert "npm exec -- tsx agent.mts" in getting_started
@@ -1072,7 +1068,7 @@ def test_typescript_readme_quick_start_uses_an_esm_filename() -> None:
     assert "quickstart.ts`" not in readme
 
 
-def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
+def test_release_docs_enforce_the_local_alpha_registry_boundary() -> None:
     documents = {
         path: path.read_text()
         for path in (
@@ -1088,10 +1084,8 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         )
     }
     combined = "\n".join(documents.values())
-    assert "kaji==0.3.0a1" in combined
-    assert set(re.findall(r"@irogane/kaji@0\.2\.0-beta\.\d+", combined)) == {
-        "@irogane/kaji@0.3.0-alpha.1"
-    }
+    assert "kaji==0.2.0b1" in combined
+    assert "irogane-kaji-0.3.0-alpha.1.tgz" in combined
 
     unpinned_typescript = re.compile(r"(?:npm install|bun add)\s+kaji(?:\s|$)")
     assert re.search(r"pip install [^\n`]*kaji", combined) is None
@@ -1100,6 +1094,10 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         "uv sync --project kaji/packages/py --extra openai"
         in documents[REPO_ROOT / "docs" / "MVP.md"]
     )
+    mvp = documents[REPO_ROOT / "docs" / "MVP.md"]
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in mvp
+    assert "npm install @irogane/kaji@0.3.0-alpha.1" not in mvp
+    assert "protected npm publication" not in mvp
     assert (
         "uv run --project kaji/packages/py kaji init --provider openai"
         in documents[REPO_ROOT / "docs" / "ROADMAP.md"]
@@ -1110,11 +1108,11 @@ def test_release_docs_enforce_the_npm_only_registry_boundary() -> None:
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
     assert "0.3.0-alpha.1" in public_docs
-    assert "npm install @irogane/kaji@0.3.0-alpha.1 zod openai" in public_docs
-    assert "bun add @irogane/kaji@0.3.0-alpha.1 zod openai" in public_docs
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in public_docs
+    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in public_docs
     assert re.search(r"pip install [^\n`]*kaji", public_docs) is None
     typescript_readme = documents[REPO_ROOT / "kaji" / "packages" / "ts" / "README.md"]
-    assert "npm install @irogane/kaji@0.3.0-alpha.1" in typescript_readme
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz" in typescript_readme
 
 
 def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:
@@ -1127,3 +1125,10 @@ def test_event_and_cli_docs_do_not_claim_reserved_or_removed_behavior() -> None:
     assert "schema presence" in events
     assert "temporarily accepts deprecated" not in cli
     assert "`init` does not accept `--out`" in cli
+
+
+def test_v03_plan_declares_the_alpha_documentation_boundary() -> None:
+    plan = (REPO_ROOT / "docs" / "kaji" / "v0.3-plan.md").read_text()
+
+    assert plan.startswith("# Kaji v0.3 Plan")
+    assert "> **Status:** implementation plan for the v0.3 alpha milestone" in plan

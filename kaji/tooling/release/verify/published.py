@@ -28,7 +28,7 @@ from kaji.tooling.shared.process import METADATA_BUDGET, CommandError, run_check
 
 
 PYPI_PROJECT = "kaji"
-PYPI_VERSION = "0.3.0a1"
+PYPI_VERSION = "0.2.0b1"
 PYPI_URL = f"https://pypi.org/pypi/{PYPI_PROJECT}/{PYPI_VERSION}/json"
 NPM_PACKAGE = "@irogane/kaji"
 NPM_VERSION = "0.3.0-alpha.1"
@@ -55,9 +55,12 @@ MAX_PUBLISHER_RECEIPT_BYTES = 64 * 1024
 MAX_ATTESTATION_JSON_BYTES = 16 * 1024 * 1024
 MAX_DSSE_STATEMENT_BYTES = 256 * 1024
 PUBLISHER_SCHEMA = (
-    (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
-    / "contracts/release/v1/publisher.json"
-)
+    next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+) / "contracts/release/v1/publisher.json"
 PUBLISHER_STATUS_REASONS = frozenset(
     {
         "publish_job_not_started",

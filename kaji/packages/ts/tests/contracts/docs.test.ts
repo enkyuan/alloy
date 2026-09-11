@@ -231,11 +231,11 @@ describe("cross-SDK release matrix docs", () => {
   });
 
   it("defines privileged journal recovery and disposal boundaries", () => {
-    const readme = read("kaji/packages/ts/README.md");
+    const lifecycle = read("apps/docs/content/concepts/lifecycle.mdx");
     const production = read("docs/kaji/production-beta.md");
     const ordering = read("docs/kaji/concurrency-and-ordering.md");
 
-    for (const source of [readme, production]) {
+    for (const source of [lifecycle, production]) {
       const document = source.replace(/\s+/gu, " ");
       expect(document).toContain("privileged full-fidelity journal");
       expect(document).toContain("not redaction-safe");
@@ -247,28 +247,31 @@ describe("cross-SDK release matrix docs", () => {
       expect(document).toContain("does not delete retained history");
     }
 
-    for (const source of [readme, production, ordering]) {
+    for (const source of [lifecycle, production, ordering]) {
       const document = source.replace(/\s+/gu, " ");
       expect(document).toContain("VM string zeroization");
       expect(document).toContain("stop ingress");
       expect(document).toContain("process-local");
     }
 
-    const normalizedReadme = readme.replace(/\s+/gu, " ");
+    const normalizedLifecycle = lifecycle.replace(/\s+/gu, " ");
     const normalizedProduction = production.replace(/\s+/gu, " ");
     const normalizedOrdering = ordering.replace(/\s+/gu, " ");
-    expect(normalizedReadme).toContain("failed turns have no `TurnResult`");
-    expect(normalizedReadme).toContain("generic provider failures have no durable recovery code");
-    expect(normalizedReadme).toContain("releaseSettled()");
-    expect(normalizedReadme).toContain("host ledger cleanup");
-    expect(normalizedReadme).toContain("pageHistory");
-    expect(normalizedReadme).toContain("safeJournalEvidence");
-    expect(normalizedReadme).toContain("append-only while retained");
+    expect(normalizedLifecycle).toContain("failed turns have no `TurnResult`");
+    expect(normalizedLifecycle).toContain(
+      "generic provider failures have no durable recovery code",
+    );
+    expect(normalizedLifecycle).toContain("releaseSettled()");
+    expect(normalizedLifecycle).toContain("host ledger cleanup");
+    expect(normalizedLifecycle).toContain("pageHistory");
+    expect(normalizedLifecycle).toContain("safeJournalEvidence");
+    expect(normalizedLifecycle).toContain("in-memory, and process-local");
+    expect(normalizedLifecycle).toContain("Retained histories are append-only while retained.");
 
-    const recoveryBlock = [...readme.matchAll(/```ts\n([\s\S]*?)\n```/gu)]
+    const recoveryBlock = [...lifecycle.matchAll(/```ts\n([\s\S]*?)\n```/gu)]
       .map((match) => match[1] ?? "")
       .find((block) => block.includes("stopIngress(sessionId)"));
-    expect(recoveryBlock, "missing runnable failure-recovery block").toBeDefined();
+    expect(recoveryBlock, "missing ordered failure-recovery pseudocode").toBeDefined();
     const compactRecovery = recoveryBlock?.replace(/\s+/gu, "") ?? "";
     const recoverySteps = [
       "stopIngress(sessionId)",
@@ -353,10 +356,6 @@ describe("cross-SDK release matrix docs", () => {
     ]) {
       expect(combined).toContain(phrase);
     }
-
-    const tsReadme = read("kaji/packages/ts/README.md");
-    expect(tsReadme).toContain("TS not ported");
-    expect(tsReadme).toContain("OpenAI-compatible factories");
   });
 
   it("does not describe the manifest contract as missing", () => {
@@ -370,22 +369,41 @@ describe("cross-SDK release matrix docs", () => {
     expect(mvp).not.toContain("no shared manifest/auth/credential shape");
   });
 
-  it("keeps the two-entry catalog and experimental quarantine explicit", () => {
+  it("documents the current beta integration catalog and Gmail recovery contract", () => {
+    const index = read("apps/docs/content/integrations/index.mdx");
+    const recovery = read("apps/docs/content/integrations/recovery-v1.mdx");
+
+    expect(index).toContain("All current catalog entries are beta");
+    expect(index).toContain("`kaji add gmail` does not require\n`--allow-experimental`");
+    expect(recovery).toContain("gmail.readonly");
+    expect(recovery).toContain("gmail.send");
+    expect(recovery).toContain("`list_messages`,\n`get_message`, and `send_message`");
+  });
+
+  it("keeps the package README to executable first-success paths", () => {
     const readme = read("kaji/packages/ts/README.md");
-    expect(readme).toContain("--allow-experimental");
-    expect(readme).toContain("`echo` and `github` are beta catalog entries");
+
+    expect(readme.split("\n").length).toBeLessThanOrEqual(180);
+    expect(snippet(readme, "docs-test:readme-no-key:typescript", "ts")).toContain("MockProvider");
+    expect(snippet(readme, "docs-test:readme-openai:typescript", "ts")).toContain("functionTool");
+    for (const removedTopic of [
+      "## Privileged event journal and disposal",
+      "## Stability tiers",
+      "## Python vs TypeScript parity",
+      "## Global tool registry",
+      "## What's exported",
+      "## Development",
+      "kaji-onboarding",
+    ]) {
+      expect(readme).not.toContain(removedTopic);
+    }
   });
 
   it("documents, typechecks, and failure-tests read-only packaged GitHub wiring", async () => {
-    const readme = read("kaji/packages/ts/README.md");
     const guide = read("apps/docs/content/integrations/github.mdx");
     const index = read("apps/docs/content/integrations/index.mdx");
     const guideExample = snippet(guide, "docs-test:github-read-only", "ts");
 
-    expect(readme).toContain('from "@irogane/kaji/integrations/github"');
-    expect(readme).toContain("createGithubIntegration");
-    expect(readme).toContain('toolExposure: "read-only"');
-    expect(readme).toContain("github.close()");
     expect(guideExample).toContain('from "@irogane/kaji/integrations/github"');
     expect(guideExample).toContain('toolExposure: "read-only"');
     expect(guideExample).toContain("await runtime.drainTools(10_000)");

@@ -1,6 +1,31 @@
-# Kaji beta release runbook
+# Kaji 0.3.0-alpha.1 local candidate runbook
 
-Kaji betas are immutable, same-commit releases. A release is rebuilt from a
+## Active candidate policy
+
+`0.3.0-alpha.1` is a local-only candidate for the TypeScript package. Build
+and verify the exact local tarball, then install it by file path for the
+approved smoke and onboarding checks:
+
+```bash
+uv run --project kaji/packages/py python -m kaji.tooling.release.check --release
+npm install .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz
+```
+
+The candidate ends at local artifact verification; it does not publish to npm or PyPI.
+Do not run `npm publish` or `npm dist-tag`. Do not run `npm deprecate`,
+a registry credential preflight, or any protected publish workflow.
+Do not create or push a release tag. There is no npm dist-tag for this
+local-only candidate.
+
+Python package remains `0.2.0b1`; its wheel and sdist are build evidence only
+and must not be published or versioned as part of this candidate.
+
+## Historical beta release records
+
+Everything below is retained only as historical beta release evidence and is
+not an instruction to publish or tag `0.3.0-alpha.1`.
+
+Kaji betas were immutable, same-commit releases. A release was rebuilt from a
 verified, signed, annotated beta tag; passes offline, compatibility,
 performance, and provider gates; and then requires a separate approval before
 npm may be written. This release publishes the TypeScript package only. The
@@ -9,13 +34,13 @@ publication is deferred.
 
 Three protected environments have intentionally different authority:
 
-- `kaji-onboarding` protects only the deterministic TypeScript onboarding
+- `Onboarding` protects only the deterministic TypeScript onboarding
   aggregate. It receives no provider or registry secret. Its single deployment
   is `typescript-onboarding-evidence`, after the unprotected archive calibration
   has validated the same three current-run raw REST ZIP bodies.
-- `kaji-release` protects mandatory keyed OpenAI proof in Python and TypeScript.
+- `Release` protects mandatory keyed OpenAI proof in Python and TypeScript.
   Configure `OPENAI_API_KEY` here only. It has no registry publisher authority.
-- `kaji-publish` protects the sole final npm write. Its single deployment
+- `Publish` protects the sole final npm write. Its single deployment
   is `publish-npm`, and only credentialed steps in that job receive
   `NPM_TOKEN`. It must not contain a provider key.
 
@@ -32,7 +57,7 @@ receipts retain their own reviewed runner claims. The closed fields, exact
 archive bindings, and canonical executable snippets are documented in the
 [TypeScript onboarding evidence guide](typescript-onboarding-evidence.md).
 
-Protect `kaji-v*-alpha.*` tags against update and deletion. Each tag must be an
+Protect `kaji-v*-beta.*` tags against update and deletion. Each tag must be an
 annotated Git tag with a verified signature and must target a commit directly.
 Set the repository variable `KAJI_RELEASE_SIGNER_EMAIL` to the approved tagger
 email. GitHub's signature verification must report `reason=valid`, and the
@@ -64,9 +89,9 @@ Complete these once before creating the release tag:
    under Apache-2.0 on the second anniversary of that date.
 4. Configure all three environments with required reviewer `enkyuan`,
    `prevent_self_review=false`, and `can_admins_bypass=false`.
-   `kaji-onboarding` and `kaji-release` permit only `main` and
-   `kaji-v0.3.0-alpha.1`; `kaji-publish` permits only
-   `kaji-v0.3.0-alpha.1`. Configure `OPENAI_API_KEY` only in `kaji-release`, and
+   `Onboarding` and `Release` permit only `main` and
+   `kaji-v0.3.0-alpha.1`; `Publish` permits only
+   `kaji-v0.3.0-alpha.1`. Configure `OPENAI_API_KEY` only in `Release`, and
    configure `KAJI_NPM_PUBLISHER` only for the final publisher boundary. Audit
    the complete reviewer and custom branch-policy state without reading any
    secret:
@@ -78,7 +103,7 @@ Complete these once before creating the release tag:
 5. Confirm the exact first-publication registry state. The protected workflow
    fails closed unless the stable `tiny-tarball@1.0.0` npm control is an exact
    200 JSON document, the `kaji` packument is an exact 404 JSON object
-   `{"error":"Not found"}`, and the exact alpha.1 endpoint is an exact 404 JSON
+   `{"error":"Not found"}`, and the exact beta.11 endpoint is an exact 404 JSON
    string `"Not Found"`. It binds every response to its original HTTPS URL,
    forbids redirects, bounds the body, and requires a JSON content type. Do not
    infer absence from npm CLI error text or a substring match. The PyPI beta
@@ -89,7 +114,7 @@ Complete these once before creating the release tag:
    npm 11.16 warned about setup-node's deprecated `always-auth=false` setting;
    npm and PyPI remained absent. Do not rerun that workflow or reuse its tag.
    Before alpha.1 tag creation, the operator must explicitly confirm that a
-   fresh `NPM_TOKEN` is stored only in `kaji-publish`. Do not inspect,
+   fresh `NPM_TOKEN` is stored only in `Publish`. Do not inspect,
    copy, or test the secret locally. Do not run a local credential preflight;
    the protected `publish-npm` job removes
    only setup-node's deprecated setting, then performs exact `npm whoami`
@@ -109,12 +134,9 @@ Complete these once before creating the release tag:
 
 ## Offline rehearsal
 
-From a clean, real Git checkout with its `.git` metadata present, using Bun
-1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters, run:
-
-```bash
-uv run --project kaji/packages/py python -m kaji.tooling.release.check --release
-```
+The active candidate command appears at the start of this runbook. Historical rehearsal
+records require a clean, real Git checkout with its `.git` metadata present, using Bun
+1.3.11, Node 22 or 24, uv 0.11.25, and the locked Python interpreters.
 
 Source archives are unsupported because the release gate must bind artifacts
 to the exact checked-out commit and verify the source tree before packaging.
@@ -160,7 +182,7 @@ later run is not acceptable evidence.
    benchmark replicas and their aggregate, the 30-minute soak, and
    `typescript-onboarding-archive-calibration`. The calibration must be
    terminal success before `typescript-onboarding-evidence` becomes the sole
-   waiting deployment under `kaji-onboarding`. Do not approve a run with
+   waiting deployment under `Onboarding`. Do not approve a run with
    a failed calibration, a rerun, a mixed attempt, or any other waiting job.
 
 4. Query the complete current-run artifact collection. Resolve exactly one
@@ -213,14 +235,14 @@ later run is not acceptable evidence.
    Only after that command succeeds, rerun the identical command with
    `--approve` appended. The helper stable-reads the archives, repeats the
    complete local and 13-GET remote snapshot, requires unchanged state, and
-   approves exactly the sole `kaji-onboarding` deployment. Do not approve
+   approves exactly the sole `Onboarding` deployment. Do not approve
    onboarding manually in the Actions UI. A failure after the approval POST is
    ambiguous; do not retry it or rerun the workflow.
 
 6. Require the protected onboarding aggregate and its retained
    `status.json`, `validation.log`, and
    `typescript-onboarding-evidence.json` to pass. Approve the later, distinct
-   `kaji-release` deployment separately. The keyed provider proof must complete a
+   `Release` deployment separately. The keyed provider proof must complete a
    normalized OpenAI tool loop in Python and TypeScript; missing-key hygiene is
    not provider evidence.
 
@@ -247,7 +269,7 @@ workflow SHA to equal `REVIEWED_COMMIT`, run attempt 1, distinct positive-safe
 artifact IDs, fixed artifact names, and the exact alpha.1 tarball name.
 
 Stop here until the operator explicitly confirms a fresh `NPM_TOKEN` is stored
-only in `kaji-publish`. Do not inspect or test the secret. After that
+only in `Publish`. Do not inspect or test the secret. After that
 confirmation and one final registry/tag/main/environment recheck, write the
 exact authorization bytes to `AUTHORIZATION_FILE`.
 
@@ -423,16 +445,16 @@ reuse this tag after it is pushed.
 
    After the dry run succeeds, rerun the identical command with `--approve`
    appended. Require the protected onboarding aggregate to finish terminal
-   green, then approve the later `kaji-release` keyed-provider deployment
+   green, then approve the later `Release` keyed-provider deployment
    separately.
 
 4. Review the exact manifest, checksums, offline summary, compatibility,
    onboarding, provider, paired benchmark, soak, SBOM, provenance,
    attestation, signed-source/rebuild/carrier, and registry-absence evidence.
-   Keep `kaji-publish` unapproved until every upstream gate is terminal
+   Keep `Publish` unapproved until every upstream gate is terminal
    green and fresh-token storage has already been explicitly confirmed.
 
-5. Approve the sole `kaji-publish` deployment, `publish-npm`, exactly
+5. Approve the sole `Publish` deployment, `publish-npm`, exactly
    once. There is no separate publisher deployment and no Python publisher.
    Inside this job, exact `npm whoami` equality with `KAJI_NPM_PUBLISHER` is
    the first credentialed action. The job then reverifies the signed tag,

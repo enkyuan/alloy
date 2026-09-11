@@ -3,7 +3,7 @@ name: publish / kaji
 on:
   push:
     tags:
-      - "kaji-v*-alpha.*"
+      - "kaji-v*-beta.*"
 
 permissions:
   contents: read
@@ -109,7 +109,7 @@ jobs:
               !Number.isSafeInteger(runAttempt) ||
               runAttempt !== 1
             ) {
-              fail("publish workflow identity differs from the exact alpha.1 boundary");
+              fail("publish workflow identity differs from the exact beta.11 boundary");
             }
             if (context.payload.repository?.private !== false) {
               fail("npm provenance requires the source repository to remain public");
@@ -614,8 +614,8 @@ jobs:
           expected = {
               "SHA256SUMS",
               "irogane-kaji-0.3.0-alpha.1.tgz",
-              "kaji-0.3.0a1-py3-none-any.whl",
-              "kaji-0.3.0a1.tar.gz",
+              "kaji-0.2.0b1-py3-none-any.whl",
+              "kaji-0.2.0b1.tar.gz",
               "manifest.json",
           }
           encoded = archive_path.read_bytes()
@@ -677,8 +677,8 @@ jobs:
           cmp --silent "$rebuilt/$SIGNED_NPM_NAME" "$signed/$SIGNED_NPM_NAME"
           mkdir -p "$carrier"
           for filename in \
-            kaji-0.3.0a1-py3-none-any.whl \
-            kaji-0.3.0a1.tar.gz \
+            kaji-0.2.0b1-py3-none-any.whl \
+            kaji-0.2.0b1.tar.gz \
             irogane-kaji-0.3.0-alpha.1.tgz \
             manifest.json \
             SHA256SUMS; do
@@ -992,7 +992,7 @@ jobs:
                 if $kind == "python" then
                   (.artifactSha256 |
                     type == "object" and
-                    keys == ["kaji-0.3.0a1-py3-none-any.whl", "kaji-0.3.0a1.tar.gz"] and
+                    keys == ["kaji-0.2.0b1-py3-none-any.whl", "kaji-0.2.0b1.tar.gz"] and
                     all(.[]; sha256)) and
                   (.runtime |
                     type == "object" and
@@ -1688,7 +1688,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && !cancelled() && needs.verify-tag.result == 'success' && needs.offline-gates.result == 'success' && needs.performance.result == 'success' && needs.python-compat.result == 'success' && needs.node-compat.result == 'success' && needs.typescript-onboarding-archive-calibration.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    environment: kaji-onboarding
+    environment: Onboarding
     permissions:
       actions: read
       contents: read
@@ -2070,7 +2070,7 @@ jobs:
     # Two proofs are capped at three minutes each. Thirty minutes leaves setup
     # and final evidence upload outside the child-process budget.
     timeout-minutes: 30
-    environment: kaji-release
+    environment: Release
     env:
       KAJI_RELEASE_COMMIT: ${{ needs.verify-tag.outputs.commit }}
       KAJI_RELEASE_ARTIFACT_ID: ${{ needs.offline-gates.outputs.artifact-id }}
@@ -2546,8 +2546,8 @@ jobs:
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
-            .artifacts/kaji-release/kaji-0.3.0a1-py3-none-any.whl
-            .artifacts/kaji-release/kaji-0.3.0a1.tar.gz
+            .artifacts/kaji-release/kaji-0.2.0b1-py3-none-any.whl
+            .artifacts/kaji-release/kaji-0.2.0b1.tar.gz
             .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz
             .artifacts/kaji-release/manifest.json
             .artifacts/kaji-release/SHA256SUMS
@@ -2622,10 +2622,10 @@ jobs:
       - name: Require PyPI beta absence and exact npm beta absence
         run: |
           set -euo pipefail
-          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.3.0a1/json)"
+          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_STATUS" in
             404) ;;
-            200) echo "PyPI beta 0.3.0a1 must remain absent; aborting npm publication" >&2; exit 1 ;;
+            200) echo "PyPI beta 0.2.0b1 must remain absent; aborting npm publication" >&2; exit 1 ;;
             *) echo "PyPI absence check failed with HTTP $PYPI_STATUS; aborting npm publication" >&2; exit 1 ;;
           esac
           fetch_registry_json() {
@@ -2727,7 +2727,7 @@ jobs:
     if: ${{ github.run_attempt == 1 && !cancelled() && needs.verify-tag.result == 'success' && needs.supply-chain.result == 'success' && needs.registry-preflight.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: kaji-publish
+    environment: Publish
     outputs:
       expected-publisher: ${{ steps.publisher-identity-init.outputs.expected-publisher }}
       publisher-artifact-id: ${{ steps.publisher-identity-upload.outputs.artifact-id }}
@@ -3038,10 +3038,10 @@ jobs:
       - name: Recheck exact registry absence immediately before npm publication
         run: |
           set -euo pipefail
-          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.3.0a1/json)"
+          PYPI_STATUS="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_STATUS" in
             404) ;;
-            200) echo "PyPI beta 0.3.0a1 must remain absent; aborting npm publication" >&2; exit 1 ;;
+            200) echo "PyPI beta 0.2.0b1 must remain absent; aborting npm publication" >&2; exit 1 ;;
             *) echo "PyPI absence check failed with HTTP $PYPI_STATUS; aborting npm publication" >&2; exit 1 ;;
           esac
           fetch_registry_json() {
@@ -3142,7 +3142,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$NODE_AUTH_TOKEN"
-          npm publish .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz --provenance --access public --tag alpha --registry=https://registry.npmjs.org/
+          npm publish .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/
 
   publication-status:
     name: verify publication
@@ -3497,7 +3497,7 @@ jobs:
         run: |
           set +e
           mkdir -p .artifacts/kaji-publication-status
-          PYPI_HTTP="$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.3.0a1/json)"
+          PYPI_HTTP="$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' https://pypi.org/pypi/kaji/0.2.0b1/json)"
           case "$PYPI_HTTP" in
             200) PYPI_STATE=present ;;
             404) PYPI_STATE=absent ;;

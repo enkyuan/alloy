@@ -80,19 +80,10 @@ const pythonVersion = pythonProject.match(/^version = "([^"]+)"$/m)?.[1];
 if (pythonVersion === undefined) fail("Python package version could not be read");
 requireText(install, `\`${pythonVersion}\``, "install guide");
 requireText(install, `\`${typescriptPackage.version}\``, "install guide");
-const npmPackageUrl = `https://www.npmjs.com/package/@irogane/kaji/v/${typescriptPackage.version}`;
-const npmOpenaiInstall = `npm install @irogane/kaji@${typescriptPackage.version} zod openai`;
-const bunOpenaiInstall = `bun add @irogane/kaji@${typescriptPackage.version} zod openai`;
-requireText(install, npmPackageUrl, "install guide npm package link");
-requireText(gettingStarted, npmPackageUrl, "getting-started npm package link");
-requireText(install, npmOpenaiInstall, "install guide npm command");
-requireText(install, bunOpenaiInstall, "install guide Bun command");
-requireText(landingPage, npmOpenaiInstall, "landing install command");
-requireText(
-  gettingStarted,
-  `npm install @irogane/kaji@${typescriptPackage.version} zod`,
-  "published-package tutorial",
-);
+const localTarball = `./irogane-kaji-${typescriptPackage.version}.tgz`;
+requireText(install, localTarball, "install guide local tarball");
+requireText(gettingStarted, localTarball, "getting-started local tarball");
+requireText(landingPage, localTarball, "landing local tarball status");
 requireText(gettingStarted, "npm install --save-dev tsx@4.22.4", "pinned TypeScript runner");
 requireText(gettingStarted, "npm exec -- tsx kaji.mts", "no-key TypeScript command");
 requireText(gettingStarted, "npm exec -- tsx agent.mts", "OpenAI TypeScript command");
@@ -182,21 +173,14 @@ const displayedFiles = [
 const displayedSources = await Promise.all(
   displayedFiles.map(async (path) => [relative(root, path), await readFile(path, "utf8")]),
 );
-const obsoletePublicationClaims = [
-  "Source checkout required",
-  "The npm and PyPI packages are not publicly available yet",
-  "protected npm release candidate",
-  "public registry command remains unavailable",
-  "public registry command will be documented",
-  "npm package remains unavailable",
-  "scaffold inspection is source-only",
-  "dependency through npm or Bun will return `404`",
-  "Use the source-checkout setup",
-  "Prepare the TypeScript beta from source",
+const unprovenPublicationClaims = [
+  `https://www.npmjs.com/package/@irogane/kaji/v/${typescriptPackage.version}`,
+  `npm install @irogane/kaji@${typescriptPackage.version}`,
+  `bun add @irogane/kaji@${typescriptPackage.version}`,
 ];
 for (const [path, source] of displayedSources) {
-  for (const claim of obsoletePublicationClaims) {
-    if (source.includes(claim)) fail(`${path} still contains obsolete publication claim ${claim}`);
+  for (const claim of unprovenPublicationClaims) {
+    if (source.includes(claim)) fail(`${path} claims unpublished package availability ${claim}`);
   }
 }
 

@@ -317,8 +317,8 @@ def python_github_package_proof() -> dict[str, Any]:
 
 def python_v1_receipt() -> dict[str, Any]:
     hashes = {
-        "kaji-0.3.0a1-py3-none-any.whl": "e" * 64,
-        "kaji-0.3.0a1.tar.gz": "f" * 64,
+        "kaji-0.2.0b1-py3-none-any.whl": "e" * 64,
+        "kaji-0.2.0b1.tar.gz": "f" * 64,
     }
     return {
         "schemaVersion": 1,
@@ -331,8 +331,8 @@ def python_v1_receipt() -> dict[str, Any]:
             "executable": "/opt/python/3.14/bin/python",
         },
         "artifacts": {
-            "wheel": "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
-            "sdist": "/artifacts/kaji-0.3.0a1.tar.gz",
+            "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+            "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
         },
         "githubPackageProofs": {
             "wheel": python_github_package_proof(),

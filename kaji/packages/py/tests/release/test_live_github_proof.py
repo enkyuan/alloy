@@ -110,8 +110,8 @@ def _compatibility_receipt(
         return {
             **common,
             "artifactSha256": {
-                "kaji-0.3.0a1-py3-none-any.whl": "1" * 64,
-                "kaji-0.3.0a1.tar.gz": "2" * 64,
+                "kaji-0.2.0b1-py3-none-any.whl": "1" * 64,
+                "kaji-0.2.0b1.tar.gz": "2" * 64,
             },
             "runtime": {
                 "implementation": "CPython",
@@ -119,8 +119,8 @@ def _compatibility_receipt(
                 "executable": "/opt/python/3.11/bin/python",
             },
             "artifacts": {
-                "wheel": "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
-                "sdist": "/artifacts/kaji-0.3.0a1.tar.gz",
+                "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+                "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
             },
         }
     return {
@@ -151,12 +151,12 @@ def _release(tmp_path: Path) -> VerifiedReleaseArtifacts:
         root=tmp_path / "artifacts",
         commit=COMMIT,
         manifest_sha256=MANIFEST,
-        python_wheel=tmp_path / "artifacts/kaji-0.3.0a1-py3-none-any.whl",
-        python_sdist=tmp_path / "artifacts/kaji-0.3.0a1.tar.gz",
+        python_wheel=tmp_path / "artifacts/kaji-0.2.0b1-py3-none-any.whl",
+        python_sdist=tmp_path / "artifacts/kaji-0.2.0b1.tar.gz",
         npm_tarball=tmp_path / "artifacts/irogane-kaji-0.3.0-alpha.1.tgz",
         artifact_sha256={
-            "kaji-0.3.0a1-py3-none-any.whl": "1" * 64,
-            "kaji-0.3.0a1.tar.gz": "2" * 64,
+            "kaji-0.2.0b1-py3-none-any.whl": "1" * 64,
+            "kaji-0.2.0b1.tar.gz": "2" * 64,
             "irogane-kaji-0.3.0-alpha.1.tgz": "3" * 64,
         },
     )
@@ -908,7 +908,7 @@ def _runtime_identity() -> dict[str, Any]:
         "releaseManifestSha256": MANIFEST,
         "artifacts": {
             "python": {
-                "file": "kaji-0.3.0a1-py3-none-any.whl",
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
                 "sha256": "1" * 64,
             },
             "typescript": {
@@ -1264,7 +1264,7 @@ async def test_output_cannot_alias_retained_prerequisites_or_artifacts(
         "python-compat": python_compatibility,
         "typescript-compat": typescript_compatibility,
         "manifest": artifacts / "manifest.json",
-        "wheel": artifacts / "kaji-0.3.0a1-py3-none-any.whl",
+        "wheel": artifacts / "kaji-0.2.0b1-py3-none-any.whl",
         "artifact-descendant": artifacts / "github-proof.json",
     }
     prerequisite_calls = 0

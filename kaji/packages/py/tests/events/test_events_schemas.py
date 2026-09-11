@@ -1,5 +1,6 @@
 import json
 import re
+import runpy
 from pathlib import Path
 from typing import Any, cast
 
@@ -48,6 +49,15 @@ NEW_EVENT_SCHEMA = REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/new.
 STORED_EVENT_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/stored.json"
 )
+CONTRACT_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts" / "check.py"
+PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES = {
+    "task.created",
+    "task.suspended",
+    "task.resumed",
+    "task.completed",
+    "task.failed",
+    "task.cancelled",
+}
 
 
 class _FixedIds:
@@ -401,7 +411,23 @@ def test_typescript_event_type_values_match_python():
     ts_values = set(re.findall(r': "([^"]+)"', source))
     py_values = {event.value for event in EventType}
 
-    assert ts_values == py_values
+    assert ts_values == py_values - PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES
+
+
+def test_typescript_event_type_values_reject_missing_supported_non_task_type():
+    checker = runpy.run_path(str(CONTRACT_CHECK), run_name="event_type_projection_test")
+    python_values = {event.value for event in EventType}
+    typescript_values = python_values - PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES
+    dropped_type = "agent.message.completed"
+
+    assert dropped_type in typescript_values
+    with pytest.raises(
+        checker["ContractError"], match="missing=.*agent.message.completed"
+    ):
+        checker["validate_runtime_event_type_projection"](
+            python_values,
+            typescript_values - {dropped_type},
+        )
 
 
 @pytest.mark.parametrize(

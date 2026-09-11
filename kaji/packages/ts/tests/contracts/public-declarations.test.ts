@@ -4,6 +4,24 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
 const dist = resolve(root, "dist");
+const legacyTaskSymbols = [
+  "InvalidTaskTransitionError",
+  "PendingApproval",
+  "PendingApprovalSummary",
+  "TaskCancelled",
+  "TaskCompleted",
+  "TaskCreated",
+  "TaskFailed",
+  "TaskHandle",
+  "TaskNotFoundError",
+  "TaskProjectionError",
+  "TaskResumed",
+  "TaskRuntime",
+  "TaskSnapshot",
+  "TaskState",
+  "TaskSuspended",
+  "projectTask",
+] as const;
 
 function readFreshDeclaration(file: string, sourceFiles: string[]): string {
   const declarationPath = resolve(dist, file);
@@ -168,6 +186,28 @@ describe("public declarations", () => {
       /<!-- public-exports:typescript:start -->\n([\s\S]*?)\n<!-- public-exports:typescript:end -->/,
     )?.[1];
     expect(actual).toBe(fragment);
+  });
+
+  it("keeps legacy Task symbols out of TypeScript source and root declarations", () => {
+    expect(existsSync(resolve(root, "src/tasks"))).toBe(false);
+
+    for (const source of ["src/index.ts", "src/events/schemas.ts", "src/events/types.ts"]) {
+      const contents = readFileSync(resolve(root, source), "utf8");
+      for (const symbol of legacyTaskSymbols) {
+        expect(contents).not.toMatch(new RegExp(`\\b${symbol}\\b`));
+      }
+    }
+
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
+    ]) {
+      const exports = declarationExportNames(declaration);
+      for (const symbol of legacyTaskSymbols) {
+        expect(exports).not.toContain(symbol);
+        expect(declaration).not.toMatch(new RegExp(`\\b${symbol}\\b`));
+      }
+    }
   });
 
   it("exposes the bounded network transport contract from the package root", () => {

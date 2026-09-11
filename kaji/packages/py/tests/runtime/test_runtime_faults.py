@@ -14,6 +14,8 @@ import pytest
 from kaji.events.store.memory import InMemoryEventStore
 from kaji.events.errors import SessionPurgeBusyError
 from kaji.events.schemas import UserMessage
+from kaji.artifacts import artifact
+from kaji.capabilities import capability_result
 from kaji.runtime.sessions.replay import replay_session
 from kaji.events.types import EventType
 from kaji.observability import InMemoryMetrics
@@ -581,6 +583,67 @@ async def test_hostile_container_result_is_tombstoned_without_calling_hooks(
     assert ledger.completed_ids == ["healthy-result"]
     assert ledger.unknown_ids == ["hostile-result"]
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_capability_result_completes_ledger_without_unknown_outcome() -> None:
+    class RecordingLedger(InMemoryToolIdempotencyLedger):
+        def __init__(self) -> None:
+            super().__init__()
+            self.completed_ids: list[str] = []
+            self.unknown_ids: list[str] = []
+
+        async def complete(self, claim: ToolIdempotencyClaim, result: Any) -> None:
+            self.completed_ids.append(claim.tool_call_id)
+            await super().complete(claim, result)
+
+        async def unknown_outcome(
+            self,
+            claim: ToolIdempotencyClaim,
+            failure: ToolIdempotencyFailure,
+        ) -> None:
+            self.unknown_ids.append(claim.tool_call_id)
+            await super().unknown_outcome(claim, failure)
+
+    ledger = RecordingLedger()
+    controller = ToolExecutionController(ledger=ledger)
+    spec = ToolSpec(name="tool", description="tool", parameters={}, risk="write")
+    executions = 0
+    expected = {
+        "value": {"ok": True},
+        "artifacts": [
+            {
+                "id": "receipt",
+                "type": "test/receipt",
+                "uri": "memory:receipt",
+            }
+        ],
+    }
+
+    async def executor(_invocation: ToolInvocation) -> object:
+        nonlocal executions
+        executions += 1
+        return capability_result(
+            {"ok": True},
+            [artifact("receipt", "test/receipt", "memory:receipt")],
+        )
+
+    first = await controller.execute(
+        _invocation("capability-result"), spec, executor, _noop_started
+    )
+    assert first.failure is None
+    assert first.result == expected
+    assert ledger.completed_ids == ["capability-result"]
+    assert ledger.unknown_ids == []
+
+    replay = await controller.execute(
+        _invocation("capability-result"), spec, executor, _noop_started
+    )
+    assert replay.failure is None
+    assert replay.result == expected
+    assert executions == 1
+    assert ledger.completed_ids == ["capability-result"]
+    assert ledger.unknown_ids == []
 
 
 @pytest.mark.asyncio

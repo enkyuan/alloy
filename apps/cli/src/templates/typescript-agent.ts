@@ -1,6 +1,7 @@
 import type { Provider } from "../providers.js";
 
-export const TYPESCRIPT_SDK_RANGE = "^0.3.0-alpha.1";
+export const TYPESCRIPT_SDK_PACKAGE = "@irogane/kaji";
+export const TYPESCRIPT_SDK_RANGE = "0.3.0-alpha.1";
 export const ZOD_RANGE = ">=4.3 <5";
 const DOTENVX_VERSION = "2.9.0";
 
@@ -78,7 +79,11 @@ export function typescriptPackageTemplate(provider: Provider): string {
           start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
           typecheck: "tsc --noEmit",
         },
-        dependencies: { kaji: TYPESCRIPT_SDK_RANGE, zod: ZOD_RANGE, ...providerDeps },
+        dependencies: {
+          [TYPESCRIPT_SDK_PACKAGE]: TYPESCRIPT_SDK_RANGE,
+          zod: ZOD_RANGE,
+          ...providerDeps,
+        },
         devDependencies: {
           "@dotenvx/dotenvx": DOTENVX_VERSION,
           "@types/node": "^22.10.2",

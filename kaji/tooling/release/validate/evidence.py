@@ -69,8 +69,8 @@ MAX_SIGNED_TARBALL_BYTES = 128 * 1024 * 1024
 MAX_ONBOARDING_STATUS_BYTES = 64 * 1024
 MAX_PUBLICATION_STATUS_BYTES = 256 * 1024
 IO_CHUNK_BYTES = 1024 * 1024
-PYTHON_WHEEL = "kaji-0.3.0a1-py3-none-any.whl"
-PYTHON_SDIST = "kaji-0.3.0a1.tar.gz"
+PYTHON_WHEEL = "kaji-0.2.0b1-py3-none-any.whl"
+PYTHON_SDIST = "kaji-0.2.0b1.tar.gz"
 TYPESCRIPT_TARBALL = "irogane-kaji-0.3.0-alpha.1.tgz"
 PRODUCER_ARTIFACT = "kaji-artifacts"
 EVIDENCE_ARTIFACT = "kaji-release-candidate-evidence"
@@ -2347,14 +2347,14 @@ def validate(args: argparse.Namespace) -> dict[str, Any]:
         ):
             check(
                 label,
-                lambda label=label,
-                runtime=runtime,
-                version=version: validate_compatibility(
-                    documents[label],
-                    runtime=runtime,
-                    version=version,
-                    release=release,
-                    args=args,
+                lambda label=label, runtime=runtime, version=version: (
+                    validate_compatibility(
+                        documents[label],
+                        runtime=runtime,
+                        version=version,
+                        release=release,
+                        args=args,
+                    )
                 ),
             )
 

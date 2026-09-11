@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import runpy
 import shutil
+import subprocess
 import sys
 from typing import Any
 
@@ -47,10 +48,7 @@ FEATURE_TIERS = REPO_ROOT / "kaji" / "contracts" / "tiers/v1/features.json"
 PARITY_SCENARIOS = REPO_ROOT / "kaji" / "contracts" / "parity" / "v1" / "scenarios.json"
 RELEASE_MATRIX = REPO_ROOT / "kaji" / "RELEASE_MATRIX.md"
 CONTRACT_CHECKER = REPO_ROOT / "kaji" / "tooling" / "contracts/check.py"
-PACKAGED_CONTRACT_ROOTS = (
-    REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts",
-    REPO_ROOT / "kaji" / "packages" / "ts" / "contracts",
-)
+BETA_CONTRACT_SYNC = REPO_ROOT / "kaji" / "tooling" / "integrations/contracts/beta.py"
 DOC_PATHS = [
     REPO_ROOT / "kaji" / "RELEASE_MATRIX.md",
     REPO_ROOT / "kaji" / "README.md",
@@ -196,8 +194,8 @@ def test_release_matrix_parity_scenario_count_matches_fixture() -> None:
 @pytest.mark.parametrize(
     "matrix",
     [
-        "<!-- beta-parity-scenarios: 67 --> trailing garbage",
-        "<!-- beta-parity-scenarios: 67 -->\n<!-- beta-parity-scenarios: malformed -->",
+        "<!-- beta-parity-scenarios: 70 --> trailing garbage",
+        "<!-- beta-parity-scenarios: 70 -->\n<!-- beta-parity-scenarios: malformed -->",
     ],
 )
 def test_release_matrix_parity_scenario_marker_rejects_malformed_lines(
@@ -249,12 +247,123 @@ def test_session_purge_lifecycle_is_frozen_in_beta_contract() -> None:
     }
 
 
-def test_beta_contract_package_copies_are_byte_identical() -> None:
+def test_beta_contract_package_copies_match_runtime_projection() -> None:
     canonical_root = REPO_ROOT / "kaji" / "contracts"
+    checker = runpy.run_path(str(CONTRACT_CHECKER), run_name="contract_projection_test")
+    project = checker["typescript_contract_projection"]
+    projected = checker["TYPESCRIPT_PROJECTED_CONTRACTS"]
+
+    python_contracts = REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts"
+    typescript_contracts = REPO_ROOT / "kaji" / "packages" / "ts" / "contracts"
     for name in ("core/v1/beta.json", "tiers/v1/features.json"):
-        expected = (canonical_root / name).read_bytes()
-        for packaged_root in PACKAGED_CONTRACT_ROOTS:
-            assert (packaged_root / name).read_bytes() == expected
+        source = canonical_root / name
+        assert (python_contracts / name).read_bytes() == source.read_bytes()
+        expected = (
+            project(Path(name), source) if name in projected else source.read_bytes()
+        )
+        assert (typescript_contracts / name).read_bytes() == expected
+
+
+def test_beta_contract_sync_allows_only_task_free_typescript_projection(
+    tmp_path: Path,
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "beta_contract_sync_test", BETA_CONTRACT_SYNC
+    )
+    assert spec is not None and spec.loader is not None
+    beta = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = beta
+    spec.loader.exec_module(beta)
+    source = tmp_path / "contracts"
+    python_target = tmp_path / "python/contracts"
+    typescript_target = tmp_path / "typescript/contracts"
+    shutil.copytree(REPO_ROOT / "kaji" / "contracts", source)
+
+    setattr(beta, "SOURCE", source)
+    setattr(beta, "TARGETS", (python_target, typescript_target))
+    setattr(beta, "TYPESCRIPT_PACKAGE_CONTRACTS", typescript_target)
+    beta.write()
+
+    assert beta.check() == []
+    assert not (typescript_target / "tasks/v1/schema.json").exists()
+    assert not (typescript_target / "tasks/v1/cases/valid.json").exists()
+
+    missing = typescript_target / "events/v1/schema/new.json"
+    missing.unlink()
+    assert f"missing: {missing}" in beta.check()
+    beta.write()
+
+    extra = typescript_target / "unexpected.json"
+    extra.write_text("{}", encoding="utf-8")
+    assert f"unexpected: {extra}" in beta.check()
+    extra.unlink()
+
+    drifted = typescript_target / "tiers/v1/features.json"
+    drifted.write_text("{}", encoding="utf-8")
+    assert f"out of sync: {drifted}" in beta.check()
+
+
+def test_beta_contract_sync_runs_directly_without_installed_kaji(
+    tmp_path: Path,
+) -> None:
+    fixture_root = tmp_path / "isolated-build"
+    fixture_kaji = fixture_root / "kaji"
+    source = fixture_kaji / "contracts"
+    script = fixture_kaji / "tooling/integrations/contracts/beta.py"
+    projection = fixture_kaji / "tooling/contracts/projection.py"
+    python_target = fixture_kaji / "packages/py/src/contracts"
+    typescript_target = fixture_kaji / "packages/ts/contracts"
+
+    shutil.copytree(REPO_ROOT / "kaji/contracts", source)
+    script.parent.mkdir(parents=True)
+    projection.parent.mkdir(parents=True)
+    shutil.copy2(BETA_CONTRACT_SYNC, script)
+    shutil.copy2(REPO_ROOT / "kaji/tooling/contracts/projection.py", projection)
+    python_target.parent.mkdir(parents=True)
+    typescript_target.parent.mkdir(parents=True)
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", str(script), "--write"],
+        cwd=fixture_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "OK: beta contract package copies updated" in completed.stdout
+
+    canonical = {
+        path.relative_to(source).as_posix(): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file() and path.suffix in {".json", ".md"}
+    }
+    python_copies = {
+        path.relative_to(python_target).as_posix(): path.read_bytes()
+        for path in python_target.rglob("*")
+        if path.is_file()
+    }
+    typescript_copies = {
+        path.relative_to(typescript_target).as_posix(): path.read_bytes()
+        for path in typescript_target.rglob("*")
+        if path.is_file()
+    }
+
+    assert python_copies == canonical
+    assert set(typescript_copies) == set(canonical) - {
+        "tasks/v1/schema.json",
+        "tasks/v1/cases/valid.json",
+    }
+    assert "tasks/v1/schema.json" not in typescript_copies
+    assert "tasks/v1/cases/valid.json" not in typescript_copies
+
+    events = json.loads(typescript_copies["events/v1/cases/valid.json"])["events"]
+    assert all(not event["type"].startswith("task.") for event in events)
+    features = json.loads(typescript_copies["tiers/v1/features.json"])
+    assert all(
+        not export.startswith("Task")
+        for export in features["publicExports"]["python"]["stable"]
+    )
 
 
 def test_python_session_purge_exports_are_stable() -> None:

@@ -15,8 +15,8 @@ Both SDKs target the same five-step developer path:
 Before you write any code:
 
 1. **Prepare an SDK** (`uv sync --project kaji/packages/py --extra openai` from the source
-   checkout for Python, or `npm install @irogane/kaji@0.3.0-alpha.1 zod` for
-   TypeScript after protected npm publication)
+   checkout for Python, or `npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod` for
+   TypeScript from the local alpha release-candidate artifact)
 2. **Install the OpenAI provider SDK** for the beta-supported live path
 3. **Set `OPENAI_API_KEY`** for live OpenAI runs. The installed-package mock
    quickstart needs no key.
@@ -150,9 +150,9 @@ The Python distribution is not published to PyPI for this release.
 **TypeScript**
 
 ```bash
-npm install @irogane/kaji@0.3.0-alpha.1 zod openai        # OpenAI
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai   # OpenAI
 # or
-npm install @irogane/kaji@0.3.0-alpha.1 zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod @anthropic-ai/sdk  # Anthropic (experimental/WIP)
 ```
 
 ### Step 2 - Configure provider

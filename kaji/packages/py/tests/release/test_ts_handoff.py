@@ -127,6 +127,7 @@ def _exports() -> dict[str, Any]:
         "./integrations": entry("integrations"),
         "./integrations/github": entry("integrations/github"),
         "./auth": entry("auth"),
+        "./postgres": entry("postgres"),
         "./cli": {
             "import": {
                 "types": "./dist/cli/package-entry.d.ts",

@@ -57,8 +57,9 @@ describe("cross-SDK fixture exporter", () => {
     expect(first).toEqual(second);
     const exported = JSON.parse(new TextDecoder().decode(first));
     const contract = JSON.parse(readFileSync(SCENARIOS, "utf8"));
+    const typescriptScenarios = contract.scenarios.filter((row: any) => row.runtime !== "python");
     expect(exported.scenarios.map((row: any) => row.id)).toEqual(
-      contract.scenarios.map((row: any) => row.id),
+      typescriptScenarios.map((row: any) => row.id),
     );
     expect(exported.scenarios).toHaveLength(70);
     for (const row of exported.scenarios) {
@@ -117,6 +118,9 @@ describe("cross-SDK fixture exporter", () => {
     expect(snapshots.get("replay-json-unrepresentable-integer")!.result).toEqual({
       event_count: 3,
       rejection: "integer_outside_i_json_safe_range",
+    });
+    expect(snapshots.get("postgres-lock-key")!.result).toEqual({
+      keys: ["677529369334489940", "2107250361640305863", "5864869109797145327"],
     });
 
     const referenced = contract.scenarios

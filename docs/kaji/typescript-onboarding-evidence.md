@@ -1,7 +1,7 @@
 # TypeScript onboarding evidence
 
 This policy records deterministic onboarding proof for the exact
-`kaji-0.3.0-alpha.1.tgz` release candidate. It runs from the candidate
+`irogane-kaji-0.3.0-alpha.1.tgz` release candidate. It runs from the candidate
 artifact rather than a source checkout and is required in both the rehearsal
 and tag-triggered protected release workflows.
 

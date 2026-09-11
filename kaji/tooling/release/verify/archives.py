@@ -81,7 +81,11 @@ def load_archives(dist_dir: Path) -> None:
 
     wheel = wheel_candidate
     sdist = sdist_candidate
-    sdk_root = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    sdk_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
     # Contracts stay at kaji/contracts (shared canonical spine).
     contracts_dir = sdk_root / "contracts"
     # The Python SDK package moved to kaji/packages/py; its packaging inputs

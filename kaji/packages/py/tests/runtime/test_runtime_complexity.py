@@ -154,6 +154,11 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
             2,
             "revalidate_stored_event",
         ),
+        "kaji/packages/py/src/backends/postgres/committer.py": (
+            ".get_events(",
+            1,
+            "PostgresEventStore",
+        ),
         "kaji/packages/py/src/runtime/agents/planner.py": (
             ".get_events(",
             3,
@@ -163,6 +168,16 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
             ".get_events(",
             3,
             "revalidate_stored_event",
+        ),
+        "kaji/packages/py/src/tasks/handle.py": (
+            ".get_events(",
+            1,
+            "project_task",
+        ),
+        "kaji/packages/ts/src/backends/postgres/committer.ts": (
+            ".getEvents(",
+            1,
+            "PostgresEventCommitter",
         ),
         "kaji/packages/ts/src/events/committer.ts": (
             ".getEvents(",
@@ -210,6 +225,8 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
                 actual.add(str(path.relative_to(repo)))
 
     assert actual == set(inventory)
+    assert not (repo / "kaji/packages/ts/src/tasks").exists()
+    assert not (repo / "kaji/packages/ts/tests/tasks").exists()
 
     for relative, (call, count, boundary) in inventory.items():
         source = (repo / relative).read_text()

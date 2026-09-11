@@ -87,8 +87,8 @@ def _zip_bytes(
 
 def _release_members(module: ModuleType) -> dict[str, bytes]:
     payloads = {
-        "kaji-0.3.0a1-py3-none-any.whl": b"retained-wheel",
-        "kaji-0.3.0a1.tar.gz": b"retained-sdist",
+        "kaji-0.2.0b1-py3-none-any.whl": b"retained-wheel",
+        "kaji-0.2.0b1.tar.gz": b"retained-sdist",
         TARBALL: b"retained-typescript-tarball",
     }
     entries = []

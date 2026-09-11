@@ -27,6 +27,7 @@ export const navigation: NavigationSection[] = [
       { href: "/docs/concepts/events", label: "Events" },
       { href: "/docs/concepts/session-state", label: "Session State" },
       { href: "/docs/concepts/runtime", label: "Runtime" },
+      { href: "/docs/concepts/lifecycle", label: "Lifecycle and Data Handling" },
       { href: "/docs/concepts/tool-registry", label: "Tool Registry" },
       { href: "/docs/concepts/event-bus", label: "Event Delivery" },
       { href: "/docs/concepts/providers", label: "Providers" },

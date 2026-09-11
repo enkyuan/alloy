@@ -52,7 +52,6 @@ import { Integration, tool } from "@/integrations/base";
 import { capability } from "@/capabilities/definition";
 import { artifact } from "@/artifacts/types";
 import { postgresLockKey } from "@/backends/postgres";
-import { InMemoryBackend, TaskRuntime } from "@/tasks";
 import {
   ToolArgumentValidationError,
   ToolSchemaValidationError,
@@ -1575,69 +1574,6 @@ function runLockKey(scenario: JsonObject): JsonObject {
   return snapshot;
 }
 
-async function runTaskProjection(_scenario: JsonObject): Promise<JsonObject> {
-  const snapshot = emptySnapshot();
-  const backend = new InMemoryBackend();
-  const handle = await new TaskRuntime(backend).start({
-    session_id: "task-session",
-    principal_id: "principal",
-    input: "task",
-    task_id: "task",
-  });
-  await backend.journal.commit(
-    ToolApprovalRequested.parse({
-      type: "tool.approval.requested",
-      id: "task-approval",
-      session_id: "task-session",
-      turn_id: "turn",
-      tool_name: "write",
-      tool_call_id: "call",
-      tool_args: {},
-      risk: "write",
-    }),
-  );
-  await backend.journal.commit(
-    ToolApprovalApproved.parse({
-      type: "tool.approval.approved",
-      id: "task-approved",
-      session_id: "task-session",
-      turn_id: "turn",
-      tool_name: "write",
-      tool_call_id: "call",
-    }),
-  );
-  await backend.journal.commit(
-    ArtifactEmitted.parse({
-      type: "artifact.emitted",
-      id: "task-artifact",
-      session_id: "task-session",
-      turn_id: "turn",
-      tool_call_id: "call",
-      artifact: artifact("artifact", "text/plain", "memory:artifact"),
-    }),
-  );
-  await backend.journal.commit(
-    ToolCallFailed.parse({
-      type: "tool.call.failed",
-      id: "task-unknown",
-      session_id: "task-session",
-      turn_id: "turn",
-      tool_name: "write",
-      tool_call_id: "call",
-      error: "unknown",
-      outcome: "unknown",
-    }),
-  );
-  const projected = await handle.snapshot();
-  snapshot.result = {
-    state: projected.state,
-    cursor: projected.sequence_cursor,
-    artifacts: projected.artifacts.map((item) => item.id),
-    pending_approvals: projected.pending_approvals.length,
-  };
-  return snapshot;
-}
-
 function surfacedSpecKeys(spec: ToolSpec): string[] {
   const keys = ["name", "description", "parameters", "risk"];
   if (spec.parallel_safe !== undefined && spec.parallel_safe !== false) {
@@ -1656,6 +1592,7 @@ async function exportParity(): Promise<JsonObject> {
   for (const scenario of document.scenarios) {
     if (seen.has(scenario.id)) throw new Error(`duplicate scenario id: ${scenario.id}`);
     seen.add(scenario.id);
+    if (scenario.runtime === "python") continue;
     let snapshot: JsonObject;
     if (scenario.kind === "runtime") snapshot = await runRuntime(document, scenario);
     else if (scenario.kind === "tool-schema") snapshot = await runToolSchema(scenario);
@@ -1664,7 +1601,6 @@ async function exportParity(): Promise<JsonObject> {
     else if (scenario.kind === "provider-adapter") snapshot = await runProviderAdapter(scenario);
     else if (scenario.kind === "idempotency") snapshot = await runIdempotency(scenario);
     else if (scenario.kind === "capability") snapshot = runCapability(document, scenario);
-    else if (scenario.kind === "task-projection") snapshot = await runTaskProjection(scenario);
     else if (scenario.kind === "lock-key") snapshot = runLockKey(scenario);
     else throw new Error(`unknown scenario kind: ${scenario.kind}`);
     if (JSON.stringify(Object.keys(snapshot)) !== JSON.stringify(SNAPSHOT_KEYS)) {

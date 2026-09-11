@@ -164,11 +164,11 @@ def _identity(commit: str, prefix: str) -> dict[str, Any]:
         "releaseManifestSha256": prefix * 64,
         "artifacts": {
             "pythonWheel": {
-                "file": "kaji-0.3.0a1-py3-none-any.whl",
+                "file": "kaji-0.2.0b1-py3-none-any.whl",
                 "sha256": chr(ord(prefix) + 1) * 64,
             },
             "pythonSdist": {
-                "file": "kaji-0.3.0a1.tar.gz",
+                "file": "kaji-0.2.0b1.tar.gz",
                 "sha256": chr(ord(prefix) + 2) * 64,
             },
             "typescript": {
@@ -194,11 +194,11 @@ def _write_release_artifacts(
     )
     payloads = {
         (
-            "kaji_sdk-0.3.0a1-py3-none-any.whl"
+            "kaji_sdk-0.2.0b1-py3-none-any.whl"
             if is_reference
-            else "kaji-0.3.0a1-py3-none-any.whl"
+            else "kaji-0.2.0b1-py3-none-any.whl"
         ): b"wheel",
-        "kaji_sdk-0.3.0a1.tar.gz" if is_reference else "kaji-0.3.0a1.tar.gz": b"sdist",
+        "kaji_sdk-0.2.0b1.tar.gz" if is_reference else "kaji-0.2.0b1.tar.gz": b"sdist",
         typescript_filename: b"npm",
     }
     entries = []
@@ -213,7 +213,7 @@ def _write_release_artifacts(
                 "package": package,
                 "sha256": hashlib.sha256(payload).hexdigest(),
                 "size": len(payload),
-                "version": typescript_version if package == "typescript" else "0.3.0a1",
+                "version": typescript_version if package == "typescript" else "0.2.0b1",
             }
         )
     manifest = {
@@ -239,7 +239,7 @@ def _write_release_artifacts(
         },
         "packages": {
             "contract": "1.0.0",
-            "python": "0.3.0a1",
+            "python": "0.2.0b1",
             "typescript": typescript_version,
         },
         "artifacts": entries,
@@ -373,13 +373,13 @@ def test_reference_anchor_is_exact_and_contains_no_runtime_paths() -> None:
     }
     assert anchor["artifacts"] == {
         "pythonWheel": {
-            "file": "kaji_sdk-0.3.0a1-py3-none-any.whl",
+            "file": "kaji_sdk-0.2.0b1-py3-none-any.whl",
             "sha256": (
                 "2a092b49c2c87666db9178bb8233f0b42551b683fa69475739582a8678ff0945"
             ),
         },
         "pythonSdist": {
-            "file": "kaji_sdk-0.3.0a1.tar.gz",
+            "file": "kaji_sdk-0.2.0b1.tar.gz",
             "sha256": (
                 "58540d729bc1eb64fd02c0bc153fdbcf826a997e2ef91c4bc06254e94079be1d"
             ),

@@ -28,13 +28,6 @@ export const EventType = {
 
   ARTIFACT_EMITTED: "artifact.emitted",
 
-  TASK_CREATED: "task.created",
-  TASK_SUSPENDED: "task.suspended",
-  TASK_RESUMED: "task.resumed",
-  TASK_COMPLETED: "task.completed",
-  TASK_FAILED: "task.failed",
-  TASK_CANCELLED: "task.cancelled",
-
   TOOL_APPROVAL_REQUESTED: "tool.approval.requested",
   TOOL_APPROVAL_APPROVED: "tool.approval.approved",
   TOOL_APPROVAL_REJECTED: "tool.approval.rejected",

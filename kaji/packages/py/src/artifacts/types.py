@@ -5,7 +5,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
 _NAMESPACED_TYPE = re.compile(r"^[^/\s]+/[^/\s]+$")
 _URI_WITH_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")

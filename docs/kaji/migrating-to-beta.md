@@ -424,7 +424,7 @@ if (jsonSchema.type !== "object") throw new Error("Zod 4 schema export failed");
 <!-- docs-test:typescript-zod-after:end -->
 
 ```bash
-npm install @irogane/kaji@0.2.0-beta.11 'zod@>=4.3 <5'
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz 'zod@>=4.3 <5'
 ```
 
 ## Manifest and index schema

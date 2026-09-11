@@ -5,6 +5,7 @@ from email.message import Message
 import importlib.util
 from io import BytesIO
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -397,14 +398,14 @@ def test_release_gate_runs_package_metadata_and_supply_chain_checks() -> None:
     assert "if python_project != PYTHON_PROJECT:" in metadata_verifier
 
     publish_workflow = _read(".github/workflows/kaji.publish.yml")
-    assert publish_workflow.count("https://pypi.org/pypi/kaji/0.3.0a1/json") == 3
-    assert "https://pypi.org/pypi/kaji-sdk/0.3.0a1/json" not in publish_workflow
+    assert publish_workflow.count("https://pypi.org/pypi/kaji/0.2.0b1/json") == 3
+    assert "https://pypi.org/pypi/kaji-sdk/0.2.0b1/json" not in publish_workflow
 
     npm_verifier = _read("kaji/tooling/release/verify/npm.py")
     for expected in (
         "npm tarball member set differs from checkout",
         "npm tarball file differs from checkout",
-        "npm packaged contracts differ from canonical shared contracts",
+        "npm packaged contracts differ from the canonical TypeScript projection",
         "npm package target is missing or outside dist/",
         "npm registry manifest is missing",
     ):
@@ -461,7 +462,7 @@ def test_publish_tag_guard_matches_typescript_package_version() -> None:
     assert f'const tagName = "{expected_tag}";' in publish
 
 
-def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None:
+def test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None:
     allowed_beta8_sections = {
         Path("docs/kaji/releasing.md"): (
             "- Treat `kaji-v0.2.0-beta.8`",
@@ -474,7 +475,7 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
             2,
         ),
         Path("kaji/packages/py/tests/release/test_release_task15.py"): (
-            "\ndef test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None:\n"
+            "\ndef test_beta10_is_the_only_active_identity_and_beta8_is_exact_history() -> None:\n"
             "    allowed_beta8_sections = {",
             "\ndef test_protected_release_workflows_fail_closed_and_attach_provenance()"
             " -> None:\n",
@@ -488,7 +489,7 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
             1,
         ),
         Path("kaji/packages/ts/tests/contracts/release-security.test.ts"): (
-            '  it("binds the current TypeScript candidate to alpha.1 and preserves prior incident history"',
+            '  it("binds the current TypeScript candidate to beta.11 and preserves prior incident history"',
             '  it("smokes compatibility matrices only from verified producer artifacts"',
             5,
         ),
@@ -516,9 +517,9 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
     assert typescript_package["version"] == "0.3.0-alpha.1"
     assert (
         _read("kaji/packages/py/pyproject.toml").splitlines()[2]
-        == 'version = "0.3.0a1"'
+        == 'version = "0.2.0b1"'
     )
-    assert '__version__ = "0.3.0a1"' in _read("kaji/packages/py/src/__init__.py")
+    assert '__version__ = "0.2.0b1"' in _read("kaji/packages/py/src/__init__.py")
     onboarding_contract_name = "release/v1/typescript/onboarding.json"
     legacy_contract_names = {
         "tthw-evidence-v1.schema.json",
@@ -573,7 +574,7 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
         generated_contract_directory = python_build / "lib/kaji/contracts/release"
         generated_contract = generated_contract_directory / onboarding_contract_name
         assert generated_init.is_file()
-        assert '__version__ = "0.3.0a1"' in generated_init.read_text()
+        assert '__version__ = "0.2.0b1"' in generated_init.read_text()
         assert {
             path.name for path in generated_contract_directory.iterdir()
         } == release_contract_names
@@ -584,8 +585,8 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
 
     python_dist = REPO_ROOT / "kaji/dist"
     if python_dist.exists():
-        wheel_name = "kaji-0.3.0a1-py3-none-any.whl"
-        sdist_name = "kaji-0.3.0a1.tar.gz"
+        wheel_name = "kaji-0.2.0b1-py3-none-any.whl"
+        sdist_name = "kaji-0.2.0b1.tar.gz"
         npm_name = "irogane-kaji-0.3.0-alpha.1.tgz"
         assert {path.name for path in python_dist.glob("*.whl")} <= {wheel_name}
         assert {path.name for path in python_dist.glob("*.tar.gz")} <= {sdist_name}
@@ -612,14 +613,14 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
                     }
                     & archive_names
                 )
-                assert b"Version: 0.3.0a1" in archive.read(
-                    "kaji-0.3.0a1.dist-info/METADATA"
+                assert b"Version: 0.2.0b1" in archive.read(
+                    "kaji-0.2.0b1.dist-info/METADATA"
                 )
 
         sdist = python_dist / sdist_name
         if sdist.exists():
             with tarfile.open(sdist, "r:gz") as archive:
-                release_prefix = "kaji-0.3.0a1/src/contracts/release/"
+                release_prefix = "kaji-0.2.0b1/src/contracts/release/"
                 archive_names = set(archive.getnames())
                 assert {
                     name.removeprefix(release_prefix)
@@ -629,7 +630,7 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
                 contract = archive.extractfile(
                     release_prefix + onboarding_contract_name
                 )
-                metadata = archive.extractfile("kaji-0.3.0a1/PKG-INFO")
+                metadata = archive.extractfile("kaji-0.2.0b1/PKG-INFO")
                 assert contract is not None
                 assert contract.read() == canonical_release_contract
                 assert (
@@ -640,7 +641,7 @@ def test_alpha1_is_the_only_active_identity_and_beta8_is_exact_history() -> None
                     & archive_names
                 )
                 assert metadata is not None
-                assert b"Version: 0.3.0a1" in metadata.read()
+                assert b"Version: 0.2.0b1" in metadata.read()
 
         npm = python_dist / npm_name
         if npm.exists():
@@ -717,16 +718,16 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     rehearsal = _read(".github/workflows/kaji.rehearsal.yml")
     publish = _read(".github/workflows/kaji.publish.yml")
 
-    assert "environment: kaji-release" in rehearsal
+    assert "environment: Release" in rehearsal
     assert "OPENAI_API_KEY" in rehearsal
     assert "ANTHROPIC_API_KEY" not in rehearsal
     assert "kaji.tooling.providers.openai.live" in rehearsal
-    assert rehearsal.count("environment: kaji-onboarding") == 1
-    assert rehearsal.count("environment: kaji-release\n") == 1
-    assert "environment: kaji-publish" not in rehearsal
-    assert publish.count("environment: kaji-onboarding") == 1
-    assert publish.count("environment: kaji-release\n") == 1
-    assert publish.count("environment: kaji-publish") == 1
+    assert rehearsal.count("environment: Onboarding") == 1
+    assert rehearsal.count("environment: Release\n") == 1
+    assert "environment: Publish" not in rehearsal
+    assert publish.count("environment: Onboarding") == 1
+    assert publish.count("environment: Release\n") == 1
+    assert publish.count("environment: Publish") == 1
     assert (
         "needs: [offline-release, performance, typescript-onboarding-evidence, "
         "python-compat, node-compat]" in rehearsal
@@ -753,9 +754,9 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
     _assert_external_actions_are_sha_pinned(rehearsal)
     for expected in (
         "verification.verified",
-        "environment: kaji-release",
-        "environment: kaji-publish",
-        "npm publish .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz --provenance --access public --tag alpha --registry=https://registry.npmjs.org/",
+        "environment: Release",
+        "environment: Publish",
+        "npm publish .artifacts/kaji-release/irogane-kaji-0.3.0-alpha.1.tgz --provenance --access public --tag beta --registry=https://registry.npmjs.org/",
         "--provenance",
         "actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be",
         "SHA256SUMS",
@@ -858,7 +859,7 @@ def test_protected_release_workflows_fail_closed_and_attach_provenance() -> None
         publish.count("Revalidate downloaded filenames, sizes, hashes, and commit") == 2
     )
     assert publish.count("uses: ./.github/actions/verify-kaji-tag") == 2
-    assert publish.count("environment: kaji-publish") == 1
+    assert publish.count("environment: Publish") == 1
     assert publish.count("needs: [verify-tag, supply-chain, registry-preflight]") == 1
     assert (
         "needs: [verify-tag, typescript-onboarding-evidence, supply-chain, "
@@ -1050,7 +1051,7 @@ def test_typescript_onboarding_gate_authenticates_archives_before_protected_use(
     assert import_fragment in calibration
     assert import_fragment in onboarding
 
-    assert "environment: kaji-onboarding" in onboarding
+    assert "environment: Onboarding" in onboarding
     assert "runs-on: ubuntu-24.04" in onboarding
     assert "needs.typescript-onboarding-archive-calibration.result == 'success'" in (
         onboarding
@@ -1126,7 +1127,7 @@ def test_release_runbook_orders_archive_onboarding_tag_and_publisher_approvals()
         'git verify-tag "$TAG"',
         'git push origin "refs/tags/$TAG"',
         "Run the same helper without `--approve`, now with `--mode publish`",
-        "Approve the sole `kaji-publish` deployment",
+        "Approve the sole `Publish` deployment",
     )
     missing_steps = [step for step in ordered_steps if step not in runbook]
     assert not missing_steps, f"missing release runbook steps: {missing_steps}"
@@ -1942,7 +1943,7 @@ def test_registry_verifier_retains_machine_failure_before_exiting(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.3.0a1", "typescript": "0.3.0-alpha.1"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.3.0-alpha.1"},
                 "artifacts": [],
             }
         )
@@ -1996,7 +1997,7 @@ def test_registry_verifier_retries_propagation_before_byte_verification(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.3.0a1", "typescript": "0.3.0-alpha.1"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.3.0-alpha.1"},
                 "artifacts": [],
             }
         )
@@ -2062,10 +2063,10 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.3.0a1", "typescript": "0.3.0-alpha.1"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.3.0-alpha.1"},
                 "artifacts": [
                     {
-                        "file": "kaji-0.3.0a1-py3-none-any.whl",
+                        "file": "kaji-0.2.0b1-py3-none-any.whl",
                         "package": "python",
                         "sha256": "0" * 64,
                         "size": 1,
@@ -2127,7 +2128,7 @@ def test_npm_target_verifier_skips_pypi_and_records_the_target(
     assert retained["pypi"] == {"status": "not_targeted"}
     assert retained["npm"] == {"byteVerified": True}
     assert retained["packages"] == {
-        "python": "0.3.0a1",
+        "python": "0.2.0b1",
         "typescript": "0.3.0-alpha.1",
     }
 
@@ -2724,10 +2725,10 @@ def test_malformed_registry_json_is_retained_as_typed_machine_failure(
         json.dumps(
             {
                 "commit": "a" * 40,
-                "packages": {"python": "0.3.0a1", "typescript": "0.3.0-alpha.1"},
+                "packages": {"python": "0.2.0b1", "typescript": "0.3.0-alpha.1"},
                 "artifacts": [
                     {
-                        "file": "kaji-0.3.0a1-py3-none-any.whl",
+                        "file": "kaji-0.2.0b1-py3-none-any.whl",
                         "package": "python",
                         "sha256": "0" * 64,
                         "size": 1,
@@ -2934,8 +2935,8 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
 ) -> None:
     verifier = _load_root_script("release/verify/published.py")
     payloads = {
-        "kaji-0.3.0a1-py3-none-any.whl": b"wheel",
-        "kaji-0.3.0a1.tar.gz": b"sdist",
+        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji-0.2.0b1.tar.gz": b"sdist",
     }
     entries = {
         name: {
@@ -2962,7 +2963,7 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
         if url == verifier.PYPI_URL:
             return json.dumps(
                 {
-                    "info": {"name": "kaji", "version": "0.3.0a1"},
+                    "info": {"name": "kaji", "version": "0.2.0b1"},
                     "urls": urls,
                 }
             ).encode()
@@ -2990,7 +2991,7 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
 
     assert len(evidence["files"]) == 2
     assert all(item["byteVerified"] for item in evidence["files"])
-    assert sum("/integrity/kaji/0.3.0a1/" in url for url in fetched) == 2
+    assert sum("/integrity/kaji/0.2.0b1/" in url for url in fetched) == 2
     assert (
         sum(
             command[:3] == ("pypi-attestations", "verify", "pypi")
@@ -3008,8 +3009,8 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
     )
     retained = {path.name for path in tmp_path.iterdir()}
     assert {
-        "registry-kaji-0.3.0a1-py3-none-any.whl",
-        "registry-kaji-0.3.0a1.tar.gz",
+        "registry-kaji-0.2.0b1-py3-none-any.whl",
+        "registry-kaji-0.2.0b1.tar.gz",
     }.issubset(retained)
     assert sum(name.endswith(".provenance.json") for name in retained) == 2
     assert sum(name.endswith(".github-attestation.json") for name in retained) == 2
@@ -3019,13 +3020,13 @@ def test_pypi_verification_downloads_each_file_and_checks_both_attestation_sourc
     ("published_names", "expected_error"),
     [
         (
-            ["kaji-0.3.0a1-py3-none-any.whl"],
+            ["kaji-0.2.0b1-py3-none-any.whl"],
             "VerificationUnavailable",
         ),
         (
             [
-                "kaji-0.3.0a1-py3-none-any.whl",
-                "kaji-0.3.0a1.tar.gz",
+                "kaji-0.2.0b1-py3-none-any.whl",
+                "kaji-0.2.0b1.tar.gz",
                 "unexpected.zip",
             ],
             "VerificationMismatch",
@@ -3042,12 +3043,12 @@ def test_pypi_missing_files_are_retryable_but_unexpected_files_are_terminal(
     entries = {
         name: {"file": name, "package": "python", "sha256": "0" * 64, "size": 1}
         for name in (
-            "kaji-0.3.0a1-py3-none-any.whl",
-            "kaji-0.3.0a1.tar.gz",
+            "kaji-0.2.0b1-py3-none-any.whl",
+            "kaji-0.2.0b1.tar.gz",
         )
     }
     metadata = {
-        "info": {"name": "kaji", "version": "0.3.0a1"},
+        "info": {"name": "kaji", "version": "0.2.0b1"},
         "urls": [{"filename": name} for name in published_names],
     }
     monkeypatch.setattr(
@@ -3071,7 +3072,7 @@ def test_pypi_verifier_rejects_a_different_project_identity(
 ) -> None:
     verifier = _load_root_script("release/verify/published.py")
     metadata = {
-        "info": {"name": "kaji-sdk", "version": "0.3.0a1"},
+        "info": {"name": "kaji-sdk", "version": "0.2.0b1"},
         "urls": [],
     }
     monkeypatch.setattr(
@@ -3937,19 +3938,20 @@ def test_release_composite_actions_are_sha_pinned() -> None:
 
 def test_release_runbook_has_fail_closed_rollback_contract() -> None:
     runbook = _read("docs/kaji/releasing.md")
-    protected_release = runbook.split("## Protected release", 1)[1].split(
-        "## Partial or ambiguous publication", 1
-    )[0]
+    active_policy = runbook.split("## Historical beta release records", 1)[0]
 
-    assert "TAG=kaji-v0.3.0-alpha.1" in protected_release
-    assert 'git tag -s --cleanup=verbatim -F "$AUTHORIZATION_FILE"' in (
-        protected_release
-    )
-    assert '"$TAG" "$REVIEWED_COMMIT"' in protected_release
-    assert 'git verify-tag "$TAG"' in protected_release
-    assert 'git push origin "refs/tags/$TAG"' in protected_release
-    assert "kaji-v0.2.0-beta.2" not in protected_release
-    assert "kaji-v0.2.0-beta.4" not in protected_release
+    assert runbook.startswith("# Kaji 0.3.0-alpha.1 local candidate runbook")
+    for expected in (
+        "local-only candidate",
+        "irogane-kaji-0.3.0-alpha.1.tgz",
+        "Do not run `npm publish` or `npm dist-tag`",
+        "Do not create or push a release tag",
+        "Python package remains `0.2.0b1`",
+        "does not publish to npm or PyPI",
+    ):
+        assert expected in active_policy
+    assert "TAG=kaji-v0.3.0-alpha.1" not in active_policy
+    assert "KAJI_NPM_PUBLISHER" not in active_policy
     assert "0.2.0-beta.4" not in _read(".github/workflows/kaji.rehearsal.yml")
     assert "burned, immutable pre-build attempt" in runbook
     assert "run `30190948860`" in runbook
@@ -3984,15 +3986,16 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
     assert "npm and PyPI remained absent" in runbook
 
     for expected in (
+        "Historical beta release records",
         "verified, signed, annotated beta tag",
-        "`kaji-release` protects mandatory keyed OpenAI proof",
+        "`Release` protects mandatory keyed OpenAI proof",
         "yank",
         "npm deprecate",
         "preserve",
         "Never reuse the",
         "No keyed provider or publisher evidence is claimed",
-        "`kaji-publish`",
-        "Protect `kaji-v*-alpha.*` tags against update and deletion",
+        "`Publish`",
+        "Protect `kaji-v*-beta.*` tags against update and deletion",
         "annotated tag object SHA",
         "never click **Re-run failed jobs**",
         "partial_or_ambiguous",
@@ -4014,11 +4017,132 @@ def test_release_runbook_has_fail_closed_rollback_contract() -> None:
         "stable `tiny-tarball@1.0.0` npm control",
         "`kaji` packument is an exact 404 JSON object",
         '`{"error":"Not found"}`',
-        "exact alpha.1 endpoint is an exact 404 JSON",
+        "exact beta.11 endpoint is an exact 404 JSON",
         'string `"Not Found"`',
         "infer absence from npm CLI error text or a substring match",
     ):
         assert expected in runbook
+
+
+def test_npm_tarball_contract_projection_allows_task_free_package_and_rejects_missing_supported_contract(
+    tmp_path: Path,
+) -> None:
+    verifier = __import__(
+        "kaji.tooling.release.verify.npm", fromlist=["verify_npm_tarball"]
+    )
+    checkout = tmp_path / "checkout"
+    shutil.copytree(
+        REPO_ROOT / "kaji",
+        checkout / "kaji",
+        ignore=shutil.ignore_patterns(
+            "dist",
+            "node_modules",
+            "__pycache__",
+            "*.pyc",
+            "*.pyo",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+        ),
+    )
+    for source in ("pyproject.toml", "uv.lock"):
+        shutil.copy2(REPO_ROOT / source, checkout / source)
+
+    package_root = checkout / "kaji/packages/ts"
+    source_node_modules = REPO_ROOT / "kaji/packages/ts/node_modules"
+    assert source_node_modules.is_dir()
+    (package_root / "node_modules").symlink_to(
+        source_node_modules, target_is_directory=True
+    )
+    assert not (package_root / "dist").exists()
+
+    environment = os.environ | {
+        "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
+        "npm_config_cache": str(tmp_path / "npm-cache"),
+    }
+    subprocess.run(
+        ["bun", "run", "build"],
+        cwd=package_root,
+        check=True,
+        env=environment,
+    )
+    packed = subprocess.run(
+        [
+            "npm",
+            "pack",
+            "--ignore-scripts",
+            "--json",
+            "--pack-destination",
+            str(tmp_path),
+        ],
+        cwd=package_root,
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    tarball = tmp_path / json.loads(packed.stdout)[0]["filename"]
+
+    verifier.verify_npm_tarball(tarball, checkout)
+
+    missing_path = "package/contracts/events/v1/schema/new.json"
+    missing_contract_tarball = tmp_path / "missing-supported-contract.tgz"
+    with (
+        tarfile.open(tarball, "r:gz") as source,
+        tarfile.open(missing_contract_tarball, "w:gz") as target,
+    ):
+        for member in source:
+            if member.name == missing_path:
+                continue
+            stream = source.extractfile(member) if member.isfile() else None
+            target.addfile(member, stream)
+
+    with pytest.raises(
+        SystemExit, match="npm tarball member set differs from checkout"
+    ) as failure:
+        verifier.verify_npm_tarball(missing_contract_tarball, checkout)
+    assert missing_path in str(failure.value)
+
+
+def test_npm_tarball_verifier_default_repo_uses_workspace_root(
+    tmp_path: Path,
+) -> None:
+    package_root = REPO_ROOT / "kaji/packages/ts"
+    assert (package_root / "dist").is_dir()
+    assert (REPO_ROOT / "kaji/contracts").is_dir()
+
+    environment = os.environ | {"npm_config_cache": str(tmp_path / "npm-cache")}
+    packed = subprocess.run(
+        [
+            "npm",
+            "pack",
+            "--ignore-scripts",
+            "--json",
+            "--pack-destination",
+            str(tmp_path),
+        ],
+        cwd=package_root,
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    tarball = tmp_path / json.loads(packed.stdout)[0]["filename"]
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "kaji/tooling/release/verify/npm.py"),
+            str(tarball),
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "PASS: verified exact npm artifact" in result.stdout
 
 
 def test_release_metadata_rejects_non_commit_provenance() -> None:
@@ -4058,15 +4182,15 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     artifacts.mkdir()
     commit = "a" * 40
     payloads = {
-        "kaji-0.3.0a1-py3-none-any.whl": b"wheel",
-        "kaji-0.3.0a1.tar.gz": b"sdist",
+        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji-0.2.0b1.tar.gz": b"sdist",
         "irogane-kaji-0.3.0-alpha.1.tgz": b"npm",
     }
     entries = []
     for name, payload in payloads.items():
         (artifacts / name).write_bytes(payload)
         package = "typescript" if name.endswith(".tgz") else "python"
-        version = "0.3.0-alpha.1" if package == "typescript" else "0.3.0a1"
+        version = "0.3.0-alpha.1" if package == "typescript" else "0.2.0b1"
         entries.append(
             {
                 "commit": commit,
@@ -4097,7 +4221,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         },
         "packages": {
             "contract": "1.0.0",
-            "python": "0.3.0a1",
+            "python": "0.2.0b1",
             "typescript": "0.3.0-alpha.1",
         },
         "artifacts": entries,
@@ -4124,9 +4248,9 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
         == hashlib.sha256((artifacts / "manifest.json").read_bytes()).hexdigest()
     )
     assert (
-        verified.python_wheel == (artifacts / "kaji-0.3.0a1-py3-none-any.whl").resolve()
+        verified.python_wheel == (artifacts / "kaji-0.2.0b1-py3-none-any.whl").resolve()
     )
-    assert verified.python_sdist == (artifacts / "kaji-0.3.0a1.tar.gz").resolve()
+    assert verified.python_sdist == (artifacts / "kaji-0.2.0b1.tar.gz").resolve()
     assert (
         verified.npm_tarball == (artifacts / "irogane-kaji-0.3.0-alpha.1.tgz").resolve()
     )
@@ -4172,7 +4296,7 @@ def test_downloaded_release_artifact_verifier_fails_closed(tmp_path: Path) -> No
     assert "artifact file set mismatch" in result.stderr
     unexpected.unlink()
 
-    wheel = artifacts / "kaji-0.3.0a1-py3-none-any.whl"
+    wheel = artifacts / "kaji-0.2.0b1-py3-none-any.whl"
     wheel.unlink()
     result = subprocess.run(command, capture_output=True, check=False, text=True)
     assert result.returncode != 0
@@ -4651,8 +4775,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
             **identity_free_passed,
             "releaseManifestSha256": "b" * 64,
             "artifactSha256": {
-                "kaji-0.3.0a1-py3-none-any.whl": "c" * 64,
-                "kaji-0.3.0a1.tar.gz": "d" * 64,
+                "kaji-0.2.0b1-py3-none-any.whl": "c" * 64,
+                "kaji-0.2.0b1.tar.gz": "d" * 64,
             },
             "runtime": {
                 "implementation": "CPython",
@@ -4660,8 +4784,8 @@ def test_compatibility_normalizer_fails_closed_across_hostile_states(
                 "executable": "/opt/python/bin/python",
             },
             "artifacts": {
-                "wheel": "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
-                "sdist": "/artifacts/kaji-0.3.0a1.tar.gz",
+                "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+                "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
             },
             "githubPackageProofs": {
                 "wheel": _github_package_proof("python"),
@@ -4992,8 +5116,8 @@ def _release_evidence_fixture(
     artifacts_dir = tmp_path / "release"
     artifacts_dir.mkdir()
     payloads = {
-        "kaji-0.3.0a1-py3-none-any.whl": b"wheel",
-        "kaji-0.3.0a1.tar.gz": b"sdist",
+        "kaji-0.2.0b1-py3-none-any.whl": b"wheel",
+        "kaji-0.2.0b1.tar.gz": b"sdist",
         "irogane-kaji-0.3.0-alpha.1.tgz": b"npm",
     }
     entries: list[dict[str, object]] = []
@@ -5008,7 +5132,7 @@ def _release_evidence_fixture(
                 "package": package,
                 "sha256": hashlib.sha256(payload).hexdigest(),
                 "size": len(payload),
-                "version": ("0.3.0-alpha.1" if package == "typescript" else "0.3.0a1"),
+                "version": ("0.3.0-alpha.1" if package == "typescript" else "0.2.0b1"),
             }
         )
     manifest = {
@@ -5030,7 +5154,7 @@ def _release_evidence_fixture(
         },
         "packages": {
             "contract": "1.0.0",
-            "python": "0.3.0a1",
+            "python": "0.2.0b1",
             "typescript": "0.3.0-alpha.1",
         },
         "artifacts": entries,
@@ -5045,8 +5169,8 @@ def _release_evidence_fixture(
     artifact_hashes = {str(entry["file"]): str(entry["sha256"]) for entry in entries}
     runtime_artifacts = {
         "python": {
-            "file": "kaji-0.3.0a1-py3-none-any.whl",
-            "sha256": artifact_hashes["kaji-0.3.0a1-py3-none-any.whl"],
+            "file": "kaji-0.2.0b1-py3-none-any.whl",
+            "sha256": artifact_hashes["kaji-0.2.0b1-py3-none-any.whl"],
         },
         "typescript": {
             "file": "irogane-kaji-0.3.0-alpha.1.tgz",
@@ -5109,8 +5233,8 @@ def _release_evidence_fixture(
                 "artifactSha256": {
                     name: artifact_hashes[name]
                     for name in (
-                        "kaji-0.3.0a1-py3-none-any.whl",
-                        "kaji-0.3.0a1.tar.gz",
+                        "kaji-0.2.0b1-py3-none-any.whl",
+                        "kaji-0.2.0b1.tar.gz",
                     )
                 },
                 "runtime": {
@@ -5119,8 +5243,8 @@ def _release_evidence_fixture(
                     "executable": f"/opt/python/{version}/bin/python",
                 },
                 "artifacts": {
-                    "wheel": "/artifacts/kaji-0.3.0a1-py3-none-any.whl",
-                    "sdist": "/artifacts/kaji-0.3.0a1.tar.gz",
+                    "wheel": "/artifacts/kaji-0.2.0b1-py3-none-any.whl",
+                    "sdist": "/artifacts/kaji-0.2.0b1.tar.gz",
                 },
                 "githubPackageProofs": {
                     "wheel": _github_package_proof("python"),
@@ -5184,8 +5308,8 @@ def _release_evidence_fixture(
     paired_artifacts = {
         "pythonWheel": runtime_artifacts["python"],
         "pythonSdist": {
-            "file": "kaji-0.3.0a1.tar.gz",
-            "sha256": artifact_hashes["kaji-0.3.0a1.tar.gz"],
+            "file": "kaji-0.2.0b1.tar.gz",
+            "sha256": artifact_hashes["kaji-0.2.0b1.tar.gz"],
         },
         "typescript": runtime_artifacts["typescript"],
     }

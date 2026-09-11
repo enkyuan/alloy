@@ -18,7 +18,10 @@ from kaji.events.schemas import (
     ToolApprovalRejected,
 )
 from kaji.events.store import EventStore
-from kaji.runtime.agents.coordinator import TurnCoordinator, default_coordinator_for_store
+from kaji.runtime.agents.coordinator import (
+    TurnCoordinator,
+    default_coordinator_for_store,
+)
 from kaji.runtime.tools.idempotency import (
     InMemoryToolIdempotencyLedger,
     ToolIdempotencyLedger,
@@ -44,13 +47,17 @@ class InMemoryBackend:
     @classmethod
     def create(cls) -> InMemoryBackend:
         store = InMemoryEventStore()
-        return cls(store, InMemoryEventJournal(store), default_coordinator_for_store(store))
+        return cls(
+            store, InMemoryEventJournal(store), default_coordinator_for_store(store)
+        )
 
 
 class TaskRuntime:
     """Creates and finds task handles; snapshots always replay the journal."""
 
-    def __init__(self, backend: InMemoryBackend, *, ids: IdFactory = SYSTEM_ID_FACTORY) -> None:
+    def __init__(
+        self, backend: InMemoryBackend, *, ids: IdFactory = SYSTEM_ID_FACTORY
+    ) -> None:
         self._backend = backend
         self._ids = ids
 
@@ -70,7 +77,9 @@ class TaskRuntime:
         identifier = task_id or self._ids.next("task")
         if identifier in self._backend.task_sessions:
             raise ValueError(f"task already exists: {identifier}")
-        handle = TaskHandle.for_in_memory(identifier, session_id, self._backend, self._ids)
+        handle = TaskHandle.for_in_memory(
+            identifier, session_id, self._backend, self._ids
+        )
         async with self._backend.coordinator.acquire(session_id):
             await self._backend.journal.commit(
                 TaskCreated(
@@ -83,7 +92,11 @@ class TaskRuntime:
                 )
             )
             await self._backend.journal.commit(
-                TaskResumed(id=self._ids.next("event"), task_id=identifier, session_id=session_id)
+                TaskResumed(
+                    id=self._ids.next("event"),
+                    task_id=identifier,
+                    session_id=session_id,
+                )
             )
             self._backend.task_sessions[identifier] = session_id
         return handle
@@ -109,12 +122,20 @@ class TaskHandle:
 
     @classmethod
     def for_in_memory(
-        cls, task_id: str, session_id: str, backend: InMemoryBackend, ids: IdFactory = SYSTEM_ID_FACTORY
+        cls,
+        task_id: str,
+        session_id: str,
+        backend: InMemoryBackend,
+        ids: IdFactory = SYSTEM_ID_FACTORY,
     ) -> TaskHandle:
         return cls(task_id, session_id, backend, ids)
 
     async def events(self, *, after_sequence: int = 0) -> tuple[StoredKajiEvent, ...]:
-        return tuple(await self._backend.store.get_events(self.session_id, after_sequence=after_sequence))
+        return tuple(
+            await self._backend.store.get_events(
+                self.session_id, after_sequence=after_sequence
+            )
+        )
 
     async def snapshot(self) -> TaskSnapshot:
         return project_task(self.task_id, await self.events())
@@ -136,12 +157,30 @@ class TaskHandle:
         return tuple(by_id[item.id] for item in snapshot.pending_approvals)
 
     async def cancel(self) -> TaskSnapshot:
-        return await self._append(TaskCancelled(id=self._ids.next("event"), task_id=self.task_id, session_id=self.session_id))
+        return await self._append(
+            TaskCancelled(
+                id=self._ids.next("event"),
+                task_id=self.task_id,
+                session_id=self.session_id,
+            )
+        )
 
     async def resume(self) -> TaskSnapshot:
-        return await self._append(TaskResumed(id=self._ids.next("event"), task_id=self.task_id, session_id=self.session_id))
+        return await self._append(
+            TaskResumed(
+                id=self._ids.next("event"),
+                task_id=self.task_id,
+                session_id=self.session_id,
+            )
+        )
 
-    async def decide_approval(self, approval: PendingApproval, *, approved: bool, reason: str = "host decision") -> TaskSnapshot:
+    async def decide_approval(
+        self,
+        approval: PendingApproval,
+        *,
+        approved: bool,
+        reason: str = "host decision",
+    ) -> TaskSnapshot:
         event: NewKajiEvent
         event_id = self._ids.next("event")
         turn_id, tool_call_id = approval.id.split(":", 1)

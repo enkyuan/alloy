@@ -10,6 +10,12 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import NoReturn
 
+from kaji.tooling.contracts.projection import (
+    PYTHON_LEGACY_CONTRACTS,
+    TYPESCRIPT_PROJECTED_CONTRACTS,
+    typescript_contract_projection,
+)
+
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_MEMBER_BYTES = 8 * 1024 * 1024
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
@@ -161,8 +167,13 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
             if stream is None or stream.read() != expected_payload:
                 fail(f"npm tarball file differs from checkout: {relative}")
 
-    if package.get("name") != "@irogane/kaji" or package.get("version") != "0.3.0-alpha.1":
-        fail("npm package name/version are not the approved beta coordinates")
+    if (
+        package.get("name") != "@irogane/kaji"
+        or package.get("version") != "0.3.0-alpha.1"
+    ):
+        fail(
+            "npm package name/version are not the approved alpha candidate coordinates"
+        )
     if package.get("license") != "FSL-1.1-ALv2":
         fail("npm package license metadata is not canonical")
     for target in export_targets(package.get("exports")) + list(
@@ -173,9 +184,16 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
             fail(f"npm package target is missing or outside dist/: {target}")
 
     canonical_contracts = {
-        relative: payload
+        relative: (
+            typescript_contract_projection(
+                Path(relative), canonical_contracts_root / relative
+            )
+            if relative in TYPESCRIPT_PROJECTED_CONTRACTS
+            else payload
+        )
         for relative, payload in tree_bytes(canonical_contracts_root).items()
         if Path(relative).suffix in {".json", ".md"}
+        and relative not in PYTHON_LEGACY_CONTRACTS
     }
     packaged_contracts = {
         relative.removeprefix("contracts/"): payload
@@ -184,7 +202,7 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
         and Path(relative).suffix in {".json", ".md"}
     }
     if packaged_contracts != canonical_contracts:
-        fail("npm packaged contracts differ from canonical shared contracts")
+        fail("npm packaged contracts differ from the canonical TypeScript projection")
 
     registry_index = json.loads(expected.get("registry/index.json", b"{}"))
     integrations = registry_index.get("integrations") or {}
@@ -209,7 +227,11 @@ def main() -> None:
     parser.add_argument("tarball", type=Path)
     parser.add_argument("--repo", type=Path)
     args = parser.parse_args()
-    repo = args.repo or (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+    repo = args.repo or next(
+        parent.parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
     verify_npm_tarball(args.tarball.resolve(), repo.resolve())
     print(f"PASS: verified exact npm artifact {args.tarball.name}")
 

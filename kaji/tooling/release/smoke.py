@@ -23,7 +23,11 @@ from kaji.tooling.shared.process import (
 )
 
 
-KAJI_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir()))
+KAJI_ROOT = next(
+    parent
+    for parent in Path(__file__).resolve().parents
+    if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+)
 SDK_ROOT = KAJI_ROOT / "packages" / "py"
 TOOLING = KAJI_ROOT / "tooling"
 import kaji.tooling.release.verify.artifacts as verify_release_artifacts  # noqa: E402
@@ -498,7 +502,7 @@ def smoke_archives(
                 cwd=artifact_workdir,
                 environment=environment,
             )
-            if "kaji (Python distribution kaji) 0.3.0a1" not in help_output:
+            if "kaji (Python distribution kaji) 0.2.0b1" not in help_output:
                 raise SystemExit("FAIL: qualified Python CLI owner/version mismatch")
 
             scaffold = workdir / f"scaffold-{safe_name}"
@@ -725,8 +729,8 @@ def failure_receipt(
             "executable": str(Path(sys.executable).resolve()),
         },
         "artifacts": {
-            "wheel": (str(root / "kaji-0.3.0a1-py3-none-any.whl") if root else None),
-            "sdist": str(root / "kaji-0.3.0a1.tar.gz") if root else None,
+            "wheel": (str(root / "kaji-0.2.0b1-py3-none-any.whl") if root else None),
+            "sdist": str(root / "kaji-0.2.0b1.tar.gz") if root else None,
         },
         "githubPackageProofs": {},
         "conclusion": "failed",

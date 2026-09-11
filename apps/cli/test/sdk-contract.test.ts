@@ -2,12 +2,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PYTHON_SDK_RANGE } from "../src/templates/python-agent.js";
 import {
+  TYPESCRIPT_SDK_PACKAGE,
   TYPESCRIPT_PROVIDER_RANGES,
   TYPESCRIPT_SDK_RANGE,
   ZOD_RANGE,
 } from "../src/templates/typescript-agent.js";
 
 interface PackageMetadata {
+  name: string;
   version: string;
   peerDependencies: Record<string, string>;
 }
@@ -19,10 +21,13 @@ const pythonProject = readFileSync(
   new URL("../../../kaji/packages/py/pyproject.toml", import.meta.url),
   "utf8",
 );
+const cliDocs = readFileSync(new URL("../../docs/content/cli.mdx", import.meta.url), "utf8");
 
 describe("SDK scaffold contract", () => {
-  it("tracks the TypeScript beta version and peer ranges", () => {
-    expect(TYPESCRIPT_SDK_RANGE).toBe(`^${typescriptPackage.version}`);
+  it("tracks the TypeScript alpha package, version, and peer ranges", () => {
+    expect(TYPESCRIPT_SDK_PACKAGE).toBe(typescriptPackage.name);
+    expect(TYPESCRIPT_SDK_RANGE).toBe(typescriptPackage.version);
+    expect(cliDocs).toContain(`${TYPESCRIPT_SDK_PACKAGE}@${TYPESCRIPT_SDK_RANGE}`);
     expect(ZOD_RANGE).toBe(typescriptPackage.peerDependencies.zod);
     expect(TYPESCRIPT_PROVIDER_RANGES.openai.openai).toBe(
       typescriptPackage.peerDependencies.openai,
