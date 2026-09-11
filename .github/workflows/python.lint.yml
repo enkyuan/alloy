@@ -47,7 +47,7 @@ jobs:
           # jsonschema test extras, etc.) is installed — ty checks src/ AND
           # tests/, so it must resolve the test-only imports. A bare root sync
           # only pulls the root project's dev group under the uv workspace.
-          sync-args: "--frozen --no-editable --package kaji"
+          sync-args: "--frozen --no-editable --package kaji --extra postgres"
 
       - name: Type check
         # Direct venv invocation (NOT `uv run`) — `uv run` re-syncs the venv

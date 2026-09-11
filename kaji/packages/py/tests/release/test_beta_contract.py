@@ -75,9 +75,42 @@ def test_event_schemas_annotate_durable_event_and_tool_result_caps() -> None:
 def test_python_package_contract_copy_matches_canonical_files() -> None:
     canonical = REPO_ROOT / "kaji" / "contracts"
     for source in canonical.rglob("*"):
-        if source.is_file() and source.suffix in {".json", ".md"}:
+        if source.is_file() and source.suffix in {".json", ".md", ".sql"}:
             packaged = PACKAGE_CONTRACTS / source.relative_to(canonical)
             assert packaged.read_bytes() == source.read_bytes()
+
+
+def test_sql_contract_files_are_synced_to_both_package_targets() -> None:
+    """Regression: beta.py must sync .sql files alongside .json/.md.
+
+    The gate check in contracts/check.py filters for {".json", ".md", ".sql"},
+    so the sync script must also include .sql files — otherwise the TS
+    contracts directory (git-ignored build artifact) will be missing
+    postgres/v1/schema.sql and the gate fails with a set mismatch.
+    """
+    canonical = REPO_ROOT / "kaji" / "contracts" / "postgres" / "v1" / "schema.sql"
+    sql_relative = Path("postgres/v1/schema.sql")
+    assert canonical.is_file(), "canonical postgres schema.sql must exist"
+
+    py_target = (
+        REPO_ROOT / "kaji" / "packages" / "py" / "src" / "contracts" / sql_relative
+    )
+    ts_target = REPO_ROOT / "kaji" / "packages" / "ts" / "contracts" / sql_relative
+    assert py_target.is_file(), "py package contract copy must exist"
+    assert ts_target.is_file(), "ts package contract copy must exist"
+    assert py_target.read_bytes() == canonical.read_bytes()
+    assert ts_target.read_bytes() == canonical.read_bytes()
+
+    beta_script = (
+        REPO_ROOT / "kaji" / "tooling" / "integrations" / "contracts" / "beta.py"
+    )
+    result = subprocess.run(
+        [sys.executable, str(beta_script), "--check"],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_typescript_handoff_schema_is_required_valid_and_packaged_for_both_runtimes() -> (

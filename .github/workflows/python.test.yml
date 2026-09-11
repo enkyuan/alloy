@@ -85,6 +85,7 @@ jobs:
       - uses: ./.github/actions/setup-python-uv
         with:
           working-directory: .
+          sync-args: --frozen --extra postgres
 
       - name: Run quickstart smoke
         run: uv run --project packages/py pytest packages/py/tests/docs/test_quickstart.py -q

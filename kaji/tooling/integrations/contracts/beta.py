@@ -41,7 +41,7 @@ def contract_files() -> list[Path]:
     return sorted(
         path.relative_to(SOURCE)
         for path in SOURCE.rglob("*")
-        if path.is_file() and path.suffix in {".json", ".md"}
+        if path.is_file() and path.suffix in {".json", ".md", ".sql"}
     )
 
 
@@ -51,7 +51,7 @@ def packaged_contract_files(target: Path) -> set[Path]:
     return {
         path.relative_to(target)
         for path in target.rglob("*")
-        if path.is_file() and path.suffix in {".json", ".md"}
+        if path.is_file() and path.suffix in {".json", ".md", ".sql"}
     }
 
 

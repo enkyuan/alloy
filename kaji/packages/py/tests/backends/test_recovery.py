@@ -47,7 +47,7 @@ async def postgres_recovery_schema() -> AsyncIterator[None]:
     yield
 
 
-_PROCESS = r'''
+_PROCESS = r"""
 import asyncio
 import json
 import os
@@ -151,10 +151,12 @@ async def main():
 
 
 asyncio.run(main())
-'''
+"""
 
 
-async def _process(action: str, *, task_id: str, session_id: str, effect_key: str) -> dict[str, Any]:
+async def _process(
+    action: str, *, task_id: str, session_id: str, effect_key: str
+) -> dict[str, Any]:
     environment = os.environ | {
         "KAJI_RECOVERY_CASE": json.dumps(
             {
@@ -206,23 +208,48 @@ async def _effect_count() -> int:
 
 @pytest.mark.asyncio
 async def test_restart_requires_reconciliation_after_started_external_effect() -> None:
-    session_id, task_id, effect_key = "recovery-session", "recovery-task", "recovery-effect"
+    session_id, task_id, effect_key = (
+        "recovery-session",
+        "recovery-task",
+        "recovery-effect",
+    )
 
-    assert (await _process("crash_after_effect", task_id=task_id, session_id=session_id, effect_key=effect_key))["state"] == "running"
-    assert (await _process("inspect_started", task_id=task_id, session_id=session_id, effect_key=effect_key))["state"] == "reconciliation_required"
+    assert (
+        await _process(
+            "crash_after_effect",
+            task_id=task_id,
+            session_id=session_id,
+            effect_key=effect_key,
+        )
+    )["state"] == "running"
+    assert (
+        await _process(
+            "inspect_started",
+            task_id=task_id,
+            session_id=session_id,
+            effect_key=effect_key,
+        )
+    )["state"] == "reconciliation_required"
     assert await _effect_count() == 1
 
     reconciled = await _fixture_result(effect_key)
     ledger = PostgresToolIdempotencyLedger(os.environ["KAJI_POSTGRES_URL"])
     assert await ledger.reconcile_completed(session_id, "call", reconciled)
 
-    resumed = await _process("resume_reconciled", task_id=task_id, session_id=session_id, effect_key=effect_key)
+    resumed = await _process(
+        "resume_reconciled",
+        task_id=task_id,
+        session_id=session_id,
+        effect_key=effect_key,
+    )
     assert resumed == {"state": "completed", "result": reconciled}
     assert await _effect_count() == 1
 
     from kaji.backends.postgres import PostgresEventStore
 
-    events = await PostgresEventStore(os.environ["KAJI_POSTGRES_URL"]).get_events(session_id)
+    events = await PostgresEventStore(os.environ["KAJI_POSTGRES_URL"]).get_events(
+        session_id
+    )
     assert [event.type for event in events] == [
         EventType.TASK_CREATED,
         EventType.TASK_RESUMED,
@@ -242,11 +269,27 @@ async def test_restart_requires_reconciliation_after_started_external_effect() -
 async def test_restart_allows_retry_only_before_handler_start() -> None:
     session_id, task_id, effect_key = "retry-session", "retry-task", "retry-effect"
 
-    assert (await _process("crash_before_handler", task_id=task_id, session_id=session_id, effect_key=effect_key))["state"] == "running"
-    assert (await _process("retry_not_started", task_id=task_id, session_id=session_id, effect_key=effect_key))["state"] == "completed"
+    assert (
+        await _process(
+            "crash_before_handler",
+            task_id=task_id,
+            session_id=session_id,
+            effect_key=effect_key,
+        )
+    )["state"] == "running"
+    assert (
+        await _process(
+            "retry_not_started",
+            task_id=task_id,
+            session_id=session_id,
+            effect_key=effect_key,
+        )
+    )["state"] == "completed"
     assert await _effect_count() == 1
 
     from kaji.backends.postgres import PostgresEventStore
 
-    events = await PostgresEventStore(os.environ["KAJI_POSTGRES_URL"]).get_events(session_id)
+    events = await PostgresEventStore(os.environ["KAJI_POSTGRES_URL"]).get_events(
+        session_id
+    )
     assert EventType.TOOL_CALL_FAILED not in [event.type for event in events]

@@ -143,7 +143,11 @@ async def test_task_decision_unblocks_a_process_bound_capability_turn():
         calls.append("refund")
         return capability_result(
             {"refunded": True},
-            [ArtifactRef(id="refund", type="stripe/refund", uri="stripe://refunds/re_test")],
+            [
+                ArtifactRef(
+                    id="refund", type="stripe/refund", uri="stripe://refunds/re_test"
+                )
+            ],
         )
 
     runtime = (

@@ -552,6 +552,20 @@ def test_ci_workflows_run_path_filtered_pushes_on_every_branch() -> None:
     )
 
 
+def test_python_workflow_sync_args_include_postgres_extra() -> None:
+    """Regression: lint and test workflows must install the postgres extra
+    so psycopg/psycopg_pool resolve during typecheck and test collection."""
+    lint_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "python.lint.yml"
+    ).read_text()
+    test_workflow = (
+        REPO_ROOT / ".github" / "workflows" / "python.test.yml"
+    ).read_text()
+
+    assert "--extra postgres" in lint_workflow
+    assert "--extra postgres" in test_workflow
+
+
 def test_typescript_build_precedes_every_artifact_consumer() -> None:
     module = _load_beta_gate()
     common = [gate.label for gate in module.common_gates()]
