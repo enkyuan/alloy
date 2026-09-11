@@ -10,20 +10,20 @@ binary name, but their command sets differ.
 
 ## Command surfaces
 
-| Command             |  TypeScript `kaji`  | Python `kaji` distribution | Standalone `@irogane/kaji/cli`  |
-| ------------------- | :-----------------: | :------------------------: | :-----------------------------: |
-| `init`              | TypeScript scaffold |      Python scaffold       |  Python or TypeScript scaffold  |
-| `add`               |         Yes         |            Yes             |               No                |
-| `connect`           |         Yes         |            Yes             |               No                |
-| `disconnect`        |         Yes         |            Yes             |               No                |
-| `list-integrations` |         Yes         |            Yes             |               No                |
-| `replay`            |         Yes         |             No             |               No                |
-| `gen`               |         No          | WIP (`experimental` tier)  |    WIP (`experimental` tier)    |
-| `info`              |         No          | WIP (`experimental` tier)  |    WIP (`experimental` tier)    |
-| `secret`            |         No          | WIP (`experimental` tier)  |    WIP (`experimental` tier)    |
-| `doctor`            |         No          | WIP (`experimental` tier)  |    WIP (`experimental` tier)    |
-| `upgrade`           |         No          | WIP (`experimental` tier)  |    WIP (`experimental` tier)    |
-| `mcp`               |         No          |             No             | WIP; no server or config writer |
+| Command             |  TypeScript `kaji`  | Python `kaji` distribution |     Standalone `@irogane/kaji/cli`      |
+| ------------------- | :-----------------: | :------------------------: | :-------------------------------------: |
+| `init`              | TypeScript scaffold |      Python scaffold       | TypeScript scaffold; Python unavailable |
+| `add`               |         Yes         |            Yes             |                   No                    |
+| `connect`           |         Yes         |            Yes             |                   No                    |
+| `disconnect`        |         Yes         |            Yes             |                   No                    |
+| `list-integrations` |         Yes         |            Yes             |                   No                    |
+| `replay`            |         Yes         |             No             |                   No                    |
+| `gen`               |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
+| `info`              |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
+| `secret`            |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
+| `doctor`            |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
+| `upgrade`           |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
+| `mcp`               |         No          |             No             |     WIP; no server or config writer     |
 
 Use the selected package's `--help` output as the exact flag reference.
 
@@ -101,9 +101,12 @@ evaluating a single scaffold and diagnostic tool for both languages:
 bun apps/cli/src/index.ts --help
 ```
 
-Its repository version is `0.1.0`. It provides `init`, `gen`, `info`, `secret`,
-`doctor`, `upgrade`, and `mcp`. The `mcp` command reports that no server is
-available; it does not install a server or write AI-tool configuration.
+Its repository version is `0.1.0`. Its `init` command scaffolds TypeScript only:
+Python initialization fails closed because Kaji Python is not published to PyPI.
+Use the [Python source-checkout install route](https://github.com/enkyuan/alloy/blob/main/kaji/packages/py/README.md#install)
+instead. It provides `gen`, `info`, `secret`, `doctor`, `upgrade`, and `mcp`.
+The `mcp` command reports that no server is available; it does not install a
+server or write AI-tool configuration.
 
 Avoid relying on whichever `kaji` binary wins package-manager linking when
 multiple Kaji packages are installed. Invoke the intended package from a

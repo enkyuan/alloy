@@ -488,11 +488,31 @@ def test_beta_release_check_wraps_required_gates() -> None:
         "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
         in gate_workflow
     )
+    lint_workflow = (REPO_ROOT / ".github" / "workflows" / "ts.lint.yml").read_text()
     typescript_workflow = (
         REPO_ROOT / ".github" / "workflows" / "ts.test.yml"
     ).read_text()
     assert "run: bun run test:coverage" in typescript_workflow
     assert 'node-version: "24"' in typescript_workflow
+
+    python_setup = (
+        "- uses: ./.github/actions/setup-python-uv\n"
+        "        with:\n"
+        "          working-directory: ."
+    )
+    assert lint_workflow.count(python_setup) == 1
+    assert lint_workflow.index(python_setup) < lint_workflow.index(
+        "./.github/actions/setup-bun-cache"
+    )
+    for job_name in ("kaji-ts", "kaji-ts-install-smoke"):
+        job_match = re.search(
+            rf"(?ms)^  {re.escape(job_name)}:\n(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            typescript_workflow,
+        )
+        assert job_match is not None
+        job = job_match.group(1)
+        assert job.count(python_setup) == 1
+        assert job.index(python_setup) < job.index("./.github/actions/setup-bun-cache")
 
     parity = script.index('"Cross-SDK behavioral parity"')
     assert parity < script.index("run_gates(common_gates(), environment)")

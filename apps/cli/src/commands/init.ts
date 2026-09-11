@@ -9,16 +9,15 @@ import {
   typescriptEnvTemplate,
   typescriptPackageTemplate,
 } from "../templates/typescript-agent.js";
-import {
-  pythonAgentTemplate,
-  pythonEnvTemplate,
-  pythonRequirementsTemplate,
-} from "../templates/python-agent.js";
 import { writeScaffoldFiles, type ScaffoldFile } from "../utils/scaffold.js";
 
 type Lang = "ts" | "python";
 
 const LANGS = ["ts", "python"] as const;
+const PYTHON_INIT_UNAVAILABLE_MESSAGE =
+  "Python initialization is unavailable because Kaji Python is not published to PyPI. " +
+  "Use the documented source-checkout route instead: " +
+  "https://github.com/enkyuan/alloy/blob/main/kaji/packages/py/README.md#install";
 
 function isLang(value: string | undefined): value is Lang {
   return LANGS.includes(value as Lang);
@@ -96,22 +95,18 @@ export const init = new Command("init")
         printArgError("--lang is required in --yes mode.");
         return;
       }
-      const cwd = resolve(opts.cwd);
-      let files: ScaffoldFile[];
-      if (lang === "ts") {
-        files = [
-          { name: "package.json", contents: typescriptPackageTemplate(provider) },
-          { name: "tsconfig.json", contents: typescriptConfigTemplate() },
-          { name: "agent.ts", contents: typescriptAgentTemplate(provider) },
-          { name: ".env.example", contents: typescriptEnvTemplate(provider) },
-        ];
-      } else {
-        files = [
-          { name: "agent.py", contents: pythonAgentTemplate(provider) },
-          { name: ".env.example", contents: pythonEnvTemplate(provider) },
-          { name: "requirements.txt", contents: pythonRequirementsTemplate(provider) },
-        ];
+      if (lang === "python") {
+        console.error(PYTHON_INIT_UNAVAILABLE_MESSAGE);
+        process.exitCode = 1;
+        return;
       }
+      const cwd = resolve(opts.cwd);
+      const files: ScaffoldFile[] = [
+        { name: "package.json", contents: typescriptPackageTemplate(provider) },
+        { name: "tsconfig.json", contents: typescriptConfigTemplate() },
+        { name: "agent.ts", contents: typescriptAgentTemplate(provider) },
+        { name: ".env.example", contents: typescriptEnvTemplate(provider) },
+      ];
       let written: string[];
       try {
         written = writeScaffoldFiles(cwd, files, opts.force);
@@ -127,13 +122,7 @@ export const init = new Command("init")
       }
       if (opts.yes) {
         for (const f of written) console.log(f);
-        if (lang === "ts") {
-          console.log(`Next: cd ${cwd} && bun install && bun start`);
-        } else {
-          console.log(
-            `Next: cd ${cwd} && python -m pip install -r requirements.txt && python agent.py`,
-          );
-        }
+        console.log(`Next: cd ${cwd} && bun install && bun start`);
         return;
       }
       p.outro(`${chalk.green("✓")} Created ${written.join(", ")} (${lang}, ${provider})`);

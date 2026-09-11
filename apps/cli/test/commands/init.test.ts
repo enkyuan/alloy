@@ -1,7 +1,14 @@
-import { existsSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { init } from "../../src/commands/init.js";
 
 describe("init command", () => {
@@ -74,31 +81,36 @@ describe("init command", () => {
     expect(pkg.dependencies.openai).toBeUndefined();
   });
 
-  it("python non-interactive scaffolds agent.py and .env.example", async () => {
+  it("fails closed for Python without writing a scaffold or PyPI instruction", async () => {
+    const previousExitCode = process.exitCode;
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    process.exitCode = undefined;
     const dir = mkdtempSync(join(tmpdir(), "kaji-init-"));
-    await init.parseAsync([
-      "node",
-      "kaji",
-      "--cwd",
-      dir,
-      "--lang",
-      "python",
-      "--provider",
-      "openai",
-      "--yes",
-    ]);
-    expect(existsSync(join(dir, "agent.py"))).toBe(true);
-    expect(existsSync(join(dir, ".env.example"))).toBe(true);
-    expect(existsSync(join(dir, "requirements.txt"))).toBe(true);
-    const agent = readFileSync(join(dir, "agent.py"), "utf-8");
-    expect(agent).toMatch(/runtime\.turn\("Say hello\."\)/);
-    expect(agent).toContain('kaji.get_provider("openai")');
-    expect(agent).toContain('print(f"turn_id={result.turn_id}")');
-    expect(agent).toContain('print(f"final_sequence={final_sequence}")');
-    expect(agent).not.toMatch(/InMemoryEventBus|InMemoryEventStore|store\.append|run_turn/);
-    const requirements = readFileSync(join(dir, "requirements.txt"), "utf-8");
-    expect(requirements).toContain("kaji[openai]>=0.2.0b1,<0.3");
-    expect(readFileSync(join(dir, ".env.example"), "utf-8")).toContain("OPENAI_API_KEY=\n");
+
+    try {
+      await init.parseAsync([
+        "node",
+        "kaji",
+        "--cwd",
+        dir,
+        "--lang",
+        "python",
+        "--provider",
+        "openai",
+        "--yes",
+      ]);
+
+      const message = error.mock.calls.flat().join(" ");
+      expect(process.exitCode).toBe(1);
+      expect(readdirSync(dir)).toEqual([]);
+      expect(message).toContain("not published to PyPI");
+      expect(message).toContain("kaji/packages/py/README.md#install");
+      expect(message).not.toContain("pip install");
+      expect(message).not.toContain("requirements.txt");
+    } finally {
+      error.mockRestore();
+      process.exitCode = previousExitCode;
+    }
   });
 
   it("refuses to overwrite without --force", async () => {

@@ -28,25 +28,20 @@ bun install
 bun start
 ```
 
-Python uses the same output contract:
+Python initialization is unavailable because Kaji Python is not published to
+PyPI. Use the documented source-checkout route instead:
+[`kaji/packages/py/README.md#install`](../../kaji/packages/py/README.md#install).
 
-```bash
-bun run --cwd apps/cli dev -- init --cwd "$PWD/my-agent" --lang python --yes
-cd ./my-agent
-python -m pip install -r requirements.txt
-python agent.py
-```
-
-Both scaffolds print deterministic `text`, `turn_id`, and `final_sequence`
-fields. Select `--provider openai` or `--provider anthropic` for a live model
-and copy `.env.example` to `.env` before setting the generated credential. The
-TypeScript scaffold's `start` command loads it with its pinned dotenvx
-dependency. The beta scaffold intentionally supports `mock`, `openai`, and
-`anthropic`; other SDK provider adapters remain outside this first-run contract.
+The TypeScript scaffold prints deterministic `text`, `turn_id`, and
+`final_sequence` fields. Select `--provider openai` or `--provider anthropic`
+for a live model and copy `.env.example` to `.env` before setting the generated
+credential. Its `start` command loads it with its pinned dotenvx dependency.
+The beta scaffold intentionally supports `mock`, `openai`, and `anthropic`;
+other SDK provider adapters remain outside this first-run contract.
 
 ## Commands
 
-- `kaji init` -- scaffold a TypeScript or Python agent.
+- `kaji init` -- scaffold a TypeScript agent; Python initialization is unavailable until PyPI publication.
 - `kaji gen --spec <path> --out <dir>` -- generate typed tool stubs from an OpenAPI JSON or YAML document.
 - `kaji doctor` -- verify runtimes, SDK packages, required peers, and selected-provider credentials.
 - `kaji info` -- report the local environment and installed Kaji packages.

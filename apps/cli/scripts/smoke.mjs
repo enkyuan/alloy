@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,17 +31,18 @@ if (!tsAgent.includes("MockProvider") || tsPackage.dependencies.zod !== ">=4.3 <
 }
 execFileSync("node", ["--check", join(tsOut, "agent.ts")], { stdio: "ignore" });
 
-execFileSync("node", [bin, "init", "--cwd", pyOut, "--lang", "python", "--yes"], {
+mkdirSync(pyOut);
+const pythonInit = spawnSync("node", [bin, "init", "--cwd", pyOut, "--lang", "python", "--yes"], {
   encoding: "utf-8",
 });
-
-const pyAgent = readFileSync(join(pyOut, "agent.py"), "utf-8");
-const pyRequirements = readFileSync(join(pyOut, "requirements.txt"), "utf-8");
-if (!pyAgent.includes('turn("Say hello.")') || !pyAgent.includes("final_sequence=")) {
-  throw new Error("generated Python scaffold does not use the turn() API");
-}
-if (!pyAgent.includes('get_provider("mock")') || !pyRequirements.includes(">=0.3.0a1,<0.3")) {
-  throw new Error("generated Python scaffold is not bound to the beta no-key contract");
+if (
+  pythonInit.status !== 1 ||
+  !pythonInit.stderr.includes("not published to PyPI") ||
+  pythonInit.stderr.includes("pip install") ||
+  pythonInit.stderr.includes("requirements.txt") ||
+  readdirSync(pyOut).length !== 0
+) {
+  throw new Error("Python init must fail closed without writing a PyPI scaffold");
 }
 
 console.log(`smoke ok: ${workspace}`);

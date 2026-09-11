@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { PYTHON_SDK_RANGE } from "../src/templates/python-agent.js";
 import {
   TYPESCRIPT_SDK_PACKAGE,
   TYPESCRIPT_PROVIDER_RANGES,
@@ -17,10 +16,6 @@ interface PackageMetadata {
 const typescriptPackage = JSON.parse(
   readFileSync(new URL("../../../kaji/packages/ts/package.json", import.meta.url), "utf8"),
 ) as PackageMetadata;
-const pythonProject = readFileSync(
-  new URL("../../../kaji/packages/py/pyproject.toml", import.meta.url),
-  "utf8",
-);
 const cliDocs = readFileSync(new URL("../../docs/content/cli.mdx", import.meta.url), "utf8");
 
 describe("SDK scaffold contract", () => {
@@ -35,12 +30,5 @@ describe("SDK scaffold contract", () => {
     expect(TYPESCRIPT_PROVIDER_RANGES.anthropic["@anthropic-ai/sdk"]).toBe(
       typescriptPackage.peerDependencies["@anthropic-ai/sdk"],
     );
-  });
-
-  it("tracks the Python beta version", () => {
-    const version = pythonProject.match(/^version = "([^"]+)"$/m)?.[1];
-
-    expect(version).toBeDefined();
-    expect(PYTHON_SDK_RANGE).toContain(`>=${version}`);
   });
 });

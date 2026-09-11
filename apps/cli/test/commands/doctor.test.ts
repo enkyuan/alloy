@@ -90,7 +90,10 @@ describe("doctor.runChecks", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, "agent.py"), "print('hello')\n");
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
+    writeFileSync(
+      join(dir, "requirements.txt"),
+      "kaji[openai] @ file:///tmp/kaji-0.2.0b1-py3-none-any.whl\n",
+    );
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },
@@ -107,7 +110,10 @@ describe("doctor.runChecks", () => {
   it("auto-detects package.json as a TypeScript signal in mixed scaffolds", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
+    writeFileSync(
+      join(dir, "requirements.txt"),
+      "kaji[openai] @ file:///tmp/kaji-0.2.0b1-py3-none-any.whl\n",
+    );
     writeFileSync(
       join(dir, "package.json"),
       JSON.stringify({
@@ -128,7 +134,10 @@ describe("doctor.runChecks", () => {
   it("flags old Python versions", () => {
     const dir = mkdtempSync(join(tmpdir(), "kaji-doc-"));
     writeFileSync(join(dir, ".env.example"), "KAJI_MODEL_PROVIDER=openai\n");
-    writeFileSync(join(dir, "requirements.txt"), "kaji[openai]>=0.3.0a1,<0.3\n");
+    writeFileSync(
+      join(dir, "requirements.txt"),
+      "kaji[openai] @ file:///tmp/kaji-0.2.0b1-py3-none-any.whl\n",
+    );
     const out = runChecks({
       cwd: dir,
       env: { OPENAI_API_KEY: "sk" },
