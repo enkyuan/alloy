@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -203,13 +204,12 @@ def test_public_site_states_the_openai_only_beta_provider_boundary() -> None:
         feature_tiers["packageSubpaths"]["typescript"]["./anthropic"]["tier"]
         == "experimental"
     )
-    assert re.search(r"\|\s*`openai`\s*.*\|\s*Stable\s*\|", providers)
+    assert re.search(r"\|\s*`openai`\s*.*\|\s*Recommended\s*\|", providers)
     for provider in ("anthropic", "kimi", "gemini"):
         assert f"| `{provider}`" in providers
     assert providers.count("| WIP") >= 3
     for source in (install, getting_started, troubleshooting):
         assert "WIP" in source
-        assert "`experimental`" in source
     assert "stable live-provider" in " ".join(overview.split())
     assert 'pip install "kaji==0.2.0b1"' not in overview
     assert "OpenAI and Anthropic are the beta-core model adapters" not in combined
@@ -780,7 +780,7 @@ def test_package_readmes_have_permanent_status_neutral_canonical_links() -> None
     blocks: list[str] = []
     for path in (
         REPO_ROOT / "kaji" / "README.md",
-        REPO_ROOT / "kaji" / "packages" / "ts" / "README.md",
+        REPO_ROOT / "kaji" / "packages" / "py" / "README.md",
     ):
         text = path.read_text()
         marker = re.search(
@@ -801,13 +801,10 @@ def test_package_readmes_have_permanent_status_neutral_canonical_links() -> None
         REPO_ROOT / "kaji" / "packages" / "ts" / "README.md"
     ).read_text()
     normalized_typescript_readme = " ".join(typescript_readme.split())
-    assert (
-        "package metadata declares Node `22.x || 24.x`" in normalized_typescript_readme
-    )
+    assert "canonical-status-links:start" not in typescript_readme
+    assert "Node 22.x and 24.x" in normalized_typescript_readme
+    assert "[install guide]" in normalized_typescript_readme
     assert "Node 22+" not in normalized_typescript_readme
-    assert "Node 22 on `ubuntu-22.04`" in normalized_typescript_readme
-    assert "Node 24 on `ubuntu-24.04`" in normalized_typescript_readme
-    assert "TypeScript 5.7.3 and 6.0.3" in normalized_typescript_readme
     assert "current TypeScript 6" not in normalized_typescript_readme
 
 
@@ -1031,7 +1028,7 @@ def test_typescript_onboarding_docs_make_only_the_protected_runner_claims() -> N
     ):
         assert explicit_limit in normalized_guide
 
-    for scoped_document in (testing, typescript_readme, install):
+    for scoped_document in (testing, install):
         normalized = " ".join(scoped_document.split())
         assert "GitHub-hosted" in normalized
         assert "Linux/x64" in normalized
@@ -1044,15 +1041,22 @@ def test_typescript_onboarding_docs_make_only_the_protected_runner_claims() -> N
         assert "Windows" in normalized
         assert "fully offline" in normalized
 
-    assert "TypeScript 5.7.3 and 6.0.3" in typescript_readme
-    assert "5.7.3 and 6.0.3 in both cells" in install
-    for protected_document in (
-        production,
-        troubleshooting,
-        python_readme,
-        typescript_readme,
-        matrix,
+    normalized_typescript_readme = " ".join(typescript_readme.split())
+    assert "Node 22.x and 24.x" in normalized_typescript_readme
+    assert "[install guide]" in normalized_typescript_readme
+    for package_readme_claim in (
+        "GitHub-hosted",
+        "`ubuntu-22.04`",
+        "`ubuntu-24.04`",
+        "kaji-onboarding",
+        "kaji-release",
+        "kaji-publish",
     ):
+        assert package_readme_claim not in normalized_typescript_readme
+
+    assert "TypeScript 5.7.3 and 6.0.3" in testing
+    assert "5.7.3 and 6.0.3 in both cells" in install
+    for protected_document in (production, troubleshooting, python_readme):
         normalized = " ".join(protected_document.split())
         assert "kaji-onboarding" in normalized
         assert "`kaji-release`" in normalized
@@ -1060,11 +1064,29 @@ def test_typescript_onboarding_docs_make_only_the_protected_runner_claims() -> N
         assert "rehearsal and publish workflows" in normalized
 
 
+def test_release_matrix_uses_canonical_github_environment_names() -> None:
+    matrix = (REPO_ROOT / "kaji" / "RELEASE_MATRIX.md").read_text()
+    gate_summary = matrix[
+        matrix.index("Their GitHub environments enforce the") : matrix.index(
+            "The pinned ast-grep step"
+        )
+    ]
+
+    for environment in ("`Onboarding`", "`Release`", "`Publish`"):
+        assert environment in gate_summary
+    for legacy_environment in (
+        "kaji-onboarding",
+        "kaji-release",
+        "kaji-publish",
+    ):
+        assert legacy_environment not in matrix
+
+
 def test_typescript_readme_quick_start_uses_an_esm_filename() -> None:
     readme = (REPO_ROOT / "kaji" / "packages" / "ts" / "README.md").read_text()
     normalized = " ".join(readme.split())
 
-    assert "Save this example as `quickstart.mts`" in normalized
+    assert "Save this as `quickstart.mts`" in normalized
     assert "quickstart.ts`" not in readme
 
 
@@ -1084,7 +1106,12 @@ def test_release_docs_enforce_the_local_alpha_registry_boundary() -> None:
         )
     }
     combined = "\n".join(documents.values())
-    assert "kaji==0.2.0b1" in combined
+    python_version = tomllib.loads(
+        (REPO_ROOT / "kaji" / "packages" / "py" / "pyproject.toml").read_text()
+    )["project"]["version"]
+    python_readme = documents[REPO_ROOT / "kaji" / "packages" / "py" / "README.md"]
+    assert python_version in python_readme
+    assert re.search(r"\bkaji==", combined) is None
     assert "irogane-kaji-0.3.0-alpha.1.tgz" in combined
 
     unpinned_typescript = re.compile(r"(?:npm install|bun add)\s+kaji(?:\s|$)")

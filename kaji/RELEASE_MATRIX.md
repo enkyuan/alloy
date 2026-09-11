@@ -112,11 +112,11 @@ The checker verifies the exact local alpha artifacts and fails clearly when
 required local tooling such as `bun` or `uv` is missing. This is a
 non-publishing, non-promotable local rehearsal, not provider-readiness
 evidence. The protected rehearsal and
-publish workflows are authoritative. `kaji-onboarding` protects the
-deterministic TypeScript onboarding aggregate, `kaji-release` protects the keyed
-OpenAI tool loop in both SDKs, and `kaji-publish` protects publisher
-identity and the sole npm write. A missing OpenAI credential blocks the
-release.
+publish workflows are authoritative. Their GitHub environments enforce the
+final gates: `Onboarding` protects the deterministic TypeScript onboarding
+aggregate, `Release` protects the keyed OpenAI tool loop in both SDKs, and
+`Publish` protects publisher identity and the sole npm write. A missing OpenAI
+credential blocks the release.
 
 The pinned ast-grep step is mandatory. It guards the Python SDK/service
 boundary, core package dependency direction, legacy tool-model imports,
@@ -136,7 +136,7 @@ TypeScript optional provider imports, and cancellation error shape.
 | TypeScript onboarding evidence | exact current-run tarball and raw `kaji-artifacts`, `kaji-node-compat-22`, and `kaji-node-compat-24` REST ZIPs, independently recomputed by calibration and the protected aggregate | Yes; npm and Bun install, scaffold, no-key, Echo lifecycle, cold, and warm phases on GitHub-hosted Linux/x64 Node 22 `ubuntu-22.04` and Node 24 `ubuntu-24.04`; no human, macOS/arm64, Windows, or fully offline onboarding claim | Pending protected run |
 | Paired A/B benchmark | `kaji.performance.yml`: immutable reference artifacts and the exact candidate on three numbered GitHub-hosted `macos-15` matrix replicas in one run attempt; five adjacent matched pairs after two warmups per case, with retained raw runner/image receipts; diagnostic runner names may repeat | Yes; timing must pass unanimously at ≤1.20 across all three replicas, mixed timing is inconclusive, and any per-pair RSS ratio >1.20 is a hard failure | Pending protected run |
 | Thirty-minute soak | `run_beta_soak.py --minutes 30 --protected` on the exact candidate, with retained `macos-15` image provenance | Yes; independent of the paired benchmark | Pending protected run |
-| Keyed OpenAI proof | `live_provider_proof.py` in `kaji-release` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
+| Keyed OpenAI proof | `live_provider_proof.py` in GitHub environment `Release` | Yes; OpenAI in Python and TypeScript, missing key blocks | Pending protected run |
 | Exact-artifact GitHub proof | `live_github_proof.py` against the retained Python 3.11 and Node 22 compatibility receipts | Required before GitHub can move from experimental to beta; both installed artifacts must read, make one exactly approved comment, verify it, and clean it up | Pending protected private-repository run |
 | Immutable signed tag | `kaji.publish.yml` tag verification | Yes; annotated, signed, approved tagger, direct commit | Pending real tag |
 | SBOM, provenance, attestation | publish workflow supply-chain job | Yes | Pending real tag |
