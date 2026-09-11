@@ -2,7 +2,8 @@ name: test / go
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "ryo/api/**"
       - "ryo/consumer/**"

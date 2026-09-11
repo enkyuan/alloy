@@ -2,7 +2,8 @@ name: test / docs
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "apps/docs/**"
       - "apps/cli/**"

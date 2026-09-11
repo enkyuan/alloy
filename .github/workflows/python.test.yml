@@ -2,7 +2,8 @@ name: test / python
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "kaji/**"
       - "kaji/packages/serve/**"

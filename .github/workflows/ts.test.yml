@@ -2,7 +2,8 @@ name: test / ts
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "kaji/packages/ts/**"
       - "packages/shared/**"

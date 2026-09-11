@@ -262,7 +262,7 @@ def test_workflow_check_prepares_frozen_dependencies(
                 "kaji/packages/ts",
                 "test",
                 "--",
-                "tests/release-security.test.ts",
+                "tests/contracts/release-security.test.ts",
             ],
         ),
     ]
@@ -483,7 +483,11 @@ def test_beta_release_check_wraps_required_gates() -> None:
         "          working-directory: kaji/packages/ts"
     ) in python_workflow
     gate_workflow = (REPO_ROOT / ".github" / "workflows" / "kaji.gate.yml").read_text()
-    assert "  pull_request:\n  workflow_dispatch:\n" in gate_workflow
+    assert "  push:\n  pull_request:\n  workflow_dispatch:\n" in gate_workflow
+    assert (
+        "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+        in gate_workflow
+    )
     typescript_workflow = (
         REPO_ROOT / ".github" / "workflows" / "ts.test.yml"
     ).read_text()
@@ -493,6 +497,39 @@ def test_beta_release_check_wraps_required_gates() -> None:
     parity = script.index('"Cross-SDK behavioral parity"')
     assert parity < script.index("run_gates(common_gates(), environment)")
     assert parity < script.index('"Python artifact smoke"')
+
+
+def test_ci_workflows_run_path_filtered_pushes_on_every_branch() -> None:
+    workflow_paths = (
+        "ast-grep.test.yml",
+        "cli.test.yml",
+        "docs.format.yml",
+        "docs.lint.yml",
+        "docs.test.yml",
+        "go.format.yml",
+        "go.lint.yml",
+        "go.test.yml",
+        "python.format.yml",
+        "python.lint.yml",
+        "python.test.yml",
+        "ts.format.yml",
+        "ts.lint.yml",
+        "ts.test.yml",
+        "web.test.yml",
+    )
+
+    for workflow_path in workflow_paths:
+        workflow = (REPO_ROOT / ".github" / "workflows" / workflow_path).read_text()
+        assert '  push:\n    branches:\n      - "**"\n    paths:' in workflow
+        assert "    branches: [main]" not in workflow
+        assert "  pull_request:\n    paths:" in workflow
+
+    gate = (REPO_ROOT / ".github" / "workflows" / "kaji.gate.yml").read_text()
+    assert "  push:\n  pull_request:\n  workflow_dispatch:" in gate
+    assert (
+        "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+        in gate
+    )
 
 
 def test_typescript_build_precedes_every_artifact_consumer() -> None:

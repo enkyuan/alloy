@@ -2,7 +2,8 @@ name: format / docs
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "apps/docs/**"
       - "bun.lock"

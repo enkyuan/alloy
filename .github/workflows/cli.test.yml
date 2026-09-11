@@ -2,7 +2,8 @@ name: test / cli
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "apps/cli/**"
       - "packages/shared/**"

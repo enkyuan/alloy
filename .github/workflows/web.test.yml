@@ -2,7 +2,8 @@ name: test / web
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "**"
     paths:
       - "apps/web/**"
       - "packages/shared/**"

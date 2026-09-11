@@ -64,7 +64,7 @@ def run_workflow_checks(environment: dict[str, str], *, include_gate: bool) -> N
             "kaji/packages/ts",
             "test",
             "--",
-            "tests/release-security.test.ts",
+            "tests/contracts/release-security.test.ts",
         ],
         environment,
         LOCAL_ORCHESTRATOR_BUDGET,
