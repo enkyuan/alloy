@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, LiteralString, cast
 
 import psycopg
 from psycopg import sql
@@ -34,7 +34,7 @@ async def postgres_recovery_schema() -> AsyncIterator[None]:
             "DROP TABLE IF EXISTS recovery_fixture_effects, kaji_event_sequences, "
             "kaji_events, kaji_tool_idempotency"
         )
-        await connection.execute(sql.SQL(_SCHEMA.read_text()))
+        await connection.execute(sql.SQL(cast(LiteralString, _SCHEMA.read_text())))
         await connection.execute(
             """
             CREATE TABLE recovery_fixture_effects (

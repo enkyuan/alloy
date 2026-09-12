@@ -26,7 +26,7 @@ PYTHON_LEGACY_EVENT_DEFINITIONS = {
     "taskFailed",
     "taskCancelled",
 }
-PYTHON_LEGACY_EXPORTS = {"TaskHandle", "TaskRuntime", "TaskSnapshot", "TaskState"}
+PYTHON_LEGACY_EXPORTS = {"TaskHandle", "TaskRuntime", "TaskSnapshot", "TaskState", "TaskCompleted"}
 TYPESCRIPT_PROJECTED_CONTRACTS = {
     "events/v1/cases/valid.json",
     "events/v1/schema/new.json",

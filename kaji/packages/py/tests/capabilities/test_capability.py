@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import kaji
+from kaji.capabilities.result import CapabilityResult
 from kaji.core.determinism import SystemClock
 from kaji.events.store import InMemoryEventStore
 from kaji.events.types import EventType
@@ -108,7 +109,9 @@ async def test_capability_result_is_serialized_for_existing_tool_execution() -> 
     registry = ToolRegistry()
     create_receipt.register(registry)
 
-    assert await registry.execute(ToolInvocation("receipts.create", {}, context())) == {
+    result = await registry.execute(ToolInvocation("receipts.create", {}, context()))
+    assert isinstance(result, CapabilityResult)
+    assert result.to_tool_result() == {
         "value": {"ok": True},
         "artifacts": [
             {

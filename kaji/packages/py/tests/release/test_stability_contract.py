@@ -336,7 +336,7 @@ def test_beta_contract_sync_runs_directly_without_installed_kaji(
     canonical = {
         path.relative_to(source).as_posix(): path.read_bytes()
         for path in source.rglob("*")
-        if path.is_file() and path.suffix in {".json", ".md"}
+        if path.is_file() and path.suffix in {".json", ".md", ".sql"}
     }
     python_copies = {
         path.relative_to(python_target).as_posix(): path.read_bytes()

@@ -8,6 +8,16 @@ npm registry availability. OpenAI is the recommended live-provider path;
 Anthropic, Gemini, Kimi, and OpenRouter are opt-in WIP adapters. Use
 `MockProvider` for deterministic local and test runs.
 
+### Provider parity
+
+| Provider category | Python | TypeScript |
+| --- | --- | --- |
+| OpenAI | Yes (stable) | Yes (stable) |
+| Anthropic | Yes (experimental/WIP) | Yes (experimental/WIP) |
+| Kimi / Gemini providers | Yes (experimental/WIP) | Yes (experimental/WIP, OpenAI-compatible factories) |
+| OpenRouter | No | Yes (experimental/WIP) |
+| MockProvider | Yes (stable) | Yes (stable) |
+
 ## Install
 
 Build or obtain the candidate tarball, then install it with the required Zod

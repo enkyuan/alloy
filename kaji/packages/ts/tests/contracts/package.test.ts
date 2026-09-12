@@ -61,7 +61,13 @@ const PYTHON_LEGACY_EVENT_DEFINITIONS = new Set([
   "taskFailed",
   "taskCancelled",
 ]);
-const PYTHON_LEGACY_EXPORTS = new Set(["TaskHandle", "TaskRuntime", "TaskSnapshot", "TaskState"]);
+const PYTHON_LEGACY_EXPORTS = new Set([
+  "TaskHandle",
+  "TaskRuntime",
+  "TaskSnapshot",
+  "TaskState",
+  "TaskCompleted",
+]);
 const SYNC_CHILD_TIMEOUT_MS = 20_000;
 const SYNC_CHILD_MAX_BUFFER = 16 * 1024 * 1024;
 
