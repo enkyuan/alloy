@@ -337,8 +337,11 @@
         "InvalidDurableValueError",
         "JSONSchema",
         "JournalStage",
+        "Kaji",
+        "KajiBackend",
         "KajiEvent",
         "KajiEventInput",
+        "KajiExecuteArgs",
         "ListToolSpecsOptions",
         "LoadedIntegrationManifest",
         "METRIC_NAMES",
@@ -466,6 +469,7 @@
         "functionTool",
         "generateText",
         "getProvider",
+        "kajiExecute",
         "listToolSpecs",
         "loadManifest",
         "loadRegistryIndex",
@@ -512,81 +516,105 @@
   "stable": [
     {
       "id": "agent-builder",
-      "surface": "Agent builder"
+      "surface": "Agent builder",
+      "role": "compatibility"
     },
     {
       "id": "runtime-turn-loop",
-      "surface": "Runtime turn loop"
+      "surface": "Runtime turn loop",
+      "role": "compatibility"
     },
     {
       "id": "cancellation",
-      "surface": "Cancellation"
+      "surface": "Cancellation",
+      "role": "core"
     },
     {
       "id": "sessions",
-      "surface": "Sessions"
+      "surface": "Sessions",
+      "role": "core"
     },
     {
       "id": "in-memory-event-store-journal",
-      "surface": "In-memory event store/journal"
+      "surface": "In-memory event store/journal",
+      "role": "core"
     },
     {
       "id": "event-replay",
-      "surface": "Event replay"
+      "surface": "Event replay",
+      "role": "core"
     },
     {
       "id": "tool-registry-planner-policy",
-      "surface": "Tool registry/planner/policy"
+      "surface": "Tool registry/planner/policy",
+      "role": "core"
     },
     {
       "id": "openai-adapter",
-      "surface": "OpenAI adapter"
+      "surface": "OpenAI adapter",
+      "role": "core"
     },
     {
       "id": "echo-integration",
-      "surface": "Echo integration"
+      "surface": "Echo integration",
+      "role": "core"
+    },
+    {
+      "id": "kaji-execute",
+      "surface": "Kaji.execute one-shot capability entry point",
+      "role": "core"
     }
   ],
   "experimental": [
     {
       "id": "python-redis-event-history",
-      "surface": "Python-only Redis event/history backends"
+      "surface": "Python-only Redis event/history backends",
+      "role": "core"
     },
     {
       "id": "voice-tts",
-      "surface": "Voice/TTS"
+      "surface": "Voice/TTS",
+      "role": "core"
     },
     {
       "id": "rag-retrieval",
-      "surface": "RAG/retrieval"
+      "surface": "RAG/retrieval",
+      "role": "core"
     },
     {
       "id": "native-gemini-kimi",
-      "surface": "Native Gemini/Kimi"
+      "surface": "Native Gemini/Kimi",
+      "role": "core"
     },
     {
       "id": "anthropic-adapter",
-      "surface": "Anthropic adapter"
+      "surface": "Anthropic adapter",
+      "role": "core"
     },
     {
       "id": "retriever-selection",
-      "surface": "Retriever selection"
+      "surface": "Retriever selection",
+      "role": "core"
     },
     {
       "id": "distributed-session-serialization",
-      "surface": "Distributed same-session serialization"
+      "surface": "Distributed same-session serialization",
+      "role": "core"
     },
     {
       "id": "exactly-once-external-side-effects",
-      "surface": "Exactly-once external side effects"
+      "surface": "Exactly-once external side effects",
+      "role": "core"
     },
     {
       "id": "unbounded-cross-process-replay",
-      "surface": "Unbounded or cross-process replay"
+      "surface": "Unbounded or cross-process replay",
+      "role": "core"
     },
     {
       "id": "durable-snapshotting",
-      "surface": "Durable snapshotting"
+      "surface": "Durable snapshotting",
+      "role": "core"
     }
   ]
 }

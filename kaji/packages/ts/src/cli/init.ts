@@ -11,10 +11,16 @@ import type { RunOptions } from "@/cli/index";
 const PROVIDERS = ["mock", "openai", "anthropic"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
+interface InitTemplate {
+  agent: undefined;
+  capability: undefined;
+}
+
 interface Args {
   out: string;
   provider: Provider;
   force: boolean;
+  template: keyof InitTemplate;
 }
 
 interface PackageMetadata {
@@ -85,10 +91,14 @@ function throwIfCancelled(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new Error("scaffold worker cancelled");
 }
 
+const TEMPLATES = ["agent", "capability"] as const;
+type InitTemplateName = (typeof TEMPLATES)[number];
+
 function parseArgs(rest: string[]): Args {
   let positionalPath: string | undefined;
   let provider: Provider = "mock";
   let force = false;
+  let template: InitTemplateName = "agent";
 
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index]!;
@@ -101,6 +111,16 @@ function parseArgs(rest: string[]): Args {
         throw new CliArgError("--provider must be mock, openai, or anthropic");
       }
       provider = next as Provider;
+      index++;
+    } else if (arg === "--template") {
+      const next = rest[index + 1];
+      if (next === undefined || next.startsWith("--")) {
+        throw new CliArgError("--template requires a value");
+      }
+      if (!TEMPLATES.includes(next as InitTemplateName)) {
+        throw new CliArgError("--template must be agent or capability");
+      }
+      template = next as InitTemplateName;
       index++;
     } else if (arg === "--force") {
       force = true;
@@ -119,6 +139,7 @@ function parseArgs(rest: string[]): Args {
     out: resolve(positionalPath ?? "."),
     provider,
     force,
+    template,
   };
 }
 
@@ -167,7 +188,36 @@ console.log(\`final_sequence=\${finalSequence}\`);
 `;
 }
 
-function scaffoldFiles(provider: Provider): Record<string, string> {
+function capabilitySource(): string {
+  return `import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
+
+// A no-op capability that echoes its input — replace the execute hook
+// with your own logic and register real side effects behind a policy
+// gate (see ToolPolicy in @irogane/kaji).
+const echo = capability({
+  name: "echo",
+  description: "Echo the provided message back as a capability result.",
+  input: z.object({
+    message: z.string(),
+  }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
+});
+
+// One-shot entry: no agent loop, no turn context — just invoke the
+// capability through the stable Kaji.execute surface.
+const result = await Kaji.execute({
+  capability: echo,
+  input: { message: "Hello, Kaji." },
+  principal: "local-user",
+});
+
+console.log(JSON.stringify(result.value));
+`;
+}
+
+function scaffoldFiles(provider: Provider, template: InitTemplateName): Record<string, string> {
   const metadata = installedMetadata();
   const zodRange = metadata.peerDependencies.zod;
   if (zodRange === undefined) throw new Error("installed kaji has no Zod peer range");
@@ -202,7 +252,10 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
         private: true,
         type: "module",
         scripts: {
-          start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
+          start:
+            template === "capability"
+              ? "dotenvx run --ignore=MISSING_ENV_FILE -- tsx capability.ts"
+              : "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
           typecheck: "tsc --noEmit",
         },
         dependencies,
@@ -233,7 +286,9 @@ function scaffoldFiles(provider: Provider): Record<string, string> {
       null,
       2,
     ),
-    "agent.ts": agentSource(provider),
+    ...(template === "capability"
+      ? { "capability.ts": capabilitySource() }
+      : { "agent.ts": agentSource(provider) }),
     ".env.example":
       provider === "mock"
         ? "# No provider credentials required.\n"
@@ -797,7 +852,7 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
 
   let files: Record<string, string>;
   try {
-    files = scaffoldFiles(args.provider);
+    files = scaffoldFiles(args.provider, args.template);
   } catch {
     err("kaji init could not read installed package metadata");
     return 1;

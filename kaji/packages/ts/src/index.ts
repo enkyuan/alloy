@@ -290,6 +290,11 @@ export { AutoApprovalHandler, type AutoApprovalPolicy } from "@/runtime/approval
 
 // Backends
 export { InMemoryBackend } from "@/backends/in-memory";
+export { type KajiBackend } from "@/backends/base"; // Slice 0 — role/core seam for Kaji.execute wiring
+
+// Kaji.execute surface (Slice 1)
+export { Kaji, kajiExecute } from "@/kaji";
+export type { KajiExecuteArgs } from "@/kaji";
 
 // Observability
 export {

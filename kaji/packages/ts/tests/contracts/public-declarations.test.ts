@@ -188,6 +188,29 @@ describe("public declarations", () => {
     expect(actual).toBe(fragment);
   });
 
+  it("classifies features by a role axis (core | compatibility)", () => {
+    const contract = JSON.parse(
+      readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
+    );
+    const byId: Map<string, { role?: unknown }> = new Map();
+    for (const tier of ["stable", "experimental"] as const) {
+      const entries = contract[tier] as Array<{ id: string; role?: unknown }>;
+      for (const feature of entries) {
+        byId.set(feature.id, feature);
+      }
+    }
+    // Role is a real axis: these three are locked by the Q4 product decision.
+    expect(byId.get("kaji-execute")?.role).toBe("core");
+    expect(byId.get("agent-builder")?.role).toBe("compatibility");
+    expect(byId.get("runtime-turn-loop")?.role).toBe("compatibility");
+    // Where a role is declared, it must be one of the two valid values.
+    for (const feature of byId.values()) {
+      if (feature.role !== undefined) {
+        expect(["core", "compatibility"]).toContain(feature.role);
+      }
+    }
+  });
+
   it("keeps legacy Task symbols out of TypeScript source and root declarations", () => {
     expect(existsSync(resolve(root, "src/tasks"))).toBe(false);
 
@@ -289,6 +312,28 @@ describe("public declarations", () => {
   it("preserves RetryOptions on the OpenAI provider subpath", () => {
     const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai/index.ts"]);
     expect(openai).toContain("RetryOptions");
+  });
+
+  it("classifies features by role", () => {
+    const contract = JSON.parse(
+      readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
+    ) as {
+      stable: Array<{ id: string; surface: string; role?: string }>;
+      experimental: Array<{ id: string; surface: string; role?: string }>;
+    };
+
+    for (const tier of ["stable", "experimental"] as const) {
+      for (const feature of contract[tier]) {
+        expect(feature.role, `${tier}/${feature.id} missing role`).toMatch(
+          /^(core|compatibility)$/,
+        );
+      }
+    }
+
+    const roles = new Map(contract.stable.map((f) => [f.id, f.role] as const));
+    expect(roles.get("kaji-execute")).toBe("core");
+    expect(roles.get("agent-builder")).toBe("compatibility");
+    expect(roles.get("runtime-turn-loop")).toBe("compatibility");
   });
 
   it("keeps optional provider peers out of root declarations", () => {

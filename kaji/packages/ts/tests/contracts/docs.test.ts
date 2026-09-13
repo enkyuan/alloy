@@ -536,6 +536,37 @@ describe("cross-SDK release matrix docs", () => {
     }
   }, 30_000);
 
+  it("typechecks and runs the Kaji.execute capability snippet", () => {
+    const readme = read("docs/kaji/README.md");
+    const source = snippet(readme, "docs-test:kaji-execute:typescript", "ts");
+
+    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-kaji-"));
+    try {
+      writeFileSync(resolve(workdir, "kaji-execute.mts"), source);
+      writeFileSync(
+        resolve(workdir, "tsconfig.json"),
+        JSON.stringify({
+          extends: "../tsconfig.json",
+          compilerOptions: { noEmit: true },
+          include: ["*.mts"],
+        }),
+      );
+      execFileSync(
+        "node",
+        [resolve(packageRoot, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"],
+        { cwd: workdir, stdio: "inherit" },
+      );
+      const output = execFileSync("bun", [resolve(workdir, "kaji-execute.mts")], {
+        cwd: packageRoot,
+        encoding: "utf8",
+        env: tokenFreeEnvironment(),
+      });
+      expect(output.trim()).toBe('{"message":"Hello, Kaji."}');
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("executes manifest and index migrations as invalid/valid schema pairs", () => {
     const migration = read("docs/kaji/migrating-to-beta.md");
     const manifestBefore = JSON.parse(snippet(migration, "docs-test:manifest-before", "json"));

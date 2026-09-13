@@ -45,6 +45,47 @@ idempotency, failures, artifacts, and replay.
 See [`examples/refund-agent`](../../examples/refund-agent) for a Stripe
 test-mode product action using only package APIs.
 
+## Kaji.execute — one-shot capability entry point
+
+For product actions that don't need a conversational agent loop, `Kaji.execute`
+dispatches a single [`Capability`](tool-contracts.md) through the same tool
+policy, approval boundary, and durable event journal that the `AgentBuilder`
+runtime uses. No agent loop, no session seeding — just pass the capability,
+its input, and a principal identity.
+
+<!-- docs-test:kaji-execute:typescript:start -->
+```ts
+import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
+
+// A no-op capability that echoes its input — replace the execute hook
+// with your own logic and register real side effects behind a policy
+// gate (see ToolPolicy in @irogane/kaji).
+const echo = capability({
+  name: "echo",
+  description: "Echo the provided message back as a capability result.",
+  input: z.object({
+    message: z.string(),
+  }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
+});
+
+// One-shot entry: no agent loop, no turn context — just invoke the
+// capability through the stable Kaji.execute surface.
+const result = await Kaji.execute({
+  capability: echo,
+  input: { message: "Hello, Kaji." },
+  principal: "local-user",
+});
+
+console.log(JSON.stringify(result.value));
+```
+<!-- docs-test:kaji-execute:typescript:end -->
+
+Run `kaji init --template capability` to scaffold a starter `capability.ts`
+based on this snippet.
+
 ## Support boundaries
 
 Stable and experimental features and exports are classified by

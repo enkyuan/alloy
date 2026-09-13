@@ -1956,6 +1956,53 @@ def feature_sets(document: dict[str, Any]) -> dict[str, set[str]]:
     return result
 
 
+def check_feature_roles(document: dict[str, Any]) -> None:
+    """Enforce the `role` classification axis on features.json feature objects.
+
+    `role` is an optional annotation; when present it must be one of
+    {core, compatibility}. A small set of features is required to carry an
+    explicit role so the axis is real rather than aspirational.
+    """
+    path = CONTRACTS / "tiers/v1/features.json"
+    valid_roles = {"core", "compatibility"}
+    required: dict[str, str] = {
+        "kaji-execute": "core",
+        "agent-builder": "compatibility",
+        "runtime-turn-loop": "compatibility",
+    }
+    required_missing: set[str] = set(required)
+    for tier in ("stable", "experimental"):
+        entries = document.get(tier)
+        if not isinstance(entries, list):
+            continue
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                continue
+            if "role" in entry:
+                role = entry.get("role")
+                if role not in valid_roles:
+                    raise fail(
+                        path,
+                        f"/{tier}/{index}/role",
+                        f"expected one of {sorted(valid_roles)}, got {role!r}",
+                    )
+            feature_id = entry.get("id")
+            if isinstance(feature_id, str) and feature_id in required:
+                required_missing.discard(feature_id)
+                if entry.get("role") != required[feature_id]:
+                    raise fail(
+                        path,
+                        f"/{tier}/{index}/role",
+                        f"feature {feature_id!r} must have role {required[feature_id]!r}",
+                    )
+    if required_missing:
+        raise fail(
+            path,
+            "/features",
+            "missing required feature roles for: " + ", ".join(sorted(required_missing)),
+        )
+
+
 def check_cli_command_tiers(document: dict[str, Any]) -> None:
     path = CONTRACTS / "tiers/v1/features.json"
     matrix = document.get("cliCommands")
@@ -2113,10 +2160,10 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
         raise fail(path, "/schemaVersion", "expected 1")
     if document.get("grammar") != (
         "kaji [--no-color] [--verbose] init [path] "
-        "--provider mock|openai|anthropic --yes --force"
+        "--provider mock|openai|anthropic --template agent|capability --yes --force"
     ):
         raise fail(path, "/grammar", "canonical init grammar differs")
-    if document.get("defaults") != {"path": ".", "provider": "mock"}:
+    if document.get("defaults") != {"path": ".", "provider": "mock", "template": "agent"}:
         raise fail(path, "/defaults", "canonical init defaults differ")
     if document.get("exitCodes") != {
         "successOrHelp": 0,
@@ -2168,6 +2215,8 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
         "missing-provider-value",
         "unknown-option",
         "existing-file-refusal",
+        "template-agent",
+        "template-capability",
     }
     actual = set(names)
     if actual != required:
@@ -2422,6 +2471,7 @@ def check_contracts() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
     check_packaged_contracts()
     check_cli_command_tiers(documents["tiers/v1/features.json"])
     check_package_subpaths(documents["tiers/v1/features.json"])
+    check_feature_roles(documents["tiers/v1/features.json"])
     check_cli_init_cases(documents["cli/v1/init.json"])
     check_public_exports(documents["tiers/v1/features.json"])
     return documents, feature_sets(documents["tiers/v1/features.json"])

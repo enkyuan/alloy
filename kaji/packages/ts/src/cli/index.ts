@@ -67,7 +67,8 @@ export const COMMANDS: Record<string, Command> = {
   },
   init: {
     describe: "Scaffold a new TypeScript Kaji project.",
-    usage: "kaji init [path] [--provider mock|openai|anthropic] [--yes] [--force]",
+    usage:
+      "kaji init [path] [--provider mock|openai|anthropic] [--template agent|capability] [--yes] [--force]",
     run: (rest, opts) => init(rest, opts),
   },
   "list-integrations": {

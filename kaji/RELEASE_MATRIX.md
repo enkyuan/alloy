@@ -18,7 +18,7 @@ is checked against the machine feature contract and both registry indexes by
 
 ## Stable Core
 
-<!-- beta-stable: agent-builder,runtime-turn-loop,cancellation,sessions,in-memory-event-store-journal,event-replay,tool-registry-planner-policy,openai-adapter,echo-integration -->
+<!-- beta-stable: agent-builder,runtime-turn-loop,cancellation,sessions,in-memory-event-store-journal,event-replay,tool-registry-planner-policy,openai-adapter,echo-integration,kaji-execute -->
 
 | Surface | Python | TypeScript | Release gate |
 | --- | --- | --- | --- |
@@ -31,8 +31,7 @@ is checked against the machine feature contract and both registry indexes by
 | Tool registry/planner/policy | Stable core | Stable core | unit tests + echo integration |
 | OpenAI adapter | Stable core | Stable core | unit tests + mandatory live tool loop in both SDKs |
 | Echo integration | Stable core | Stable core | integration tests |
-
-OpenAI is Kaji's sole beta-supported primary provider. Anthropic remains
+| Kaji.execute one-shot capability entry point | Stable core | Stable core | unit tests | Python parity is a v0.4 gate; TypeScript ships stable/core now | OpenAI is Kaji's sole beta-supported primary provider. Anthropic remains
 implemented but experimental/WIP, with no beta compatibility or
 publication-proof commitment.
 

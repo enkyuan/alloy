@@ -1,10 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "schemaVersion": 1,
-  "grammar": "kaji [--no-color] [--verbose] init [path] --provider mock|openai|anthropic --yes --force",
+  "grammar": "kaji [--no-color] [--verbose] init [path] --provider mock|openai|anthropic --template agent|capability --yes --force",
   "defaults": {
     "path": ".",
-    "provider": "mock"
+    "provider": "mock",
+    "template": "agent"
   },
   "exitCodes": {
     "successOrHelp": 0,
@@ -22,6 +23,8 @@
     { "name": "unknown-provider", "args": ["--provider", "unknown"], "exitCode": 2 },
     { "name": "missing-provider-value", "args": ["--provider"], "exitCode": 2 },
     { "name": "unknown-option", "args": ["--unknown"], "exitCode": 2 },
+    { "name": "template-agent", "args": ["--template", "agent"], "exitCode": 0 },
+    { "name": "template-capability", "args": ["--template", "capability"], "exitCode": 0 },
     { "name": "existing-file-refusal", "args": [], "setup": "existing-file", "exitCode": 1 }
   ]
 }
