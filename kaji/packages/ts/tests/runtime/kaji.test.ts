@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as z from "zod";
 
+import { InMemoryBackend } from "@/backends/in-memory";
+import { EventType } from "@/events/types";
 import {
   Kaji,
   MissingToolIdentityError,
@@ -30,6 +32,82 @@ describe("Kaji.execute", () => {
     expect(isCapabilityResult(result)).toBe(true);
     expect(result).toEqual(result); // reference equality for pre-wrapped results
     expect(result.value).toEqual({ foo: "bar" });
+  });
+
+  it("dispatches through the planner and journals the request event", async () => {
+    const backend = new InMemoryBackend();
+    const sessionId = "kaji_test_planner_dispatch";
+    const cap = capability({
+      name: "kaji_test_planner_dispatch",
+      description: "Confirms planner-mediated dispatch.",
+      input: z.object({}),
+      risk: "read",
+      execute: async () => ({ ok: true }),
+    });
+
+    await Kaji.execute({
+      capability: cap,
+      input: {},
+      principal: "test-principal",
+      backend,
+      sessionId,
+    });
+
+    const events = await backend.store.getEvents(sessionId);
+    expect(events.map((event) => event.type)).toContain(EventType.TOOL_CALL_REQUESTED);
+  });
+
+  it("deduplicates identical retries by session and capability", async () => {
+    const backend = new InMemoryBackend();
+    const sessionId = "kaji_test_retry";
+    let executions = 0;
+    const cap = capability({
+      name: "kaji_test_retry",
+      description: "Counts executions for retry identity checks.",
+      input: z.object({ value: z.string() }),
+      risk: "read",
+      execute: async (input) => {
+        executions += 1;
+        return { value: input.value, execution: executions };
+      },
+    });
+
+    const first = await Kaji.execute({
+      capability: cap,
+      input: { value: "same" },
+      principal: "test-principal",
+      backend,
+      sessionId,
+    });
+    const retry = await Kaji.execute({
+      capability: cap,
+      input: { value: "same" },
+      principal: "test-principal",
+      backend,
+      sessionId,
+    });
+
+    expect(executions).toBe(1);
+    expect(retry).toEqual(first);
+    await expect(
+      Kaji.execute({
+        capability: cap,
+        input: { value: "changed" },
+        principal: "test-principal",
+        backend,
+        sessionId,
+      }),
+    ).rejects.toMatchObject({ error_code: "IDEMPOTENCY_CONFLICT" });
+
+    const otherSession = await Kaji.execute({
+      capability: cap,
+      input: { value: "same" },
+      principal: "test-principal",
+      backend,
+      sessionId: "kaji_test_retry_other",
+    });
+    expect(executions).toBe(2);
+    expect(otherSession.value).toEqual({ value: "same", execution: 2 });
   });
 
   it("wraps a plain JSON result with capabilityResult", async () => {
@@ -66,6 +144,24 @@ describe("Kaji.execute", () => {
         input: {},
         // principal deliberately omitted — normalizePrincipalId throws fail-closed
         principal: undefined as unknown as string,
+      }),
+    ).rejects.toThrow(MissingToolIdentityError);
+  });
+
+  it("rejects structured principal values at runtime", async () => {
+    const cap = capability({
+      name: "kaji_test_structured_principal_rejected",
+      description: "Must never run with a structured principal.",
+      input: z.object({}),
+      risk: "read",
+      execute: async () => ({ ok: true }),
+    });
+
+    await expect(
+      Kaji.execute({
+        capability: cap,
+        input: {},
+        principal: { id: "structured-user" } as unknown as string,
       }),
     ).rejects.toThrow(MissingToolIdentityError);
   });

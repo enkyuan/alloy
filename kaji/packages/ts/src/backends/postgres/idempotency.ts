@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { durableJsonSnapshot } from "@/events/json";
-import { closedRecoveryFields } from "@/integrations/recovery";
+import { closedRecoveryFields } from "@/recovery";
 import { MAX_DURABLE_TOOL_RESULT_BYTES } from "@/events/schemas";
 import {
   IdempotencyConflictError,

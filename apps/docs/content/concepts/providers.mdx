@@ -1,6 +1,6 @@
 ---
 title: Providers
-description: OpenAI is Kaji's recommended live-provider path; other implemented adapters are opt-in WIP.
+description: OpenAI is Kaji's recommended live-provider path on the Python side; the TypeScript capability product ships no provider adapters.
 ---
 
 Pick a provider when you build the runtime. The runtime never imports
@@ -9,37 +9,38 @@ against a neutral message and tool-spec format.
 
 ## LLM providers
 
-| Provider    | TypeScript SDK            | Python SDK     | Status       | Env var              |
-| ----------- | ------------------------- | -------------- | ------------ | -------------------- |
-| `openai`    | Native adapter            | Native adapter | Recommended  | `OPENAI_API_KEY`     |
-| `anthropic` | Native adapter            | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
-| `kimi`      | OpenAI-compatible factory | Native adapter | WIP          | `OPENROUTER_API_KEY` |
-| `gemini`    | OpenAI-compatible factory | Native adapter | WIP          | `GEMINI_API_KEY`     |
-| `mock`      | `@irogane/kaji/testing`   | Main package   | Testing only | -                    |
+| Provider    | TypeScript SDK                | Python SDK     | Status       | Env var              |
+| ----------- | ----------------------------- | -------------- | ------------ | -------------------- |
+| `openai`    | Removed (capability cut)      | Native adapter | Recommended  | `OPENAI_API_KEY`     |
+| `anthropic` | Removed (capability cut)      | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
+| `kimi`      | Removed (capability cut)      | Native adapter | WIP          | `OPENROUTER_API_KEY` |
+| `gemini`    | Removed (capability cut)      | Native adapter | WIP          | `GEMINI_API_KEY`     |
+| `mock`      | Removed (capability cut)      | Main package   | Testing only | -                    |
 
-TypeScript callers choose a provider factory in code. For local tests, import
-`MockProvider` from `@irogane/kaji/testing`; for the recommended live-provider
-path, use `openai()`. OpenAI is the only primary provider path documented for
-the local `0.3.0-alpha.1` candidate. Other implemented adapters remain WIP.
+The TypeScript capability product is the one-shot `Kaji.execute` surface: it
+ships no provider factories, no `ModelProvider` interface, and no
+`MockProvider`. Live providers are a Python path: select one explicitly with
+`get_provider(name)` or a constructed provider passed to
+`AgentBuilder.provider(...)`. Call `register_provider` only when you also want
+name-based lookup through `get_provider`. OpenAI is the only primary provider
+path documented for the local `0.3.0-alpha.1` candidate; other implemented
+adapters remain WIP.
 
-`OpenRouter`, Kimi, and Gemini factories in TypeScript reuse the
-OpenAI-compatible transport and do not expose native vendor features.
-Kimi requires an explicit `apiKey` or `OPENROUTER_API_KEY`; Gemini falls back
-to `GOOGLE_API_KEY`. To add a provider, implement `ModelProvider` and pass it
-to `AgentBuilder.provider(...)`. Call `registerProvider` only when you also
-want name-based lookup through `getProvider`.
+Kimi reuses the OpenAI-compatible transport and does not expose native vendor
+features; it requires an explicit `api_key` or `OPENROUTER_API_KEY`. Gemini
+falls back to `GOOGLE_API_KEY`.
 
 ## Custom-provider cancellation contract
 
 Custom providers are cooperative in-process boundaries. While opening a
 request and while streaming, they must observe the runtime-provided
-`cancellationToken`, stop the underlying request, and let the stream iterator
+`cancellation_token`, stop the underlying request, and let the stream iterator
 settle when cancellation is requested. They must also support the runtime
 closing that iterator after partial output.
 
 If a provider remains active beyond the configured cancellation grace, Kaji
 raises `PROVIDER_CANCELLATION_CONTRACT_VIOLATION` and quarantines that session
-until `drainProviders()` confirms settlement. Closing the runtime rejects new
+until `drain_providers()` confirms settlement. Closing the runtime rejects new
 turns; it cannot force-kill hostile in-process code. Run the same
 cancellation-contract suite used by the built-in adapters before describing a
 custom provider as production-safe.
@@ -52,6 +53,5 @@ to Soniox when `SONIOX_API_KEY` is configured. Neither surface is part of the
 TypeScript candidate's documented provider path. The reasoning loop itself
 remains modality-agnostic.
 
-The Python SDK selects a provider explicitly with `get_provider(name)` or a
-constructed provider passed to `AgentBuilder.provider(...)`. It uses the
-snake_case cancellation names `cancellation_token` and `drain_providers()`.
+The Python SDK uses the snake_case cancellation names `cancellation_token` and
+`drain_providers()`.

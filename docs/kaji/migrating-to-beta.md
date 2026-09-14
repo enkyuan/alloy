@@ -162,15 +162,15 @@ asyncio.run(verify_identity())
 <!-- docs-test:typescript-risk-context-before:start -->
 ```ts
 import {
-  AgentBuilder,
+  Kaji,
   MissingToolIdentityError,
   ToolRegistry,
   UnclassifiedToolRiskError,
-  functionTool,
+  capability,
+  capabilityResult,
   type ToolSpec,
 } from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
-import { z } from "zod";
+import * as z from "zod";
 
 const unsafe = {
   name: "unsafe",
@@ -184,22 +184,16 @@ try {
   if (!(error instanceof UnclassifiedToolRiskError)) throw error;
 }
 
-const classified = functionTool(
-  {
-    name: "inspect",
-    description: "Classified tool.",
-    parameters: z.object({}),
-    risk: "read",
-  },
-  async (_args, context) => ({ principal: context.principalId }),
-);
-const runtime = new AgentBuilder()
-  .provider(new MockProvider())
-  .tool(classified)
-  .build();
+const echo = capability({
+  name: "echo",
+  description: "Echo the provided message back.",
+  input: z.object({ message: z.string() }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
+});
 try {
-  await runtime.turn("Call inspect.");
-  throw new Error("tool-capable turn without principal must fail");
+  await Kaji.execute({ capability: echo, input: { message: "x" }, principal: "" });
+  throw new Error("capability execution without principal must fail");
 } catch (error) {
   if (!(error instanceof MissingToolIdentityError)) throw error;
 }
@@ -208,27 +202,24 @@ try {
 
 <!-- docs-test:typescript-risk-context-after:start -->
 ```ts
-import { AgentBuilder, functionTool } from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
-import { z } from "zod";
+import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
 
-const inspect = functionTool(
-  {
-    name: "inspect",
-    description: "Classified tool.",
-    parameters: z.object({}),
-    risk: "read",
-  },
-  async (_args, context) => ({ principal: context.principalId }),
-);
-const runtime = new AgentBuilder()
-  .provider(new MockProvider())
-  .tool(inspect)
-  .build();
-const result = await runtime.turn("Call inspect.", {
-  context: { principalId: "user-42" },
+const inspect = capability({
+  name: "inspect",
+  description: "Classified tool.",
+  input: z.object({}),
+  risk: "read",
+  execute: async (_args, context) => capabilityResult({ principal: context.principalId }),
 });
-if (result.toolCallEvents.length === 0) throw new Error("tool was not called");
+const result = await Kaji.execute({
+  capability: inspect,
+  input: {},
+  principal: "user-42",
+});
+if (JSON.stringify(result.value) !== '{"principal":"user-42"}') {
+  throw new Error("tool was not called");
+}
 ```
 <!-- docs-test:typescript-risk-context-after:end -->
 

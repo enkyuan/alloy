@@ -2,7 +2,7 @@
 import { KajiEvent, StoredKajiEvent, validateStoredEvent } from "@/events/schemas";
 import { structurallyEqualJson } from "@/events/json";
 import { EventType } from "@/events/types";
-import type { ToolCall } from "@/providers/base";
+import type { ToolCall } from "@/messages";
 import type {
   ApprovalDecision,
   ApprovalRejectionCode,

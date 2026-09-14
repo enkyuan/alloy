@@ -5,17 +5,23 @@
     "echo": {
       "manifest": "echo/manifest.json",
       "stability": "beta",
-      "runtimes": ["python", "typescript"]
+      "runtimes": [
+        "python"
+      ]
     },
     "gmail": {
       "manifest": "gmail/manifest.json",
       "stability": "beta",
-      "runtimes": ["python", "typescript"]
+      "runtimes": [
+        "python"
+      ]
     },
     "github": {
       "manifest": "github/manifest.json",
       "stability": "beta",
-      "runtimes": ["python", "typescript"]
+      "runtimes": [
+        "python"
+      ]
     }
   }
 }

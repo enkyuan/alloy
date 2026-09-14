@@ -16,16 +16,18 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError, ValidationError
 from kaji.integrations.validation import parameter_schema_issue
 from kaji.tooling.contracts.projection import (
-    PYTHON_LEGACY_CONTRACTS,
-    PYTHON_LEGACY_EVENT_DEFINITIONS,
-    PYTHON_LEGACY_EVENT_TYPES,
-    PYTHON_LEGACY_EXPORTS,
     TYPESCRIPT_PROJECTED_CONTRACTS,
     typescript_contract_projection,
 )
 
 
-ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
+ROOT = (
+    next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "contracts").is_dir() and (parent / "packages").is_dir()
+    )
+).parent
 CONTRACTS = ROOT / "kaji" / "contracts"
 RELEASE_MATRIX = ROOT / "kaji" / "RELEASE_MATRIX.md"
 REGISTRY_INDEXES = (
@@ -79,8 +81,6 @@ REQUIRED_JSON = {
     "artifacts/v1/cases/valid.json",
     "capabilities/v1/schema.json",
     "capabilities/v1/cases/valid.json",
-    "tasks/v1/schema.json",
-    "tasks/v1/cases/valid.json",
 }
 DATA_DOCUMENTS = {
     "integrations/v1/abi/index.json",
@@ -621,8 +621,6 @@ def check_packaged_contracts() -> None:
     }
     for target in PACKAGE_CONTRACT_TARGETS:
         target_expected = expected
-        if target == TYPESCRIPT_PACKAGE_CONTRACTS:
-            target_expected = expected - {Path(path) for path in PYTHON_LEGACY_CONTRACTS}
         actual = {
             path.relative_to(target)
             for path in target.rglob("*")
@@ -646,7 +644,9 @@ def check_packaged_contracts() -> None:
                     typescript_contract_projection(relative, source)
                 )
                 if load_json(target / relative) != expected_document:
-                    raise fail(target / relative, "/", "packaged contract is out of sync")
+                    raise fail(
+                        target / relative, "/", "packaged contract is out of sync"
+                    )
                 continue
             if (target / relative).read_bytes() != source.read_bytes():
                 raise fail(target / relative, "/", "packaged contract is out of sync")
@@ -658,8 +658,6 @@ def sync_typescript_package_contracts() -> None:
     if TYPESCRIPT_PACKAGE_CONTRACTS.exists():
         shutil.rmtree(TYPESCRIPT_PACKAGE_CONTRACTS)
     shutil.copytree(CONTRACTS, TYPESCRIPT_PACKAGE_CONTRACTS)
-    for relative_name in PYTHON_LEGACY_CONTRACTS:
-        (TYPESCRIPT_PACKAGE_CONTRACTS / relative_name).unlink()
     for relative_name in TYPESCRIPT_PROJECTED_CONTRACTS:
         relative = Path(relative_name)
         source = CONTRACTS / relative
@@ -840,13 +838,6 @@ def check_github_typescript_abi(documents: dict[str, dict[str, Any]]) -> None:
         ROOT
         / "kaji"
         / "packages"
-        / "ts"
-        / "registry"
-        / "github"
-        / "manifest.json",
-        ROOT
-        / "kaji"
-        / "packages"
         / "py"
         / "src"
         / "integrations"
@@ -955,7 +946,7 @@ def integration_recovery_entries(
 def validate_runtime_event_type_projection(
     python_types: set[str], typescript_types: set[str]
 ) -> None:
-    expected_typescript_types = python_types - PYTHON_LEGACY_EVENT_TYPES
+    expected_typescript_types = python_types
     if typescript_types != expected_typescript_types:
         raise fail(
             ROOT / "kaji",
@@ -1960,15 +1951,13 @@ def check_feature_roles(document: dict[str, Any]) -> None:
     """Enforce the `role` classification axis on features.json feature objects.
 
     `role` is an optional annotation; when present it must be one of
-    {core, compatibility}. A small set of features is required to carry an
-    explicit role so the axis is real rather than aspirational.
+    {core}. Every retained feature is part of the capability execution product;
+    removed compatibility surfaces are deliberately not classified here.
     """
     path = CONTRACTS / "tiers/v1/features.json"
-    valid_roles = {"core", "compatibility"}
+    valid_roles = {"core"}
     required: dict[str, str] = {
         "kaji-execute": "core",
-        "agent-builder": "compatibility",
-        "runtime-turn-loop": "compatibility",
     }
     required_missing: set[str] = set(required)
     for tier in ("stable", "experimental"):
@@ -1999,7 +1988,8 @@ def check_feature_roles(document: dict[str, Any]) -> None:
         raise fail(
             path,
             "/features",
-            "missing required feature roles for: " + ", ".join(sorted(required_missing)),
+            "missing required feature roles for: "
+            + ", ".join(sorted(required_missing)),
         )
 
 
@@ -2160,10 +2150,10 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
         raise fail(path, "/schemaVersion", "expected 1")
     if document.get("grammar") != (
         "kaji [--no-color] [--verbose] init [path] "
-        "--provider mock|openai|anthropic --template agent|capability --yes --force"
+        "--provider mock|openai|anthropic --yes --force"
     ):
         raise fail(path, "/grammar", "canonical init grammar differs")
-    if document.get("defaults") != {"path": ".", "provider": "mock", "template": "agent"}:
+    if document.get("defaults") != {"path": ".", "provider": "mock"}:
         raise fail(path, "/defaults", "canonical init defaults differ")
     if document.get("exitCodes") != {
         "successOrHelp": 0,
@@ -2215,8 +2205,6 @@ def check_cli_init_cases(document: dict[str, Any]) -> None:
         "missing-provider-value",
         "unknown-option",
         "existing-file-refusal",
-        "template-agent",
-        "template-capability",
     }
     actual = set(names)
     if actual != required:

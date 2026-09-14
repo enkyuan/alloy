@@ -21,11 +21,7 @@
     },
     "typescript": {
       "stable": [
-        "add",
-        "connect",
-        "disconnect",
         "init",
-        "list-integrations",
         "replay"
       ],
       "experimental": []
@@ -33,66 +29,9 @@
   },
   "packageSubpaths": {
     "typescript": {
-      "./anthropic": {
-        "tier": "experimental",
-        "exports": [
-          "AnthropicProvider",
-          "AnthropicProviderOptions"
-        ]
-      },
-      "./auth": {
-        "tier": "experimental",
-        "exports": [
-          "GoogleOAuthClient",
-          "GoogleOAuthClientOptions",
-          "MacOSKeychainTokenStorage",
-          "OAuthAccessTokenProvider",
-          "OAuthCredentialRecord",
-          "OAuthTokenSet",
-          "OAuthTokenStorage",
-          "canonicalOAuthCredentialJson",
-          "snapshotOAuthCredentialRecord"
-        ]
-      },
       "./cli": {
         "tier": "stable",
         "exports": []
-      },
-      "./integrations": {
-        "tier": "experimental",
-        "exports": [
-          "BoundedResponse",
-          "FixedOriginRequester",
-          "INTEGRATION_RECOVERY",
-          "IntegrationAuthRequiredError",
-          "IntegrationExecutionError",
-          "IntegrationPolicyError",
-          "IntegrationRateLimitedError",
-          "IntegrationRecoveryFields",
-          "IntegrationRecoveryReason",
-          "IntegrationTransientReadError",
-          "closedRecoveryFields",
-          "createGitHubRequester",
-          "createGmailRequester",
-          "snapshotIntegrationResult"
-        ]
-      },
-      "./integrations/github": {
-        "tier": "experimental",
-        "exports": [
-          "CreateGitHubIntegrationOptions",
-          "GitHubIntegration",
-          "createGithubIntegration",
-          "inspectIntegration"
-        ]
-      },
-      "./openai": {
-        "tier": "stable",
-        "exports": [
-          "OpenAIProvider",
-          "OpenAIProviderOptions",
-          "RetryOptions"
-        ]
       },
       "./postgres": {
         "tier": "experimental",
@@ -106,15 +45,6 @@
           "PostgresToolIdempotencyLedger",
           "PostgresTurnCoordinator",
           "postgresLockKey"
-        ]
-      },
-      "./testing": {
-        "tier": "experimental",
-        "exports": [
-          "MockProvider",
-          "ProviderResponseDiagnostics",
-          "createSessionState",
-          "withProviderResponseDiagnostics"
         ]
       }
     }
@@ -146,7 +76,6 @@
         "IdFactory",
         "IdempotencyCapacityExceeded",
         "IdempotencyConflictError",
-        "InMemoryBackend",
         "InMemoryEventJournal",
         "InMemoryEventStore",
         "InMemorySessionStore",
@@ -181,11 +110,6 @@
         "StoredKajiEvent",
         "SystemClock",
         "SystemIdFactory",
-        "TaskCompleted",
-        "TaskHandle",
-        "TaskRuntime",
-        "TaskSnapshot",
-        "TaskState",
         "ToolArgumentValidationError",
         "ToolExecutionContext",
         "ToolExecutionController",
@@ -254,11 +178,6 @@
     },
     "typescript": {
       "stable": [
-        "AgentBuilder",
-        "AgentBuilderBuildOptions",
-        "AgentRuntime",
-        "AgentRuntimeOptions",
-        "AgentStrategy",
         "AgentTurnFailed",
         "ApprovalDeadlineSource",
         "ApprovalDecision",
@@ -271,8 +190,6 @@
         "AutoApprovalHandler",
         "AutoApprovalPolicy",
         "BaseEvent",
-        "BoundTool",
-        "BoundedResponse",
         "CancellationError",
         "CancellationToken",
         "CancellationTokenLike",
@@ -288,12 +205,9 @@
         "ContextWindow",
         "ContextWindowOverflowError",
         "DEFAULT_CONTEXT_WINDOW",
-        "DEFAULT_PROVIDER_RESPONSE_LIMITS",
         "DEFAULT_TOOL_EXECUTION_LIMITS",
         "DEFAULT_TURN_EXECUTION_LIMITS",
         "DurableJsonLimitError",
-        "EffectiveRuntimeLimits",
-        "EnvSecretSource",
         "EventApprovalHandler",
         "EventApprovalHandlerOptions",
         "EventBackedApprovalHandler",
@@ -306,9 +220,6 @@
         "EventStore",
         "EventStoreCapacityError",
         "EventType",
-        "FunctionToolHandler",
-        "FunctionToolMeta",
-        "GenerateTextOptions",
         "IdFactory",
         "IdScope",
         "IdempotencyCapacityError",
@@ -321,19 +232,6 @@
         "InMemorySessionTurnCoordinator",
         "InMemoryToolIdempotencyLedger",
         "InMemoryToolIdempotencyLedgerOptions",
-        "IndexValidationError",
-        "Integrable",
-        "Integration",
-        "IntegrationAuth",
-        "IntegrationExperimentalError",
-        "IntegrationManifestDocument",
-        "IntegrationManifestTool",
-        "IntegrationNotFoundError",
-        "IntegrationRuntime",
-        "IntegrationStability",
-        "IntegrationToolRisk",
-        "IntegrationValidationCode",
-        "IntegrationValidationError",
         "InvalidDurableValueError",
         "JSONSchema",
         "JournalStage",
@@ -343,47 +241,19 @@
         "KajiEventInput",
         "KajiExecuteArgs",
         "ListToolSpecsOptions",
-        "LoadedIntegrationManifest",
         "METRIC_NAMES",
-        "ManifestValidationError",
         "Message",
         "MetricLabels",
         "MetricMeasurement",
         "MetricName",
         "MetricsSink",
         "MissingToolIdentityError",
-        "ModelCostEntry",
-        "ModelProvider",
-        "ModelProviderOptions",
-        "ModelResponse",
-        "ModelResponseChunk",
         "NOOP_METRICS",
         "NOOP_TRACE",
         "NewKajiEvent",
-        "NormalizedIntegrationValidationError",
-        "NormalizedProviderError",
         "ObservableCancellationToken",
-        "OpenAIProvider",
-        "OpenAIProviderOptions",
-        "ProviderAPIError",
         "ProviderCancellationContractViolation",
-        "ProviderConfigError",
-        "ProviderConnectionError",
-        "ProviderError",
-        "ProviderFamily",
-        "ProviderMessage",
-        "ProviderOutputDimension",
-        "ProviderOutputLimitError",
-        "ProviderRateLimitedError",
-        "ProviderResponseLimits",
-        "ProviderStatus",
         "PurgeableEventStore",
-        "RegistryIndexDocument",
-        "RegistryIndexEntry",
-        "RegistryLoaderOptions",
-        "RetryOptions",
-        "RunTurnOptions",
-        "SecretSource",
         "SessionCreated",
         "SessionManager",
         "SessionProjector",
@@ -397,13 +267,10 @@
         "SessionTurnLease",
         "SpanName",
         "StoredKajiEvent",
-        "StreamTextResult",
         "SubscriberStage",
         "TimerHandle",
         "TimerScheduler",
-        "TokenUsage",
         "ToolArgumentValidationError",
-        "ToolCall",
         "ToolCallInstruction",
         "ToolCallResult",
         "ToolClaimResult",
@@ -441,15 +308,12 @@
         "TraceAttributes",
         "TraceSink",
         "TraceSpan",
-        "TurnAccounting",
         "TurnContext",
         "TurnDeadlineOutcome",
         "TurnExecutionLimits",
         "TurnLeaseOptions",
-        "TurnOptions",
         "TurnOutcome",
         "TurnPhase",
-        "TurnResult",
         "TurnTimeoutError",
         "TypedApprovalHandler",
         "UnclassifiedToolRiskError",
@@ -459,71 +323,33 @@
         "applyEvent",
         "approvalKey",
         "artifact",
-        "calculateCostUsd",
         "capability",
         "capabilityResult",
         "cliApprovalHandler",
         "deadlineAfter",
         "executeTool",
-        "formatIntegrationError",
-        "functionTool",
-        "generateText",
-        "getProvider",
         "kajiExecute",
         "listToolSpecs",
-        "loadManifest",
-        "loadRegistryIndex",
-        "lookupCost",
-        "normalizeProviderError",
-        "openai",
-        "providerFamily",
         "recordMetric",
-        "registerProvider",
         "registerTool",
         "replaySession",
-        "resolveProviderResponseLimits",
         "startSpan",
-        "streamText",
         "supportsSessionPurge",
         "throwIfCancellationRequested",
-        "tool",
         "toolSpecFromSchema",
         "validateArtifactRef",
-        "validateIndexDocument",
-        "validateManifestDocument",
         "validateNewEvent",
         "validateStoredEvent"
       ],
       "experimental": [
-        "AnthropicProvider",
-        "AnthropicProviderOptions",
-        "BoundNetworkTransport",
         "EventBus",
-        "GeminiFactoryOptions",
-        "OpenRouterFactoryOptions",
-        "SafeFetchPolicy",
         "SplitEventCommitter",
-        "SplitEventCommitterOptions",
-        "anthropic",
-        "gemini",
-        "kimi",
-        "openrouter",
-        "safeRequest"
+        "SplitEventCommitterOptions"
       ],
       "deprecated": []
     }
   },
   "stable": [
-    {
-      "id": "agent-builder",
-      "surface": "Agent builder",
-      "role": "compatibility"
-    },
-    {
-      "id": "runtime-turn-loop",
-      "surface": "Runtime turn loop",
-      "role": "compatibility"
-    },
     {
       "id": "cancellation",
       "surface": "Cancellation",
@@ -547,16 +373,6 @@
     {
       "id": "tool-registry-planner-policy",
       "surface": "Tool registry/planner/policy",
-      "role": "core"
-    },
-    {
-      "id": "openai-adapter",
-      "surface": "OpenAI adapter",
-      "role": "core"
-    },
-    {
-      "id": "echo-integration",
-      "surface": "Echo integration",
       "role": "core"
     },
     {

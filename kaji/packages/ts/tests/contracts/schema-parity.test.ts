@@ -70,7 +70,7 @@ describe("shared event schema fixtures", () => {
     expect(contract.events).toMatchObject(lifecycleContract);
   });
 
-  it("projects Python legacy Task data out of TypeScript package contracts", () => {
+  it("keeps Python legacy Task data out of the shared contracts and TypeScript exports", () => {
     const sharedEvents = JSON.parse(
       readFileSync(new URL("events/v1/cases/valid.json", sharedContracts), "utf8"),
     ) as { events: Array<{ type: string }> };
@@ -81,7 +81,7 @@ describe("shared event schema fixtures", () => {
       .map((event) => event.type)
       .filter((type) => type.startsWith("task."));
 
-    expect(sharedTaskEvents).toEqual(legacyTaskEventTypes);
+    expect(sharedTaskEvents).toEqual([]);
     expect(typeScriptEvents.events.map((event) => event.type)).not.toEqual(
       expect.arrayContaining([...legacyTaskEventTypes]),
     );
@@ -97,7 +97,7 @@ describe("shared event schema fixtures", () => {
         publicExports: { python: { stable: string[] } };
       }
     ).publicExports.python.stable;
-    expect(sharedPythonExports).toEqual(expect.arrayContaining([...legacyPythonTaskSymbols]));
+    expect(sharedPythonExports).not.toEqual(expect.arrayContaining([...legacyPythonTaskSymbols]));
     expect(packagedPythonExports).not.toEqual(expect.arrayContaining([...legacyPythonTaskSymbols]));
 
     for (const name of [

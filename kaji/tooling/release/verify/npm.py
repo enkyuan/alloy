@@ -11,7 +11,6 @@ from pathlib import Path, PurePosixPath
 from typing import NoReturn
 
 from kaji.tooling.contracts.projection import (
-    PYTHON_LEGACY_CONTRACTS,
     TYPESCRIPT_PROJECTED_CONTRACTS,
     typescript_contract_projection,
 )
@@ -193,7 +192,6 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
         )
         for relative, payload in tree_bytes(canonical_contracts_root).items()
         if Path(relative).suffix in {".json", ".md"}
-        and relative not in PYTHON_LEGACY_CONTRACTS
     }
     packaged_contracts = {
         relative.removeprefix("contracts/"): payload
@@ -206,8 +204,10 @@ def verify_npm_tarball(tarball: Path, repo: Path) -> None:
 
     registry_index = json.loads(expected.get("registry/index.json", b"{}"))
     integrations = registry_index.get("integrations") or {}
-    if not integrations:
-        fail("npm registry index declares no integrations")
+    if integrations:
+        fail(
+            "npm registry index must not declare integrations: the TypeScript capability product ships none"
+        )
     for name, entry in integrations.items():
         manifest_relative = entry.get("manifest") if isinstance(entry, dict) else entry
         if not isinstance(manifest_relative, str) or not manifest_relative:

@@ -42,7 +42,7 @@ import {
   type ToolExecutionLimits,
 } from "@/tools/execution";
 import type { ToolExecutionError } from "@/tools/execution/errors";
-import type { IntegrationRecoveryReason } from "@/integrations/recovery";
+import type { IntegrationRecoveryReason } from "@/recovery";
 import type { MetricsSink, TraceSink } from "@/observability";
 import type { ToolIdempotencyLedger } from "@/tools/idempotency";
 import type { ToolPolicy } from "@/tools/policy";

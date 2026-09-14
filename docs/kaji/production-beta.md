@@ -106,56 +106,33 @@ stable API.
 
 <!-- installed-quickstart:typescript:start -->
 ```ts
-import {
-  AgentBuilder,
-  Integration,
-  ProviderConfigError,
-  deadlineAfter,
-  normalizeProviderError,
-  tool,
-} from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
-import { z } from "zod";
+import { EventType, InMemoryBackend, Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
 
-class EchoIntegration extends Integration {
-  namespace = "docs";
-
-  ping = tool(
-    {
-      description: "Return a deterministic acknowledgement.",
-      parameters: z.object({}),
-      risk: "read",
-    },
-    async (_args, context) => ({ ok: true, principal: context.principalId }),
-  );
-}
-
-const textRuntime = new AgentBuilder()
-  .provider(new MockProvider({ reply: "hello" }))
-  .build();
-const text = await textRuntime.turn("Say hello.");
-if (text.text !== "hello") throw new Error("unexpected text result");
-if (!text.events.every((event) => event.turn_id === text.turnId)) {
+const backend = new InMemoryBackend();
+const ping = capability({
+  name: "ping",
+  description: "Return a deterministic acknowledgement.",
+  input: z.object({}),
+  risk: "read",
+  execute: async (_args, context) =>
+    capabilityResult({ ok: true, principal: context.principalId }),
+});
+const sessionId = "docs-quickstart";
+const result = await Kaji.execute({
+  capability: ping,
+  input: {},
+  principal: "docs-user",
+  backend,
+  sessionId,
+});
+const events = await backend.store.getEvents(sessionId);
+const completed = events.find((event) => event.type === EventType.TOOL_CALL_COMPLETED);
+if (completed === undefined) throw new Error("tool was not called");
+if (events.some((event) => event.turn_id !== completed.turn_id)) {
   throw new Error("turn IDs did not propagate");
 }
-console.log(text.text, text.accounting);
-
-const toolRuntime = new AgentBuilder()
-  .provider(new MockProvider())
-  .integration(new EchoIntegration())
-  .build();
-const toolResult = await toolRuntime.turn("Call ping.", {
-  context: {
-    principalId: "docs-user",
-    deadlineAtMs: deadlineAfter(30_000),
-  },
-});
-if (toolResult.toolCallEvents.length === 0) throw new Error("tool was not called");
-
-const normalized = normalizeProviderError(
-  new ProviderConfigError("safe public message", { service: "example" }),
-);
-console.log(normalized.code, normalized.retryable);
+console.log(JSON.stringify(result.value));
 ```
 <!-- installed-quickstart:typescript:end -->
 
@@ -254,22 +231,24 @@ closed, and a later runtime purge retries cleanup without repeating physical
 deletion. Kaji cannot promise VM string zeroization or delete copies held by
 callers, providers, logs, observability backends, custom stores, or crash dumps.
 
-### TypeScript-only accounting
+### Removed TypeScript accounting
 
-`TurnAccounting` remains TypeScript-only. It summarizes only normally completed
-provider iterations on a successful `TurnResult`; thrown failed turns have no
-aggregate accounting result.
+`TurnAccounting` was removed with the TypeScript capability cut. The retained
+`Kaji.execute` surface returns a `CapabilityResult` without provider
+accounting.
 
 ## Stable core
 
-The beta promise is the cross-SDK embedded loop: agent builder and runtime,
-same-session coordination, cancellation, sequenced in-memory event history and
-replay, tool schema/policy/execution, the OpenAI adapter, and the echo catalog
-integration. Anthropic, Gemini, Kimi, and OpenRouter adapters remain
-experimental/WIP, opt-in, and outside the beta compatibility and
-publication-proof commitment. RAG/retrieval may be implemented in Python but
-also remains experimental and outside this promise. `MockProvider` is the
-deterministic local/test default.
+The beta promise is the shared stable core: cancellation, sessions,
+same-session coordination, sequenced in-memory event history and replay, tool
+schema/policy/execution, and the one-shot `Kaji.execute` capability surface.
+The Python SDK additionally retains the agent builder, runtime turn loop, and
+OpenAI adapter; the TypeScript capability cut removed those surfaces.
+Anthropic, Gemini, Kimi, and OpenRouter adapters remain experimental/WIP,
+opt-in, and outside the beta compatibility and publication-proof commitment.
+RAG/retrieval may be implemented in Python but also remains experimental and
+outside this promise. The Python `MockProvider` is the deterministic
+local/test default for the Python runtime.
 
 Echo is the only beta catalog entry. GitHub is experimental and requires
 explicit opt-in in both SDKs. Python-only
@@ -356,7 +335,7 @@ Promotion additionally requires evidence from the exact release commit for:
   `kaji-onboarding` on GitHub-hosted Linux/x64: Node 22 on
   `ubuntu-22.04` and Node 24 on `ubuntu-24.04`; this is not evidence for other
   runtimes or platforms;
-- required keyed OpenAI tool loops in both Python and TypeScript under the
+- required keyed OpenAI tool loops in Python under the
   separate `kaji-release` review boundary; a missing `OPENAI_API_KEY` blocks
   release rather than producing a readiness skip;
 - the immutable-reference paired A/B benchmark on three numbered same-attempt

@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type Anthropic from "@anthropic-ai/sdk";
-import type OpenAI from "openai";
 
 import {
   CancellationError,
@@ -15,16 +13,6 @@ import {
   type TimerScheduler,
 } from "@/internal/uuid";
 import { TurnTimeoutError } from "@/runtime/limits";
-import type { ModelResponseChunk } from "@/providers/base";
-import { TestAnthropicProvider, TestOpenAIProvider } from "../helpers/provider-clients";
-
-function openAIClient(create: ReturnType<typeof vi.fn>): OpenAI {
-  return { chat: { completions: { create } } } as unknown as OpenAI;
-}
-
-function anthropicClient(create: ReturnType<typeof vi.fn>): Anthropic {
-  return { messages: { create } } as unknown as Anthropic;
-}
 
 class ManualClock implements Clock {
   constructor(private monotonic = 0) {}
@@ -70,6 +58,11 @@ class ManualScheduler implements TimerScheduler {
       }
     }
   }
+}
+
+interface ModelResponseChunk {
+  delta: string;
+  toolCalls: unknown[];
 }
 
 class ControlledStream implements AsyncIterableIterator<ModelResponseChunk> {
@@ -450,92 +443,5 @@ describe("systemTimerScheduler", () => {
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])("rejects invalid delays (%s)", (delay) => {
     expect(() => systemTimerScheduler.schedule(delay, () => {})).toThrow(/finite non-negative/);
-  });
-});
-
-describe("OpenAIProvider AbortSignal plumbing", () => {
-  it("passes cancellationToken.signal to the OpenAI client on generate()", async () => {
-    const token = new CancellationToken();
-    const create = vi.fn().mockResolvedValue({
-      choices: [{ message: { content: "ok", tool_calls: null } }],
-    });
-    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
-
-    await provider.generate([{ role: "user", content: "hi" }], [], {
-      cancellationToken: token,
-    });
-
-    expect(create).toHaveBeenCalledOnce();
-    const [, requestOpts] = create.mock.calls[0]!;
-    expect(requestOpts).toEqual({ signal: token.signal });
-  });
-
-  it("passes signal on generateStream() too", async () => {
-    const token = new CancellationToken();
-    async function* empty() {} // eslint-disable-line @typescript-eslint/no-empty-function
-    const create = vi.fn().mockResolvedValue(empty());
-    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
-
-    const iter = provider.generateStream([{ role: "user", content: "hi" }], [], {
-      cancellationToken: token,
-    });
-    // Drain so the inner create() actually runs.
-    for await (const _ of iter) {
-      void _;
-    }
-
-    expect(create).toHaveBeenCalledOnce();
-    const [, requestOpts] = create.mock.calls[0]!;
-    expect(requestOpts).toEqual({ signal: token.signal });
-  });
-
-  it("maps token-owned client aborts to CancellationError", async () => {
-    const token = new CancellationToken();
-    const create = vi.fn().mockImplementation(() => {
-      token.cancel();
-      return Promise.reject(new Error("aborted"));
-    });
-    const provider = new TestOpenAIProvider({ apiKey: "test-key" }, openAIClient(create));
-
-    await expect(
-      provider.generate([{ role: "user", content: "hi" }], [], {
-        cancellationToken: token,
-      }),
-    ).rejects.toBeInstanceOf(CancellationError);
-
-    expect(create).toHaveBeenCalledOnce();
-  });
-});
-
-describe("AnthropicProvider AbortSignal plumbing", () => {
-  it("passes cancellationToken.signal to the Anthropic client on generate()", async () => {
-    const token = new CancellationToken();
-    const create = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
-    const provider = new TestAnthropicProvider({ apiKey: "test-key" }, anthropicClient(create));
-
-    await provider.generate([{ role: "user", content: "hi" }], [], {
-      cancellationToken: token,
-    });
-
-    expect(create).toHaveBeenCalledOnce();
-    const [, requestOpts] = create.mock.calls[0]!;
-    expect(requestOpts).toEqual({ signal: token.signal });
-  });
-
-  it("maps token-owned client aborts to CancellationError", async () => {
-    const token = new CancellationToken();
-    const create = vi.fn().mockImplementation(() => {
-      token.cancel();
-      return Promise.reject(new Error("aborted"));
-    });
-    const provider = new TestAnthropicProvider({ apiKey: "test-key" }, anthropicClient(create));
-
-    await expect(
-      provider.generate([{ role: "user", content: "hi" }], [], {
-        cancellationToken: token,
-      }),
-    ).rejects.toBeInstanceOf(CancellationError);
-
-    expect(create).toHaveBeenCalledOnce();
   });
 });

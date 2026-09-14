@@ -3,9 +3,10 @@ title: Getting Started
 description: Install the local Kaji TypeScript alpha candidate, define a typed tool, and inspect an agent turn end to end.
 ---
 
-This tutorial builds one TypeScript agent in six steps. You will first verify
-the runtime without credentials, then configure OpenAI and a risk-classified
-tool.
+This tutorial verifies capability execution without credentials in both SDKs,
+then configures OpenAI and a risk-classified tool on the Python side. The
+retained TypeScript product is the one-shot `Kaji.execute` capability surface;
+live providers remain a Python path.
 
 <Steps>
   <Step>
@@ -36,12 +37,22 @@ tool.
 
     {/* getting-started:no-key:typescript:start */}
     ```ts
-    import { AgentBuilder } from "@irogane/kaji";
-    import { MockProvider } from "@irogane/kaji/testing";
+    import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+    import * as z from "zod";
 
-    const runtime = new AgentBuilder().provider(new MockProvider()).build();
-    const result = await runtime.turn("Say hello.");
-    console.log(result.text);
+    const echo = capability({
+      name: "echo",
+      description: "Echo the provided message back.",
+      input: z.object({ message: z.string() }),
+      risk: "read",
+      execute: async (input) => capabilityResult({ message: input.message }),
+    });
+    const result = await Kaji.execute({
+      capability: echo,
+      input: { message: "Hello, Kaji." },
+      principal: "local-user",
+    });
+    console.log(JSON.stringify(result.value));
     ```
     {/* getting-started:no-key:typescript:end */}
 
@@ -52,7 +63,7 @@ tool.
     # or: bun kaji.mts
     ```
 
-    It prints `The mock provider has completed the tool loop.`
+    It prints `{"message":"Hello, Kaji."}`, the capability result value.
 
     The Python distribution is unavailable from PyPI for this release. From a
     [source checkout](/docs/install#source-checkout), the same no-key proof
@@ -100,104 +111,40 @@ tool.
   </Step>
 
   <Step>
-    ### Configure OpenAI
+    ### Configure OpenAI (Python)
 
-    Add the recommended OpenAI peer, then export its credential before running
-    the live-provider example:
+    Live providers are a Python path in this release. Export the credential,
+    then switch the quickstart's mock factory for the OpenAI factory:
 
     ```bash
-    npm install "openai@>=4 <8"
-    # or: bun add "openai@>=4 <8"
     export OPENAI_API_KEY=sk-...
     ```
 
-    The `openai()` provider factory reads `OPENAI_API_KEY`. Load the variable
-    with your application's environment tooling. OpenAI is the recommended
-    live-provider path for this TypeScript candidate. Anthropic, Gemini, Kimi,
-    and OpenRouter are implemented but remain WIP.
+    The `kaji.get_provider("openai")` factory reads `OPENAI_API_KEY`. Load the
+    variable with your application's environment tooling. OpenAI is the
+    recommended live-provider path. Anthropic, Gemini, Kimi, and OpenRouter
+    are implemented but remain WIP.
 
   </Step>
 
   <Step>
-    ### Define a typed tool
+    ### Run a live tool loop (Python)
 
-    A tool combines a model-visible description, a Zod parameter schema, an
-    explicit risk classification, and a handler. Create `agent.mts`:
+    Change the Python quickstart's provider line and give the tool a caller
+    identity:
 
-    ```ts
-    import { AgentBuilder, deadlineAfter, functionTool, openai } from "@irogane/kaji";
-    import { z } from "zod";
-
-    const getWeather = functionTool(
-      {
-        name: "get_weather",
-        description: "Look up the weather for a city.",
-        parameters: z.object({ city: z.string() }),
-        risk: "read",
-      },
-      async ({ city }, context) => ({
-        city,
-        tempF: 68,
-        principal: context.principalId,
-      }),
-    );
-    ```
-
-    Kaji validates model-generated arguments against the Zod schema before the
-    handler runs.
-
-  </Step>
-
-  <Step>
-    ### Build the runtime
-
-    Continue in `agent.mts`. `AgentBuilder` makes the provider and
-    available tools explicit:
-
-    ```ts
-    const runtime = new AgentBuilder()
-      .provider(openai())
-      .tool(getWeather)
-      .systemPrompt("You are a helpful weather assistant.")
-      .build();
-    ```
-
-    No database or server is required. The default event store and committer
-    are bounded, in-memory, and process-local.
-
-  </Step>
-
-  <Step>
-    ### Run a turn
-
-    Tool-capable turns require a caller principal. Add a deadline so the caller
-    can tighten the runtime's whole-turn limit:
-
-    ```ts
-    try {
-      const result = await runtime.turn("What's the weather in Chicago?", {
-        context: {
-          principalId: "weather-app",
-          deadlineAtMs: deadlineAfter(30_000),
-        },
-      });
-      console.log(result.text);
-    } finally {
-      runtime.close();
-    }
-    ```
-
-    Run the completed example from the quickstart directory:
-
-    ```bash
-    npm exec -- tsx agent.mts
-    # or: bun agent.mts
+    ```python
+    runtime = (
+        kaji.AgentBuilder()
+        .provider(kaji.get_provider("openai"))
+        .tool(local_status)
+        .default_context(kaji.TurnContext(principal_id="docs-source"))
+        .build()
+    )
     ```
 
     `turn()` records the user message, calls the provider, validates and
     dispatches any selected tool, and returns the final assistant text.
-    `deadlineAfter()` converts a duration to the absolute epoch value expected
-    by `deadlineAtMs`.
 
   </Step>
 </Steps>

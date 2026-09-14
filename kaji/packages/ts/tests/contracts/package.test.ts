@@ -2,17 +2,12 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
-  cpSync,
-  copyFileSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   readdirSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,12 +105,19 @@ const GITHUB_PACKAGE_ABI = JSON.parse(
   catalog_version: "0.2.0";
   tools: ReadonlyArray<{ name: string; risk?: unknown }>;
 };
-const GITHUB_COPIED_MANIFEST = JSON.parse(
-  readFileSync(join(packageRoot, "registry/github/manifest.json"), "utf8"),
-) as {
-  version: "0.1.0";
-  tools: ReadonlyArray<{ name: string; risk?: unknown }>;
-};
+// Receipt-validation fixture retained for the packaging script's closed
+// catalog handling; the packaged GitHub integration itself is removed.
+const GITHUB_COPIED_MANIFEST = {
+  version: "0.1.0" as const,
+  tools: [
+    { name: "add_comment", risk: "write" },
+    { name: "create_issue", risk: "write" },
+    { name: "get_file", risk: "read" },
+    { name: "get_issue", risk: "read" },
+    { name: "list_issues", risk: "read" },
+    { name: "search_code", risk: "read" },
+  ],
+} as const;
 const GITHUB_API_FIXTURE = JSON.parse(
   readFileSync(join(canonicalRoot, "integrations/v1/api/github.json"), "utf8"),
 ) as { version: "1.0.0"; cases: readonly unknown[] };
@@ -339,25 +341,7 @@ function localReceiptContext(commit: string | null): OrdinaryReceiptContext {
   };
 }
 
-const EXPECTED_PACKED_REGISTRY_FILES = [
-  "registry/echo/index.ts",
-  "registry/echo/manifest.json",
-  "registry/github/LICENSE",
-  "registry/github/client.ts",
-  "registry/github/index.ts",
-  "registry/github/manifest.json",
-  "registry/github/owner-fixtures.json",
-  "registry/github/tests/github.test.ts",
-  "registry/gmail/LICENSE",
-  "registry/gmail/client.ts",
-  "registry/gmail/index.ts",
-  "registry/gmail/manifest.json",
-  "registry/gmail/owner-fixtures.json",
-  "registry/gmail/tests/gmail.test.ts",
-  "registry/index.json",
-  "registry/index.schema.json",
-  "registry/schema.json",
-] as const;
+const EXPECTED_PACKED_REGISTRY_FILES: readonly string[] = [];
 
 interface SyncChildOptions {
   cwd?: string;
@@ -1095,60 +1079,14 @@ describe("npm contract artifact", () => {
     expect(source).not.toContain("echoResult:");
   });
 
-  it("runs the source benchmark without consulting clean or stale dist subpaths", () => {
-    const workdir = mkdtempSync(join(tmpdir(), "kaji-source-benchmark-"));
-    const checkout = join(workdir, "sdk");
-    try {
-      mkdirSync(join(checkout, "benchmarks", "runtime"), { recursive: true });
-      cpSync(join(packageRoot, "src"), join(checkout, "src"), { recursive: true });
-      cpSync(join(packageRoot, "contracts"), join(checkout, "contracts"), { recursive: true });
-      cpSync(
-        join(packageRoot, "benchmarks/runtime/benchmark.ts"),
-        join(checkout, "benchmarks/runtime/benchmark.ts"),
+  it("keeps the removed runtime benchmark harness and stale dist subpaths out", () => {
+    expect(existsSync(join(packageRoot, "benchmarks/runtime/benchmark.ts"))).toBe(false);
+    for (const stale of ["openai.js", "testing.js", "integrations.js"]) {
+      expect(existsSync(join(packageRoot, "dist", stale)), `${stale} must stay removed`).toBe(
+        false,
       );
-      cpSync(join(packageRoot, "package.json"), join(checkout, "package.json"));
-      cpSync(join(packageRoot, "tsconfig.json"), join(checkout, "tsconfig.json"));
-      symlinkSync(join(packageRoot, "node_modules"), join(checkout, "node_modules"));
-      mkdirSync(join(checkout, "dist"));
-      for (const file of ["index.js", "openai.js", "testing.js"]) {
-        writeFileSync(join(checkout, "dist", file), 'throw new Error("stale dist loaded");\n');
-      }
-
-      const sample = JSON.parse(
-        runText(
-          "bun",
-          ["benchmarks/runtime/benchmark.ts", "--worker-case", "replay10k", "--seed", "13"],
-          { cwd: checkout },
-        ),
-      ) as { case: string; completed: number };
-
-      expect(sample.case).toBe("replay10k");
-      expect(sample.completed).toBe(10_000);
-
-      const warmed = JSON.parse(
-        runText(
-          "bun",
-          [
-            "benchmarks/runtime/benchmark.ts",
-            "--case",
-            "crossSession100",
-            "--samples",
-            "1",
-            "--warmups",
-            "1",
-            "--seed",
-            "13",
-            "--json",
-          ],
-          { cwd: checkout },
-        ),
-      ) as { sampleResults: Array<{ warmupRuns?: number }> };
-
-      expect(warmed.sampleResults[0]?.warmupRuns).toBe(1);
-    } finally {
-      rmSync(workdir, { recursive: true, force: true });
     }
-  }, 30_000);
+  });
 
   it("accepts only the exact canonical Echo list row", () => {
     expect(() =>
@@ -1215,7 +1153,7 @@ describe("npm contract artifact", () => {
     expect(manifest.scripts.build).toBe("bun run clean && tsup");
     expect(buildConfig).not.toContain("rmSync");
     expect(buildConfig).not.toContain('from "node:fs"');
-    expect([...buildConfig.matchAll(/\bclean:\s*false\b/g)]).toHaveLength(5);
+    expect([...buildConfig.matchAll(/\bclean:\s*false\b/g)]).toHaveLength(4);
     expect(buildConfig).not.toMatch(/\bclean:\s*true\b/);
   });
 
@@ -1240,21 +1178,22 @@ describe("npm contract artifact", () => {
     expect(entry).toContain("process.argv.slice(1)");
   });
 
-  it("exports the canonical GitHub package subpath", () => {
+  it("keeps removed integration, provider, auth, and testing subpaths out of the manifest", () => {
     const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8"));
     const buildConfig = readFileSync(join(packageRoot, "tsup.config.ts"), "utf8");
 
-    expect(manifest.exports["./integrations/github"]).toEqual({
-      import: {
-        types: "./dist/integrations/github.d.ts",
-        default: "./dist/integrations/github.js",
-      },
-      require: {
-        types: "./dist/integrations/github.d.cts",
-        default: "./dist/integrations/github.cjs",
-      },
-    });
-    expect(buildConfig).toContain('"integrations/github": "src/integrations/github.ts"');
+    expect(Object.keys(manifest.exports).sort()).toEqual([".", "./cli", "./postgres"]);
+    for (const removed of [
+      "./anthropic",
+      "./auth",
+      "./integrations",
+      "./integrations/github",
+      "./openai",
+      "./testing",
+    ]) {
+      expect(manifest.exports, removed).not.toHaveProperty(removed);
+      expect(buildConfig).not.toContain(removed);
+    }
   });
 
   it("smokes generated npm and Bun projects with both supported compiler lines", () => {
@@ -1266,41 +1205,22 @@ describe("npm contract artifact", () => {
       packageSubpaths: { typescript: Record<string, unknown> };
     };
 
-    expect(tiers.cliCommands.typescript.stable).toEqual([
-      "add",
-      "connect",
-      "disconnect",
-      "init",
-      "list-integrations",
-      "replay",
-    ]);
+    expect(tiers.cliCommands.typescript.stable).toEqual(["init", "replay"]);
     expect(tiers.packageSubpaths.typescript["./cli"]).toEqual({
       tier: "stable",
       exports: [],
     });
-    expect(Object.keys(tiers.packageSubpaths.typescript).sort()).toEqual([
+    expect(Object.keys(tiers.packageSubpaths.typescript).sort()).toEqual(["./cli", "./postgres"]);
+    for (const removed of [
       "./anthropic",
       "./auth",
-      "./cli",
       "./integrations",
       "./integrations/github",
       "./openai",
-      "./postgres",
       "./testing",
-    ]);
-    expect(tiers.packageSubpaths.typescript["./integrations/github"]).toEqual({
-      tier: "experimental",
-      exports: [
-        "CreateGitHubIntegrationOptions",
-        "GitHubIntegration",
-        "createGithubIntegration",
-        "inspectIntegration",
-      ],
-    });
-    expect(tiers.packageSubpaths.typescript["./openai"]).toEqual({
-      tier: "stable",
-      exports: ["OpenAIProvider", "OpenAIProviderOptions", "RetryOptions"],
-    });
+    ]) {
+      expect(tiers.packageSubpaths.typescript, removed).not.toHaveProperty(removed);
+    }
     expect(tiers.packageSubpaths.typescript["./postgres"]).toEqual({
       tier: "experimental",
       exports: [
@@ -1313,19 +1233,6 @@ describe("npm contract artifact", () => {
         "PostgresToolIdempotencyLedger",
         "PostgresTurnCoordinator",
         "postgresLockKey",
-      ],
-    });
-    expect(tiers.packageSubpaths.typescript["./anthropic"]).toEqual({
-      tier: "experimental",
-      exports: ["AnthropicProvider", "AnthropicProviderOptions"],
-    });
-    expect(tiers.packageSubpaths.typescript["./testing"]).toEqual({
-      tier: "experimental",
-      exports: [
-        "MockProvider",
-        "ProviderResponseDiagnostics",
-        "createSessionState",
-        "withProviderResponseDiagnostics",
       ],
     });
 
@@ -1446,8 +1353,13 @@ describe("npm contract artifact", () => {
     }
 
     const scaffoldSource = readFileSync(join(packageRoot, "src/cli/init.ts"), "utf8");
-    expect(scaffoldSource).toContain('import { AgentBuilder } from "@irogane/kaji"');
-    expect(scaffoldSource).toContain("new AgentBuilder().provider(provider).build()");
+    expect(scaffoldSource).toContain(
+      'import { Kaji, capability, capabilityResult } from "@irogane/kaji"',
+    );
+    expect(scaffoldSource).toContain("await Kaji.execute({");
+    expect(scaffoldSource).toContain('principal: "local-user"');
+    expect(scaffoldSource).not.toContain("AgentBuilder");
+    expect(scaffoldSource).not.toContain("@irogane/kaji/openai");
     expect(scaffoldSource).not.toContain("supportsSessionPurge");
     expect(scaffoldSource).not.toContain("purgeSession(result.sessionId)");
 
@@ -2556,12 +2468,7 @@ exit 7
             )),
       );
 
-      expect(githubSourceMaps.map(({ path }) => path)).toEqual(
-        expect.arrayContaining([
-          "dist/integrations/github.js.map",
-          "dist/integrations/github.cjs.map",
-        ]),
-      );
+      expect(githubSourceMaps.map(({ path }) => path)).toEqual([]);
       for (const { path, document } of githubSourceMaps) {
         const embeddedSources = Array.isArray(document.sourcesContent)
           ? document.sourcesContent.filter((source) => typeof source === "string")
@@ -2581,504 +2488,69 @@ exit 7
     }
   }, 30_000);
 
-  it("executes every GitHub package-proof case without network access", () => {
-    const workdir = mkdtempSync(join(tmpdir(), "kaji-github-proof-"));
-    try {
-      const packDestination = join(workdir, "pack");
-      mkdirSync(packDestination);
-      const packed = JSON.parse(
-        runText(
-          "npm",
-          ["pack", "--ignore-scripts", "--json", "--pack-destination", packDestination],
-          {
-            cwd: packageRoot,
-            env: { ...process.env, npm_config_cache: join(workdir, "npm-cache") },
-          },
-        ),
-      ) as Array<{ filename: string }>;
-      const extracted = join(workdir, "artifact");
-      mkdirSync(extracted);
-      runText("tar", ["-xzf", join(packDestination, packed[0]!.filename), "-C", extracted]);
-
-      const installed = realpathSync(join(extracted, "package"));
-      const bootstrap = join(workdir, "bootstrap");
-      mkdirSync(join(bootstrap, "node_modules", "@irogane"), { recursive: true });
-      symlinkSync(installed, join(bootstrap, "node_modules", "@irogane", "kaji"), "dir");
-      symlinkSync(join(packageRoot, "node_modules"), join(installed, "node_modules"), "dir");
-      symlinkSync(
-        join(packageRoot, "node_modules", "@types"),
-        join(bootstrap, "node_modules", "@types"),
-        "dir",
-      );
-      symlinkSync(
-        join(packageRoot, "node_modules", "undici-types"),
-        join(bootstrap, "node_modules", "undici-types"),
-        "dir",
-      );
-      writeFileSync(
-        join(bootstrap, "github-types.mts"),
-        `import {
-  Integration,
-  type CliApprovalInput,
-  type CliApprovalOptions,
-  type CliApprovalOutput,
-} from "@irogane/kaji";
-import {
-  GitHubIntegration,
-  createGithubIntegration,
-  inspectIntegration,
-  type CreateGitHubIntegrationOptions,
-} from "@irogane/kaji/integrations/github";
-const options: CreateGitHubIntegrationOptions = {
-  tokenFor: async () => "proof",
-  repositories: [],
-  toolExposure: "read-only",
-};
-const direct: GitHubIntegration = new GitHubIntegration(options);
-const created: GitHubIntegration = createGithubIntegration(options);
-const inspected: GitHubIntegration = inspectIntegration();
-const roots: Integration[] = [direct, created, inspected];
-const approvalInput: CliApprovalInput = {
-  readableEnded: false,
-  destroyed: false,
-  on(_event, _listener) {
-    return this;
-  },
-  once(_event, _listener) {
-    return this;
-  },
-  removeListener(_event, _listener) {
-    return this;
-  },
-  pause() {
-    return this;
-  },
-  resume() {
-    return this;
-  },
-};
-const approvalOutput: CliApprovalOutput = {
-  write(_chunk) {
-    return true;
-  },
-};
-const approvalOptions: CliApprovalOptions = {
-  input: approvalInput,
-  output: approvalOutput,
-  label: "installed-type-proof",
-};
-void roots;
-void approvalOptions;
-`,
-      );
-      writeFileSync(
-        join(bootstrap, "github-types.cts"),
-        `import sdk = require("@irogane/kaji");
-import github = require("@irogane/kaji/integrations/github");
-const options: github.CreateGitHubIntegrationOptions = {
-  tokenFor: async () => "proof",
-  repositories: [],
-  toolExposure: "read-only",
-};
-const direct: github.GitHubIntegration = new github.GitHubIntegration(options);
-const created: github.GitHubIntegration = github.createGithubIntegration(options);
-const inspected: github.GitHubIntegration = github.inspectIntegration();
-const roots: sdk.Integration[] = [direct, created, inspected];
-const approvalInput: sdk.CliApprovalInput = {
-  readableEnded: false,
-  destroyed: false,
-  on(_event, _listener) {
-    return this;
-  },
-  once(_event, _listener) {
-    return this;
-  },
-  removeListener(_event, _listener) {
-    return this;
-  },
-  pause() {
-    return this;
-  },
-  resume() {
-    return this;
-  },
-};
-const approvalOutput: sdk.CliApprovalOutput = {
-  write(_chunk) {
-    return true;
-  },
-};
-const approvalOptions: sdk.CliApprovalOptions = {
-  input: approvalInput,
-  output: approvalOutput,
-  label: "installed-type-proof",
-};
-void roots;
-void approvalOptions;
-`,
-      );
-      const compilerOptions = {
-        module: "NodeNext",
-        moduleResolution: "NodeNext",
-        noEmit: true,
-        skipLibCheck: false,
-        strict: true,
-        target: "ES2022",
-        types: [],
-      };
-      for (const [config, source] of [
-        ["tsconfig.github-types-esm.json", "github-types.mts"],
-        ["tsconfig.github-types-cjs.json", "github-types.cts"],
-      ] as const) {
-        writeFileSync(
-          join(bootstrap, config),
-          JSON.stringify({ compilerOptions, files: [source] }),
-        );
-      }
-      for (const [compiler, extraArgs] of [
-        [join(packageRoot, "node_modules/typescript57/bin/tsc"), ["--ignoreDeprecations", "5.0"]],
-        [join(packageRoot, "node_modules/typescript/bin/tsc"), []],
-      ] as const) {
-        for (const config of ["tsconfig.github-types-esm.json", "tsconfig.github-types-cjs.json"]) {
-          runText("node", [compiler, "--project", config, "--noEmit", ...extraArgs], {
-            cwd: bootstrap,
-          });
-        }
-      }
-      const declarationChecks = join(bootstrap, "typescript-declaration-checks.json");
-      writeFileSync(
-        declarationChecks,
-        JSON.stringify(GITHUB_PACKAGE_PROOF.typescriptDeclarationChecks),
-      );
-      const runner = join(bootstrap, "installed-github-smoke.mts");
-      copyFileSync(resolve(packageRoot, "scripts/installed-github-smoke.mts"), runner);
-      const environment = Object.fromEntries(
-        ["HOME", "LANG", "LC_ALL", "LC_CTYPE", "PATH", "TEMP", "TMP", "TMPDIR"].flatMap((name) =>
-          process.env[name] === undefined ? [] : [[name, process.env[name]]],
-        ),
-      );
-      expect(() =>
-        runText("node", [runner, "--sandbox-root", workdir, "--package-root", installed], {
-          cwd: bootstrap,
-          env: environment,
-        }),
-      ).toThrow();
-      const output = runText(
-        "node",
-        [
-          runner,
-          "--sandbox-root",
-          workdir,
-          "--package-root",
-          installed,
-          "--typescript-declaration-checks",
-          declarationChecks,
-        ],
-        { cwd: bootstrap, env: environment },
-      );
-
-      expect(JSON.parse(output)).toEqual(GITHUB_PACKAGE_PROOF);
-    } finally {
-      rmSync(workdir, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  it("preserves tool error identity across installed ESM and CommonJS entrypoints", () => {
-    const esmRoot = pathToFileURL(resolve(packageRoot, "dist/index.js")).href;
-    const esmIntegrations = pathToFileURL(resolve(packageRoot, "dist/integrations.js")).href;
-    const esm = runText(
-      "node",
-      [
-        "--input-type=module",
-        "--eval",
-        `const root=await import(${JSON.stringify(esmRoot)});` +
-          `const integrations=await import(${JSON.stringify(esmIntegrations)});` +
-          'const error=new integrations.IntegrationAuthRequiredError("github_token_missing");' +
-          "console.log(error instanceof root.ToolExecutionError," +
-          'new root.ToolExecutionError("x","X",false,"failed") instanceof ' +
-          "integrations.IntegrationAuthRequiredError," +
-          '({error_code:"X",retryable:false,outcome:"failed"}) instanceof ' +
-          "root.ToolExecutionError);",
-      ],
-      { cwd: packageRoot },
-    );
-    const cjs = runText(
-      "node",
-      [
-        "--eval",
-        `const root=require(${JSON.stringify(resolve(packageRoot, "dist/index.cjs"))});` +
-          `const integrations=require(${JSON.stringify(
-            resolve(packageRoot, "dist/integrations.cjs"),
-          )});` +
-          'const error=new integrations.IntegrationAuthRequiredError("github_token_missing");' +
-          "console.log(error instanceof root.ToolExecutionError," +
-          'new root.ToolExecutionError("x","X",false,"failed") instanceof ' +
-          "integrations.IntegrationAuthRequiredError," +
-          '({error_code:"X",retryable:false,outcome:"failed"}) instanceof ' +
-          "root.ToolExecutionError);",
-      ],
-      { cwd: packageRoot },
-    );
-
-    expect(esm.trim()).toBe("true false false");
-    expect(cjs.trim()).toBe("true false false");
-  });
-
-  it("exports the closed recovery contract from built ESM and CommonJS entrypoints", () => {
-    const esmIntegrations = pathToFileURL(resolve(packageRoot, "dist/integrations.js")).href;
-    const script = (specifier: string, loader: "import" | "require") =>
-      loader === "import"
-        ? `const integrations=await import(${JSON.stringify(specifier)});`
-        : `const integrations=require(${JSON.stringify(specifier)});`;
-    const proof =
-      "const recovery=integrations.INTEGRATION_RECOVERY.github_token_missing;" +
-      "console.log(JSON.stringify({" +
-      "exports:['INTEGRATION_RECOVERY','closedRecoveryFields'].every(" +
-      'name=>typeof integrations[name]!=="undefined"),' +
-      'internalAbsent:typeof integrations.isClosedRecoveryTuple==="undefined",' +
-      "count:Object.keys(integrations.INTEGRATION_RECOVERY).length," +
-      "frozen:Object.isFrozen(integrations.INTEGRATION_RECOVERY)," +
-      "github:recovery.docUrl," +
-      "rateLimited:integrations.INTEGRATION_RECOVERY.rate_limited.docUrl," +
-      "valid:integrations.closedRecoveryFields({" +
-      "reason_code:'github_token_missing',recovery_code:recovery.recoveryCode," +
-      "doc_url:recovery.docUrl,error_code:recovery.errorCode})," +
-      "invalid:integrations.closedRecoveryFields({" +
-      "reason_code:'github_token_missing',recovery_code:recovery.recoveryCode," +
-      "doc_url:recovery.docUrl,error_code:'WRONG'})" +
-      "}));";
-    const expected = {
-      exports: true,
-      internalAbsent: true,
-      count: 15,
-      frozen: true,
-      github: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
-      rateLimited: "https://kaji.dev/docs/integrations/recovery-v1#rate-limited",
-      valid: {
-        reason_code: "github_token_missing",
-        recovery_code: "CONFIGURE_GITHUB_TOKEN",
-        doc_url: "https://kaji.dev/docs/integrations/recovery-v1#github-token",
-      },
-    };
-
-    const esm = runText(
-      "node",
-      ["--input-type=module", "--eval", script(esmIntegrations, "import") + proof],
-      { cwd: packageRoot },
-    );
-    const cjs = runText(
-      "node",
-      ["--eval", script(resolve(packageRoot, "dist/integrations.cjs"), "require") + proof],
-      { cwd: packageRoot },
-    );
-
-    expect(JSON.parse(esm)).toEqual(expected);
-    expect(JSON.parse(cjs)).toEqual(expected);
-  });
-
-  it("installs packed benchmark seams through public ESM and CommonJS specifiers", () => {
-    const workdir = mkdtempSync(join(tmpdir(), "kaji-testing-pack-"));
+  it("keeps removed integration runtime files out of the packed artifact", () => {
+    const workdir = mkdtempSync(join(tmpdir(), "kaji-integration-pack-"));
     try {
       const packed = JSON.parse(
         runText("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", workdir], {
           cwd: packageRoot,
           env: { ...process.env, npm_config_cache: join(workdir, "npm-cache") },
         }),
-      ) as Array<{ filename: string }>;
-      const tarball = join(workdir, packed[0]!.filename);
-      const consumer = join(workdir, "consumer");
-      mkdirSync(consumer);
-      const fixtureLock = JSON.parse(
-        readFileSync(
-          resolve(repositoryRoot, "kaji/tooling/package/typescript/runtime/package-lock.json"),
-          "utf8",
-        ),
-      ) as { packages: Record<string, { version?: string }> };
-      const localDependency = (name: string): string => {
-        const version = fixtureLock.packages[`node_modules/${name}`]?.version;
-        if (version === undefined) throw new Error(`missing frozen version for ${name}`);
-        const directory = realpathSync(join(packageRoot, "node_modules", name));
-        const installedManifest = JSON.parse(
-          readFileSync(join(directory, "package.json"), "utf8"),
-        ) as { name?: string; version?: string };
-        if (installedManifest.name !== name || installedManifest.version !== version) {
-          throw new Error(`local ${name} does not match the frozen consumer lock`);
-        }
-        return `file:${directory}`;
-      };
-      const localDependencies = {
-        "@anthropic-ai/sdk": localDependency("@anthropic-ai/sdk"),
-        ajv: localDependency("ajv"),
-        "ajv-formats": localDependency("ajv-formats"),
-        openai: localDependency("openai"),
-        zod: localDependency("zod"),
-      };
-      const writeConsumerManifest = (dependencies: Record<string, string>): void => {
-        writeFileSync(
-          join(consumer, "package.json"),
-          JSON.stringify({
-            name: "kaji-packed-subpath-proof",
-            private: true,
-            type: "module",
-            dependencies,
-          }),
-        );
-      };
-      const installHome = join(workdir, "home");
-      const installCache = join(workdir, "bun-cache");
-      const installTemporary = join(workdir, "bun-tmp");
-      for (const directory of [installHome, installCache, installTemporary]) {
-        mkdirSync(directory);
-      }
-      const installOptions = {
-        cwd: consumer,
-        env: {
-          ...process.env,
-          HOME: installHome,
-          npm_config_cache: installCache,
-          npm_config_registry: "http://127.0.0.1:9",
-          TEMP: installTemporary,
-          TMP: installTemporary,
-          TMPDIR: installTemporary,
-        },
-      };
-      writeConsumerManifest(localDependencies);
-      runText(
-        "npm",
-        [
-          "install",
-          "--offline",
-          "--ignore-scripts",
-          "--no-audit",
-          "--no-fund",
-          "--package-lock=false",
-        ],
-        installOptions,
-      );
-      writeConsumerManifest({ ...localDependencies, "@irogane/kaji": `file:${tarball}` });
-      runText(
-        "npm",
-        [
-          "install",
-          "--offline",
-          "--ignore-scripts",
-          "--no-audit",
-          "--no-fund",
-          "--package-lock=false",
-        ],
-        installOptions,
-      );
-      const installed = join(consumer, "node_modules/@irogane/kaji");
-      expect(lstatSync(installed).isSymbolicLink()).toBe(false);
-      expect(realpathSync(installed).startsWith(`${realpathSync(consumer)}/`)).toBe(true);
-      const exercise = `
-class Probe extends openai.OpenAIProvider {
-  constructor(outcome) { super({apiKey:"test",retry:{maxAttempts:1}}); this.outcome=outcome; }
-  async createClient() { return {chat:{completions:{create:async()=>{
-    if (this.outcome?.throws) throw this.outcome.value;
-    return this.outcome;
-  }}}}; }
-}
-const response=(content)=>({choices:[{message:{content,tool_calls:[]}}]});
-const capture=async(promise)=>{try{await promise;}catch(error){return error;} throw new Error("expected failure");};
-let diagnostics;
-await new Probe(response("ok")).generate([{role:"user",content:"probe"}],[],testing.withProviderResponseDiagnostics({}, {record(value){diagnostics=value;}}));
-let config;
-try { new openai.OpenAIProvider({apiKey:""}); } catch (error) { config=error; }
-const api=await capture(new Probe({throws:true,value:{status:500}}).generate([{role:"user",content:"probe"}],[]));
-const connection=await capture(new Probe({throws:true,value:{code:"ECONNRESET"}}).generate([{role:"user",content:"probe"}],[]));
-const rateSource=new root.ProviderRateLimitedError("rate",{retryAfterMs:1,attempts:1});
-const rate=await capture(new Probe({throws:true,value:rateSource}).generate([{role:"user",content:"probe"}],[]));
-const limit=await capture(new Probe(response("too large")).generate([{role:"user",content:"probe"}],[],{responseLimits:{...root.DEFAULT_PROVIDER_RESPONSE_LIMITS,textMaxBytes:1,responseMaxBytes:1}}));
-console.log(JSON.stringify({
-  testing:Object.keys(testing),
-  root:Object.keys(root),
-  diagnostics:diagnostics!==undefined,
-  errors:{
-    config:config instanceof root.ProviderConfigError,
-    api:api instanceof root.ProviderAPIError,
-    connection:connection instanceof root.ProviderConnectionError,
-    rate:rate instanceof root.ProviderRateLimitedError,
-    limit:limit instanceof root.ProviderOutputLimitError,
-  },
-}));`;
-      const esm = JSON.parse(
-        runText(
-          "node",
-          [
-            "--input-type=module",
-            "--eval",
-            `const testing=await import("@irogane/kaji/testing"); const root=await import("@irogane/kaji"); const openai=await import("@irogane/kaji/openai"); ${exercise}`,
-          ],
-          { cwd: consumer },
-        ),
-      ) as {
-        testing: string[];
-        root: string[];
-        diagnostics: boolean;
-        errors: Record<string, boolean>;
-      };
-      const cjs = JSON.parse(
-        runText(
-          "node",
-          [
-            "--eval",
-            `void (async()=>{ const testing=require("@irogane/kaji/testing"); const root=require("@irogane/kaji"); const openai=require("@irogane/kaji/openai"); ${exercise} })();`,
-          ],
-          { cwd: consumer },
-        ),
-      ) as {
-        testing: string[];
-        root: string[];
-        diagnostics: boolean;
-        errors: Record<string, boolean>;
-      };
-
-      const esmCli = runText(
-        "node",
-        [
-          "--input-type=module",
-          "--eval",
-          'process.argv=["node","--help"]; await import("@irogane/kaji/cli");',
-        ],
-        { cwd: consumer },
-      );
-      const cjsCli = runText(
-        "node",
-        ["--eval", 'process.argv=["node","--help"]; require("@irogane/kaji/cli");'],
-        { cwd: consumer },
-      );
-      expect(esmCli).toContain("usage: kaji");
-      expect(cjsCli).toContain("usage: kaji");
-
-      for (const exports of [esm, cjs]) {
-        expect(exports.testing).toEqual(
-          expect.arrayContaining([
-            "MockProvider",
-            "createSessionState",
-            "withProviderResponseDiagnostics",
-          ]),
-        );
-        expect(exports.root).not.toContain("createSessionState");
-        expect(exports.root).not.toContain("withProviderResponseDiagnostics");
-        expect(exports.diagnostics).toBe(true);
-        expect(exports.errors).toEqual({
-          config: true,
-          api: true,
-          connection: true,
-          rate: true,
-          limit: true,
-        });
-      }
-      for (const declaration of ["testing.d.ts", "testing.d.cts"]) {
-        expect(readFileSync(join(installed, "dist", declaration), "utf8")).toContain(
-          "ProviderResponseDiagnostics",
-        );
+      ) as Array<{ filename: string; files: Array<{ path: string }> }>;
+      const paths = packed[0]!.files.map(({ path }) => path);
+      for (const removed of ["registry/github/manifest.json"]) {
+        expect(paths, removed).not.toContain(removed);
       }
     } finally {
       rmSync(workdir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it("keeps tool error identity on the root entrypoints while recovery internals stay private", () => {
+    const esmRoot = pathToFileURL(resolve(packageRoot, "dist/index.js")).href;
+    const probe =
+      "console.log(JSON.stringify({" +
+      'errorIdentity:new root.ToolExecutionError("x","X",false,"failed") instanceof root.ToolExecutionError,' +
+      "recoveryInternal:typeof root.closedRecoveryFields," +
+      "transport:typeof root.safeRequest}));";
+    const esm = runText(
+      "node",
+      [
+        "--input-type=module",
+        "--eval",
+        `const root=await import(${JSON.stringify(esmRoot)});` + probe,
+      ],
+      { cwd: packageRoot },
+    );
+    const cjs = runText(
+      "node",
+      [
+        "--eval",
+        `const root=require(${JSON.stringify(resolve(packageRoot, "dist/index.cjs"))});` + probe,
+      ],
+      { cwd: packageRoot },
+    );
+
+    const expected = JSON.stringify({
+      errorIdentity: true,
+      recoveryInternal: "undefined",
+      transport: "undefined",
+    });
+    expect(esm.trim()).toBe(expected);
+    expect(cjs.trim()).toBe(expected);
+  });
+
+  it("keeps removed provider and testing subpaths unresolvable", () => {
+    const manifest = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
+      exports: Record<string, unknown>;
+    };
+
+    expect(Object.keys(manifest.exports).sort()).toEqual([".", "./cli", "./postgres"]);
+    expect(existsSync(join(packageRoot, "dist", "testing.js"))).toBe(false);
+    expect(existsSync(join(packageRoot, "dist", "testing.d.ts"))).toBe(false);
+    expect(existsSync(join(packageRoot, "dist", "openai.js"))).toBe(false);
+    expect(existsSync(join(packageRoot, "dist", "openai.d.ts"))).toBe(false);
+  });
 
   it("contains exactly the supported TypeScript contract projection", () => {
     const workdir = mkdtempSync(join(tmpdir(), "kaji-contract-pack-"));
@@ -3138,16 +2610,6 @@ console.log(JSON.stringify({
         "dist/cli/package-entry-cjs.cjs",
         "dist/cli/package-entry-cjs.d.cts",
         "dist/cli/init-worker.js",
-        "dist/integrations.js",
-        "dist/integrations.cjs",
-        "dist/integrations.d.ts",
-        "dist/integrations.d.cts",
-        "dist/integrations/github.js",
-        "dist/integrations/github.cjs",
-        "dist/integrations/github.d.ts",
-        "dist/integrations/github.d.cts",
-        "registry/index.json",
-        "registry/schema.json",
       ]) {
         expect(paths).toContain(required);
       }
@@ -3192,27 +2654,6 @@ console.log(JSON.stringify({
       );
       expect(forbidden).toEqual([]);
 
-      const registryIndex = JSON.parse(
-        runText("tar", ["-xOf", tarball, "package/registry/index.json"]),
-      ) as { integrations?: Record<string, { manifest?: string } | string> };
-      const integrations = registryIndex.integrations ?? {};
-      expect(Object.keys(integrations).length).toBeGreaterThan(0);
-      for (const [name, entry] of Object.entries(integrations)) {
-        const manifestPath = typeof entry === "string" ? entry : entry.manifest;
-        expect(manifestPath, `${name} has no manifest`).toBeTruthy();
-        const packedManifest = `registry/${manifestPath!}`;
-        expect(paths, `missing ${packedManifest}`).toContain(packedManifest);
-        const manifest = JSON.parse(
-          runText("tar", ["-xOf", tarball, `package/${packedManifest}`]),
-        ) as { files?: string[] };
-        expect(manifest.files?.length, `${name} manifest has no files`).toBeGreaterThan(0);
-        const manifestDirectory = dirname(packedManifest);
-        for (const file of manifest.files ?? []) {
-          expect(paths, `missing ${name} manifest file ${file}`).toContain(
-            join(manifestDirectory, file).replaceAll("\\", "/"),
-          );
-        }
-      }
       expect(manifest.dependencies).toEqual({
         ajv: "^8.20.0",
         "ajv-formats": "^3.0.1",

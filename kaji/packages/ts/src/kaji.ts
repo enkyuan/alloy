@@ -2,7 +2,7 @@
  * Kaji.execute: stable one-shot entry point for product-capability execution.
  *
  * Composes the existing `ToolRegistry` + `ToolExecutionController` + `ToolPlanner`
- * triple (the same stack that `AgentBuilder.build()` constructs) to dispatch a
+ * triple to dispatch a
  * single `Capability` through `ToolPlanner.executeBatch()`. There is no second
  * execution path; policy and approval enforcement live exclusively in the
  * planner.
@@ -28,11 +28,8 @@ export interface KajiExecuteArgs {
   capability: Capability;
   /** Capability arguments, validated against the capability's Zod schema. */
   input: Record<string, unknown>;
-  /**
-   * Caller identity. A bare string is normalized to `{ id: <principalId> }`;
-   * an object must include a non-empty `id`.
-   */
-  principal: string | { id: string; [k: string]: unknown };
+  /** Caller identity. Must be a non-empty string. */
+  principal: string;
   /** Durable seams; defaults to a fresh `InMemoryBackend`. */
   backend?: KajiBackend;
   /** Optional policy override; defaults to fail-closed (unknown risk blocked). */
@@ -68,8 +65,8 @@ export { execute as kajiExecute };
 /**
  * Execute a single capability through the existing planner + controller stack.
  *
- * The method composes the same `ToolRegistry` + `ToolExecutionController` +
- * `ToolPlanner` triple that `AgentBuilder.build()` does, registers the
+ * The method composes the `ToolRegistry` + `ToolExecutionController` +
+ * `ToolPlanner` triple, registers the
  * capability, and dispatches one tool call via `executeBatch`. `executeBatch`
  * assembles the full `ToolExecutionContext` internally from
  * `sessionId + turnContext.principalId + signal`; it throws
@@ -86,7 +83,7 @@ async function execute<T extends JsonValue = JsonValue>(
   const backend = args.backend ?? new InMemoryBackend();
   const idFactory = systemIdFactory;
 
-  // (1) Same registry + capability registration path as AgentBuilder.build().
+  // (1) Register the capability in a fresh registry.
   const registry = new ToolRegistry();
   args.capability.register(registry);
   const specs = new Map(
@@ -127,7 +124,13 @@ async function execute<T extends JsonValue = JsonValue>(
 
   const results = await planner.executeBatch(
     sessionId,
-    [{ name: args.capability.spec.name, arguments: args.input }],
+    [
+      {
+        id: `kaji:${args.capability.spec.name}`,
+        name: args.capability.spec.name,
+        arguments: args.input,
+      },
+    ],
     emit,
     /* turnId */ idFactory.next("turn"),
     {

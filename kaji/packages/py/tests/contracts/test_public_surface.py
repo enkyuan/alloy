@@ -41,7 +41,6 @@ EXPECTED_PUBLIC = {
     "HistoryStore",
     "GoogleOAuthClient",
     "IdFactory",
-    "InMemoryBackend",
     "InMemoryEventBus",
     "InMemoryEventJournal",
     "InMemoryEventStore",
@@ -86,12 +85,7 @@ EXPECTED_PUBLIC = {
     "StoredKajiEvent",
     "SystemClock",
     "SystemIdFactory",
-    "TaskCompleted",
     "SpanHandle",
-    "TaskHandle",
-    "TaskRuntime",
-    "TaskSnapshot",
-    "TaskState",
     "ToolExecutionController",
     "ToolExecutionContext",
     "ToolExecutionError",
@@ -145,6 +139,23 @@ def test_public_surface_is_pinned() -> None:
 def test_each_public_name_resolves() -> None:
     for name in EXPECTED_PUBLIC:
         getattr(kaji, name)  # raises if the lazy module is broken
+
+
+def test_durable_task_surface_is_absent_while_voice_task_helpers_remain() -> None:
+    durable_task_names = {
+        "TaskCompleted",
+        "TaskHandle",
+        "TaskRuntime",
+        "TaskSnapshot",
+        "TaskState",
+    }
+
+    assert not durable_task_names.intersection(dir(kaji))
+
+    from kaji.modalities.voice.tasks import await_tasks_safe, cancel_tasks_safe
+
+    assert await_tasks_safe is not None
+    assert cancel_tasks_safe is not None
 
 
 def test_internal_names_still_importable_from_subpackages() -> None:

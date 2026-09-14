@@ -535,14 +535,7 @@ def test_every_packaged_cli_command_has_one_stability_tier() -> None:
             "experimental": ["doctor", "gen", "info", "secret", "upgrade"],
         },
         "typescript": {
-            "stable": [
-                "add",
-                "connect",
-                "disconnect",
-                "init",
-                "list-integrations",
-                "replay",
-            ],
+            "stable": ["init", "replay"],
             "experimental": [],
         },
     }
@@ -569,32 +562,23 @@ def test_cli_init_contract_has_exact_current_cases() -> None:
 
 def test_package_subpath_contract_covers_every_typed_esm_and_cjs_export() -> None:
     document = json.loads(FEATURE_TIERS.read_text())
-    assert set(document["packageSubpaths"]["typescript"]) == {
+    assert set(document["packageSubpaths"]["typescript"]) == {"./cli", "./postgres"}
+    for removed in (
         "./anthropic",
         "./auth",
-        "./cli",
         "./integrations",
         "./integrations/github",
         "./openai",
-        "./postgres",
         "./testing",
-    }
-    assert document["packageSubpaths"]["typescript"]["./integrations/github"] == {
-        "tier": "experimental",
-        "exports": [
-            "CreateGitHubIntegrationOptions",
-            "GitHubIntegration",
-            "createGithubIntegration",
-            "inspectIntegration",
-        ],
-    }
+    ):
+        assert removed not in document["packageSubpaths"]["typescript"]
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
     checker["check_package_subpaths"](document)
 
 
 def test_package_subpath_contract_rejects_an_unclassified_manifest_export() -> None:
     document = json.loads(FEATURE_TIERS.read_text())
-    del document["packageSubpaths"]["typescript"]["./testing"]
+    del document["packageSubpaths"]["typescript"]["./postgres"]
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="package_subpath_test")
     with pytest.raises(checker["ContractError"], match="coverage mismatch"):
         checker["check_package_subpaths"](document)

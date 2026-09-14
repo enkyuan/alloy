@@ -65,7 +65,7 @@ it in [`docs/kaji/`](kaji/).
 | Provider-safe tool names        | `ToolSpec.name` is provider-safe (e.g. `weather_get_weather`); dotted identity preserved in `catalog_name`. | Same; preserved as `catalogName`.                                                                                 | Implemented.                                                                         |
 | First-party integration catalog | Python ships the `echo` proof integration and validates manifests against the shared schema.                | TypeScript ships local/dev examples and validates manifests against the same schema.                              | Catalog contract implemented; production third-party integrations remain out of MVP. |
 | Event inspection                | Store-backed event log is the source of truth.                                                              | Store-backed event log is the source of truth.                                                                    | Implemented.                                                                         |
-| Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | `bun run test:quickstart` plus Vitest discovery of `examples/**/*.test.ts`.                                       | Implemented.                                                                         |
+| Quickstart protection           | `tests/test_quickstart.py` + `tests/test_public_api.py`.                                                    | Contract suites in `tests/contracts` execute the offline capability snippets.                                     | Implemented.                                                                         |
 | Public surface                  | Top-level `kaji` includes the core runtime plus documented Python extensions.                               | Top-level entry is MVP-focused; `MockProvider` moved to `@irogane/kaji/testing`.                                       | Implemented; keep docs honest.                                                       |
 
 The practical readiness judgement:
@@ -699,12 +699,11 @@ uv run pytest tests/test_quickstart.py tests/test_public_api.py -q
 bun run typecheck
 bun run format:check
 bun run test
-bun run test:quickstart
 ```
 
-The TypeScript quickstart check must actually discover the quickstart test. The
-package now includes `examples/**/*.test.ts` in Vitest and includes `examples`
-in the local TypeScript project so the source quickstart typechecks.
+The TypeScript verification must actually execute the offline capability
+snippets; the contract suites in `kaji/packages/ts/tests/contracts` run them
+in a token-free environment.
 
 ---
 

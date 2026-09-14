@@ -1,12 +1,14 @@
 ---
 title: Integrations
-description: Use packaged integrations or copy source-owned registry bundles, with explicit stability, auth, and risk boundaries.
+description: Use the Python-side packaged integrations catalog with explicit stability, auth, and risk boundaries.
 ---
 
-The TypeScript SDK supports packaged integration subpaths and source-owned
-registry bundles. Import a packaged subpath directly, or use `kaji add` to copy
-the files declared by a registry manifest plus a provenance sidecar into your
-project. Review copied code before registering it with `AgentBuilder`. Kaji
+Integration catalog ownership now sits with the Python SDK. The retained
+TypeScript capability product is the one-shot `Kaji.execute` surface: it ships
+no integration runtime, no packaged integration subpaths, and no
+`add`/`connect`/`list-integrations` CLI commands. Use `kaji add` from the
+Python SDK to copy the files declared by a registry manifest plus a provenance
+sidecar into your project. Review copied code before registering it. Kaji
 never activates catalog tools implicitly.
 
 ## Catalog status
@@ -15,55 +17,47 @@ This is the catalog in the TypeScript `0.3.0-alpha.1` candidate and Python
 `0.2.0b1`. All current catalog entries are beta. Future entries marked
 `experimental` require `--allow-experimental`.
 
-| Integration | Support status | Runtime            | Auth                    | Tools                     |
-| ----------- | -------------- | ------------------ | ----------------------- | ------------------------- |
-| `echo`      | Beta           | Python, TypeScript | None                    | 2                         |
-| `gmail`     | Beta           | Python, TypeScript | Google OAuth grant      | 3                         |
-| `github`    | Beta           | Python, TypeScript | Application-owned token | 6 copied / 15 packaged TS |
+| Integration | Support status | Runtime            | Auth                    | Tools |
+| ----------- | -------------- | ------------------ | ----------------------- | ----- |
+| `echo`      | Beta           | Python | None                    | 2     |
+| `gmail`     | Beta           | Python | Google OAuth grant      | 3     |
+| `github`    | Beta           | Python | Application-owned token | 6     |
 
-The TypeScript and Python registries contain `echo`, `gmail`, and `github`. Their
-manifests and JSON schemas are validated, and shared entries are checked for
-cross-SDK ABI parity. Source modules outside this index are not discoverable or
+The Python registry contains `echo`, `gmail`, and `github`. Its manifests and
+JSON schemas are validated. The TypeScript package ships no integration
+implementation. Source modules outside this index are not discoverable or
 installable catalog entries.
 
-The **Runtime** column lists the runtimes each integration has a working
-implementation for, not where it is published. The TypeScript package is a
-local alpha candidate; the Python package's publication to PyPI is deferred, so `Python` here
-means the in-repo implementation exists and passes cross-SDK parity, not that a
+The **Runtime** column lists the runtimes recorded by the registry catalog, not
+where it is published. The TypeScript package is a local alpha candidate; the
+Python package's publication to PyPI is deferred, so `Python` here means the
+in-repo implementation exists and passes cross-SDK parity, not that a
 `pip install` is available yet.
 
 ## Discover and copy
 
-After [installing the TypeScript candidate](/docs/install#typescript), use its
-local `kaji` binary:
+With the Python SDK's local `kaji` binary:
 
 ```bash
-npm exec -- kaji list-integrations
-npm exec -- kaji add echo --out ./integrations/echo
-npm exec -- kaji add github --out ./integrations/github
-npm exec -- kaji add gmail --out ./integrations/gmail
+python -m kaji.cli list-integrations
+python -m kaji.cli add echo --out ./integrations/echo
+python -m kaji.cli add github --out ./integrations/github
+python -m kaji.cli add gmail --out ./integrations/gmail
 ```
 
 Use `--check` to inspect copy status without writing and `--json` for tooling.
 A matching unmodified bundle is a no-op. `--force` replaces only an unmodified,
 same-provider outdated bundle; it does not overwrite arbitrary local edits.
-The Python SDK exposes the same copy workflow through its own `kaji` binary.
 
 ## GitHub
 
 The copied GitHub bundle exposes four parallel-safe reads:
 `get_file`, `get_issue`, `list_issues`, and `search_code`; and two serialized
 external effects: `create_issue` and `add_comment`. The integration namespace
-is applied before provider dispatch.
-
-The TypeScript package also exports `@irogane/kaji/integrations/github`. The
-catalog adds nine bounded evidence reads for commits, pull requests, check runs,
-Actions workflow runs and jobs, file history, releases, and deployments. Use
-`toolExposure: "read-only"` to register only the 13 read tools; the compatibility
-default is the complete 15-tool catalog.
+is applied before tool dispatch.
 
 The runtime requires an application-owned repository allowlist and invokes the
-application's `tokenFor` callback per tool execution context. Its client is
+application's `token_for` callback per tool execution context. Its client is
 fixed to `https://api.github.com`, rejects redirects, bounds response headers
 and bodies, and treats a connection loss after mutation dispatch as an unknown
 outcome. Include an application-owned marker in the issue title or body and
@@ -73,23 +67,22 @@ idempotency key to GitHub.
 GitHub's machine registry tier is `beta`. Local package and ABI checks do not
 establish protected keyed-API or release evidence.
 
-See the [GitHub integration guide](/docs/integrations/github) for package wiring,
-token ownership, lifecycle, permissions, limits, and unsupported surfaces.
+See the [GitHub integration guide](/docs/integrations/github) for token
+ownership, lifecycle, permissions, limits, and unsupported surfaces.
 
 ## Gmail
 
 The copied Gmail bundle exposes two parallel-safe reads, `list_messages` and
 `get_message`, and one serialized external effect, `send_message`. The
-integration namespace is applied before provider dispatch.
+integration namespace is applied before tool dispatch.
 
 Gmail authenticates with a Google OAuth grant rather than a static token. Run
-`kaji connect gmail --principal <id>` to store a refresh grant, then in
-TypeScript wire the integration's `tokenFor` callback to the OAuth client's
-access-token accessor. Python's corresponding callback is named `token_for`.
-The scopes are `gmail.readonly` and `gmail.send`. Its client is fixed to
-`https://gmail.googleapis.com`, rejects redirects, bounds response headers and
-bodies, decodes base64url message payloads, and treats a connection loss after
-send dispatch as an unknown outcome.
+`kaji connect gmail --principal <id>` to store a refresh grant, then wire the
+integration's Python `token_for` callback to the OAuth client's access-token
+accessor. The scopes are `gmail.readonly` and `gmail.send`. Its client is fixed
+to `https://gmail.googleapis.com`, rejects redirects, bounds response headers
+and bodies, decodes base64url message payloads, and treats a connection loss
+after send dispatch as an unknown outcome.
 
 Gmail's registry tier is `beta`, so `kaji add gmail` does not require
 `--allow-experimental`. Its live send path is an external-effect boundary;

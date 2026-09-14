@@ -1,36 +1,25 @@
 # Kaji (TypeScript)
 
-Kaji is an embeddable, infra-free TypeScript SDK for building agents with an
-event-sourced runtime, typed tools, and session replay.
+Kaji is an embeddable, infra-free TypeScript SDK for capability execution with
+an event-sourced journal, typed tools, fail-closed policy, and session replay.
 
-This `0.3.0-alpha.1` candidate has local release evidence but is not a claim of
-npm registry availability. OpenAI is the recommended live-provider path;
-Anthropic, Gemini, Kimi, and OpenRouter are opt-in WIP adapters. Use
-`MockProvider` for deterministic local and test runs.
-
-### Provider parity
-
-| Provider category | Python | TypeScript |
-| --- | --- | --- |
-| OpenAI | Yes (stable) | Yes (stable) |
-| Anthropic | Yes (experimental/WIP) | Yes (experimental/WIP) |
-| Kimi / Gemini providers | Yes (experimental/WIP) | Yes (experimental/WIP, OpenAI-compatible factories) |
-| OpenRouter | No | Yes (experimental/WIP) |
-| MockProvider | Yes (stable) | Yes (stable) |
+This `0.3.0-alpha.1` candidate ships the retained capability product: one-shot
+`Kaji.execute` over a registered `capability`. There is no agent loop and no
+provider adapter in the TypeScript package; policy and approval enforcement
+live in the execution planner.
 
 ## Install
 
 Build or obtain the candidate tarball, then install it with the required Zod
-peer. Add `openai` only for a live OpenAI runtime:
+peer:
 
 ```bash
 npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod
-npm install openai
-# or: bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai
+# or: bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod
 ```
 
-Kaji requires Zod `>=4.3 <5`; `openai` is an optional peer. It supports Node
-22.x and 24.x. See the [install guide](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/install.mdx)
+Kaji requires Zod `>=4.3 <5`. It supports Node 22.x and 24.x. See the
+[install guide](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/install.mdx)
 for source-checkout and compatibility details.
 
 ## First run: no key
@@ -40,49 +29,64 @@ Save this as `quickstart.mts`, then run `npm exec -- tsx quickstart.mts` or
 
 <!-- docs-test:readme-no-key:typescript:start -->
 ```ts
-import { AgentBuilder } from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
+import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
 
-const runtime = new AgentBuilder().provider(new MockProvider({ reply: "hello" })).build();
-const result = await runtime.turn("Say hello.");
-console.log(result.text);
+const echo = capability({
+  name: "echo",
+  description: "Echo the provided message back.",
+  input: z.object({ message: z.string() }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
+});
+
+const result = await Kaji.execute({
+  capability: echo,
+  input: { message: "Hello, Kaji." },
+  principal: "local-user",
+});
+console.log(JSON.stringify(result.value));
 ```
 <!-- docs-test:readme-no-key:typescript:end -->
 
-This proves the runtime without credentials or enabled tools.
+This proves capability execution without credentials, servers, or enabled
+tools. The default journal and idempotency ledger are bounded, in-memory, and
+process-local.
 
-## First live agent
+## Idempotent retries
 
-Set `OPENAI_API_KEY`, then give tools an explicit risk, caller identity, and
-deadline. This example uses a read-only tool:
-
-```bash
-export OPENAI_API_KEY=...
-```
+Supplying `sessionId` makes same-session retries of one capability deduplicate
+to a single execution: the retry returns the recorded result without running
+the hook again. Changed input in the same session rejects with
+`ToolExecutionError`; distinct sessions run independently.
 
 <!-- docs-test:readme-openai:typescript:start -->
 ```ts
-import { AgentBuilder, deadlineAfter, functionTool, openai } from "@irogane/kaji";
-import { z } from "zod";
+import { Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
 
-const getWeather = functionTool(
-  {
-    name: "get_weather",
-    description: "Look up weather for a city.",
-    parameters: z.object({ city: z.string() }),
-    risk: "read",
-  },
-  async ({ city }, context) => ({ city, principal: context.principalId, tempF: 68 }),
-);
-
-const runtime = new AgentBuilder().provider(openai()).tool(getWeather).build();
-const result = await runtime.turn("Weather in Seattle?", {
-  context: {
-    principalId: "weather-app",
-    deadlineAtMs: deadlineAfter(30_000),
-  },
+const echo = capability({
+  name: "echo",
+  description: "Echo the provided message back.",
+  input: z.object({ message: z.string() }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
 });
-console.log(result.text);
+
+const sessionId = "retry-session";
+const first = await Kaji.execute({
+  capability: echo,
+  input: { message: "hello" },
+  principal: "caller",
+  sessionId,
+});
+const retry = await Kaji.execute({
+  capability: echo,
+  input: { message: "hello" },
+  principal: "caller",
+  sessionId,
+});
+console.log(JSON.stringify(first.value), JSON.stringify(retry.value));
 ```
 <!-- docs-test:readme-openai:typescript:end -->
 
@@ -91,8 +95,7 @@ console.log(result.text);
 - [Getting started](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/getting-started.mdx)
 - [Tool policy and approval](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/concepts/tool-registry.mdx)
 - [Lifecycle and data handling](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/concepts/lifecycle.mdx)
-- [Providers](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/concepts/providers.mdx)
-- [Integrations](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/integrations/index.mdx)
+- [Events](https://github.com/enkyuan/alloy/blob/main/apps/docs/content/concepts/event-bus.mdx)
 
 ## License
 

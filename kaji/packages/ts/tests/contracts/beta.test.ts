@@ -66,11 +66,9 @@ describe("production-beta contract", () => {
   it("parses and replays every TypeScript-projected approval lifecycle fixture row", () => {
     const fixture = JSON.parse(readFileSync(eventFixturePath, "utf8")) as { events: unknown[] };
     const legacyPythonTaskEvents = fixture.events.filter(isPythonLegacyTaskEvent);
-    const events = fixture.events
-      .filter((event) => !isPythonLegacyTaskEvent(event))
-      .map(validateStoredEvent);
+    const events = fixture.events.map(validateStoredEvent);
 
-    expect(legacyPythonTaskEvents).toHaveLength(6);
+    expect(legacyPythonTaskEvents).toEqual([]);
     expect(events).toHaveLength(41);
     const state = replaySession(events);
     expect(state.isActive).toBe(false);

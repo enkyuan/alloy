@@ -73,92 +73,56 @@ describe("public declarations", () => {
     }
   });
 
-  it("exposes only the experimental OAuth and Keychain auth surface", () => {
-    const sources = ["src/auth/index.ts", "src/auth/oauth.ts", "src/auth/keychain.ts"];
+  it("keeps the removed auth adapter surface out of the package", () => {
+    expect(existsSync(resolve(root, "src/auth"))).toBe(false);
+    expect(existsSync(resolve(dist, "auth.d.ts"))).toBe(false);
+    expect(existsSync(resolve(dist, "auth.d.cts"))).toBe(false);
     for (const declaration of [
-      readFreshDeclaration("auth.d.ts", sources),
-      readFreshDeclaration("auth.d.cts", sources),
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
     ]) {
       const exports = declarationExportNames(declaration);
-      for (const internal of [
-        "KeychainProcess",
-        "_createGoogleOAuthClientForTest",
-        "_createMacOSKeychainTokenStorageForTest",
-        "validateOAuthPrincipal",
-      ]) {
-        expect(exports).not.toContain(internal);
-      }
+      expect(
+        exports.filter((name) => /OAuth|Keychain|TokenStorage|TokenSet|Credential/u.test(name)),
+      ).toEqual([]);
     }
   });
 
-  it("exposes only the experimental fixed-origin and closed recovery surface", () => {
-    const sources = [
-      "src/integrations/recovery.ts",
-      "src/integrations/public.ts",
-      "src/integrations/origin.ts",
-      "src/integrations/safe-fetch.ts",
-    ];
+  it("keeps the removed integration adapter surface out of the package", () => {
+    expect(existsSync(resolve(root, "src/integrations"))).toBe(false);
+    expect(existsSync(resolve(dist, "integrations.d.ts"))).toBe(false);
+    expect(existsSync(resolve(dist, "integrations.d.cts"))).toBe(false);
+    expect(existsSync(resolve(dist, "integrations/github.d.ts"))).toBe(false);
+    expect(existsSync(resolve(dist, "integrations/github.d.cts"))).toBe(false);
     for (const declaration of [
-      readFreshDeclaration("integrations.d.ts", sources),
-      readFreshDeclaration("integrations.d.cts", sources),
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
     ]) {
       const exports = declarationExportNames(declaration);
-      const executionError = declaration.match(
-        /declare class IntegrationExecutionError extends ToolExecutionError \{[\s\S]*?\n\}/,
-      )?.[0];
-      expect(executionError).toContain('constructor(reasonCode: "api_rejected");');
-      expect(executionError).not.toContain("errorCode");
-      expect(executionError).not.toContain("retryable");
-      for (const recoveryExport of [
+      for (const removed of [
         "INTEGRATION_RECOVERY",
         "IntegrationRecoveryFields",
         "IntegrationRecoveryReason",
         "closedRecoveryFields",
-      ]) {
-        expect(exports).toContain(recoveryExport);
-      }
-      for (const internal of [
-        "FixedOriginTestTransport",
-        "FixedOriginTestResponse",
-        "fixedOriginForTest",
-        "IntegrationTransportError",
-        "IntegrationAuthError",
-        "closedTransportFailureFields",
-        "isClosedRecoveryTuple",
-        "recoveryForReason",
-        "FixedOriginPolicy",
-        "NodeHttpsTransport",
-        "CERTIFIED_FAILURES",
-        "CertifiedIntegrationReason",
-      ]) {
-        expect(exports).not.toContain(internal);
-      }
-    }
-  });
-
-  it("exposes only safe GitHub package construction options", () => {
-    const sources = [
-      "src/integrations/github.ts",
-      "src/integrations/github/internal.ts",
-      "registry/github/index.ts",
-      "registry/github/client.ts",
-    ];
-    for (const declaration of [
-      readFreshDeclaration("integrations/github.d.ts", sources),
-      readFreshDeclaration("integrations/github.d.cts", sources),
-    ]) {
-      expect(declarationExportNames(declaration)).toEqual([
-        "CreateGitHubIntegrationOptions",
+        "IntegrationAuthRequiredError",
+        "IntegrationExecutionError",
+        "IntegrationPolicyError",
+        "IntegrationRateLimitedError",
+        "IntegrationTransientReadError",
         "GitHubIntegration",
         "createGithubIntegration",
         "inspectIntegration",
-      ]);
-      expect(declaration).toContain("constructor(options: CreateGitHubIntegrationOptions);");
-      expect(declaration).toContain('readonly toolExposure?: "read-only" | "all";');
-      expect(declaration).not.toMatch(
-        /GitHubClient|FixedOriginRequester|GitHubClientOptions|PackageGitHubRuntime|\bhttp\b|\brequester\b|\btransport\b/,
-      );
+        "snapshotIntegrationResult",
+        "formatIntegrationError",
+      ]) {
+        expect(exports).not.toContain(removed);
+      }
     }
+    // The relocated recovery module keeps the closed recovery tuple internal
+    // for the Postgres idempotency and event schema seams.
+    const recovery = readFileSync(resolve(root, "src/recovery.ts"), "utf8");
+    expect(recovery).toContain("export function closedRecoveryFields");
+    expect(recovery).toContain("export function isClosedRecoveryTuple");
   });
 
   it("classifies every built root export exactly once and syncs the generated docs", () => {
@@ -188,7 +152,7 @@ describe("public declarations", () => {
     expect(actual).toBe(fragment);
   });
 
-  it("classifies features by a role axis (core | compatibility)", () => {
+  it("classifies retained features as core capability-execution surfaces", () => {
     const contract = JSON.parse(
       readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
     );
@@ -199,15 +163,13 @@ describe("public declarations", () => {
         byId.set(feature.id, feature);
       }
     }
-    // Role is a real axis: these three are locked by the Q4 product decision.
+    // The capability product has no compatibility lane: removed agent surfaces
+    // must not be reintroduced as classified exports.
     expect(byId.get("kaji-execute")?.role).toBe("core");
-    expect(byId.get("agent-builder")?.role).toBe("compatibility");
-    expect(byId.get("runtime-turn-loop")?.role).toBe("compatibility");
-    // Where a role is declared, it must be one of the two valid values.
+    expect(byId.has("agent-builder")).toBe(false);
+    expect(byId.has("runtime-turn-loop")).toBe(false);
     for (const feature of byId.values()) {
-      if (feature.role !== undefined) {
-        expect(["core", "compatibility"]).toContain(feature.role);
-      }
+      expect(feature.role).toBe("core");
     }
   });
 
@@ -233,31 +195,29 @@ describe("public declarations", () => {
     }
   });
 
-  it("exposes the bounded network transport contract from the package root", () => {
-    const sources = ["src/index.ts", "src/integrations/safe-fetch.ts"];
+  it("keeps the removed network transport and turn-loop surfaces out of root declarations", () => {
+    expect(existsSync(resolve(root, "src/runtime/runtime.ts"))).toBe(false);
     for (const declaration of [
-      readFreshDeclaration("index.d.ts", sources),
-      readFreshDeclaration("index.d.cts", sources),
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
     ]) {
-      expect(declaration).toContain("interface SafeFetchPolicy");
-      expect(declaration).toContain("interface BoundNetworkTransport");
-      expect(declaration).toContain("function safeRequest(");
-    }
-  });
-
-  it("exposes frozen successful-turn accounting from both module formats", () => {
-    const sources = ["src/index.ts", "src/runtime/runtime.ts"];
-    for (const declaration of [
-      readFreshDeclaration("index.d.ts", sources),
-      readFreshDeclaration("index.d.cts", sources),
-    ]) {
-      expect(declaration).toContain("interface TurnAccounting");
-      expect(declaration).toContain("readonly providerIterations: number");
-      expect(declaration).toContain("readonly usage: Readonly<TokenUsage> | null");
-      expect(declaration).toContain("readonly usageComplete: boolean");
-      expect(declaration).toContain("readonly costUsd: number | null");
-      expect(declaration).toContain("readonly costComplete: boolean");
-      expect(declaration).toMatch(/interface TurnResult \{[\s\S]*?accounting: TurnAccounting;/);
+      for (const removed of [
+        "SafeFetchPolicy",
+        "BoundNetworkTransport",
+        "safeRequest",
+        "TurnAccounting",
+        "TurnResult",
+        "TurnOptions",
+        "TokenUsage",
+        "AgentBuilder",
+        "AgentRuntime",
+        "AgentStrategy",
+        "RunTurnOptions",
+        "StreamTextResult",
+        "ModelResponse",
+      ]) {
+        expect(declaration).not.toMatch(new RegExp(`\\b${removed}\\b`));
+      }
     }
   });
 
@@ -267,24 +227,24 @@ describe("public declarations", () => {
       readFreshDeclaration("index.d.ts", sources),
       readFreshDeclaration("index.d.cts", sources),
     ]) {
-      expect(declaration).toContain("normalizeProviderError");
-      expect(declaration).toContain("NormalizedProviderError");
       expect(declaration).toContain("ToolArgumentValidationError");
       expect(declaration).toContain("ToolSchemaValidationError");
       expect(declaration).toContain("ToolSchemaValidator");
-      expect(declaration).toContain("ProviderResponseLimits");
-      expect(declaration).toContain("ProviderOutputLimitError");
+      for (const removed of [
+        "normalizeProviderError",
+        "NormalizedProviderError",
+        "ProviderResponseLimits",
+        "ProviderOutputLimitError",
+      ]) {
+        expect(declaration).not.toContain(removed);
+      }
     }
 
     const declarationGraph = readdirSync(dist)
       .filter((file) => file.endsWith(".d.ts") || file.endsWith(".d.cts"))
       .map((file) => readFileSync(resolve(dist, file), "utf8"))
       .join("\n");
-    const providerOptions = declarationGraph.match(
-      /interface ModelProviderOptions \{[\s\S]*?\n\}/,
-    )?.[0];
-    expect(providerOptions).toBeDefined();
-    expect(providerOptions).not.toContain("responseDiagnostics");
+    expect(declarationGraph).not.toContain("interface ModelProviderOptions");
     expect(declarationGraph).toContain("interface TurnContext");
     expect(declarationGraph).toContain("interface ToolExecutionContext");
     expect(declarationGraph).toContain(
@@ -301,20 +261,31 @@ describe("public declarations", () => {
     expect(declarationGraph).not.toContain("validateAsync(");
   });
 
-  it("does not expose provider test hooks after build", () => {
-    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai/index.ts"]);
-    const anthropic = readFreshDeclaration("anthropic.d.ts", ["src/providers/anthropic.ts"]);
-
-    expect(openai).not.toContain("OpenAIProviderTestHooks");
-    expect(anthropic).not.toContain("AnthropicProviderTestHooks");
+  it("keeps provider subpaths and test hooks out of the build", () => {
+    expect(existsSync(resolve(root, "src/providers"))).toBe(false);
+    for (const removed of [
+      "openai.d.ts",
+      "openai.d.cts",
+      "anthropic.d.ts",
+      "anthropic.d.cts",
+      "testing.d.ts",
+      "testing.d.cts",
+      "openai.js",
+      "testing.js",
+    ]) {
+      expect(existsSync(resolve(dist, removed)), `${removed} must stay removed`).toBe(false);
+    }
+    for (const declaration of [
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
+    ]) {
+      expect(declaration).not.toContain("OpenAIProviderTestHooks");
+      expect(declaration).not.toContain("AnthropicProviderTestHooks");
+      expect(declaration).not.toContain("RetryOptions");
+    }
   });
 
-  it("preserves RetryOptions on the OpenAI provider subpath", () => {
-    const openai = readFreshDeclaration("openai.d.ts", ["src/providers/openai/index.ts"]);
-    expect(openai).toContain("RetryOptions");
-  });
-
-  it("classifies features by role", () => {
+  it("keeps every classified feature in the retained core", () => {
     const contract = JSON.parse(
       readFileSync(resolve(root, "../../contracts/tiers/v1/features.json"), "utf8"),
     ) as {
@@ -324,23 +295,20 @@ describe("public declarations", () => {
 
     for (const tier of ["stable", "experimental"] as const) {
       for (const feature of contract[tier]) {
-        expect(feature.role, `${tier}/${feature.id} missing role`).toMatch(
-          /^(core|compatibility)$/,
-        );
+        expect(feature.role, `${tier}/${feature.id} missing core role`).toBe("core");
       }
     }
 
     const roles = new Map(contract.stable.map((f) => [f.id, f.role] as const));
     expect(roles.get("kaji-execute")).toBe("core");
-    expect(roles.get("agent-builder")).toBe("compatibility");
-    expect(roles.get("runtime-turn-loop")).toBe("compatibility");
+    expect(roles.has("agent-builder")).toBe(false);
+    expect(roles.has("runtime-turn-loop")).toBe(false);
   });
 
   it("keeps optional provider peers out of root declarations", () => {
-    const sources = ["src/index.ts", "src/providers/openai/index.ts", "src/providers/anthropic.ts"];
     for (const declaration of [
-      readFreshDeclaration("index.d.ts", sources),
-      readFreshDeclaration("index.d.cts", sources),
+      readFreshDeclaration("index.d.ts", ["src/index.ts"]),
+      readFreshDeclaration("index.d.cts", ["src/index.ts"]),
     ]) {
       expect(declaration).not.toMatch(/from ["']openai["']/);
       expect(declaration).not.toMatch(/from ["']@anthropic-ai\/sdk["']/);
@@ -351,14 +319,9 @@ describe("public declarations", () => {
 });
 
 describe("test hygiene", () => {
-  it("provider tests do not cast into private provider internals", () => {
-    const files = ["tests/providers/openai.test.ts", "tests/providers/factory.test.ts"];
-
-    for (const file of files) {
-      const source = readFileSync(resolve(root, file), "utf8");
-      expect(source).not.toContain("buildMessages(m:");
-      expect(source).not.toContain("{ opts:");
-      expect(source).not.toContain("}).opts");
-    }
+  it("keeps removed provider test subjects out of the tree", () => {
+    expect(existsSync(resolve(root, "tests/providers"))).toBe(false);
+    const source = readFileSync(resolve(root, "src/index.ts"), "utf8");
+    expect(source).not.toContain("ForTest");
   });
 });

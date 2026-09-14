@@ -50,15 +50,6 @@ STORED_EVENT_SCHEMA = (
     REPO_ROOT / "kaji" / "contracts" / "events" / "v1/schema/stored.json"
 )
 CONTRACT_CHECK = REPO_ROOT / "kaji" / "tooling" / "contracts" / "check.py"
-PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES = {
-    "task.created",
-    "task.suspended",
-    "task.resumed",
-    "task.completed",
-    "task.failed",
-    "task.cancelled",
-}
-
 
 class _FixedIds:
     def __init__(self, value: str) -> None:
@@ -411,13 +402,13 @@ def test_typescript_event_type_values_match_python():
     ts_values = set(re.findall(r': "([^"]+)"', source))
     py_values = {event.value for event in EventType}
 
-    assert ts_values == py_values - PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES
+    assert ts_values == py_values
 
 
 def test_typescript_event_type_values_reject_missing_supported_non_task_type():
     checker = runpy.run_path(str(CONTRACT_CHECK), run_name="event_type_projection_test")
     python_values = {event.value for event in EventType}
-    typescript_values = python_values - PYTHON_ONLY_LEGACY_TASK_EVENT_TYPES
+    typescript_values = python_values
     dropped_type = "agent.message.completed"
 
     assert dropped_type in typescript_values
@@ -517,8 +508,8 @@ def test_shared_session_event_conformance_fixture_replays_in_python() -> None:
     stored = parsed
     state = replay_session(stored)
 
-    assert len(stored) == 47
-    assert [event.sequence for event in stored] == list(range(1, 48))
+    assert len(stored) == 41
+    assert [event.sequence for event in stored] == list(range(1, 42))
     assert {event.type for event in stored} == set(EventType)
     assert all(event.version == "1.0" for event in stored)
     assert all(isinstance(event.timestamp, float) for event in stored)

@@ -19,7 +19,6 @@ from kaji.events.errors import EventSchemaIncompatibleError
 from kaji.events.journal import InMemoryEventJournal
 from kaji.runtime.sessions.replay import ApprovalKey, SessionState, replay_session
 from kaji.events.schemas import (
-    ArtifactEmitted,
     KajiEvent,
     StoredKajiEvent,
     ToolApprovalApproved,
@@ -55,9 +54,7 @@ from kaji.runtime.tools.idempotency import (
 from kaji.runtime.tools.policy import ToolPolicy
 from kaji.runtime.tools.registry import ToolRegistry, ToolSpec
 from kaji.runtime.tools.validation import ToolSchemaValidator
-from kaji.artifacts import ArtifactRef
 from kaji.backends.postgres.coordinator import postgres_lock_key
-from kaji.tasks import InMemoryBackend, TaskRuntime
 
 
 REPO_ROOT = (next(parent for parent in Path(__file__).resolve().parents if (parent / "contracts").is_dir() and (parent / "packages").is_dir())).parent
@@ -1746,29 +1743,6 @@ def run_capability(document: dict[str, Any], scenario: dict[str, Any]) -> dict[s
     raise ValueError(f"unknown capability fixture: {scenario['fixture']}")
 
 
-async def run_task_projection(scenario: dict[str, Any]) -> dict[str, Any]:
-    snapshot = empty_snapshot()
-    backend = InMemoryBackend.create()
-    handle = await TaskRuntime(backend).start(
-        session_id="task-session", principal_id="principal", input="task", task_id="task"
-    )
-    await backend.journal.commit(
-        ToolApprovalRequested(id="task-approval", session_id="task-session", turn_id="turn", tool_name="write", tool_call_id="call", tool_args={}, risk="write")
-    )
-    await backend.journal.commit(
-        ToolApprovalApproved(id="task-approved", session_id="task-session", turn_id="turn", tool_name="write", tool_call_id="call")
-    )
-    await backend.journal.commit(
-        ArtifactEmitted(id="task-artifact", session_id="task-session", turn_id="turn", tool_call_id="call", artifact=ArtifactRef(id="artifact", type="text/plain", uri="memory:artifact"))
-    )
-    await backend.journal.commit(
-        ToolCallFailed(id="task-unknown", session_id="task-session", turn_id="turn", tool_name="write", tool_call_id="call", error="unknown", outcome="unknown")
-    )
-    projected = await handle.snapshot()
-    snapshot["result"] = {"state": projected.state.value, "cursor": projected.sequence_cursor, "artifacts": [artifact.id for artifact in projected.artifacts], "pending_approvals": len(projected.pending_approvals)}
-    return snapshot
-
-
 def run_lock_key(scenario: dict[str, Any]) -> dict[str, Any]:
     snapshot = empty_snapshot()
     snapshot["result"] = {
@@ -1821,8 +1795,6 @@ async def export_parity() -> dict[str, Any]:
             snapshot = run_capability(document, scenario)
         elif kind == "lock-key":
             snapshot = run_lock_key(scenario)
-        elif kind == "task-projection":
-            snapshot = await run_task_projection(scenario)
         else:
             raise ValueError(f"unknown scenario kind: {kind}")
         if tuple(snapshot) != SNAPSHOT_KEYS:

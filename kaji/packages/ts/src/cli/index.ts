@@ -3,14 +3,9 @@
  * table; the script-mode binary lives in `./bin.ts` so importing this module
  * from tests does not trigger `process.exit`.
  */
-import { add } from "@/cli/add";
-import { connectIntegration, CONNECT_USAGE } from "@/cli/connect";
-import { disconnectIntegration, DISCONNECT_USAGE } from "@/cli/disconnect";
 import { init } from "@/cli/init";
-import { listIntegrations } from "@/cli/list";
 import { replay } from "@/cli/replay";
 import { packageIdentity } from "@/cli/package-identity";
-import type { GoogleOAuthClient, GoogleOAuthClientOptions, OAuthTokenStorage } from "@/auth/oauth";
 
 export interface RunOptions {
   registryRoot: string;
@@ -26,13 +21,7 @@ export interface RunOptions {
     files: Readonly<Record<string, string>>,
     force: boolean,
   ) => Promise<void>;
-  /** @internal Auth CLI side-effect seams. */
-  env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal;
-  keychainStorageFactory?: (integrationName: string) => OAuthTokenStorage;
-  googleOAuthClientFactory?: (
-    options: GoogleOAuthClientOptions,
-  ) => Pick<GoogleOAuthClient, "connect" | "disconnect">;
 }
 
 export interface Command {
@@ -42,39 +31,10 @@ export interface Command {
 }
 
 export const COMMANDS: Record<string, Command> = {
-  add: {
-    describe: "Copy an integration's TypeScript source into your project.",
-    usage: "kaji add <name> [--out <dir>] [--force] [--allow-experimental] [--check] [--json]",
-    run: (rest, opts) =>
-      Promise.resolve(
-        add(rest, {
-          registryRoot: opts.registryRoot,
-          schemaRoot: opts.schemaRoot,
-          log: opts.log,
-          err: opts.err,
-        }),
-      ),
-  },
-  connect: {
-    describe: "Connect an integration OAuth grant.",
-    usage: CONNECT_USAGE.replace(/^usage: /, ""),
-    run: connectIntegration,
-  },
-  disconnect: {
-    describe: "Disconnect an integration OAuth grant.",
-    usage: DISCONNECT_USAGE.replace(/^usage: /, ""),
-    run: disconnectIntegration,
-  },
   init: {
     describe: "Scaffold a new TypeScript Kaji project.",
-    usage:
-      "kaji init [path] [--provider mock|openai|anthropic] [--template agent|capability] [--yes] [--force]",
+    usage: "kaji init [path] [--template capability] [--yes] [--force]",
     run: (rest, opts) => init(rest, opts),
-  },
-  "list-integrations": {
-    describe: "List integrations available via `kaji add`.",
-    usage: "kaji list-integrations [--json]",
-    run: (rest, opts) => listIntegrations(rest, opts),
   },
   replay: {
     describe: "Pretty-print a kaji session replay log (JSONL).",

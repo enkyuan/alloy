@@ -133,24 +133,29 @@ For either TypeScript package manager, the installed CLI first stages Echo into
 
 <!-- tthw-echo:typescript:start -->
 ```ts
-import { AgentBuilder, EventType } from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
-import { EchoIntegration } from "./echo/index.ts";
+import { EventType, InMemoryBackend, Kaji, capability, capabilityResult } from "@irogane/kaji";
+import * as z from "zod";
 
-const runtime = new AgentBuilder()
-  .provider(
-    new MockProvider({
-      toolCall: { name: "echo_say", args: { message: "hello" } },
-    }),
-  )
-  .integration(new EchoIntegration())
-  .build();
-const result = await runtime.turn("Call echo_say.", {
-  context: { principalId: "tthw-user" },
+const backend = new InMemoryBackend();
+const echo = capability({
+  name: "echo_say",
+  description: "Echo the provided message back.",
+  input: z.object({ message: z.string() }),
+  risk: "read",
+  execute: async (input) => capabilityResult({ message: input.message }),
 });
-const requested = result.events.find((event) => event.type === EventType.TOOL_CALL_REQUESTED);
-const started = result.events.find((event) => event.type === EventType.TOOL_CALL_STARTED);
-const completed = result.events.find((event) => event.type === EventType.TOOL_CALL_COMPLETED);
+const sessionId = "tthw-echo-session";
+const result = await Kaji.execute({
+  capability: echo,
+  input: { message: "hello" },
+  principal: "tthw-user",
+  backend,
+  sessionId,
+});
+const events = await backend.store.getEvents(sessionId);
+const requested = events.find((event) => event.type === EventType.TOOL_CALL_REQUESTED);
+const started = events.find((event) => event.type === EventType.TOOL_CALL_STARTED);
+const completed = events.find((event) => event.type === EventType.TOOL_CALL_COMPLETED);
 if (requested === undefined || started === undefined || completed === undefined) {
   throw new Error("missing Echo lifecycle event");
 }
@@ -166,11 +171,11 @@ if (
 if (!("result" in completed) || JSON.stringify(completed.result) !== '{"message":"hello"}') {
   throw new Error("Echo result was not observed");
 }
-if (result.text !== "The mock provider has completed the tool loop.") {
-  throw new Error("unexpected deterministic text");
+if (result.value === undefined || result.value.message !== "hello") {
+  throw new Error("Echo capability value was not returned");
 }
-if (result.turnId.length === 0 || Math.max(...result.events.map((event) => event.sequence)) <= 0) {
-  throw new Error("missing turn or sequence identity");
+if (Math.max(...events.map((event) => event.sequence)) <= 0) {
+  throw new Error("missing sequence identity");
 }
 const unexpectedTerminalTypes = new Set<string>([
   EventType.AGENT_TURN_FAILED,
@@ -179,7 +184,7 @@ const unexpectedTerminalTypes = new Set<string>([
   EventType.CANCELLATION_REQUESTED,
   EventType.CANCELLATION_COMPLETED,
 ]);
-if (result.events.some((event) => unexpectedTerminalTypes.has(event.type))) {
+if (events.some((event) => unexpectedTerminalTypes.has(event.type))) {
   throw new Error("unexpected failed, exhausted, or cancelled terminal event");
 }
 console.log("PASS: echo requested, started, completed, and observed");

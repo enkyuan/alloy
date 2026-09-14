@@ -150,19 +150,16 @@ def test_user_facing_docs_reference_existing_relative_markdown_links() -> None:
     assert missing == []
 
 
-def test_typescript_readme_matches_provider_factory_parity() -> None:
-    ts_readme = (REPO_ROOT / "kaji" / "packages" / "ts" / "README.md").read_text()
-    factory = (
-        REPO_ROOT / "kaji" / "packages" / "ts" / "src" / "providers" / "factory.ts"
-    ).read_text()
-
-    assert "export function kimi" in factory
-    assert "export function gemini" in factory
-    assert re.search(
-        r"\|\s*Kimi / Gemini providers\s*\|\s*Yes \(experimental/WIP\)\s*\|"
-        r"\s*Yes \(experimental/WIP, OpenAI-compatible factories\)\s*\|",
-        ts_readme,
-    )
+def test_typescript_readme_carries_no_provider_factory_surface() -> None:
+    """The TypeScript capability product ships no provider factories: the
+    factory module must stay gone and the README must not claim them."""
+    ts_package = REPO_ROOT / "kaji" / "packages" / "ts"
+    ts_readme = (ts_package / "README.md").read_text()
+    assert not (ts_package / "src" / "providers" / "factory.ts").exists()
+    assert "Kimi / Gemini providers" not in ts_readme
+    assert "OpenAI-compatible factories" not in ts_readme
+    assert "export function kimi" not in ts_readme
+    assert "export function gemini" not in ts_readme
 
 
 def test_user_facing_docs_include_stability_contract() -> None:

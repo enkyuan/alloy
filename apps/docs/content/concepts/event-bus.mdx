@@ -14,17 +14,26 @@ process-local boundary.
 {/* event-delivery:typescript:start */}
 
 ```ts
-import { AgentBuilder, InMemoryEventCommitter } from "@irogane/kaji";
-import { MockProvider } from "@irogane/kaji/testing";
+import { EventType, InMemoryEventCommitter, KajiEvent } from "@irogane/kaji";
 
 const sessionId = "session-1";
 const committer = new InMemoryEventCommitter();
-const runtime = new AgentBuilder()
-  .provider(new MockProvider({ reply: "Hello" }))
-  .build({ committer });
 const subscription = committer.subscribe(sessionId, { afterSequence: 0 });
-
-const turn = runtime.turn("Hello", { sessionId });
+const userMessage = committer.commit(
+  KajiEvent.parse({
+    type: EventType.USER_MESSAGE,
+    session_id: sessionId,
+    content: "Hello",
+  }),
+);
+const completed = committer.commit(
+  KajiEvent.parse({
+    type: EventType.AGENT_MESSAGE_COMPLETED,
+    session_id: sessionId,
+    turn_id: "turn-1",
+    content: "Hello back",
+  }),
+);
 try {
   for await (const event of subscription) {
     console.log(event.sequence, event.type);
@@ -33,8 +42,7 @@ try {
 } finally {
   await subscription.return();
 }
-await turn;
-runtime.close();
+await Promise.all([userMessage, completed]);
 ```
 
 {/* event-delivery:typescript:end */}

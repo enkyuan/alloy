@@ -38,7 +38,7 @@ Three protected environments have intentionally different authority:
   aggregate. It receives no provider or registry secret. Its single deployment
   is `typescript-onboarding-evidence`, after the unprotected archive calibration
   has validated the same three current-run raw REST ZIP bodies.
-- `Release` protects mandatory keyed OpenAI proof in Python and TypeScript.
+- `Release` protects mandatory keyed OpenAI proof in Python.
   Configure `OPENAI_API_KEY` here only. It has no registry publisher authority.
 - `Publish` protects the sole final npm write. Its single deployment
   is `publish-npm`, and only credentialed steps in that job receive
@@ -243,7 +243,7 @@ later run is not acceptable evidence.
    `status.json`, `validation.log`, and
    `typescript-onboarding-evidence.json` to pass. Approve the later, distinct
    `Release` deployment separately. The keyed provider proof must complete a
-   normalized OpenAI tool loop in Python and TypeScript; missing-key hygiene is
+   normalized OpenAI tool loop in Python; missing-key hygiene is
    not provider evidence.
 
 7. Wait for terminal-green candidate evidence and independently select the

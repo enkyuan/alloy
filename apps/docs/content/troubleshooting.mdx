@@ -70,12 +70,13 @@ omit identity.
 
 Check these boundaries in order:
 
-1. Pass the result of `functionTool(...)` to `AgentBuilder().tool(...)`. The
-   global `registerTool(...)` function returns `void` and writes to the default
-   registry; it does not bind a tool to the builder's scoped registry.
-2. Confirm the selected provider API supports function calling.
-3. Make the tool description and parameter schema specific enough for the
-   model to select it.
+1. Confirm the capability's `input` schema matches the calling payload; schema
+   mismatches raise `ToolArgumentValidationError` before execution.
+2. Confirm the capability's `risk` is classified and the policy for that risk
+   is satisfied; a required approval without an `approvalHandler` fails with
+   `APPROVAL_UNAVAILABLE`.
+3. Reuse a `sessionId` only when you want the recorded result; changed input
+   under the same session identity raises `ToolExecutionError`.
 
 ## Event history is empty after a turn
 

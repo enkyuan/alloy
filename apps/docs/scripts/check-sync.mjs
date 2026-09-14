@@ -86,12 +86,12 @@ requireText(gettingStarted, localTarball, "getting-started local tarball");
 requireText(landingPage, localTarball, "landing local tarball status");
 requireText(gettingStarted, "npm install --save-dev tsx@4.22.4", "pinned TypeScript runner");
 requireText(gettingStarted, "npm exec -- tsx kaji.mts", "no-key TypeScript command");
-requireText(gettingStarted, "npm exec -- tsx agent.mts", "OpenAI TypeScript command");
-requireText(troubleshooting, 'npm install "openai@>=4 <8"', "OpenAI peer repair command");
+requireText(gettingStarted, 'kaji.get_provider("openai")', "live provider step");
+requireText(troubleshooting, "uv sync --project kaji/packages/py --extra openai", "Python OpenAI extra command");
 requireText(cli, "npm exec -- kaji", "published TypeScript CLI command");
 requireText(
   integrations,
-  "npm exec -- kaji list-integrations",
+  "python -m kaji.cli list-integrations",
   "published integration CLI command",
 );
 

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -43,93 +43,6 @@ function tokenFreeEnvironment(): NodeJS.ProcessEnv {
   return environment;
 }
 
-type GitHubExampleFailure = "build" | "provider-drain" | "unsettled";
-
-async function executeGitHubExampleFailure(
-  source: string,
-  failure: GitHubExampleFailure,
-): Promise<{
-  readonly error: unknown;
-  readonly githubCloseCalls: number;
-  readonly runtimeCloseCalls: number;
-  readonly closeEvents: readonly string[];
-}> {
-  let githubCloseCalls = 0;
-  let runtimeCloseCalls = 0;
-  const closeEvents: string[] = [];
-  const runtime = {
-    async turn() {
-      return { text: "ok" };
-    },
-    async drainTools() {
-      return failure === "unsettled" ? ["tool-call"] : [];
-    },
-    async drainProviders() {
-      if (failure === "provider-drain") throw new Error("provider drain failed");
-      return failure === "unsettled" ? ["session"] : [];
-    },
-    close() {
-      runtimeCloseCalls += 1;
-      closeEvents.push("runtime.close");
-    },
-  };
-  class TestAgentBuilder {
-    provider(): this {
-      return this;
-    }
-    integration(): this {
-      return this;
-    }
-    defaultContext(): this {
-      return this;
-    }
-    systemPrompt(): this {
-      return this;
-    }
-    build() {
-      if (failure === "build") throw new Error("runtime build failed");
-      return runtime;
-    }
-  }
-  class TestOpenAIProvider {
-    constructor(_options: unknown) {}
-  }
-  const executable = source
-    .replace(/^import .*;\n/gmu, "")
-    .replace("process.env.OPENAI_API_KEY!", "process.env.OPENAI_API_KEY");
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
-    ...arguments_: string[]
-  ) => (...values: unknown[]) => Promise<void>;
-  const run = new AsyncFunction(
-    "AgentBuilder",
-    "OpenAIProvider",
-    "deadlineAfter",
-    "createGithubIntegration",
-    "process",
-    "console",
-    `"use strict";\n${executable}`,
-  );
-  let error: unknown;
-  try {
-    await run(
-      TestAgentBuilder,
-      TestOpenAIProvider,
-      () => Date.now() + 30_000,
-      () => ({
-        close() {
-          githubCloseCalls += 1;
-          closeEvents.push("github.close");
-        },
-      }),
-      { env: { OPENAI_API_KEY: "provider-key", GITHUB_TOKEN: "github-token" } },
-      { log() {} },
-    );
-  } catch (caught) {
-    error = caught;
-  }
-  return { error, githubCloseCalls, runtimeCloseCalls, closeEvents };
-}
-
 describe("cross-SDK release matrix docs", () => {
   it("executes the exact offline TypeScript examples", () => {
     const gettingStarted = snippet(
@@ -149,11 +62,6 @@ describe("cross-SDK release matrix docs", () => {
     );
     const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-onboarding-"));
     try {
-      mkdirSync(resolve(workdir, "echo"));
-      copyFileSync(
-        resolve(packageRoot, "registry/echo/index.ts"),
-        resolve(workdir, "echo/index.ts"),
-      );
       writeFileSync(resolve(workdir, "getting-started.mts"), gettingStarted);
       writeFileSync(resolve(workdir, "event-delivery.mts"), eventDelivery);
       writeFileSync(resolve(workdir, "echo-loop.mts"), onboarding);
@@ -173,7 +81,7 @@ describe("cross-SDK release matrix docs", () => {
         env: environment,
         encoding: "utf8",
       });
-      expect(noKey.trim()).toBe("The mock provider has completed the tool loop.");
+      expect(noKey.trim()).toBe('{"message":"Hello, Kaji."}');
       expect(delivery).toContain("agent.message.completed");
       expect(echo.trim()).toBe("PASS: echo requested, started, completed, and observed");
     } finally {
@@ -293,7 +201,7 @@ describe("cross-SDK release matrix docs", () => {
     const pythonQuickstart = snippet(production, "installed-quickstart:python", "python");
     const typescriptQuickstart = snippet(production, "installed-quickstart:typescript", "ts");
     expect(pythonQuickstart).toContain("event.turn_id == text.turn_id");
-    expect(typescriptQuickstart).toContain("event.turn_id === text.turnId");
+    expect(typescriptQuickstart).toContain("event.turn_id !== completed.turn_id");
 
     const pythonOutput = pythonQuickstart
       .split("\n")
@@ -315,7 +223,9 @@ describe("cross-SDK release matrix docs", () => {
     expect(normalizedProduction).toContain("public one-argument store capability");
     expect(normalizedProduction).toContain("internal coordinated capability");
     expect(normalizedProduction).toContain("cleanup_pending");
-    expect(normalizedProduction).toContain("`TurnAccounting` remains TypeScript-only");
+    expect(normalizedProduction).toContain(
+      "`TurnAccounting` was removed with the TypeScript capability cut",
+    );
     expect(normalizedOrdering).toContain(
       "direct append, event reads, last-sequence reads, transactions, and subscription registration",
     );
@@ -384,8 +294,10 @@ describe("cross-SDK release matrix docs", () => {
     const readme = read("kaji/packages/ts/README.md");
 
     expect(readme.split("\n").length).toBeLessThanOrEqual(180);
-    expect(snippet(readme, "docs-test:readme-no-key:typescript", "ts")).toContain("MockProvider");
-    expect(snippet(readme, "docs-test:readme-openai:typescript", "ts")).toContain("functionTool");
+    expect(snippet(readme, "docs-test:readme-no-key:typescript", "ts")).toContain("Kaji.execute");
+    expect(snippet(readme, "docs-test:readme-no-key:typescript", "ts")).toContain("capability(");
+    expect(snippet(readme, "docs-test:readme-openai:typescript", "ts")).toContain("sessionId");
+    expect(snippet(readme, "docs-test:readme-openai:typescript", "ts")).toContain("Kaji.execute");
     for (const removedTopic of [
       "## Privileged event journal and disposal",
       "## Stability tiers",
@@ -393,68 +305,52 @@ describe("cross-SDK release matrix docs", () => {
       "## Global tool registry",
       "## What's exported",
       "## Development",
+      "## Provider parity",
+      "AgentBuilder",
+      "MockProvider",
+      "@irogane/kaji/testing",
       "kaji-onboarding",
     ]) {
       expect(readme).not.toContain(removedTopic);
     }
   });
 
-  it("documents, typechecks, and failure-tests read-only packaged GitHub wiring", async () => {
+  it("documents the removed TypeScript integration surface and the retained Python catalog", () => {
     const guide = read("apps/docs/content/integrations/github.mdx");
     const index = read("apps/docs/content/integrations/index.mdx");
-    const guideExample = snippet(guide, "docs-test:github-read-only", "ts");
-
-    expect(guideExample).toContain('from "@irogane/kaji/integrations/github"');
-    expect(guideExample).toContain('toolExposure: "read-only"');
-    expect(guideExample).toContain("await runtime.drainTools(10_000)");
-    expect(guideExample).toContain("github.close()");
-    expect(index).toContain("6 copied / 15 packaged TS");
-    const registry = JSON.parse(read("kaji/packages/ts/registry/index.json")) as {
-      integrations: Record<string, unknown>;
+    const registry = {
+      python: JSON.parse(read("kaji/packages/py/src/integrations/registry/index.json")) as {
+        integrations: Record<string, unknown>;
+      },
+      typescript: JSON.parse(read("kaji/packages/ts/registry/index.json")) as {
+        integrations: Record<string, unknown>;
+      },
     };
+
+    expect(guide).toContain("was removed with the TypeScript capability cut");
+    expect(guide).toContain("python -m kaji.cli add github");
+    expect(guide).toContain("CONFIGURE_GITHUB_TOKEN");
+    for (const removed of [
+      "AgentBuilder",
+      "createGithubIntegration",
+      "OpenAIProvider",
+      "toolExposure",
+    ]) {
+      expect(guide).not.toContain(removed);
+    }
+
+    expect(index).toContain("no integration runtime");
+    expect(index).not.toContain("15 packaged TS");
     const documentedIntegrations = [...index.matchAll(/^\| `([^`]+)`\s+\|/gmu)].map(
       ([, name]) => name,
     );
-    expect(documentedIntegrations).toEqual(Object.keys(registry.integrations));
+    expect(documentedIntegrations).toEqual(
+      Object.keys({ ...registry.typescript.integrations, ...registry.python.integrations }),
+    );
     for (const absent of ["fs", "http", "sqlite", "web"]) {
       expect(index).not.toContain(`| \`${absent}\``);
     }
-    expect(guide).toContain('The compatibility default, `toolExposure: "all"`');
-    expect(guide).toContain("model-exposure boundary, not a token");
-    expect(guide).toContain("raw Actions logs, GraphQL, blame, GitHub Enterprise Server");
-
-    const workdir = mkdtempSync(resolve(packageRoot, ".docs-contract-github-"));
-    try {
-      writeFileSync(resolve(workdir, "github.mts"), guideExample);
-      writeFileSync(
-        resolve(workdir, "tsconfig.json"),
-        JSON.stringify({
-          extends: "../tsconfig.json",
-          compilerOptions: { noEmit: true },
-          include: ["*.mts"],
-        }),
-      );
-      execFileSync(
-        "node",
-        [resolve(packageRoot, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"],
-        { cwd: workdir, stdio: "inherit" },
-      );
-    } finally {
-      rmSync(workdir, { recursive: true, force: true });
-    }
-
-    for (const failure of ["build", "provider-drain", "unsettled"] as const) {
-      const result = await executeGitHubExampleFailure(guideExample, failure);
-      expect(result.error, failure).toBeInstanceOf(Error);
-      expect(result.githubCloseCalls, `${failure}: GitHub close`).toBe(1);
-      expect(result.runtimeCloseCalls, `${failure}: runtime close`).toBe(
-        failure === "build" ? 0 : 1,
-      );
-      expect(result.closeEvents, `${failure}: close order`).toEqual(
-        failure === "build" ? ["github.close"] : ["runtime.close", "github.close"],
-      );
-    }
-  }, 30_000);
+  });
 
   it("matches the machine-readable beta feature tiers exactly", () => {
     const tiers = JSON.parse(read("kaji/contracts/tiers/v1/features.json")) as Record<

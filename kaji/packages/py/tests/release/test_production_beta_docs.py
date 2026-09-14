@@ -197,13 +197,9 @@ def test_public_site_states_the_openai_only_beta_provider_boundary() -> None:
     feature_tiers = json.loads(
         (REPO_ROOT / "kaji/contracts/tiers/v1/features.json").read_text()
     )
-    assert (
-        feature_tiers["packageSubpaths"]["typescript"]["./openai"]["tier"] == "stable"
-    )
-    assert (
-        feature_tiers["packageSubpaths"]["typescript"]["./anthropic"]["tier"]
-        == "experimental"
-    )
+    # The TypeScript capability cut removed the provider subpaths entirely.
+    assert "./openai" not in feature_tiers["packageSubpaths"]["typescript"]
+    assert "./anthropic" not in feature_tiers["packageSubpaths"]["typescript"]
     assert re.search(r"\|\s*`openai`\s*.*\|\s*Recommended\s*\|", providers)
     for provider in ("anthropic", "kimi", "gemini"):
         assert f"| `{provider}`" in providers
@@ -604,8 +600,9 @@ def test_alpha_onboarding_uses_local_tarball_and_defers_registry_publication() -
     combined_compact = " ".join(combined.split())
 
     assert "irogane-kaji-0.3.0-alpha.1.tgz" in combined
-    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in combined
-    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in combined
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod" in combined
+    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod" in combined
+    assert "zod openai" not in combined
     assert "git clone https://github.com/enkyuan/alloy.git" in combined
     assert "bun install --frozen-lockfile" in combined
     assert "Source checkout required" not in combined
@@ -866,7 +863,7 @@ def test_maintained_alpha_docs_reject_pre_beta_contract_guidance() -> None:
     assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod" in getting_started
     assert "npm install --save-dev tsx@4.22.4" in getting_started
     assert "npm exec -- tsx kaji.mts" in getting_started
-    assert "npm exec -- tsx agent.mts" in getting_started
+    assert 'kaji.get_provider("openai")' in getting_started
     assert "node kaji.mts" not in getting_started
     assert "node agent.mts" not in getting_started
     assert "git clone https://github.com/enkyuan/alloy.git" not in getting_started
@@ -874,7 +871,7 @@ def test_maintained_alpha_docs_reject_pre_beta_contract_guidance() -> None:
     assert 'risk="read"' in getting_started
     assert 'risk: "read"' in getting_started
     assert "principal_id=" in getting_started
-    assert "principalId:" in getting_started
+    assert 'principal: "local-user"' in getting_started
     getting_started_compact = " ".join(getting_started.split())
     assert (
         "`AgentBuilder` wires a provider and tools to the runtime's event journal"
@@ -889,7 +886,7 @@ def test_maintained_alpha_docs_reject_pre_beta_contract_guidance() -> None:
         "Standalone cross-language CLI",
     ):
         assert heading in cli
-    assert re.search(r"\|\s*`add`\s*\|\s*Yes\s*\|\s*Yes\s*\|\s*No\s*\|", cli)
+    assert re.search(r"\|\s*`add`\s*\|\s*No\s*\|\s*Yes\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`replay`\s*\|\s*Yes\s*\|\s*No\s*\|\s*No\s*\|", cli)
     assert re.search(r"\|\s*`mcp`\s*\|\s*No\s*\|\s*No\s*\|\s*WIP;", cli)
     assert "not available from PyPI for this release" in cli
@@ -1135,8 +1132,9 @@ def test_release_docs_enforce_the_local_alpha_registry_boundary() -> None:
         if path.is_relative_to(REPO_ROOT / "apps" / "docs")
     )
     assert "0.3.0-alpha.1" in public_docs
-    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in public_docs
-    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai" in public_docs
+    assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod" in public_docs
+    assert "bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod" in public_docs
+    assert "zod openai" not in public_docs
     assert re.search(r"pip install [^\n`]*kaji", public_docs) is None
     typescript_readme = documents[REPO_ROOT / "kaji" / "packages" / "ts" / "README.md"]
     assert "npm install ./irogane-kaji-0.3.0-alpha.1.tgz" in typescript_readme

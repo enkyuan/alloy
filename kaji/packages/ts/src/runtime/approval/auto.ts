@@ -3,7 +3,7 @@
  * without any I/O. Useful for testing, sandboxed environments, or as a
  * safe default that denies everything not explicitly listed.
  */
-import type { ToolCall } from "@/providers/base";
+import type { ToolCall } from "@/messages";
 import type {
   ApprovalDecision,
   ApprovalRequestContext,

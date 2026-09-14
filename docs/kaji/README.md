@@ -45,20 +45,20 @@ idempotency, failures, artifacts, and replay.
 See [`examples/refund-agent`](../../examples/refund-agent) for a Stripe
 test-mode product action using only package APIs.
 
-## Kaji.execute — one-shot capability entry point
+## Kaji.execute: one-shot capability entry point
 
 For product actions that don't need a conversational agent loop, `Kaji.execute`
 dispatches a single [`Capability`](tool-contracts.md) through the same tool
 policy, approval boundary, and durable event journal that the `AgentBuilder`
-runtime uses. No agent loop, no session seeding — just pass the capability,
-its input, and a principal identity.
+runtime uses. No agent loop, no session seeding. Pass the capability, its
+input, and a principal identity.
 
 <!-- docs-test:kaji-execute:typescript:start -->
 ```ts
 import { Kaji, capability, capabilityResult } from "@irogane/kaji";
 import * as z from "zod";
 
-// A no-op capability that echoes its input — replace the execute hook
+// A no-op capability that echoes its input. Replace the execute hook
 // with your own logic and register real side effects behind a policy
 // gate (see ToolPolicy in @irogane/kaji).
 const echo = capability({
@@ -71,7 +71,7 @@ const echo = capability({
   execute: async (input) => capabilityResult({ message: input.message }),
 });
 
-// One-shot entry: no agent loop, no turn context — just invoke the
+// One-shot entry: no agent loop, no turn context. Invoke the
 // capability through the stable Kaji.execute surface.
 const result = await Kaji.execute({
   capability: echo,
@@ -91,8 +91,8 @@ based on this snippet.
 Stable and experimental features and exports are classified by
 [`feature-tiers-v1.json`](../../kaji/contracts/tiers/v1/features.json).
 OpenAI is Kaji's sole beta-supported primary provider. Keyed OpenAI proof in
-both Python and TypeScript is mandatory release evidence, and a missing
-`OPENAI_API_KEY` blocks release.
+Python is mandatory release evidence, and a missing `OPENAI_API_KEY` blocks
+release.
 Anthropic remains implemented but experimental/WIP.
 Anthropic, Gemini, Kimi, and OpenRouter are opt-in and carry no beta
 compatibility or publication-proof commitment. `MockProvider` remains the

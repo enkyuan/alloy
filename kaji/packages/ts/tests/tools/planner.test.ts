@@ -6,7 +6,7 @@ import { InMemoryEventStore } from "@/events/store";
 import { KajiEvent, StoredKajiEvent } from "@/events/schemas";
 import { EventApprovalHandler } from "@/runtime/approval/handler";
 import type { ApprovalRequestContext } from "@/runtime/approval/types";
-import type { ToolCall } from "@/providers/base";
+import type { ToolCall } from "@/messages";
 import { InMemoryEventCommitter } from "@/events/committer";
 import { UnclassifiedToolRiskError, UnknownToolError, type ToolSpec } from "@/tools/registry";
 

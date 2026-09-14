@@ -21,7 +21,8 @@ describe("kaji cli dispatch", () => {
     expect(code).toBe(0);
     const out = lines.join("\n");
     expect(out).toMatch(/usage: kaji/);
-    expect(out).toMatch(/\badd\b/);
+    expect(out).toMatch(/\binit\b/);
+    expect(out).toMatch(/\breplay\b/);
   });
 
   it("prints help and exits 0 when no command is given", async () => {
@@ -49,25 +50,12 @@ describe("kaji cli dispatch", () => {
 
   it("prints per-command usage on `<cmd> --help`", async () => {
     const lines: string[] = [];
-    const code = await runCli(["add", "--help"], {
+    const code = await runCli(["init", "--help"], {
       registryRoot: "/tmp",
       log: (m) => lines.push(m),
     });
     expect(code).toBe(0);
-    expect(lines.join("\n")).toBe(`usage: ${COMMANDS.add!.usage}`);
-  });
-
-  it("routes add usage through stderr", async () => {
-    const stdout: string[] = [];
-    const stderr: string[] = [];
-    const code = await runCli(["add"], {
-      registryRoot: "/tmp",
-      log: (message) => stdout.push(message),
-      err: (message) => stderr.push(message),
-    });
-    expect(code).toBe(2);
-    expect(stdout).toEqual([]);
-    expect(stderr.join("\n")).toContain("usage: kaji add");
+    expect(lines.join("\n")).toBe(`usage: ${COMMANDS.init!.usage}`);
   });
 
   it("accepts global no-color and verbose flags before init", async () => {

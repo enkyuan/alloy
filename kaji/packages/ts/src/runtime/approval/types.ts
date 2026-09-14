@@ -1,7 +1,7 @@
 /** Typed approval decisions and the canonical runtime request context. */
 import type { EventCommitter } from "@/events/protocols";
 import type { KajiEvent, StoredKajiEvent } from "@/events/schemas";
-import type { ToolCall } from "@/providers/base";
+import type { ToolCall } from "@/messages";
 import type { ToolExecutionContext } from "@/runtime/context";
 import type { TimerScheduler } from "@/internal/uuid";
 import type { ToolRisk } from "@/tools/policy";

@@ -17,7 +17,6 @@ if _PROJECTION_SPEC is None or _PROJECTION_SPEC.loader is None:
 _PROJECTION = importlib.util.module_from_spec(_PROJECTION_SPEC)
 _PROJECTION_SPEC.loader.exec_module(_PROJECTION)
 
-PYTHON_LEGACY_CONTRACTS = _PROJECTION.PYTHON_LEGACY_CONTRACTS
 TYPESCRIPT_PROJECTED_CONTRACTS = _PROJECTION.TYPESCRIPT_PROJECTED_CONTRACTS
 typescript_contract_projection = _PROJECTION.typescript_contract_projection
 
@@ -56,10 +55,8 @@ def packaged_contract_files(target: Path) -> set[Path]:
 
 
 def expected_contract_files(target: Path) -> set[Path]:
-    expected = set(contract_files())
-    if target == TYPESCRIPT_PACKAGE_CONTRACTS:
-        expected -= {Path(relative) for relative in PYTHON_LEGACY_CONTRACTS}
-    return expected
+    del target
+    return set(contract_files())
 
 
 def expected_contract_bytes(target: Path, relative: Path) -> bytes:

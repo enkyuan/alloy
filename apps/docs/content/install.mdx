@@ -11,18 +11,16 @@ in production.
 
 ## TypeScript
 
-Install a locally built alpha tarball with the required Zod peer and the
-recommended OpenAI adapter:
+Install a locally built alpha tarball with the required Zod peer:
 
 ```bash
-npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai
+npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod
 # or
-bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod openai
+bun add ./irogane-kaji-0.3.0-alpha.1.tgz zod
 ```
 
-The package declares Zod `>=4.3 <5` as a required peer and OpenAI `>=4 <8`
-as an optional peer. Omit `openai` when you only use `MockProvider` from
-`@irogane/kaji/testing`.
+The package declares Zod `>=4.3 <5` as its only peer. It ships no provider
+adapters or test fixtures; live model providers are a Python path.
 
 ## Source checkout
 
@@ -33,11 +31,11 @@ SDK, or run the full workspace checks:
 git clone https://github.com/enkyuan/alloy.git
 cd alloy
 bun install --frozen-lockfile
-bun run --cwd kaji/packages/ts test:quickstart
+bun run --cwd kaji/packages/ts test
 ```
 
-The final command runs the repository's deterministic TypeScript quickstart
-without a provider credential. Use this path when contributing to Kaji or
+The final command runs the repository's deterministic TypeScript contract
+suites without a provider credential. Use this path when contributing to Kaji or
 validating both SDKs together; application onboarding should use the locally
 built tarball above.
 

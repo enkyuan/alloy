@@ -1,4 +1,4 @@
-import type { ProviderMessage } from "@/providers/base";
+import type { ProviderMessage } from "@/messages";
 import {
   buildContextFromMessages,
   contextMessageCharacters,

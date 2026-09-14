@@ -137,96 +137,7 @@ export {
   type ToolLedgerOutcome,
 } from "@/tools/idempotency";
 
-// Providers
-export type {
-  ModelProvider,
-  ModelProviderOptions,
-  ModelResponse,
-  ModelResponseChunk,
-  ProviderMessage,
-  ProviderResponseLimits,
-  RetryOptions,
-  ToolCall,
-  TokenUsage,
-} from "@/providers/base";
-export { DEFAULT_PROVIDER_RESPONSE_LIMITS, resolveProviderResponseLimits } from "@/providers/base";
-export { OpenAIProvider } from "@/providers/openai";
-export type { OpenAIProviderOptions } from "@/providers/openai";
-export { AnthropicProvider } from "@/providers/anthropic";
-export type { AnthropicProviderOptions } from "@/providers/anthropic";
-export {
-  normalizeProviderError,
-  ProviderAPIError,
-  ProviderConfigError,
-  ProviderConnectionError,
-  ProviderError,
-  ProviderOutputLimitError,
-  ProviderRateLimitedError,
-} from "@/providers/errors";
-export type { NormalizedProviderError, ProviderOutputDimension } from "@/providers/errors";
-export { lookupCost, calculateCostUsd } from "@/providers/costs";
-export type { ModelCostEntry } from "@/providers/costs";
-export { getProvider, registerProvider } from "@/providers/registry";
-export {
-  openai,
-  anthropic,
-  openrouter,
-  kimi,
-  gemini,
-  type OpenRouterFactoryOptions,
-  type GeminiFactoryOptions,
-} from "@/providers/factory";
-
-// Auth
-export { type SecretSource, EnvSecretSource } from "@/auth/source";
-
-// Integrations
-export {
-  BoundTool,
-  functionTool,
-  type FunctionToolHandler,
-  type FunctionToolMeta,
-  Integration,
-  tool,
-  formatIntegrationError,
-  IndexValidationError,
-  IntegrationExperimentalError,
-  IntegrationNotFoundError,
-  IntegrationValidationError,
-  loadManifest,
-  loadRegistryIndex,
-  ManifestValidationError,
-  validateIndexDocument,
-  validateManifestDocument,
-  type IntegrationAuth,
-  type IntegrationManifestDocument,
-  type IntegrationManifestTool,
-  type IntegrationRuntime,
-  type IntegrationStability,
-  type IntegrationToolRisk,
-  type IntegrationValidationCode,
-  type LoadedIntegrationManifest,
-  type NormalizedIntegrationValidationError,
-  type RegistryIndexDocument,
-  type RegistryIndexEntry,
-  type RegistryLoaderOptions,
-  safeRequest,
-  type BoundedResponse,
-  type BoundNetworkTransport,
-  type SafeFetchPolicy,
-} from "@/integrations";
-
 // Runtime
-export {
-  AgentRuntime,
-  type EffectiveRuntimeLimits,
-  type AgentRuntimeOptions,
-  type AgentStrategy,
-  type RunTurnOptions,
-  type TurnOptions,
-  type TurnAccounting,
-  type TurnResult,
-} from "@/runtime/runtime";
 export { SessionPurgeBusyError, SessionPurgeUnsupportedError } from "@/runtime/errors";
 export {
   DEFAULT_TURN_EXECUTION_LIMITS,
@@ -253,7 +164,6 @@ export {
   throwIfCancellationRequested,
   type CancellationTokenLike,
 } from "@/runtime/cancellation";
-export { AgentBuilder, type Integrable, type AgentBuilderBuildOptions } from "@/runtime/builder";
 export type {
   Clock,
   IdFactory,
@@ -269,13 +179,6 @@ export {
   type SessionTurnLease,
   type TurnLeaseOptions,
 } from "@/runtime/session/coordinator";
-export {
-  generateText,
-  streamText,
-  type GenerateTextOptions,
-  type StreamTextResult,
-} from "@/runtime/oneshot";
-
 // Approval handlers
 export type {
   TypedApprovalHandler,
@@ -301,7 +204,6 @@ export {
   NOOP_METRICS,
   NOOP_TRACE,
   METRIC_NAMES,
-  providerFamily,
   recordMetric,
   startSpan,
   type JournalStage,
@@ -309,8 +211,6 @@ export {
   type MetricMeasurement,
   type MetricName,
   type MetricsSink,
-  type ProviderFamily,
-  type ProviderStatus,
   type SpanName,
   type SubscriberStage,
   type ToolMetricOutcome,

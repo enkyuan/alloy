@@ -67,7 +67,7 @@ runtime platform.
 
 ## Protected evidence
 
-OpenAI requires a real normalized tool loop in Python and TypeScript on the
+OpenAI requires a real normalized tool loop in Python on the
 exact commit. A missing `OPENAI_API_KEY` is a blocking failure, not a skip.
 Anthropic and the other experimental/WIP providers are not beta publication
 proof.

@@ -57,9 +57,7 @@ import psycopg
 
 from kaji.artifacts import ArtifactRef
 from kaji.backends.postgres import PostgresEventCommitter, PostgresEventStore, PostgresToolIdempotencyLedger
-from kaji.events.schemas import ArtifactEmitted, TaskCompleted, TaskCreated, TaskResumed, ToolCallCompleted, ToolCallFailed, ToolCallRequested, ToolCallStarted
-from kaji.tasks import TaskState
-from kaji.tasks.projector import project_task
+from kaji.events.schemas import ArtifactEmitted, ToolCallCompleted, ToolCallFailed, ToolCallRequested, ToolCallStarted
 
 config = json.loads(os.environ["KAJI_RECOVERY_CASE"])
 dsn = os.environ["KAJI_POSTGRES_URL"]
@@ -76,15 +74,8 @@ async def fixture_capability():
     return result
 
 
-async def task_events(committer):
-    values = {"session_id": config["session_id"], "task_id": config["task_id"]}
-    await committer.commit(TaskCreated(id=f"{config['task_id']}-created", principal_id="fixture", input="mutate", **values))
-    await committer.commit(TaskResumed(id=f"{config['task_id']}-running", **values))
+async def tool_events(committer):
     await committer.commit(ToolCallRequested(id=f"{config['task_id']}-requested", turn_id="turn", tool_name="fixture.mutate", tool_call_id="call", tool_args={"effect_key": config["effect_key"]}, session_id=config["session_id"]))
-
-
-async def snapshot(store):
-    return project_task(config["task_id"], await store.get_events(config["session_id"]))
 
 
 async def main():
@@ -95,18 +86,17 @@ async def main():
     claim_values = dict(session_id=config["session_id"], tool_call_id="call", tool_name="fixture.mutate", tool_args={"effect_key": config["effect_key"]})
 
     if action in {"crash_after_effect", "crash_before_handler"}:
-        await task_events(committer)
+        await tool_events(committer)
         await committer.commit(ToolCallStarted(id=f"{config['task_id']}-started", turn_id="turn", tool_name="fixture.mutate", tool_call_id="call", session_id=config["session_id"]))
         claim = await ledger.claim(**claim_values)
         assert claim.kind == "owner"
         if action == "crash_after_effect":
             await ledger.mark_started(claim)
             await fixture_capability()
-        print(json.dumps({"state": (await snapshot(store)).state.value}), flush=True)
+        print(json.dumps({"recovery": "started"}), flush=True)
         os._exit(23)
 
     if action == "inspect_started":
-        assert (await snapshot(store)).state is TaskState.RUNNING
         claim = await ledger.claim(**claim_values)
         assert claim.kind == "waiter"
         assert await ledger.is_started(claim)
@@ -114,8 +104,7 @@ async def main():
             row = await (await connection.execute("SELECT count(*) FROM recovery_fixture_effects")).fetchone()
         assert row[0] == 1
         await committer.commit(ToolCallFailed(id=f"{config['task_id']}-unknown", turn_id="turn", tool_name="fixture.mutate", tool_call_id="call", error="process died after the durable start boundary", outcome="unknown", session_id=config["session_id"]))
-        assert (await snapshot(store)).state is TaskState.RECONCILIATION_REQUIRED
-        print(json.dumps({"state": (await snapshot(store)).state.value}), flush=True)
+        print(json.dumps({"recovery": "reconciliation_required"}), flush=True)
         return
 
     if action == "resume_reconciled":
@@ -124,14 +113,10 @@ async def main():
         result = claim.resolution.result
         await committer.commit(ToolCallCompleted(id=f"{config['task_id']}-reconciled", turn_id="turn", tool_name="fixture.mutate", tool_call_id="call", result=result, session_id=config["session_id"]))
         await committer.commit(ArtifactEmitted(id=f"{config['task_id']}-artifact", turn_id="turn", tool_call_id="call", artifact=ArtifactRef(id="fixture-effect", type="fixture/effect", uri=f"fixture://effects/{config['effect_key']}", metadata=result), session_id=config["session_id"]))
-        await committer.commit(TaskResumed(id=f"{config['task_id']}-resumed", task_id=config["task_id"], session_id=config["session_id"]))
-        await committer.commit(TaskCompleted(id=f"{config['task_id']}-completed", task_id=config["task_id"], session_id=config["session_id"]))
-        assert (await snapshot(store)).state is TaskState.COMPLETED
-        print(json.dumps({"state": (await snapshot(store)).state.value, "result": result}), flush=True)
+        print(json.dumps({"result": result}), flush=True)
         return
 
     if action == "retry_not_started":
-        assert (await snapshot(store)).state is TaskState.RUNNING
         claim = await ledger.claim(**claim_values)
         assert claim.kind == "waiter"
         assert not await ledger.is_started(claim)
@@ -142,9 +127,7 @@ async def main():
         result = await fixture_capability()
         await ledger.complete(retry, result)
         await committer.commit(ToolCallCompleted(id=f"{config['task_id']}-retried", turn_id="turn", tool_name="fixture.mutate", tool_call_id="call", result=result, session_id=config["session_id"]))
-        await committer.commit(TaskCompleted(id=f"{config['task_id']}-completed", task_id=config["task_id"], session_id=config["session_id"]))
-        assert (await snapshot(store)).state is TaskState.COMPLETED
-        print(json.dumps({"state": (await snapshot(store)).state.value}), flush=True)
+        print(json.dumps({"recovery": "completed"}), flush=True)
         return
 
     raise AssertionError(f"unknown action: {action}")
@@ -221,7 +204,7 @@ async def test_restart_requires_reconciliation_after_started_external_effect() -
             session_id=session_id,
             effect_key=effect_key,
         )
-    )["state"] == "running"
+    )["recovery"] == "started"
     assert (
         await _process(
             "inspect_started",
@@ -229,7 +212,7 @@ async def test_restart_requires_reconciliation_after_started_external_effect() -
             session_id=session_id,
             effect_key=effect_key,
         )
-    )["state"] == "reconciliation_required"
+    )["recovery"] == "reconciliation_required"
     assert await _effect_count() == 1
 
     reconciled = await _fixture_result(effect_key)
@@ -242,7 +225,7 @@ async def test_restart_requires_reconciliation_after_started_external_effect() -
         session_id=session_id,
         effect_key=effect_key,
     )
-    assert resumed == {"state": "completed", "result": reconciled}
+    assert resumed == {"result": reconciled}
     assert await _effect_count() == 1
 
     from kaji.backends.postgres import PostgresEventStore
@@ -251,18 +234,14 @@ async def test_restart_requires_reconciliation_after_started_external_effect() -
         session_id
     )
     assert [event.type for event in events] == [
-        EventType.TASK_CREATED,
-        EventType.TASK_RESUMED,
         EventType.TOOL_CALL_REQUESTED,
         EventType.TOOL_CALL_STARTED,
         EventType.TOOL_CALL_FAILED,
         EventType.TOOL_CALL_COMPLETED,
         EventType.ARTIFACT_EMITTED,
-        EventType.TASK_RESUMED,
-        EventType.TASK_COMPLETED,
     ]
-    assert events[-3].artifact.metadata == reconciled
-    assert events[-4].result == reconciled
+    assert events[-1].artifact.metadata == reconciled
+    assert events[-2].result == reconciled
 
 
 @pytest.mark.asyncio
@@ -276,7 +255,7 @@ async def test_restart_allows_retry_only_before_handler_start() -> None:
             session_id=session_id,
             effect_key=effect_key,
         )
-    )["state"] == "running"
+    )["recovery"] == "started"
     assert (
         await _process(
             "retry_not_started",
@@ -284,7 +263,7 @@ async def test_restart_allows_retry_only_before_handler_start() -> None:
             session_id=session_id,
             effect_key=effect_key,
         )
-    )["state"] == "completed"
+    )["recovery"] == "completed"
     assert await _effect_count() == 1
 
     from kaji.backends.postgres import PostgresEventStore

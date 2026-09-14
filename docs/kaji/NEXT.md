@@ -28,10 +28,10 @@ The path already exists and works today. An out-of-tree integration reaches an
 `AgentRuntime` by subclassing `Integration` and passing it to
 `AgentBuilder.integration()`. This path has no allowlist, no manifest, and no
 registry directory; it is duck-typed on a `register()` method
-([`builder.py`](../../kaji/packages/py/src/runtime/agents/builder.py),
-[`builder.ts`](../../kaji/packages/ts/src/runtime/builder.ts)). The
+(`builder.py` at `kaji/packages/py/src/runtime/agents/builder.py`,
+`builder.ts` in the pre-cut TypeScript tree). The
 `agentos` example uses exactly this path
-([`agentos-integration.ts`](../../kaji/packages/ts/examples/agentos/agentos-integration.ts)).
+(`agentos-integration.ts` in the pre-cut TypeScript examples).
 
 The manifest/registry loader (`load_manifest` / `loadManifest`) is a separate
 source-copy mechanism used only by `kaji add`; it never constructs a runtime

@@ -8,19 +8,9 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RunOptions } from "@/cli/index";
 
-const PROVIDERS = ["mock", "openai", "anthropic"] as const;
-type Provider = (typeof PROVIDERS)[number];
-
-interface InitTemplate {
-  agent: undefined;
-  capability: undefined;
-}
-
 interface Args {
   out: string;
-  provider: Provider;
   force: boolean;
-  template: keyof InitTemplate;
 }
 
 interface PackageMetadata {
@@ -91,41 +81,21 @@ function throwIfCancelled(signal: AbortSignal | undefined): void {
   if (signal?.aborted) throw new Error("scaffold worker cancelled");
 }
 
-const TEMPLATES = ["agent", "capability"] as const;
-type InitTemplateName = (typeof TEMPLATES)[number];
-
 function parseArgs(rest: string[]): Args {
   let positionalPath: string | undefined;
-  let provider: Provider = "mock";
   let force = false;
-  let template: InitTemplateName = "agent";
 
   for (let index = 0; index < rest.length; index++) {
     const arg = rest[index]!;
-    if (arg === "--provider") {
-      const next = rest[index + 1];
-      if (next === undefined || next.startsWith("--")) {
-        throw new CliArgError("--provider requires a value");
-      }
-      if (!PROVIDERS.includes(next as Provider)) {
-        throw new CliArgError("--provider must be mock, openai, or anthropic");
-      }
-      provider = next as Provider;
-      index++;
-    } else if (arg === "--template") {
-      const next = rest[index + 1];
-      if (next === undefined || next.startsWith("--")) {
-        throw new CliArgError("--template requires a value");
-      }
-      if (!TEMPLATES.includes(next as InitTemplateName)) {
-        throw new CliArgError("--template must be agent or capability");
-      }
-      template = next as InitTemplateName;
-      index++;
-    } else if (arg === "--force") {
+    if (arg === "--force") {
       force = true;
     } else if (arg === "--yes") {
-      // Reserved for prompt-free parity with the Python CLI.
+    } else if (arg === "--template") {
+      const next = rest[index + 1];
+      if (next !== "capability") {
+        throw new CliArgError("--template must be capability");
+      }
+      index++;
     } else if (arg.startsWith("--")) {
       throw new CliArgError(`unknown argument: ${arg}`);
     } else if (positionalPath === undefined) {
@@ -137,9 +107,7 @@ function parseArgs(rest: string[]): Args {
 
   return {
     out: resolve(positionalPath ?? "."),
-    provider,
     force,
-    template,
   };
 }
 
@@ -155,37 +123,6 @@ function installedMetadata(): PackageMetadata {
     throw new Error("installed kaji package metadata is incomplete");
   }
   return value as PackageMetadata;
-}
-
-function agentSource(provider: Provider): string {
-  const providerImports = {
-    mock: 'import { MockProvider } from "@irogane/kaji/testing";',
-    openai: 'import { OpenAIProvider } from "@irogane/kaji/openai";',
-    anthropic: 'import { AnthropicProvider } from "@irogane/kaji/anthropic";',
-  } as const;
-  const providerSetup = {
-    mock: "const provider = new MockProvider();",
-    openai: `const environment = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
-const apiKey = environment.OPENAI_API_KEY;
-if (!apiKey) throw new Error("OPENAI_API_KEY is required for the openai scaffold");
-const provider = new OpenAIProvider({ apiKey });`,
-    anthropic: `const environment = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
-const apiKey = environment.ANTHROPIC_API_KEY;
-if (!apiKey) throw new Error("ANTHROPIC_API_KEY is required for the anthropic scaffold");
-const provider = new AnthropicProvider({ apiKey });`,
-  } as const;
-
-  return `import { AgentBuilder } from "@irogane/kaji";
-${providerImports[provider]}
-
-${providerSetup[provider]}
-const runtime = new AgentBuilder().provider(provider).build();
-const result = await runtime.turn("Say hello.");
-const finalSequence = Math.max(...result.events.map((event) => event.sequence));
-console.log(\`text=\${result.text}\`);
-console.log(\`turn_id=\${result.turnId}\`);
-console.log(\`final_sequence=\${finalSequence}\`);
-`;
 }
 
 function capabilitySource(): string {
@@ -217,7 +154,7 @@ console.log(JSON.stringify(result.value));
 `;
 }
 
-function scaffoldFiles(provider: Provider, template: InitTemplateName): Record<string, string> {
+function scaffoldFiles(): Record<string, string> {
   const metadata = installedMetadata();
   const zodRange = metadata.peerDependencies.zod;
   if (zodRange === undefined) throw new Error("installed kaji has no Zod peer range");
@@ -234,15 +171,6 @@ function scaffoldFiles(provider: Provider, template: InitTemplateName): Record<s
     "@irogane/kaji": metadata.version,
     zod: zodRange,
   };
-  if (provider === "openai") {
-    const range = metadata.peerDependencies.openai;
-    if (range === undefined) throw new Error("installed kaji has no OpenAI peer range");
-    dependencies.openai = range;
-  } else if (provider === "anthropic") {
-    const range = metadata.peerDependencies["@anthropic-ai/sdk"];
-    if (range === undefined) throw new Error("installed kaji has no Anthropic peer range");
-    dependencies["@anthropic-ai/sdk"] = range;
-  }
 
   return {
     "package.json": JSON.stringify(
@@ -252,10 +180,7 @@ function scaffoldFiles(provider: Provider, template: InitTemplateName): Record<s
         private: true,
         type: "module",
         scripts: {
-          start:
-            template === "capability"
-              ? "dotenvx run --ignore=MISSING_ENV_FILE -- tsx capability.ts"
-              : "dotenvx run --ignore=MISSING_ENV_FILE -- tsx agent.ts",
+          start: "dotenvx run --ignore=MISSING_ENV_FILE -- tsx capability.ts",
           typecheck: "tsc --noEmit",
         },
         dependencies,
@@ -286,15 +211,8 @@ function scaffoldFiles(provider: Provider, template: InitTemplateName): Record<s
       null,
       2,
     ),
-    ...(template === "capability"
-      ? { "capability.ts": capabilitySource() }
-      : { "agent.ts": agentSource(provider) }),
-    ".env.example":
-      provider === "mock"
-        ? "# No provider credentials required.\n"
-        : provider === "openai"
-          ? "OPENAI_API_KEY=\n"
-          : "ANTHROPIC_API_KEY=\n",
+    "capability.ts": capabilitySource(),
+    ".env.example": "# No provider credentials required.\n",
   };
 }
 
@@ -844,7 +762,7 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
   } catch (error) {
     if (error instanceof CliArgError) {
       err(`Error: ${error.message}`);
-      err("usage: kaji init [path] [--provider mock|openai|anthropic] [--yes] [--force]");
+      err("usage: kaji init [path] [--template capability] [--yes] [--force]");
       return 2;
     }
     throw error;
@@ -852,7 +770,7 @@ export async function init(rest: string[], opts: RunOptions): Promise<number> {
 
   let files: Record<string, string>;
   try {
-    files = scaffoldFiles(args.provider, args.template);
+    files = scaffoldFiles();
   } catch {
     err("kaji init could not read installed package metadata");
     return 1;

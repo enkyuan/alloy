@@ -13,10 +13,10 @@ binary name, but their command sets differ.
 | Command             |  TypeScript `kaji`  | Python `kaji` distribution |     Standalone `@irogane/kaji/cli`      |
 | ------------------- | :-----------------: | :------------------------: | :-------------------------------------: |
 | `init`              | TypeScript scaffold |      Python scaffold       | TypeScript scaffold; Python unavailable |
-| `add`               |         Yes         |            Yes             |                   No                    |
-| `connect`           |         Yes         |            Yes             |                   No                    |
-| `disconnect`        |         Yes         |            Yes             |                   No                    |
-| `list-integrations` |         Yes         |            Yes             |                   No                    |
+| `add`               |         No          |            Yes             |                   No                    |
+| `connect`           |         No          |            Yes             |                   No                    |
+| `disconnect`        |         No          |            Yes             |                   No                    |
+| `list-integrations` |         No          |            Yes             |                   No                    |
 | `replay`            |         Yes         |             No             |                   No                    |
 | `gen`               |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
 | `info`              |         No          | WIP (`experimental` tier)  |        WIP (`experimental` tier)        |
@@ -29,49 +29,35 @@ Use the selected package's `--help` output as the exact flag reference.
 
 ## TypeScript SDK CLI
 
-Install the local alpha artifact, then use its embedded CLI to scaffold TypeScript
-projects, manage the packaged registry, and render stored event logs:
+Install the local alpha artifact, then use its embedded CLI to scaffold
+capability projects and render stored event logs:
 
 ```bash
 npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod
-npm exec -- kaji init ./my-agent --provider mock --yes
-npm exec -- kaji list-integrations
-npm exec -- kaji add echo --out ./integrations/echo
-npm exec -- kaji add github --out ./integrations/github
-npm exec -- kaji connect <oauth-integration> --principal <stable-host-principal-id>
-npm exec -- kaji disconnect <oauth-integration> --principal <stable-host-principal-id>
+npm exec -- kaji init ./my-capability --yes
 npm exec -- kaji replay ./session.jsonl --format summary
 ```
 
-`init` takes a positional destination and accepts `--provider`, `--yes`, and
-`--force`. `init` does not accept `--out`; `add` uses `--out` for its exact
-destination.
+`init` takes a positional destination and accepts `--template capability`,
+`--yes`, and `--force`. The capability template has no agent or provider
+imports; registry management commands live in the Python CLI.
 
 Generated projects pin dotenvx and `@irogane/kaji@0.3.0-alpha.1`; provide the local
-tarball when installing the generated project. Experimental-registry integrations require
-`--allow-experimental`; the current `echo`, `gmail`, and `github` catalog entries
-are all beta, so none needs the flag.
+tarball when installing the generated project.
 
-`connect` and `disconnect` are available for integrations whose manifest
-declares OAuth; Gmail is the current catalog entry with an OAuth grant. `replay`
-supports `tree`, `summary`, and `json`, plus optional `--filter`, `--grep`, and
-`--tail` arguments.
+`replay` supports `tree`, `summary`, and `json`, plus optional `--filter`,
+`--grep`, and `--tail` arguments.
 
 The TypeScript SDK CLI accepts global `--no-color` and `--verbose` flags before
 the command. Successful data uses stdout; diagnostics use stderr.
 
-| Exit | Meaning                                                                     |
-| ---: | --------------------------------------------------------------------------- |
-|  `0` | Success, help, or an `add --check` result that is current                   |
-|  `1` | Validation, runtime, file, or copy failure                                  |
-|  `2` | Malformed usage                                                             |
-|  `3` | `add --check`: bundle is absent                                             |
-|  `4` | `add --check`: bundle is outdated                                           |
-|  `5` | `add --check`: bundle has local modifications or another ownership conflict |
-|  `6` | `add --check`: bundle is demoted and cannot be promoted automatically       |
+| Exit | Meaning                                        |
+| ---: | ---------------------------------------------- |
+|  `0` | Success or help                                |
+|  `1` | Validation, runtime, or file failure           |
+|  `2` | Malformed usage                                |
 
-Codes `3` through `6` classify copied bundle state; they are not generic
-runtime failures. Replay output is a closed, redaction-safe projection.
+Replay output is a closed, redaction-safe projection.
 
 ## Python SDK CLI
 
@@ -88,9 +74,23 @@ uv run --project kaji/packages/py kaji info --json
 uv run --project kaji/packages/py kaji doctor
 ```
 
-Its `init` writes `agent.py` and `.env.example`. The `gen`, `info`, `secret`,
+Its `init` writes `agent.py` and `.env.example`. `init` does not accept `--out`;
+`add` uses `--out` for its exact destination. The `gen`, `info`, `secret`,
 `doctor`, and `upgrade` commands are WIP; their machine contract tier is
 `experimental`.
+
+| Exit | Meaning                                                                     |
+| ---: | --------------------------------------------------------------------------- |
+|  `0` | Success, help, or an `add --check` result that is current                   |
+|  `1` | Validation, runtime, file, or copy failure                                  |
+|  `2` | Malformed usage                                                             |
+|  `3` | `add --check`: bundle is absent                                             |
+|  `4` | `add --check`: bundle is outdated                                           |
+|  `5` | `add --check`: bundle has local modifications or another ownership conflict |
+|  `6` | `add --check`: bundle is demoted and cannot be promoted automatically       |
+
+Codes `3` through `6` classify copied bundle state; they are not generic
+runtime failures.
 
 ## Standalone cross-language CLI
 

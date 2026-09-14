@@ -1,21 +1,5 @@
 {
   "$schema": "./index.schema.json",
   "version": "0.1.0",
-  "integrations": {
-    "echo": {
-      "manifest": "echo/manifest.json",
-      "stability": "beta",
-      "runtimes": ["python", "typescript"]
-    },
-    "gmail": {
-      "manifest": "gmail/manifest.json",
-      "stability": "beta",
-      "runtimes": ["python", "typescript"]
-    },
-    "github": {
-      "manifest": "github/manifest.json",
-      "stability": "beta",
-      "runtimes": ["python", "typescript"]
-    }
-  }
+  "integrations": {}
 }

@@ -2,7 +2,7 @@
  * Build the provider message list from replayed session state. Mirrors the
  * message construction in `kaji.runtime.agents.runtime`.
  */
-import type { ProviderMessage } from "@/providers/base";
+import type { ProviderMessage } from "@/messages";
 import type { Message, MessageToolCall } from "@/sessions/replay";
 import { NOOP_METRICS, recordMetric, type MetricsSink } from "@/observability";
 import { systemClock, type Clock } from "@/internal/uuid";

@@ -287,7 +287,7 @@ describe("projection-owned context index", () => {
     expect(projector.latestUserContent()).toBe("latest");
     expect(projector.contextIndexStats.incrementalEvents).toBe(1);
     expect(projector.contextIndexStats.latestUserAccesses).toBe(1);
-  });
+  }, 30_000);
 
   it("falls back to the oracle for a wider post-compaction window", () => {
     const configured: ContextWindow = { maxTurns: 2, maxCharacters: 20 };
@@ -486,7 +486,7 @@ describe("projection-owned context index", () => {
     expect(indexed.messages).toBe(8_000);
     const delta = Math.max(0, indexed.rss - baseline.rss);
     expect(delta, JSON.stringify({ baseline, indexed, delta })).toBeLessThanOrEqual(67_108_864);
-  });
+  }, 30_000);
 
   function ownershipProjector(): SessionProjector {
     const projector = new SessionProjector("ownership");

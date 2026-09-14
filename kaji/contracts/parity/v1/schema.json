@@ -36,8 +36,7 @@
           { "$ref": "#/$defs/providerAdapter" },
           { "$ref": "#/$defs/idempotency" },
           { "$ref": "#/$defs/capability" },
-          { "$ref": "#/$defs/lockKey" },
-          { "$ref": "#/$defs/taskProjection" }
+          { "$ref": "#/$defs/lockKey" }
         ]
       }
     }
@@ -228,22 +227,6 @@
               "minItems": 1,
               "items": { "type": "string", "minLength": 1 }
             }
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
-    "taskProjection": {
-      "allOf": [
-        { "$ref": "#/$defs/base" },
-        {
-          "type": "object",
-          "required": ["kind", "fixture"],
-          "properties": {
-            "id": true,
-            "kind": { "const": "task-projection" },
-            "fixture": { "const": "reconciliation" },
-            "runtime": true
           },
           "additionalProperties": false
         }

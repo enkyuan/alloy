@@ -169,11 +169,6 @@ def test_direct_custom_store_batch_consumers_are_inventoryed() -> None:
             3,
             "revalidate_stored_event",
         ),
-        "kaji/packages/py/src/tasks/handle.py": (
-            ".get_events(",
-            1,
-            "project_task",
-        ),
         "kaji/packages/ts/src/backends/postgres/committer.ts": (
             ".getEvents(",
             1,

@@ -14,9 +14,6 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   resolve: {
     alias: {
-      "@irogane/kaji/integrations": fileURLToPath(
-        new URL("./src/integrations/public.ts", import.meta.url),
-      ),
       "@irogane/kaji": fileURLToPath(new URL("./src/index.ts", import.meta.url)),
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },

@@ -105,7 +105,7 @@ def test_load_manifest_returns_parsed_manifest() -> None:
     assert manifest.files == ("handler.py",)
     assert manifest.peer_deps == {}
     assert manifest.stability == "beta"
-    assert manifest.runtimes == ("python", "typescript")
+    assert manifest.runtimes == ("python",)
     assert {tool.name for tool in manifest.tools} == {"say", "shout"}
     for tool in manifest.tools:
         assert isinstance(tool.parameters, MappingProxyType)

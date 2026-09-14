@@ -11,8 +11,11 @@ at this level.
 <!-- canonical-status-links:end -->
 
 OpenAI is the sole beta-supported primary provider. Anthropic, Gemini, Kimi, and
-OpenRouter are opt-in experimental adapters. Use the deterministic mock provider
-for local and test flows. See [**Kaji MVP**](https://github.com/enkyuan/alloy/blob/main/docs/MVP.md)
+OpenRouter are opt-in experimental adapters on the Python side. Use the
+deterministic mock provider for local Python test flows. The TypeScript package
+ships the retained one-shot `Kaji.execute` capability product: no agent loop,
+no provider adapters, and no integration runtime. See
+[**Kaji MVP**](https://github.com/enkyuan/alloy/blob/main/docs/MVP.md)
 for the full developer path and scope.
 
 ## Packages
@@ -20,7 +23,7 @@ for the full developer path and scope.
 | Package      | Path                          | Published as        | What it is                                            |
 | ------------ | ----------------------------- | ------------------- | ----------------------------------------------------- |
 | Python SDK   | [`packages/py`](packages/py)         | `kaji` (PyPI)   | Python embedded agent SDK, imported as `kaji`. Full docs in its own README. |
-| TypeScript SDK | [`packages/ts`](packages/ts) | `kaji` (npm)    | TypeScript embedded agent SDK                         |
+| TypeScript SDK | [`packages/ts`](packages/ts) | `kaji` (npm)    | TypeScript capability-execution SDK (`Kaji.execute`)   |
 | Reference service | [`packages/serve`](packages/serve)       | `kaji-serve` (unpublished) | Experimental FastAPI + Soniox STT reference service   |
 
 > The npm package publishes as `kaji`; the PyPI package publishes as `kaji`.

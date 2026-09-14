@@ -142,19 +142,29 @@ def test_openai_is_the_only_beta_supported_external_provider() -> None:
     typescript_exports = tiers["publicExports"]["typescript"]
     subpaths = tiers["packageSubpaths"]["typescript"]
 
-    assert "openai-adapter" in stable_ids
+    # The TypeScript capability cut removed provider adapters and their
+    # feature classification; the OpenAI-only beta boundary now lives on the
+    # retained Python provider surface.
+    assert "openai-adapter" not in stable_ids | experimental_ids
     assert "anthropic-adapter" not in stable_ids
     assert "anthropic-adapter" in experimental_ids
     assert "to_openai" in python_exports["stable"]
     assert "to_anthropic" in python_exports["experimental"]
-    assert {"OpenAIProvider", "OpenAIProviderOptions", "openai"} <= set(
-        typescript_exports["stable"]
-    )
-    assert {"AnthropicProvider", "AnthropicProviderOptions", "anthropic"} <= set(
-        typescript_exports["experimental"]
-    )
-    assert subpaths["./openai"]["tier"] == "stable"
-    assert subpaths["./anthropic"]["tier"] == "experimental"
+    removed_ts_provider_exports = {
+        "OpenAIProvider",
+        "OpenAIProviderOptions",
+        "AnthropicProvider",
+        "AnthropicProviderOptions",
+        "openai",
+        "anthropic",
+        "ModelProvider",
+        "getProvider",
+        "normalizeProviderError",
+    }
+    assert not removed_ts_provider_exports & set(typescript_exports["stable"])
+    assert not removed_ts_provider_exports & set(typescript_exports["experimental"])
+    assert "./openai" not in subpaths
+    assert "./anthropic" not in subpaths
 
 
 def test_live_docs_state_the_openai_only_beta_provider_boundary() -> None:
@@ -264,7 +274,7 @@ def test_beta_contract_package_copies_match_runtime_projection() -> None:
         assert (typescript_contracts / name).read_bytes() == expected
 
 
-def test_beta_contract_sync_allows_only_task_free_typescript_projection(
+def test_beta_contract_sync_copies_canonical_contracts(
     tmp_path: Path,
 ) -> None:
     spec = importlib.util.spec_from_file_location(
@@ -285,9 +295,6 @@ def test_beta_contract_sync_allows_only_task_free_typescript_projection(
     beta.write()
 
     assert beta.check() == []
-    assert not (typescript_target / "tasks/v1/schema.json").exists()
-    assert not (typescript_target / "tasks/v1/cases/valid.json").exists()
-
     missing = typescript_target / "events/v1/schema/new.json"
     missing.unlink()
     assert f"missing: {missing}" in beta.check()
@@ -350,12 +357,16 @@ def test_beta_contract_sync_runs_directly_without_installed_kaji(
     }
 
     assert python_copies == canonical
-    assert set(typescript_copies) == set(canonical) - {
-        "tasks/v1/schema.json",
-        "tasks/v1/cases/valid.json",
+    projection_module = runpy.run_path(
+        str(REPO_ROOT / "kaji/tooling/contracts/projection.py")
+    )
+    project = projection_module["typescript_contract_projection"]
+    projected = projection_module["TYPESCRIPT_PROJECTED_CONTRACTS"]
+    expected_typescript_copies = {
+        name: (project(Path(name), source / name) if name in projected else contents)
+        for name, contents in canonical.items()
     }
-    assert "tasks/v1/schema.json" not in typescript_copies
-    assert "tasks/v1/cases/valid.json" not in typescript_copies
+    assert typescript_copies == expected_typescript_copies
 
     events = json.loads(typescript_copies["events/v1/cases/valid.json"])["events"]
     assert all(not event["type"].startswith("task.") for event in events)
@@ -387,9 +398,9 @@ def test_release_matrix_matches_registry_stability() -> None:
     matrix = RELEASE_MATRIX.read_text()
     assert "<!-- beta-integrations: echo,github,gmail -->" in matrix
     assert "<!-- experimental-integrations:  -->" in matrix
-    assert "| echo | beta | python, typescript |" in matrix
-    assert "| github | beta | python, typescript |" in matrix
-    assert "| gmail | beta | python, typescript |" in matrix
+    assert "| echo | beta | python |" in matrix
+    assert "| github | beta | python |" in matrix
+    assert "| gmail | beta | python |" in matrix
 
 
 def test_contract_checker_reports_fixture_path_and_json_pointer(tmp_path: Path) -> None:

@@ -1,127 +1,34 @@
 ---
 title: GitHub integration
-description: Wire the packaged TypeScript GitHub catalog with a repository allowlist, lazy credentials, read-only tool exposure, and explicit lifecycle ownership.
+description: The packaged TypeScript GitHub integration is removed with the capability cut; the Python beta catalog retains the GitHub tool subset.
 ---
 
-The GitHub catalog entry is beta. Its packaged TypeScript subpath,
-`@irogane/kaji/integrations/github`, remains experimental while it provides its
-bounded GitHub evidence and issue-mutation subset. It uses a fixed
-`https://api.github.com` origin, rejects redirects, validates repository names
-against an application-owned allowlist before reading credentials, and adds its
-own stable request identity headers.
+The packaged TypeScript GitHub integration (`@irogane/kaji/integrations/github`)
+was removed with the TypeScript capability cut. The retained TypeScript product
+is the one-shot `Kaji.execute` capability surface: it ships no integration
+runtime, no `kaji add` command, and no provider adapters.
 
-## Read-only investigation agent
-
-Install the local TypeScript alpha candidate and OpenAI peer, then export
-`OPENAI_API_KEY` and a fine-grained `GITHUB_TOKEN` with your environment
-tooling. Replace `owner/repo` with every exact repository the agent may read.
-
-```bash
-npm install ./irogane-kaji-0.3.0-alpha.1.tgz zod openai
-```
+The Python package keeps the beta GitHub catalog: a repository allowlist, lazy
+credentials, read-only tool exposure, and explicit lifecycle ownership. Copy
+the bundle with the Python CLI:
 
 {/* docs-test:github-read-only:start */}
 
-```ts
-import { AgentBuilder, OpenAIProvider, deadlineAfter } from "@irogane/kaji";
-import { createGithubIntegration } from "@irogane/kaji/integrations/github";
-
-const principalId = "github-investigator";
-const github = createGithubIntegration({
-  repositories: ["owner/repo"],
-  toolExposure: "read-only",
-  tokenFor: async (context) => {
-    if (context.signal.aborted) throw context.signal.reason;
-    if (context.principalId !== principalId) throw new Error("GitHub credential unavailable");
-    const token = process.env.GITHUB_TOKEN;
-    if (!token) throw new Error("GITHUB_TOKEN is required");
-    return token;
-  },
-});
-
-try {
-  const runtime = new AgentBuilder()
-    .provider(new OpenAIProvider({ apiKey: process.env.OPENAI_API_KEY! }))
-    .integration(github)
-    .defaultContext({ principalId })
-    .systemPrompt("Use GitHub evidence from owner/repo and cite immutable refs.")
-    .build();
-
-  try {
-    const result = await runtime.turn("Inspect the latest failed checks.", {
-      context: { deadlineAtMs: deadlineAfter(30_000) },
-    });
-    console.log(result.text);
-  } finally {
-    try {
-      const unsettledTools = await runtime.drainTools(10_000);
-      const unsettledProviders = await runtime.drainProviders(10_000);
-      if (unsettledTools.length > 0 || unsettledProviders.length > 0) {
-        throw new Error("Kaji shutdown did not settle");
-      }
-    } finally {
-      runtime.close();
-    }
-  }
-} finally {
-  github.close();
-}
+```bash
+python -m kaji.cli add github --out ./integrations/github
 ```
 
 {/* docs-test:github-read-only:end */}
 
-`tokenFor` is lazy and receives the complete `ToolExecutionContext`. Return the
-raw token; Kaji validates it and adds the authorization scheme. Repository
-policy and argument validation run before the callback, so a disallowed
-repository does not trigger credential lookup. The allowlist is exact and
-case-sensitive.
+Credentials stay lazy and application-owned: the runtime validates repository
+names against the allowlist before reading `GITHUB_TOKEN`, and a disallowed
+repository never triggers credential lookup. The client is fixed to
+`https://api.github.com`, rejects redirects, bounds response headers and
+bodies, and treats a connection loss after mutation dispatch as an unknown
+outcome.
 
-`toolExposure: "read-only"` filters tools before registration, so mutation
-schemas are not sent to the model. This is a model-exposure boundary, not a token
-permission boundary. Use a fine-grained token limited to the selected
-repositories and grant only the permissions required for the GitHub endpoints
-you expose. Verify GitHub's permission names when creating the token.
-
-## Tool catalog
-
-Read-only exposure registers these 13 parallel-safe tools with 10-second tool
-deadlines:
-
-- `get_file`, `get_issue`, `list_issues`, and `search_code`;
-- `get_commit`, `get_pull_request`, and `list_pull_request_files`;
-- `list_check_runs`, `get_workflow_run`, and `list_workflow_jobs`;
-- `list_file_commits`, `get_release`, and `list_deployments`.
-
-The compatibility default, `toolExposure: "all"`, additionally exposes
-`create_issue` and `add_comment`. Both are serialized `external_effect` tools
-with 15-second tool deadlines. External effects do not require approval by
-default: configure a `ToolPolicy` that requires approval for
-`external_effect`, install an approval handler, and use a token with the needed
-write permission before choosing `"all"`. A connection loss after mutation
-dispatch is an unknown outcome. Include an application-owned marker in the
-issue title or body and reconcile it before retrying. Kaji's internal
-idempotency key is not sent to GitHub.
-
-## Lifecycle and observability
-
-`AgentBuilder` registers an integration but does not own or close it. Drain
-provider and tool work, confirm that no unsettled IDs remain, close the runtime,
-then call `github.close()`. Closing the integration is idempotent.
-
-If the application uses metrics or trace sinks, pass the same sinks to both the
-builder and `createGithubIntegration`; builder configuration does not
-automatically flow into the integration requester.
-
-## Limits
-
-The package is deliberately bounded:
-
-- list operations return at most 20 items per page and do not auto-paginate;
-- file content over 48 KiB is omitted, and returned content must decode as UTF-8;
-- raw Actions logs, GraphQL, blame, GitHub Enterprise Server, arbitrary HTTP,
-  and unbounded results are not supported;
-- the SDK does not read `GITHUB_TOKEN` automatically and does not exchange
-  GitHub App, OAuth, or installation credentials; the application owns
-  `tokenFor`;
-- the packaged TypeScript subpath remains experimental; the copied catalog
-  entry is beta.
+Failure recovery is pinned by the
+[integration recovery contract](/docs/integrations/recovery-v1):
+`INTEGRATION_AUTH_REQUIRED` maps `github_token_missing` to
+`CONFIGURE_GITHUB_TOKEN` and
+https://kaji.dev/docs/integrations/recovery-v1#github-token.
