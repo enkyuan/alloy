@@ -24,11 +24,13 @@ describe("SDK scaffold contract", () => {
     expect(TYPESCRIPT_SDK_RANGE).toBe(typescriptPackage.version);
     expect(cliDocs).toContain(`${TYPESCRIPT_SDK_PACKAGE}@${TYPESCRIPT_SDK_RANGE}`);
     expect(ZOD_RANGE).toBe(typescriptPackage.peerDependencies.zod);
-    expect(TYPESCRIPT_PROVIDER_RANGES.openai.openai).toBe(
-      typescriptPackage.peerDependencies.openai,
-    );
-    expect(TYPESCRIPT_PROVIDER_RANGES.anthropic["@anthropic-ai/sdk"]).toBe(
-      typescriptPackage.peerDependencies["@anthropic-ai/sdk"],
-    );
+    // The TypeScript capability cut removed the OpenAI and Anthropic provider
+    // adapters and their package peers from @irogane/kaji; assert absence
+    // rather than a range so the scaffold contract stays in step with the
+    // package's actual peer surface.
+    expect(TYPESCRIPT_PROVIDER_RANGES.openai).toEqual({ openai: ">=4 <8" });
+    expect(TYPESCRIPT_PROVIDER_RANGES.anthropic["@anthropic-ai/sdk"]).toEqual(">=0.30 <2");
+    expect(typescriptPackage.peerDependencies).not.toHaveProperty("openai");
+    expect(typescriptPackage.peerDependencies).not.toHaveProperty("@anthropic-ai/sdk");
   });
 });
