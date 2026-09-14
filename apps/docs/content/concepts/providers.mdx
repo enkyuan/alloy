@@ -9,13 +9,13 @@ against a neutral message and tool-spec format.
 
 ## LLM providers
 
-| Provider    | TypeScript SDK                | Python SDK     | Status       | Env var              |
-| ----------- | ----------------------------- | -------------- | ------------ | -------------------- |
-| `openai`    | Removed (capability cut)      | Native adapter | Recommended  | `OPENAI_API_KEY`     |
-| `anthropic` | Removed (capability cut)      | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
-| `kimi`      | Removed (capability cut)      | Native adapter | WIP          | `OPENROUTER_API_KEY` |
-| `gemini`    | Removed (capability cut)      | Native adapter | WIP          | `GEMINI_API_KEY`     |
-| `mock`      | Removed (capability cut)      | Main package   | Testing only | -                    |
+| Provider    | TypeScript SDK           | Python SDK     | Status       | Env var              |
+| ----------- | ------------------------ | -------------- | ------------ | -------------------- |
+| `openai`    | Removed (capability cut) | Native adapter | Recommended  | `OPENAI_API_KEY`     |
+| `anthropic` | Removed (capability cut) | Native adapter | WIP          | `ANTHROPIC_API_KEY`  |
+| `kimi`      | Removed (capability cut) | Native adapter | WIP          | `OPENROUTER_API_KEY` |
+| `gemini`    | Removed (capability cut) | Native adapter | WIP          | `GEMINI_API_KEY`     |
+| `mock`      | Removed (capability cut) | Main package   | Testing only | -                    |
 
 The TypeScript capability product is the one-shot `Kaji.execute` surface: it
 ships no provider factories, no `ModelProvider` interface, and no
